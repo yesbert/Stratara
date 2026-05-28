@@ -16,7 +16,21 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `3.0.22`._
+_No changes yet since `3.0.23`._
+
+## [3.0.23] — 2026-05-28
+
+**First publication to nuget.org.** The complete 20-package Stratara family is now
+available on the public [nuget.org](https://www.nuget.org/packages?q=Stratara) feed in
+addition to the internal Azure Artifacts feed. External consumers can now run
+`dotnet add package Stratara.Mediator` (and the rest of the family) directly. This release
+carries the same API and behaviour as 3.0.22 — the only change is public distribution.
+
+### Changed
+
+- **Distribution.** Packages are now pushed to nuget.org on every `v*` tag, gated behind a
+  manual approval, in addition to the existing internal feed. Symbol packages (`.snupkg`)
+  are forwarded to symbols.nuget.org automatically.
 
 ## [3.0.22] — 2026-05-28
 
@@ -1824,7 +1838,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.0.22...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.0.23...main
+[3.0.23]: https://github.com/yesbert/Stratara/releases/tag/v3.0.23
 [3.0.22]: https://github.com/yesbert/Stratara/releases/tag/v3.0.22
 [3.0.21]: https://github.com/yesbert/Stratara/releases/tag/v3.0.21
 [3.0.20]: https://github.com/yesbert/Stratara/releases/tag/v3.0.20
