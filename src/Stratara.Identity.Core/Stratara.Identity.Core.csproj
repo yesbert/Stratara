@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Identity.Core</PackageId>
+        <Description>Channel-agnostic identity primitives for the Stratara stack — login/claims/access-token records, sign-in / authentication-state / token-storage abstractions, and a typed HttpClient helper. Shared contract for web, mobile, and desktop hosts.</Description>
+        <PackageTags>identity;authentication;authorization;jwt;access-token;sign-in;abstractions;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

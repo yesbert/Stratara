@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Microsoft.Extensions.Hosting</RootNamespace>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.ServiceDefaults</PackageId>
+        <Description>Observability and service-discovery defaults for the Stratara stack — ConfigureOpenTelemetry (HTTP, EF Core, RabbitMQ, runtime instrumentation; OTLP exporter) and ConfigureSerilog (structured logging, OTLP sink). Reference from every host.</Description>
+        <PackageTags>opentelemetry;otel;serilog;observability;logging;tracing;metrics;hosting;service-discovery;dotnet;stratara</PackageTags>
+        <!-- NU5104: OpenTelemetry.Instrumentation.EntityFrameworkCore and RabbitMQ.Client.OpenTelemetry
+             have no stable nuget.org releases yet (only beta / rc tracks, which are their production
+             channel). Suppress so a stable Stratara.ServiceDefaults can still pack against them. -->
+        <NoWarn>$(NoWarn);NU5104</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Destructurama.Attributed"/>
+        <PackageReference Include="Microsoft.Extensions.Http.Resilience"/>
+        <PackageReference Include="Microsoft.Extensions.ServiceDiscovery"/>
+        <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol"/>
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting"/>
+        <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore"/>
+        <PackageReference Include="OpenTelemetry.Instrumentation.Http"/>
+        <PackageReference Include="OpenTelemetry.Instrumentation.Runtime"/>
+        <PackageReference Include="RabbitMQ.Client.OpenTelemetry"/>
+        <PackageReference Include="Serilog.Extensions.Hosting"/>
+        <PackageReference Include="Serilog.Settings.Configuration"/>
+        <PackageReference Include="Serilog.Sinks.Async"/>
+        <PackageReference Include="Serilog.Formatting.Compact"/>
+        <PackageReference Include="Serilog.Sinks.Console"/>
+        <PackageReference Include="Serilog.Sinks.File"/>
+        <PackageReference Include="Serilog.Sinks.OpenTelemetry"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.EventSourcing.EntityFrameworkCore</PackageId>
+        <Description>EF Core persistence for the Stratara event-sourced stack on PostgreSQL — write-store, read-store, ASP.NET Identity store, shared conventions, value generators, and UnitOfWork primitives. Targets Npgsql with pgvector.</Description>
+        <PackageTags>event-sourcing;cqrs;efcore;ef-core;entity-framework;postgresql;postgres;npgsql;pgvector;write-store;read-store;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL"/>
+        <PackageReference Include="EFCore.NamingConventions"/>
+        <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore"/>
+        <PackageReference Include="Microsoft.EntityFrameworkCore"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting"/>
+        <PackageReference Include="Pgvector.EntityFrameworkCore"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Projections\Stratara.Projections.csproj"/>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.EntityFrameworkCore.Tests"/>
+        <InternalsVisibleTo Include="Stratara.WriteStore.Tests"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

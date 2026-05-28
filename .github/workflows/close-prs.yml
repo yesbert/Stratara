@@ -1,0 +1,57 @@
+# Auto-close PRs opened against the public mirror.
+#
+# The Stratara GitHub repo is a one-way mirror of an internal Azure DevOps repo —
+# every release is force-pushed as a single squashed commit, so any PR opened here
+# is lost on the next sync. CONTRIBUTING.md spells this out; this workflow makes
+# sure no PR is silently ignored.
+#
+# Maintainer-opened PRs (the human who happens to be configured as repo owner /
+# collaborator) are NOT auto-closed — only fork-based external PRs are. That gives
+# us a safety net to use the GitHub UI directly when needed.
+
+name: Close external PRs
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    steps:
+      - name: Comment and close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              "Thanks for your interest in Stratara! 👋",
+              "",
+              "Unfortunately we currently do not accept pull requests. The Stratara GitHub repo is a public mirror of an internal Azure DevOps repository — every release is force-pushed as a single squashed commit, so any PR opened here would be lost on the next sync.",
+              "",
+              "See [`CONTRIBUTING.md`](../blob/main/CONTRIBUTING.md) for the contribution model.",
+              "",
+              "**What you can do instead:**",
+              "- Found a bug? [Open a bug report](../issues/new?template=bug_report.md) — we triage it on the internal tracker and the fix lands in the next release.",
+              "- Have a question? [Open a question issue](../issues/new?template=question.md).",
+              "",
+              "We're closing this PR automatically. Thank you for understanding."
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              state: "closed",
+            });

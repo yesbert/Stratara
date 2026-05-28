@@ -1,0 +1,94 @@
+<Project>
+
+    <!--
+      Extracts <PackageReleaseNotes> from CHANGELOG.md at pack time by matching the
+      `## [<VersionPrefix>] ...` section (Keep-a-Changelog format). Keeps the top-level
+      CHANGELOG.md as the single source of truth so local `dotnet pack` and the CI pack
+      step (Pipeline 32) produce identical .nuspec releaseNotes.
+
+      Only fires for packable projects because the target hooks GenerateNuspec.
+
+      If the section is missing (preview build whose VersionPrefix isn't yet in the
+      changelog, or a branch experimenting with a fresh version), the build stays green
+      and the package simply ships without releaseNotes. Stable-tag builds must have the
+      [Unreleased] section renamed to [<version>] by `/bump-version` Step 0.
+    -->
+
+    <UsingTask
+        TaskName="ExtractReleaseNotesFromChangelog"
+        TaskFactory="RoslynCodeTaskFactory"
+        AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+        <ParameterGroup>
+            <ChangelogPath ParameterType="System.String" Required="true" />
+            <Version ParameterType="System.String" Required="true" />
+            <ReleaseNotes ParameterType="System.String" Output="true" />
+        </ParameterGroup>
+        <Task>
+            <Using Namespace="System" />
+            <Using Namespace="System.IO" />
+            <Using Namespace="System.Text" />
+            <Using Namespace="System.Text.RegularExpressions" />
+            <Code Type="Fragment" Language="cs"><![CDATA[
+                ReleaseNotes = string.Empty;
+
+                if (string.IsNullOrWhiteSpace(ChangelogPath) || !File.Exists(ChangelogPath))
+                {
+                    Log.LogMessage(MessageImportance.Low,
+                        "ExtractReleaseNotesFromChangelog: changelog not found at '{0}', skipping.",
+                        ChangelogPath ?? "<null>");
+                    return true;
+                }
+
+                if (string.IsNullOrWhiteSpace(Version))
+                {
+                    Log.LogMessage(MessageImportance.Low,
+                        "ExtractReleaseNotesFromChangelog: VersionPrefix is empty, nothing to look up.");
+                    return true;
+                }
+
+                string content = File.ReadAllText(ChangelogPath);
+                string escapedVersion = Regex.Escape(Version);
+
+                // Matches `## [<version>]` plus any trailing date/em-dash up to EOL, then
+                // captures the body up to the next `## [` heading (Unreleased or older
+                // release) or end-of-file. The link definitions at the bottom of the file
+                // (`[1.5.0]: ...`) are excluded by the heading lookahead.
+                string pattern = @"^##\s*\[" + escapedVersion + @"\][^\n]*\n(?<body>.*?)(?=^##\s*\[|\Z)";
+                var match = Regex.Match(content, pattern,
+                    RegexOptions.Multiline | RegexOptions.Singleline);
+
+                if (!match.Success)
+                {
+                    Log.LogMessage(MessageImportance.Normal,
+                        "ExtractReleaseNotesFromChangelog: no '## [{0}]' section in {1}; package ships without releaseNotes.",
+                        Version, ChangelogPath);
+                    return true;
+                }
+
+                string body = match.Groups["body"].Value.Trim();
+                ReleaseNotes = body;
+                Log.LogMessage(MessageImportance.Normal,
+                    "ExtractReleaseNotesFromChangelog: extracted {0} characters from '## [{1}]' section.",
+                    body.Length, Version);
+            ]]></Code>
+        </Task>
+    </UsingTask>
+
+    <!-- $(MSBuildThisFileDirectory) resolves to `<repo>/build/`, so going up one level
+         lands on the top-level CHANGELOG.md. Override `StrataraChangelogPath` if the
+         repo layout ever changes. -->
+    <PropertyGroup>
+        <StrataraChangelogPath Condition="'$(StrataraChangelogPath)' == ''">$(MSBuildThisFileDirectory)../CHANGELOG.md</StrataraChangelogPath>
+    </PropertyGroup>
+
+    <Target Name="StrataraPopulatePackageReleaseNotes"
+            BeforeTargets="GenerateNuspec"
+            Condition="'$(IsPackable)' == 'true' and '$(PackageReleaseNotes)' == ''">
+        <ExtractReleaseNotesFromChangelog
+            ChangelogPath="$(StrataraChangelogPath)"
+            Version="$(VersionPrefix)">
+            <Output TaskParameter="ReleaseNotes" PropertyName="PackageReleaseNotes" />
+        </ExtractReleaseNotesFromChangelog>
+    </Target>
+
+</Project>

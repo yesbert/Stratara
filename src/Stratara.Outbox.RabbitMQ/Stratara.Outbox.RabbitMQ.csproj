@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Outbox.RabbitMQ</PackageId>
+        <Description>Outbox-pattern command and event dispatch for the Stratara event-sourced stack — RabbitMQ IMessageBus implementation, retry worker, mediator command worker, and Redis-coordinated projection-replay state. Azure Service Bus support ships as the sibling Stratara.Outbox.AzureServiceBus package.</Description>
+        <PackageTags>outbox;outbox-pattern;rabbitmq;messaging;message-bus;event-sourcing;cqrs;reliable-messaging;redis;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
+        <ProjectReference Include="..\Stratara.Contracts\Stratara.Contracts.csproj"/>
+        <ProjectReference Include="..\Stratara.Mediator\Stratara.Mediator.csproj"/>
+        <ProjectReference Include="..\Stratara.Sessions\Stratara.Sessions.csproj"/>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="StackExchange.Redis"/>
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"/>
+        <PackageReference Include="RabbitMQ.Client"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Infrastructure"/>
+        <InternalsVisibleTo Include="Stratara.Infrastructure.Tests"/>
+        <InternalsVisibleTo Include="Stratara.Outbox.RabbitMQ.Tests"/>
+        <InternalsVisibleTo Include="Stratara.Outbox.RabbitMQ.IntegrationTests"/>
+        <InternalsVisibleTo Include="Stratara.EventSourcing.WorkerDefaults.Tests"/>
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

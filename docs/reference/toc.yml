@@ -1,0 +1,8 @@
+- name: DI Extensions Cheatsheet
+  href: di-extensions-cheatsheet.md
+- name: Routing Conventions
+  href: routing-conventions.md
+- name: LogEvents Schema
+  href: log-events-schema.md
+- name: API Reference
+  href: api/toc.yml

@@ -1,0 +1,122 @@
+<Project>
+  <!-- Hosting + service-discovery + HTTP basics. Stratara is a NuGet framework,
+       not an Aspire workload; consumers compose their own host (Aspire AppHost,
+       plain Generic Host, etc.). -->
+  <ItemGroup Label="Hosting and service discovery">
+    <PackageVersion Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Localization" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Resilience" Version="10.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.6.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.18.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.14.14" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.18.0" />
+    <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
+  </ItemGroup>
+  <!-- Azure Identity library for managing authentication and authorization -->
+  <ItemGroup Label="Authentication and Authorization">
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.UI" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.8" />
+  </ItemGroup>
+  <!-- OpenTelemetry instrumentation libraries for tracing HTTP, ASP.NET Core, and runtime behavior -->
+  <ItemGroup Label="OpenTelemetry Instrumentation">
+    <PackageVersion Include="OpenTelemetry.Api" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" Version="1.15.1-beta.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+    <PackageVersion Include="RabbitMQ.Client.OpenTelemetry" Version="1.0.0-rc.2" />
+  </ItemGroup>
+  <!-- Exporters for sending telemetry to OTLP or Jaeger -->
+  <ItemGroup Label="OpenTelemetry Exporter">
+    <PackageVersion Include="OpenTelemetry.Exporter.Jaeger" Version="1.5.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+  </ItemGroup>
+  <!-- Prometheus metrics server integration for ASP.NET Core -->
+  <ItemGroup Label="Metrics (optional Prometheus)">
+    <PackageVersion Include="prometheus-net.AspNetCore" Version="8.2.1" />
+  </ItemGroup>
+  <!-- Serilog logging packages with support for console and OpenTelemetry sinks -->
+  <ItemGroup Label="Logging (Serilog)">
+    <PackageVersion Include="Destructurama.Attributed" Version="5.3.0" />
+    <PackageVersion Include="Serilog" Version="4.3.1" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Settings.Configuration" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
+    <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
+  </ItemGroup>
+  <!-- Data access, caching, and storage providers -->
+  <ItemGroup>
+    <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.8" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
+    <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.10" />
+  </ItemGroup>
+  <!-- Messaging libraries -->
+  <ItemGroup Label="Messaging">
+    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
+    <PackageVersion Include="RabbitMQ.Client" Version="7.2.1" />
+  </ItemGroup>
+  <!-- SourceLink: embeds GitHub source URLs into .pdb so .snupkg-Symbole zurück auf
+       Source mappen (debugger Step-Into in den Stratara-Quellcode). Wired up in
+       Directory.Build.props als PackageReference mit PrivateAssets=all. -->
+  <ItemGroup Label="SourceLink">
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+  </ItemGroup>
+  <!-- Additional packages for testing, configuration, and other utilities -->
+  <ItemGroup Label="Testing and Utilities">
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
+    <PackageVersion Include="Moq" Version="4.20.72" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.ServiceBus" Version="4.12.0" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <!-- Pinned to 18.0.6 — the last version on Microsoft.Testing.Platform v1 (1.8.4). xunit.v3 3.2.2
+         depends on xunit.v3.core.mtp-v1 which requires Platform v1 (1.9.1); CodeCoverage 18.1.0+
+         jumped to Platform v2 and breaks the load with TypeLoadException on IDataConsumer. Bump
+         when xunit.v3 ships an mtp-v2 variant. -->
+    <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.0.6" />
+  </ItemGroup>
+  <!-- Blazor host packages consumed by Stratara.Identity.AspNetCore -->
+  <ItemGroup Label="Blazor">
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.8" />
+  </ItemGroup>
+</Project>

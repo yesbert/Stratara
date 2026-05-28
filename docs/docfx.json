@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../src",
+          "files": [
+            "Stratara.Abstractions/Stratara.Abstractions.csproj",
+            "Stratara.Contracts/Stratara.Contracts.csproj",
+            "Stratara.Diagnostics/Stratara.Diagnostics.csproj",
+            "Stratara.Resilience/Stratara.Resilience.csproj",
+            "Stratara.Sessions/Stratara.Sessions.csproj",
+            "Stratara.Mediator/Stratara.Mediator.csproj",
+            "Stratara.Domain/Stratara.Domain.csproj",
+            "Stratara.Shared/Stratara.Shared.csproj",
+            "Stratara.Projections/Stratara.Projections.csproj",
+            "Stratara.Sagas/Stratara.Sagas.csproj",
+            "Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj",
+            "Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj",
+            "Stratara.EventSourcing.EntityFrameworkCore/Stratara.EventSourcing.EntityFrameworkCore.csproj",
+            "Stratara.EventSourcing.Pipeline.CommandAudit/Stratara.EventSourcing.Pipeline.CommandAudit.csproj",
+            "Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj",
+            "Stratara.Infrastructure/Stratara.Infrastructure.csproj",
+            "Stratara.Identity.Core/Stratara.Identity.Core.csproj",
+            "Stratara.Identity.AspNetCore/Stratara.Identity.AspNetCore.csproj",
+            "Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj",
+            "Stratara.ServiceDefaults.AspNetCore/Stratara.ServiceDefaults.AspNetCore.csproj"
+          ]
+        }
+      ],
+      "dest": "reference/api",
+      "outputFormat": "mref",
+      "memberLayout": "samePage",
+      "namespaceLayout": "nested"
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": [
+          "**/*.md",
+          "**/toc.yml",
+          "index.md"
+        ],
+        "exclude": [
+          "_site/**",
+          "obj/**"
+        ]
+      },
+      {
+        "src": "reference/api",
+        "files": [
+          "**/*.yml",
+          "**/*.md"
+        ],
+        "dest": "reference/api"
+      }
+    ],
+    "resource": [
+      {
+        "src": "..",
+        "files": [
+          "icon.png"
+        ],
+        "dest": "assets"
+      }
+    ],
+    "globalMetadata": {
+      "_appName": "Stratara",
+      "_appTitle": "Stratara — Application-Agnostic CQRS + Event Sourcing Framework",
+      "_appLogoPath": "assets/icon.png",
+      "_appFaviconPath": "assets/icon.png",
+      "_appBaseUrl": "https://docs.stratara.tech",
+      "_enableSearch": true,
+      "_disableContribution": true
+    },
+    "dest": "_site",
+    "template": [
+      "default",
+      "modern",
+      "templates/stratara"
+    ],
+    "xref": [
+      "https://learn.microsoft.com/en-us/dotnet/.xrefmap.json"
+    ]
+  }
+}
