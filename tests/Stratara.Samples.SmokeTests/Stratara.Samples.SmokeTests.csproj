@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="xunit.v3"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\samples\Stratara.Sample.CqrsBasics\Stratara.Sample.CqrsBasics.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\..\samples\Stratara.Sample.EventSourced\Stratara.Sample.EventSourced.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\..\samples\Stratara.Sample.OutboxWorker\Stratara.Sample.OutboxWorker.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\..\samples\Stratara.Sample.MoneyTransferSaga\Stratara.Sample.MoneyTransferSaga.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\..\samples\Stratara.Sample.AspNetCoreApi\Stratara.Sample.AspNetCoreApi.csproj" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+</Project>

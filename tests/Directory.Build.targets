@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    Microsoft.Testing.Platform native code-coverage extension. Replaces the coverlet.console
+    wrapper that didn't instrument production assemblies under MTP's AssemblyLoadContext
+    (every nightly SonarQube run reported 0% coverage). Activated per test-run via the MTP
+    coverage switches; see azure-pipelines-sonarqube.yml. Lives in Directory.Build.targets
+    (not Directory.Build.props) so the PackageReference is evaluated AFTER Central Package
+    Management binds versions; placing it in .props triggers NU1015 on every csproj-level
+    PackageReference that relies on Directory.Packages.props for its version.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+
+</Project>

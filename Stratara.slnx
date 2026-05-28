@@ -1,0 +1,60 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Stratara.Abstractions/Stratara.Abstractions.csproj" />
+    <Project Path="src/Stratara.Contracts/Stratara.Contracts.csproj" />
+    <Project Path="src/Stratara.Diagnostics/Stratara.Diagnostics.csproj" />
+    <Project Path="src/Stratara.Domain/Stratara.Domain.csproj" />
+    <Project Path="src/Stratara.EventSourcing.EntityFrameworkCore/Stratara.EventSourcing.EntityFrameworkCore.csproj" />
+    <Project Path="src/Stratara.EventSourcing.Pipeline.CommandAudit/Stratara.EventSourcing.Pipeline.CommandAudit.csproj" />
+    <Project Path="src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj" />
+    <Project Path="src/Stratara.Identity.AspNetCore/Stratara.Identity.AspNetCore.csproj" />
+    <Project Path="src/Stratara.Identity.Core/Stratara.Identity.Core.csproj" />
+    <Project Path="src/Stratara.Infrastructure/Stratara.Infrastructure.csproj" />
+    <Project Path="src/Stratara.Mediator/Stratara.Mediator.csproj" />
+    <Project Path="src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj" />
+    <Project Path="src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj" />
+    <Project Path="src/Stratara.Projections/Stratara.Projections.csproj" />
+    <Project Path="src/Stratara.Resilience/Stratara.Resilience.csproj" />
+    <Project Path="src/Stratara.Sagas/Stratara.Sagas.csproj" />
+    <Project Path="src/Stratara.ServiceDefaults.AspNetCore/Stratara.ServiceDefaults.AspNetCore.csproj" />
+    <Project Path="src/Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj" />
+    <Project Path="src/Stratara.Sessions/Stratara.Sessions.csproj" />
+    <Project Path="src/Stratara.Shared/Stratara.Shared.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Stratara.Sample.CqrsBasics/Stratara.Sample.CqrsBasics.csproj" />
+    <Project Path="samples/Stratara.Sample.EventSourced/Stratara.Sample.EventSourced.csproj" />
+    <Project Path="samples/Stratara.Sample.OutboxWorker/Stratara.Sample.OutboxWorker.csproj" />
+    <Project Path="samples/Stratara.Sample.MoneyTransferSaga/Stratara.Sample.MoneyTransferSaga.csproj" />
+    <Project Path="samples/Stratara.Sample.AspNetCoreApi/Stratara.Sample.AspNetCoreApi.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Stratara.Benchmarks/Stratara.Benchmarks.csproj" />
+    <Project Path="tests/Stratara.EntityFrameworkCore.Tests/Stratara.EntityFrameworkCore.Tests.csproj" />
+    <Project Path="tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests.csproj" />
+    <Project Path="tests/Stratara.EventSourcing.WorkerDefaults.Tests/Stratara.EventSourcing.WorkerDefaults.Tests.csproj" />
+    <Project Path="tests/Stratara.Identity.AspNetCore.Tests/Stratara.Identity.AspNetCore.Tests.csproj" />
+    <Project Path="tests/Stratara.Identity.Core.Tests/Stratara.Identity.Core.Tests.csproj" />
+    <Project Path="tests/Stratara.Infrastructure.Tests/Stratara.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj" />
+    <Project Path="tests/Stratara.Outbox.RabbitMQ.Tests/Stratara.Outbox.RabbitMQ.Tests.csproj" />
+    <Project Path="tests/Stratara.Projections.Tests/Stratara.Projections.Tests.csproj" />
+    <Project Path="tests/Stratara.Sagas.Tests/Stratara.Sagas.Tests.csproj" />
+    <Project Path="tests/Stratara.Samples.SmokeTests/Stratara.Samples.SmokeTests.csproj" />
+    <Project Path="tests/Stratara.ServiceDefaults.AspNetCore.Tests/Stratara.ServiceDefaults.AspNetCore.Tests.csproj" />
+    <Project Path="tests/Stratara.ServiceDefaults.Tests/Stratara.ServiceDefaults.Tests.csproj" />
+    <Project Path="tests/Stratara.Shared.Tests/Stratara.Shared.Tests.csproj" />
+    <Project Path="tests/Stratara.SmokeTests/Stratara.SmokeTests.csproj" />
+    <Project Path="tests/Stratara.WriteStore.Tests/Stratara.WriteStore.Tests.csproj" />
+  </Folder>
+</Solution>

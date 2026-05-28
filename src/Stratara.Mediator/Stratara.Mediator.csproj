@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Mediator</PackageId>
+        <Description>In-process mediator with DI-resolved handlers and pipeline behaviors for the Stratara framework. MediatR-style routing via typed wrapper cache, plus an authorizing decorator and a bucket-lock concurrency primitive.</Description>
+        <PackageTags>cqrs;mediator;pipeline;pipeline-behavior;authorization;in-process;dependency-injection;dotnet;net10;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"/>
+        <PackageReference Include="OpenTelemetry.Api"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Infrastructure.Tests"/>
+        <InternalsVisibleTo Include="Stratara.Outbox.RabbitMQ"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

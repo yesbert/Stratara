@@ -1,0 +1,68 @@
+# DocFX → GitHub Pages auto-deploy.
+#
+# Triggers ONLY on push to main. Tag pushes (v*) are intentionally NOT
+# triggered: our internal mirror sync pushes main and the v*-tag back-to-back
+# at the same commit, which used to fire two workflow runs racing for the same
+# github-pages environment (the second always lost — "deployment in progress").
+# Triggering only on main covers every case where docs/ actually changed.
+#
+# Source-of-truth for the docs is the docs/ tree in this repo; the published
+# site is at docs.stratara.tech (Custom Domain configured via docs/CNAME).
+
+name: Deploy DocFX site to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install DocFX
+        run: dotnet tool install -g docfx
+
+      - name: Build DocFX site (warningsAsErrors)
+        run: |
+          docfx metadata docs/docfx.json
+          docfx build docs/docfx.json --warningsAsErrors
+
+      - name: Copy CNAME into Pages output
+        run: cp docs/CNAME docs/_site/CNAME
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

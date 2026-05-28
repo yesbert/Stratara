@@ -1,0 +1,87 @@
+<Project>
+    <PropertyGroup>
+        <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <Deterministic>true</Deterministic>
+        <UseModernSdkResolver>true</UseModernSdkResolver>
+
+        <!-- Lockstep version across the whole Stratara NuGet family. Bumped together
+             even when only one package changed (Microsoft.Extensions.* convention). -->
+        <VersionPrefix>3.0.20</VersionPrefix>
+        <VersionSuffix Condition="'$(ContinuousIntegrationBuild)' != 'true'">dev</VersionSuffix>
+
+        <ContinuousIntegrationBuild Condition="'$(TF_BUILD)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+        <!-- Default every csproj to non-packable. Welle-1 packages explicitly
+             opt in with <IsPackable>true</IsPackable>. Welle-2 packages will
+             flip the same flag when they're ready. Without this default,
+             `dotnet pack` against the solution would produce stub .nupkg files
+             for every Tier-C csproj (Infrastructure, WriteStore, ReadStore,
+             etc.) because the SDK default is IsPackable=true. -->
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!-- NuGet metadata + XML-doc enforcement. Set unconditionally because the
+         IsPackable=true override happens in csproj AFTER Directory.Build.props
+         evaluates, so a `Condition="'$(IsPackable)' == 'true'"` here would never
+         match (props are evaluated before csproj content). The IsPackable=false
+         default above ensures Tier-C csprojs don't actually pack, so
+         the inherited PackageIcon/PackageReadmeFile never trigger NU5046 on
+         them. Once Welle 2 packages Tier C, those csprojs flip IsPackable=true
+         and inherit this block. -->
+    <PropertyGroup>
+        <!-- Shared NuGet metadata. Per-package PackageId + Description +
+             PackageTags + the <None Include="icon.png|README.md"> directives
+             are set inside each packable csproj. -->
+        <Authors>Norbert Rosenwinkel</Authors>
+        <Copyright>Copyright © Norbert Rosenwinkel</Copyright>
+        <Product>Stratara Framework</Product>
+        <PackageProjectUrl>https://github.com/yesbert/Stratara</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/yesbert/Stratara.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <!-- FSL-1.1-MIT is not on the SPDX license list, so the license must be embedded as a file
+             rather than referenced via PackageLicenseExpression. See LICENSE at the repo root. -->
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>icon.png</PackageIcon>
+
+        <!-- Reproducible packaging signals. -->
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+        <!-- XML documentation enforcement. Set unconditionally: csproj-level
+             IsPackable=true overrides happen AFTER props evaluate, so a
+             Condition="'$(IsPackable)' == 'true'" here would never match.
+             Combined with TreatWarningsAsErrors above, every public type/
+             member in every project must carry XML docs (CS1591 escalates
+             to an error). Non-packable test/sample projects suppress CS1591
+             themselves via <NoWarn>$(NoWarn);CS1591</NoWarn>. Policy:
+             .claude/docs/nuget-public-api-documentation-policy.md. -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <!-- SourceLink for GitHub. Embeds the public GitHub repository URL into the
+         .pdb files (and the .snupkg via SymbolPackageFormat=snupkg above) so
+         debuggers can step into Stratara source straight from a consuming app.
+         PrivateAssets=all so the SourceLink package isn't propagated as a
+         transitive dependency to consumers of Stratara.* packages — only the
+         resulting source-mapped symbols are. Set unconditionally because the
+         csproj-level IsPackable=true override happens AFTER props evaluate;
+         non-packable projects (tests, samples) silently inherit the reference
+         without adverse effect. -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
+    </ItemGroup>
+
+    <!-- Extracts <PackageReleaseNotes> from CHANGELOG.md at pack time. Imported
+         unconditionally; the target hooks GenerateNuspec, so it only fires for
+         IsPackable=true projects. -->
+    <Import Project="build/PackageReleaseNotes.targets" />
+
+</Project>

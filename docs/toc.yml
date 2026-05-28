@@ -1,0 +1,12 @@
+- name: Overview
+  href: overview/
+- name: Getting Started
+  href: getting-started/
+- name: Guides
+  href: guides/
+- name: Samples
+  href: samples/
+- name: API Reference
+  href: reference/
+- name: GitHub
+  href: https://github.com/yesbert/Stratara

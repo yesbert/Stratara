@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <!-- Exclude test and benchmark assemblies from coverage measurement -->
+          <Exclude>
+            [*.Tests]*,
+            [*.Benchmarks]*,
+            [*.SmokeTests]*
+          </Exclude>
+
+          <!-- Exclude auto-generated code by attribute -->
+          <!-- Covers: [LoggerMessage] source generators, EF Core compiled models, -->
+          <!-- compiler-generated async/iterator state machines -->
+          <ExcludeByAttribute>
+            GeneratedCodeAttribute,
+            CompilerGeneratedAttribute
+          </ExcludeByAttribute>
+
+          <!-- Exclude EF Core migration files from coverage -->
+          <ExcludeByFile>
+            **/Migrations/**/*.cs
+          </ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

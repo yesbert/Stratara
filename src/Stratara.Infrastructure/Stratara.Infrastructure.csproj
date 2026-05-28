@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Infrastructure</PackageId>
+        <Description>Infrastructure glue for the Stratara framework — authorization decorators, configuration providers, and DI composition helpers that wire Mediator, Outbox, Identity, and EF Core into a hosted app.</Description>
+        <PackageTags>dependency-injection;hosting;authorization;infrastructure;composition;redis;cqrs;event-sourcing;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Contracts\Stratara.Contracts.csproj"/>
+        <ProjectReference Include="..\Stratara.EventSourcing.EntityFrameworkCore\Stratara.EventSourcing.EntityFrameworkCore.csproj"/>
+        <ProjectReference Include="..\Stratara.Mediator\Stratara.Mediator.csproj"/>
+        <ProjectReference Include="..\Stratara.Outbox.RabbitMQ\Stratara.Outbox.RabbitMQ.csproj"/>
+        <ProjectReference Include="..\Stratara.Sessions\Stratara.Sessions.csproj"/>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Azure.Identity"/>
+        <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"/>
+        <PackageReference Include="StackExchange.Redis"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Infrastructure.Tests"/>
+        <InternalsVisibleTo Include="Stratara.SmokeTests"/>
+        <InternalsVisibleTo Include="Stratara.Benchmarks"/>
+        <!-- Castle.DynamicProxy requires IVT for Moq to proxy ILogger<TInternal>. -->
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

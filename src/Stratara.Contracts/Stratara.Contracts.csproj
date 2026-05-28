@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Contracts</PackageId>
+        <Description>Wire-level POCO contracts for the Stratara framework — command and event envelopes, paged-request records, and the public SessionContext shape. Library-safe, no runtime or DI.</Description>
+        <PackageTags>cqrs;event-sourcing;contracts;dto;envelopes;wire-format;dotnet;net10;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

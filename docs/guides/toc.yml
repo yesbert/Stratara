@@ -1,0 +1,18 @@
+- name: Write a Command Handler
+  href: write-a-command-handler.md
+- name: Write a Projection
+  href: write-a-projection.md
+- name: Write a Saga
+  href: write-a-saga.md
+- name: Encrypt Sensitive Data
+  href: encrypt-data-setup.md
+- name: Authorization Decorators
+  href: auth-decorators.md
+- name: Outbox — RabbitMQ
+  href: outbox-setup-rabbitmq.md
+- name: Outbox — Azure Service Bus
+  href: outbox-setup-azureservicebus.md
+- name: Bus-Envelope Integrity (HMAC)
+  href: hmac-bus-envelope.md
+- name: Testing Patterns
+  href: testing-patterns.md

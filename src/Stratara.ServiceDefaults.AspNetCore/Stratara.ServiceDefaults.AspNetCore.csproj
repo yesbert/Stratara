@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Microsoft.Extensions.Hosting</RootNamespace>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.ServiceDefaults.AspNetCore</PackageId>
+        <Description>ASP.NET Core extensions on top of Stratara.ServiceDefaults — default health checks, /health and /alive endpoints, and ASP.NET request OpenTelemetry instrumentation. Reference from every API host.</Description>
+        <PackageTags>aspnetcore;health-check;healthcheck;opentelemetry;otel;observability;hosting;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting"/>
+        <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.ServiceDefaults\Stratara.ServiceDefaults.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

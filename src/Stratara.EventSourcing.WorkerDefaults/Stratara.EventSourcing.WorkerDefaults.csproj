@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.EventSourcing.WorkerDefaults</PackageId>
+        <Description>Worker-host wiring composites for the Stratara event-sourced stack. IHostApplicationBuilder extensions (AddBackendServices, AddCommandWorkerServices, AddEventProjectionWorkerServices, AddSagaWorkerServices, AddOutboxWorkerServices) bundle the per-concern DI calls so each worker host opts in with one line.</Description>
+        <PackageTags>event-sourcing;cqrs;mediator;worker;background-service;hosting;dependency-injection;hosted-service;dotnet;stratara</PackageTags>
+        <RootNamespace>Microsoft.Extensions.Hosting</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.EventSourcing.EntityFrameworkCore\Stratara.EventSourcing.EntityFrameworkCore.csproj"/>
+        <ProjectReference Include="..\Stratara.Infrastructure\Stratara.Infrastructure.csproj"/>
+        <ProjectReference Include="..\Stratara.Outbox.RabbitMQ\Stratara.Outbox.RabbitMQ.csproj"/>
+        <ProjectReference Include="..\Stratara.Projections\Stratara.Projections.csproj"/>
+        <ProjectReference Include="..\Stratara.Sagas\Stratara.Sagas.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

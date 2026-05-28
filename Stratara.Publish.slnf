@@ -1,0 +1,42 @@
+{
+  "solution": {
+    "path": "Stratara.slnx",
+    "projects": [
+      "src/Stratara.Abstractions/Stratara.Abstractions.csproj",
+      "src/Stratara.Contracts/Stratara.Contracts.csproj",
+      "src/Stratara.Diagnostics/Stratara.Diagnostics.csproj",
+      "src/Stratara.Domain/Stratara.Domain.csproj",
+      "src/Stratara.EventSourcing.EntityFrameworkCore/Stratara.EventSourcing.EntityFrameworkCore.csproj",
+      "src/Stratara.EventSourcing.Pipeline.CommandAudit/Stratara.EventSourcing.Pipeline.CommandAudit.csproj",
+      "src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj",
+      "src/Stratara.Identity.AspNetCore/Stratara.Identity.AspNetCore.csproj",
+      "src/Stratara.Identity.Core/Stratara.Identity.Core.csproj",
+      "src/Stratara.Infrastructure/Stratara.Infrastructure.csproj",
+      "src/Stratara.Mediator/Stratara.Mediator.csproj",
+      "src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj",
+      "src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj",
+      "src/Stratara.Projections/Stratara.Projections.csproj",
+      "src/Stratara.Resilience/Stratara.Resilience.csproj",
+      "src/Stratara.Sagas/Stratara.Sagas.csproj",
+      "src/Stratara.ServiceDefaults.AspNetCore/Stratara.ServiceDefaults.AspNetCore.csproj",
+      "src/Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj",
+      "src/Stratara.Sessions/Stratara.Sessions.csproj",
+      "src/Stratara.Shared/Stratara.Shared.csproj",
+      "tests/Stratara.EntityFrameworkCore.Tests/Stratara.EntityFrameworkCore.Tests.csproj",
+      "tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests.csproj",
+      "tests/Stratara.EventSourcing.WorkerDefaults.Tests/Stratara.EventSourcing.WorkerDefaults.Tests.csproj",
+      "tests/Stratara.Identity.AspNetCore.Tests/Stratara.Identity.AspNetCore.Tests.csproj",
+      "tests/Stratara.Identity.Core.Tests/Stratara.Identity.Core.Tests.csproj",
+      "tests/Stratara.Infrastructure.Tests/Stratara.Infrastructure.Tests.csproj",
+      "tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj",
+      "tests/Stratara.Outbox.RabbitMQ.Tests/Stratara.Outbox.RabbitMQ.Tests.csproj",
+      "tests/Stratara.Projections.Tests/Stratara.Projections.Tests.csproj",
+      "tests/Stratara.Sagas.Tests/Stratara.Sagas.Tests.csproj",
+      "tests/Stratara.ServiceDefaults.AspNetCore.Tests/Stratara.ServiceDefaults.AspNetCore.Tests.csproj",
+      "tests/Stratara.ServiceDefaults.Tests/Stratara.ServiceDefaults.Tests.csproj",
+      "tests/Stratara.Shared.Tests/Stratara.Shared.Tests.csproj",
+      "tests/Stratara.SmokeTests/Stratara.SmokeTests.csproj",
+      "tests/Stratara.WriteStore.Tests/Stratara.WriteStore.Tests.csproj"
+    ]
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "UserConfig": {
+    "Namespaces": [
+      {
+        "Name": "sbemulatorns",
+        "Queues": [],
+        "Topics": [
+          {
+            "Name": "test-roundtrip",
+            "Subscriptions": [
+              { "Name": "default" }
+            ]
+          },
+          {
+            "Name": "test-ack",
+            "Subscriptions": [
+              { "Name": "default" }
+            ]
+          },
+          {
+            "Name": "test-concurrency-requeue",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
+            "Name": "test-deadletter",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
+            "Name": "test-durable",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          }
+        ]
+      }
+    ],
+    "Logging": {
+      "Type": "File"
+    }
+  }
+}

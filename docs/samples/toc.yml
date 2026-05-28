@@ -1,0 +1,10 @@
+- name: 1. CQRS Basics
+  href: 01-cqrs-basics.md
+- name: 2. Event Sourced
+  href: 02-event-sourced.md
+- name: 3. Outbox + Worker
+  href: 03-outbox-worker.md
+- name: 4. Money-Transfer Saga
+  href: 04-money-transfer-saga.md
+- name: 5. ASP.NET Core API
+  href: 05-aspnetcore-api.md

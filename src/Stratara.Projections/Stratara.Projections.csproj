@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Projections</PackageId>
+        <Description>Projection runtime for the Stratara event-sourced stack — projection-handler discovery, change-set creation, update application, and projection manager. Sits between read-model repositories and the event-bundle dispatcher.</Description>
+        <PackageTags>event-sourcing;cqrs;projections;read-model;query-side;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Contracts\Stratara.Contracts.csproj"/>
+        <ProjectReference Include="..\Stratara.Domain\Stratara.Domain.csproj"/>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="JetBrains.Annotations"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Projections.Tests"/>
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

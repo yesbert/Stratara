@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Stratara documentation
+    url: https://docs.stratara.tech
+    about: Most questions are answered in the docs — please check there first.
+  - name: Security disclosure
+    url: https://github.com/yesbert/Stratara/blob/main/SECURITY.md
+    about: For security issues please follow SECURITY.md, do NOT file a public issue.
