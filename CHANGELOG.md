@@ -16,7 +16,40 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `3.0.21`._
+_No changes yet since `3.0.22`._
+
+## [3.0.22] — 2026-05-28
+
+**Public-surface polish for the GitHub mirror.** Branded README header with logo and
+badges, a *Why we share this* Vision block making the FSL-1.1-MIT-to-MIT two-year
+commitment explicit, and richer Use-cases sections in all three concept docs tying the
+integrity properties to concrete compliance frameworks (GDPR, SOC 2, HIPAA, ISO 27001,
+PCI-DSS). No API or behaviour change.
+
+### Added
+
+- **Logo + branded README header.** The repository logo (`docs/assets/logo.png`) is
+  embedded centred at the top of the README, with a tagline, license badge, docs badge,
+  and a .NET 10 badge underneath. Matches modern GitHub README hero-section conventions.
+- **"Why we share this" section in the README.** A short Vision block explaining why
+  Stratara is published — to make integrated CQRS, Event Sourcing, audit-grade integrity,
+  and tenant-aware encryption available in the .NET ecosystem as defaults instead of as
+  enterprise-tier add-ons — and the FSL-1.1-MIT-to-MIT two-year conversion commitment.
+- **Use-cases sections in all three concept docs**:
+  - `docs/concepts/tenant-aware-encryption.md` — GDPR Article 17 crypto-shredding,
+    multi-tenant SaaS offboarding, backup leak defense, SOC 2 / ISO 27001 / HIPAA /
+    PCI-DSS compliance posture, insider-threat reduction.
+  - `docs/concepts/tamper-evident-streams.md` — financial-transaction integrity, HIPAA
+    Security Rule §164.312(c), forensic admissibility, insider-threat detection, SOC 2
+    Type 2 operating-effectiveness evidence.
+  - `docs/concepts/why-event-sourcing.md` — GDPR Article 30 (records of processing),
+    Article 15 (subject access), SOC 2 audit trail, forensic readiness.
+
+### Changed
+
+- **README *Why Stratara* Encryption block** now mentions crypto-shredding and GDPR
+  Article 17 explicitly — the most concrete value prop of tenant-bound AAD encryption,
+  previously buried in the concept doc.
 
 ## [3.0.21] — 2026-05-28
 
@@ -1791,7 +1824,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.0.21...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.0.22...main
+[3.0.22]: https://github.com/yesbert/Stratara/releases/tag/v3.0.22
 [3.0.21]: https://github.com/yesbert/Stratara/releases/tag/v3.0.21
 [3.0.20]: https://github.com/yesbert/Stratara/releases/tag/v3.0.20
 

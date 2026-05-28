@@ -24,6 +24,28 @@ Every entry in the event stream carries two extra columns: a **hash** of the ent
 
 A separate background worker (`EventStreamHashing`, one of the composites in `Stratara.EventSourcing.WorkerDefaults`) walks each stream periodically and re-computes the chain. Any divergence — payload mutated, hash column rewritten, an entry removed in the middle — raises `EventStreamCorrupted` at the precise sequence number where the chain breaks.
 
+## Use cases
+
+### 💰 Financial transaction integrity (banks, fintech, payment processors)
+
+The regulator's question is rarely "show me the transactions" — it's "prove the transactions weren't altered between the time they happened and the time you reported them." Storing every transaction as an event in a hash-chained stream answers this constructively: the chain itself is the proof. A tampered row breaks the chain at a specific sequence number, with a timestamp showing when the break was detected. Forensic accounting becomes a hash recomputation instead of a deposition.
+
+### 🏥 Healthcare records (HIPAA Security Rule)
+
+HIPAA's Security Rule §164.312(c) — *Integrity controls* — requires covered entities to "implement electronic mechanisms to corroborate that electronic protected health information has not been altered or destroyed in an unauthorized manner." Hash-chained event streams are exactly such a mechanism: integrity verification is automatic, continuous, and produces audit-trail evidence by default. Combined with `[EncryptData]` on sensitive fields, the data layer addresses both §164.312(a) (access control) and §164.312(c) (integrity) in the same construction.
+
+### 📜 Forensic admissibility / legal evidence
+
+When an incident produces a legal proceeding — internal investigation, regulator probe, civil suit — the question is whether the event stream is *admissible* as evidence. Append-only storage alone is not enough; the prosecution will ask "could anyone have modified a row after the fact?". Hash chaining lets you answer: *yes, but the chain would have broken at sequence N, and our automated verifier would have alerted at time T*. The chain is the chain-of-custody.
+
+### 🕵️ Insider-threat detection
+
+A DBA with `UPDATE` access to the event store is, by traditional CRUD threat models, an unstoppable insider — they can rewrite history and cover their tracks in the audit log. Hash-chained streams flip this: the verifier runs continuously and independently; covering tracks would require rewriting every subsequent entry's hash *and* defeating the verifier. The window between tampering and detection is bounded by the verifier's poll interval (default 60 seconds), not by when the next external audit happens to look.
+
+### 📊 Audit compliance (SOC 2 Type 2, ISO 27001, SOX)
+
+SOC 2 Type 2 auditors evaluate *operating effectiveness over time* — not just that integrity controls exist, but that they ran throughout the audit period. The `EventStreamHashing` worker emits OpenTelemetry counters and structured log events on every verification pass; pointing the auditor at the dashboard answers the operating-effectiveness question with metrics instead of interview transcripts. Same machinery, same logs, satisfies ISO 27001 Annex A.12 (integrity controls) and SOX Section 404 (internal controls over financial reporting) where event-sourced bookkeeping is in scope.
+
 ## What it catches
 
 | Threat | Caught by |

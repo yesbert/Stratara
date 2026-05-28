@@ -64,6 +64,11 @@
           "icon.png"
         ],
         "dest": "assets"
+      },
+      {
+        "files": [
+          "assets/**"
+        ]
       }
     ],
     "globalMetadata": {

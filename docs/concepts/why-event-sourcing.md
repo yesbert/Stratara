@@ -59,6 +59,13 @@ Compare to CRUD coordination: distributed transactions, locking, "did the second
 - **Anywhere you'll want new reports later.** Replay means you don't have to commit upfront to every view the business will ever need.
 - **Multi-tenant systems where integrity matters.** Combine with [Tamper-Evident Streams](tamper-evident-streams.md) and [Tenant-Aware Encryption](tenant-aware-encryption.md), and the storage layer is doing meaningful work for you.
 
+### Concrete compliance angles
+
+- **GDPR Article 30 — Records of Processing Activities.** GDPR requires you to maintain a record of every category of processing you perform on personal data. Event sourcing produces such a record automatically: every state change is an event with an actor, a tenant, a timestamp, and a causation. The Article 30 register becomes a query against your event store instead of a hand-maintained spreadsheet.
+- **GDPR Article 15 — Subject Access Requests.** "Give me everything you have on me" stops being a research project. The event stream filtered by `SubjectUserId` is — by construction — the complete picture of what the system did with that subject's data, in chronological order.
+- **SOC 2 Type 2 audit-trail evidence.** SOC 2 evaluates whether controls operated effectively over time. Append-only event streams produce that evidence as a side effect of normal writes — no separate audit-log pipeline to maintain, no risk of the log diverging from the data.
+- **Forensic readiness.** When an incident requires reconstruction — "what exactly did the system do between 14:00 and 14:30 last Tuesday?" — replay against a stream slice answers it deterministically. CRUD systems give you a snapshot plus hope.
+
 ## Where to start
 
 - **[Stratara.Sample.EventSourced](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.EventSourced)** — the learning-path sample. Bank account, three events, a projection. ~250 lines, runs in a second.

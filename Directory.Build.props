@@ -10,7 +10,7 @@
 
         <!-- Lockstep version across the whole Stratara NuGet family. Bumped together
              even when only one package changed (Microsoft.Extensions.* convention). -->
-        <VersionPrefix>3.0.21</VersionPrefix>
+        <VersionPrefix>3.0.22</VersionPrefix>
         <VersionSuffix Condition="'$(ContinuousIntegrationBuild)' != 'true'">dev</VersionSuffix>
 
         <ContinuousIntegrationBuild Condition="'$(TF_BUILD)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>

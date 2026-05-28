@@ -1,6 +1,16 @@
+<div align="center">
+
+<img src="docs/assets/logo.png" alt="Stratara" width="240">
+
 # Stratara
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
+
+[![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/)
+
+</div>
+
+---
 
 Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 20 NuGet packages for .NET 10. Opt in à la carte.
 
@@ -10,9 +20,17 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 🔒 **Tamper-Evident by Design** — Every event stream is hash-chained. Manipulate a row directly in Postgres, and the next background-worker pass raises `EventStreamCorrupted` at the exact sequence number where the chain breaks. Audit-grade integrity, not a "trust the DBA" promise. ([Concept](https://docs.stratara.tech/concepts/tamper-evident-streams.html) · [Hero Sample](samples/Stratara.Sample.TamperProof))
 
-🛡️ **Tenant-Aware Encryption** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*. The tenant binding is in the cryptography, not in the query. ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html) · [Hero Sample](samples/Stratara.Sample.Encryption))
+🛡️ **Tenant-Aware Encryption** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*. Destroy the key → the data is unrecoverable, including in backups (crypto-shredding makes GDPR Article 17 erasure architecturally sound). ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html) · [Hero Sample](samples/Stratara.Sample.Encryption))
 
 🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 20 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
+
+## Why we share this
+
+Stratara is the integrated CQRS / Event Sourcing / audit stack we built for our own products — the wiring that production event-sourced apps tend to write from scratch, plus the tamper-evident and tenant-aware-encryption properties we wanted as a *default*, not as an enterprise-tier add-on.
+
+We're publishing it because the .NET ecosystem deserves these primitives without the composition tax of stitching together Marten + Wolverine + MassTransit + your own crypto layer. Compliance-relevant integrity (GDPR Article 17 via crypto-shredding, SOC 2 audit-trail, HIPAA data integrity) should not be locked behind a license tier — it should be how the storage layer works by default.
+
+The **FSL-1.1-MIT** license is our two-part commitment: source-available today (with a no-direct-competition clause), automatic conversion to plain MIT two years after each release. Stratara becomes true open source, version by version, on a schedule everyone can plan around. The clock has started with v3.0.20.
 
 ## Documentation
 

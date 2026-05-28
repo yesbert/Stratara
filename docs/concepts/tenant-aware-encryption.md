@@ -26,6 +26,32 @@ ciphertext, tag = AES-GCM-Encrypt(
 
 Decryption requires the **same** AAD. If a sealed value from tenant A is presented for decryption under tenant B's `SessionContext`, AES-GCM rejects the authentication tag with `AuthenticationTagMismatchException`. This holds **even with the correct master key**. The tenant binding is in the cryptography, not in the query.
 
+## Use cases
+
+### 🗑️ GDPR Article 17 — Right to Be Forgotten via crypto-shredding
+
+The hardest part of GDPR erasure is not the live database. It's the seven years of nightly backup tapes, the cold-storage snapshots, the replicated read-replicas, the audit-log archives — all the places a row was *legitimately* copied to before the user asked to be forgotten. Physically deleting from every one is operationally impossible.
+
+Crypto-shredding sidesteps the problem: encrypt the personal data with a per-tenant (or, in extended setups, per-subject) key, and when erasure is required, **destroy the key**. The ciphertext remains in every copy — but mathematically, without the key, it's noise. Article 17 compliance becomes a single operation against the key store, not a coordinated purge across every storage tier.
+
+This works because the AES-256-GCM construction guarantees that decryption without the key is computationally infeasible — not "hard" in a brute-force sense, but provably outside any plausible attacker's budget.
+
+### 🏢 Multi-tenant SaaS offboarding
+
+A B2B customer terminates their contract. Their data needs to be unrecoverable from your systems, including from any backup or replica. With per-tenant keys, this is one operation: revoke the tenant's key in `IKeyStore`. Every live row, every backup, every cold-storage tape becomes unreadable in the same instant. No coordinated cleanup, no per-table purge scripts, no risk of missing a forgotten replica.
+
+### 🛡️ Backup and cold-storage leak defense
+
+A leaked DB dump, a misconfigured S3 bucket containing backups, a lost tape from a courier — Stratara's threat model treats these as expected, not exceptional. Backups carry ciphertext only; keys live in the `IKeyStore` (Key Vault, KMS, HSM), which is not in the backup. The leaked bytes are useless to the recipient without separate access to the key store.
+
+### 📋 Compliance posture (SOC 2 / ISO 27001 / HIPAA / PCI-DSS)
+
+Auditors repeatedly ask the same question: *how is tenant separation enforced?* "We use a `WHERE TenantId = @currentTenant` filter on every query" is a *procedural* answer that the auditor will dig into. "Tenant separation is enforced cryptographically: each tenant's data is encrypted with a key bound to the tenant id, and cross-tenant decryption fails at the AES-GCM layer regardless of query path" is a *constructive* answer that closes the audit thread. The same architecture supports HIPAA's "data at rest encryption" rule (164.312(a)(2)(iv)) and PCI-DSS Requirement 3 by default.
+
+### 🕵️ Insider-threat reduction
+
+DBAs, support engineers, and anyone else with direct database read access see ciphertext bytes for `[EncryptData]` fields, not plaintext. Stratara separates "can access the data store" from "can access the keys" — two permissions, two audit trails, two different people if your governance demands it.
+
 ## What it catches
 
 | Threat | Caught by |
