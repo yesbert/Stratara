@@ -26,10 +26,12 @@
     <Project Path="src/Stratara.Projections/Stratara.Projections.csproj" />
     <Project Path="src/Stratara.Resilience/Stratara.Resilience.csproj" />
     <Project Path="src/Stratara.Sagas/Stratara.Sagas.csproj" />
+    <Project Path="src/Stratara.Security/Stratara.Security.csproj" />
     <Project Path="src/Stratara.ServiceDefaults.AspNetCore/Stratara.ServiceDefaults.AspNetCore.csproj" />
     <Project Path="src/Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj" />
     <Project Path="src/Stratara.Sessions/Stratara.Sessions.csproj" />
     <Project Path="src/Stratara.Shared/Stratara.Shared.csproj" />
+    <Project Path="src/Stratara.Validation/Stratara.Validation.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Stratara.Sample.AspNetCoreApi/Stratara.Sample.AspNetCoreApi.csproj" />
@@ -53,10 +55,12 @@
     <Project Path="tests/Stratara.Projections.Tests/Stratara.Projections.Tests.csproj" />
     <Project Path="tests/Stratara.Sagas.Tests/Stratara.Sagas.Tests.csproj" />
     <Project Path="tests/Stratara.Samples.SmokeTests/Stratara.Samples.SmokeTests.csproj" />
+    <Project Path="tests/Stratara.Security.Tests/Stratara.Security.Tests.csproj" />
     <Project Path="tests/Stratara.ServiceDefaults.AspNetCore.Tests/Stratara.ServiceDefaults.AspNetCore.Tests.csproj" />
     <Project Path="tests/Stratara.ServiceDefaults.Tests/Stratara.ServiceDefaults.Tests.csproj" />
     <Project Path="tests/Stratara.Shared.Tests/Stratara.Shared.Tests.csproj" />
     <Project Path="tests/Stratara.SmokeTests/Stratara.SmokeTests.csproj" />
+    <Project Path="tests/Stratara.Validation.Tests/Stratara.Validation.Tests.csproj" />
     <Project Path="tests/Stratara.WriteStore.Tests/Stratara.WriteStore.Tests.csproj" />
   </Folder>
 </Solution>

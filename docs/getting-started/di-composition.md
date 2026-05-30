@@ -49,6 +49,18 @@ services
 
 A typical host calls `AddCommandHandlersFromAssemblyContaining<T>()` once per assembly that holds command handlers. Most apps have one host-level assembly + one domain assembly.
 
+## Opt-in: request validation
+
+Validation is **not** wired by the umbrellas — add it explicitly, **before** the handlers, so the behavior runs outermost (rejecting invalid requests before authorization, auditing, or the handler):
+
+```csharp
+services
+    .AddStrataraValidation()                          // pipeline behavior — register first
+    .AddValidatorsFromAssemblyContaining<Program>();  // discover every IValidator<T>
+```
+
+See **[Write a Validator](../guides/write-a-validator.md)**.
+
 ## Example: a worker that runs everything
 
 ```csharp

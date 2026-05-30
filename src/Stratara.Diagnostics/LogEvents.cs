@@ -49,6 +49,8 @@ public static class LogEvents
     {
         /// <summary>Validation failed on an incoming request.</summary>
         public const int ValidationFailed = 103_101;
+        /// <summary>Non-blocking validation failures (<c>Warning</c>/<c>Info</c> severity) were observed; the request still reached the handler (warning).</summary>
+        public const int NonBlockingValidationFailures = 103_102;
     }
 
     /// <summary>Projection worker event-IDs (104_000s).</summary>
@@ -191,5 +193,13 @@ public static class LogEvents
     {
         /// <summary>The resolved <c>IKeyStore</c> at host start is the development-only <c>DummyKeyStore</c> (warning).</summary>
         public const int DummyKeyStoreActive = 112_001;
+        /// <summary>A new data-encryption-key version was created for a scope.</summary>
+        public const int KeyCreated = 112_002;
+        /// <summary>A scope's key was rotated — a new current version was created.</summary>
+        public const int KeyRotated = 112_003;
+        /// <summary>A key version was revoked (single-version crypto-shred).</summary>
+        public const int KeyRevoked = 112_004;
+        /// <summary>All key versions for a scope were erased (GDPR Art. 17 crypto-shred).</summary>
+        public const int ScopeErased = 112_005;
     }
 }

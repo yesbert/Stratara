@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.Security;
 using Stratara.Diagnostics;
+using Stratara.Security;
 
 namespace Stratara.Infrastructure.Security.KeyManagement;
 

@@ -8,7 +8,7 @@ A normal aggregate replay won't notice. Projections happily rebuild from the wro
 
 ## How Stratara solves it
 
-Every entry in the event stream carries two extra columns: a **hash** of the entry's contents and a **previous-hash** pointer to the prior entry's hash. The hash is `SHA-256(previousHash || canonical-json(payload))`.
+Every entry in the event stream carries two extra columns: a **hash** of the entry's contents and a **previous-hash** pointer to the prior entry's hash. Simplified, the hash is `SHA-256(previousHash || event-payload)` — in practice the input also binds the entry's global sequence number, version, timestamp and event type, so an entry's *position and identity* are part of the hash, not just its payload.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -22,7 +22,7 @@ Every entry in the event stream carries two extra columns: a **hash** of the ent
 └──────────────────────────────────────────────────────────────┘
 ```
 
-A separate background worker (`EventStreamHashing`, one of the composites in `Stratara.EventSourcing.WorkerDefaults`) walks each stream periodically and re-computes the chain. Any divergence — payload mutated, hash column rewritten, an entry removed in the middle — raises `EventStreamCorrupted` at the precise sequence number where the chain breaks.
+A background worker (`EventStreamHashing`, one of the composites in `Stratara.EventSourcing.WorkerDefaults`) hashes each newly-committed event into the chain a beat behind the write. That's what makes tampering *evident*: because every entry's hash is pinned to the one before it, recomputing the chain and comparing surfaces any divergence — payload mutated, hash column rewritten, an entry removed in the middle — at the precise sequence number where the break is. Running that comparison is a deliberate verification pass (an audit job, an external-anchor check; the hero sample's `ChainVerifier` is exactly this check), not something the framework does to itself automatically. The chain preserves the evidence; you decide when to check it.
 
 ## Use cases
 
@@ -40,11 +40,11 @@ When an incident produces a legal proceeding — internal investigation, regulat
 
 ### 🕵️ Insider-threat detection
 
-A DBA with `UPDATE` access to the event store is, by traditional CRUD threat models, an unstoppable insider — they can rewrite history and cover their tracks in the audit log. Hash-chained streams flip this: the verifier runs continuously and independently; covering tracks would require rewriting every subsequent entry's hash *and* defeating the verifier. The window between tampering and detection is bounded by the verifier's poll interval (default 60 seconds), not by when the next external audit happens to look.
+A DBA with `UPDATE` access to the event store is, by traditional CRUD threat models, an unstoppable insider — they can rewrite history and cover their tracks in the audit log. Hash-chained streams raise the bar: editing one row leaves a break that any verification recomputes and finds. Covering tracks means rewriting every subsequent entry's hash — a full re-chain — and even that is defeated once anchors are committed to a source of truth outside the database (see [Anchoring beyond your own infrastructure](#anchoring-beyond-your-own-infrastructure)). The externally committed hash is the one thing the insider can't reach.
 
 ### 📊 Audit compliance (SOC 2 Type 2, ISO 27001, SOX)
 
-SOC 2 Type 2 auditors evaluate *operating effectiveness over time* — not just that integrity controls exist, but that they ran throughout the audit period. The `EventStreamHashing` worker emits OpenTelemetry counters and structured log events on every verification pass; pointing the auditor at the dashboard answers the operating-effectiveness question with metrics instead of interview transcripts. Same machinery, same logs, satisfies ISO 27001 Annex A.12 (integrity controls) and SOX Section 404 (internal controls over financial reporting) where event-sourced bookkeeping is in scope.
+SOC 2 Type 2 auditors evaluate *operating effectiveness over time* — not just that integrity controls exist, but that they ran throughout the audit period. The `EventStreamHashing` worker emits structured log events as it hashes; that running record, plus a scheduled verification job over the chain, is the evidence the control actually operated — instead of an interview transcript. The same machinery speaks to ISO 27001 Annex A.12 (integrity controls) and SOX Section 404 (internal controls over financial reporting) where event-sourced bookkeeping is in scope.
 
 ## What it catches
 
@@ -54,12 +54,50 @@ SOC 2 Type 2 auditors evaluate *operating effectiveness over time* — not just 
 | Rewrite a stored hash to match a tampered payload | Previous-hash pointer of the next entry no longer matches the rewritten hash. |
 | Remove an entry from the middle | Next entry's previous-hash pointer doesn't match the entry that's now its predecessor. |
 | Insert a forged entry | Same — pointer chain breaks at the insertion. |
-| Restore an older backup that's missing recent entries | If the tail is short, the snapshot/aggregation pass notices the gap; if the chain is internally consistent but historically wrong, this is a backup-policy problem, not a tamper problem — by design. |
+| Restore an older backup that's missing recent entries | A verification pass sees the chain end early; a chain that is internally consistent but historically stale is a backup-policy problem, not a tamper problem — by design. |
+
+## The one attack the per-stream chain can't stop on its own
+
+The table above assumes the attacker edits *some* rows and leaves the rest. But an insider with
+full write access to your database can do more: after editing a payload, they **recompute every
+hash in the stream**. The chain is internally consistent again, and the verifier sees nothing
+wrong. The per-stream hash is a *checksum, not a signature* — when you own both ends of the
+chain, so does anyone who compromises that database.
+
+## Anchoring beyond your own infrastructure
+
+This is what Stratara's **event-chain anchor** is for. Alongside the per-stream chains, a second
+table (`event_chain_anchor`) records periodic global anchors: every N events the
+`EventStreamHashing` worker writes an anchor row capturing the chain head at that sequence. Each
+anchor row carries an optional **`BlockchainTxHash`** column — the seam for committing that anchor
+to a source of truth **outside your own infrastructure**:
+
+- a public blockchain (the anchor hash as a transaction payload),
+- an RFC 3161 timestamp authority or an [OpenTimestamps](https://opentimestamps.org/) calendar,
+- a notary, a transparency log, or simply a second party you don't control.
+
+Once an anchor is committed externally, the full re-chain attack fails. The insider can rewrite
+every hash in your database — but cannot change the hash already published beyond their reach.
+Verification escalates from *"is the local chain internally consistent?"* to *"does the local
+chain still match what we committed externally?"*.
+
+**What ships today vs. what you wire.** The anchor table, the periodic anchor worker, and the
+`BlockchainTxHash` seam are in the box. The actual submission to an external chain — and
+re-verification against it — is the integration point you own: Stratara stays
+application-agnostic about *which* external source of truth you trust, the same way it doesn't
+pick your message broker or your KMS. The [`TamperProof` sample](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.TamperProof)
+demonstrates the whole escalation in-memory: a full re-chain that passes local verification but
+fails against an external anchor.
 
 ## What it does NOT catch
 
-- **Tampering by a process that holds the framework's signing keys.** The hash is a *checksum*, not a signature. Stratara assumes the framework itself and its KMS access have not been compromised. If you need cryptographic non-repudiation against framework-level compromise, sign each entry with an external HSM and verify out-of-band.
-- **Backups with tampered hash columns.** If the attacker controls both the data and the backup pipeline, restoring from a tampered backup looks consistent. Defense: backup integrity sits outside Stratara's scope.
+- **An attacker who controls your database *and* the external anchor pipeline.** Anchoring only
+  helps if the source of truth is genuinely outside the attacker's reach. If they can forge the
+  external commitment too — or you never wired external anchoring in the first place — a
+  fully re-chained, re-anchored stream looks consistent. Choose an anchor target you don't control.
+- **Backups with tampered hash columns, restored without anchor re-verification.** If the attacker
+  controls both the data and the backup pipeline, a restored tampered backup looks internally
+  consistent. External anchoring narrows this; backup integrity otherwise sits outside Stratara's scope.
 
 ## Why SHA-256 specifically
 
@@ -67,20 +105,24 @@ Fast, FIPS-approved, ubiquitous, no patent or export concerns, hardware-accelera
 
 The chain itself is the cryptographic primitive, not the hash function. Switching to BLAKE3 or SHA-3 would change throughput, not security properties.
 
-## Why it runs as a worker, not on the read path
+## Why hashing runs on a worker
 
-Two reasons:
+Hashing happens on a background worker rather than inline on every append, so writes stay cheap — the chain is filled in a beat behind the commit, not inside the request. Verification is then a separate, deliberate pass: a scheduled audit job, or the external-anchor check above. You don't want it on the read path either — that would put a `SELECT ... ORDER BY Sequence` on every query and couple each read to the integrity check. Run it on its own schedule, and a detected break alerts an operator instead of failing whatever request is in flight.
 
-1. **Read latency.** Verifying the chain on every read would put a `SELECT ... WHERE Sequence < @current ORDER BY Sequence` on the hot path. Stratara keeps reads cheap by deferring verification.
-2. **Failure surface.** A read-path verifier would couple every query handler to the integrity check. Putting the worker on the side means a chain-break alerts an operator without breaking the user-facing request currently in flight.
+Worth stating plainly: nothing in the framework wakes up and scans for tampering on its own today. The hashes and anchors exist so that *when* you verify — on a schedule, during an audit, after an incident — the evidence is intact and a break shows up at the exact sequence.
 
 ## See it in action
 
-The hero sample at [`Stratara.Sample.TamperProof`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.TamperProof) reduces the whole idea to ~100 lines of in-memory code. Run it once with a clean chain (verifier passes), once with a tampered entry (verifier raises `EventStreamCorruptedException` at the exact sequence number).
+The hero sample at [`Stratara.Sample.TamperProof`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.TamperProof) reduces the whole idea to in-memory code, in three acts:
+
+1. **Clean chain** — the verifier passes.
+2. **Naive tamper** — one payload edited, hash left stale; the verifier raises `EventStreamCorruptedException` at the exact sequence number.
+3. **Full re-chain + external anchor** — the attacker recomputes every hash so local verification *passes again*, but the run still catches it by checking the chain head against an anchor published to a (simulated) external source of truth.
 
 ## Operational notes
 
-- The worker is a `BackgroundService` registered by `AddEventStreamHashWorkerServices()`. It can be scaled horizontally — each instance leases a stream, processes it, releases the lease.
-- Verification cadence is configurable via `EventStreamHashingOptions.VerifyEverySeconds` (default 60s). Faster cadence narrows the detection window; slower cadence reduces DB load.
-- A detected break **does not** auto-quarantine the stream. It logs at `Error` with the corrupted sequence, raises an OpenTelemetry counter, and lets your alerting decide the response (page on-call, freeze the projection rebuild, write-disable the affected aggregate, …).
+- The worker is a `BackgroundService` registered by `AddEventStreamHashWorkerServices()`.
+- The same worker drives anchoring: after each hashing batch it writes an `event_chain_anchor` row once enough new events have accrued (the anchor range), capturing the chain head at that sequence. Committing the anchor to an external source of truth and storing the reference on `BlockchainTxHash` is the integration point you wire — Stratara records the anchor; it does not pick the external chain for you.
+- The worker hashes newly-committed events on a fixed interval (a few seconds behind the commit, to let concurrent writers flush). Verification — recomputing the chain to look for a break — is something you schedule yourself, as an audit job or as part of the external-anchor check; it is not driven by the hashing worker.
+- When a verification pass finds a break, it surfaces the corrupted sequence number. Stratara does **not** auto-quarantine the stream — your alerting decides the response (page on-call, freeze the projection rebuild, write-disable the affected aggregate, …).
 - Stratara never *repairs* a broken chain automatically. The fix is operational — confirm what happened, restore from a known-good snapshot or backup, and document the incident.

@@ -1,9 +1,9 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
-using Stratara.Infrastructure.Security.Cryptography;
-using Stratara.Infrastructure.Security.KeyManagement;
 using Stratara.Infrastructure.Security.Serialization;
+using Stratara.Security;
 using Stratara.Abstractions.Security;
 
 namespace Stratara.SmokeTests.Security;
@@ -26,7 +26,10 @@ public static class SecuritySmokeTest
     {
         var devEnvironment = new HostingEnvironment { EnvironmentName = Environments.Development };
         var keyStore = new DummyKeyStore(devEnvironment);
-        var encryptionFactory = new AesGcmEncryptionFactory();
+        var encryptionFactory = new ServiceCollection()
+            .AddStrataraBlobEncryption()
+            .BuildServiceProvider()
+            .GetRequiredService<IEncryptionFactory>();
         var serializer = new SecureJsonSerializer(keyStore, encryptionFactory);
 
         // Always use the same tenant and user IDs for encryption and decryption

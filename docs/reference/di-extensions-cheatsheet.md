@@ -34,8 +34,16 @@ These tell Stratara *what* to dispatch / project / saga. Call once per assembly 
 
 | Extension | What it does |
 |---|---|
-| `services.AddSecurity()` | Wires AES-GCM `[EncryptData]` infrastructure, `IKeyStore` + `KeyStoreStartupProbe` |
+| `services.AddStrataraFileKeyStore(configuration)` | Registers the production file-backed `EnvelopeFileKeyStore` (KEK-wrapped, versioned per-`KeyScope` DEKs) + `FileMasterKeyProvider` + the AES-GCM `ISecureBlobEncryptor`. Lives in `Stratara.Security` (dependency-light). Call **before** `AddSecurity()` so it wins the `TryAdd` race. |
+| `services.AddSecurity()` | Wires `ISecureJsonSerializer` (`[EncryptData]`), the AES-GCM blob encryptor, and a **Development-only** `DummyKeyStore` fallback (`TryAdd`, so a real `IKeyStore` registered first wins). Adds the `KeyStoreStartupProbe` fail-fast guard. |
 | `services.AddBusEnvelopeIntegrity(opts)` | Opt-in HMAC signing of `CommandEnvelope` + `EventBundle` |
+
+## Validation
+
+| Extension | What it does |
+|---|---|
+| `services.AddStrataraValidation()` | Registers the validation pipeline behavior. Call **before** other `AddPipelineBehavior*` so it runs outermost. |
+| `services.AddValidatorsFromAssemblyContaining<T>()` | Discovers + registers every concrete `IValidator<T>` in the marker's assembly as scoped. |
 
 ## Resilience
 

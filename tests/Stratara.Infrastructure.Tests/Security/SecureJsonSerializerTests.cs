@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Stratara.Infrastructure.Security.Cryptography;
+using Microsoft.Extensions.DependencyInjection;
 using Stratara.Infrastructure.Security.Serialization;
 using Stratara.Abstractions.Security;
 
@@ -14,21 +14,24 @@ namespace Stratara.Infrastructure.Tests.Security;
 public class SecureJsonSerializerTests
 {
     private readonly Mock<IKeyStore> _keyStoreMock = new();
-    private readonly IEncryptionFactory _encryptionFactory = new AesGcmEncryptionFactory();
+    private readonly IEncryptionFactory _encryptionFactory = CreateEncryptionFactory();
     private readonly SecureJsonSerializer _serializer;
 
     private static readonly Guid TestTenantId = Guid.NewGuid();
     private static readonly Guid TestUserId = Guid.NewGuid();
     private static readonly string TestKeyId = "key-001";
 
+    private static IEncryptionFactory CreateEncryptionFactory()
+        => new ServiceCollection().AddStrataraBlobEncryption().BuildServiceProvider().GetRequiredService<IEncryptionFactory>();
+
     public SecureJsonSerializerTests()
     {
         var key = new byte[32];
         RandomNumberGenerator.Fill(key);
 
-        _keyStoreMock.Setup(k => k.EnsureKeyAsync(
-                It.IsAny<DataSensitivityLevel>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(TestKeyId);
+        _keyStoreMock.Setup(k => k.GetOrCreateCurrentKeyAsync(
+                It.IsAny<KeyScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KeyMaterial(TestKeyId, key));
 
         _keyStoreMock.Setup(k => k.GetDataEncryptionKeyAsync(TestKeyId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(key);
@@ -148,14 +151,18 @@ public class SecureJsonSerializerTests
     }
 
     [Fact]
-    public async Task Serialize_CallsEnsureKeyAsync()
+    public async Task Serialize_CallsGetOrCreateCurrentKeyAsync_WithScope()
     {
         var obj = new FullyEncryptedDto { Name = "Test", Value = 1 };
 
         await _serializer.SerializeAsync(obj, TestTenantId, TestUserId);
 
-        _keyStoreMock.Verify(k => k.EnsureKeyAsync(
-            DataSensitivityLevel.TenantScoped, TestTenantId, TestUserId, It.IsAny<CancellationToken>()), Times.Once);
+        _keyStoreMock.Verify(k => k.GetOrCreateCurrentKeyAsync(
+            It.Is<KeyScope>(s =>
+                s.Level == DataSensitivityLevel.TenantScoped &&
+                s.TenantId == TestTenantId.ToString() &&
+                s.UserId == TestUserId.ToString()),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -219,21 +226,20 @@ public class SecureJsonSerializerTests
     }
 
     [Fact]
-    public async Task Serialize_ZerosKeyMemory()
+    public async Task Serialize_ResolvesCurrentKeyOnce()
     {
-        var capturedKey = Array.Empty<byte>();
-        _keyStoreMock.Setup(k => k.GetDataEncryptionKeyAsync(TestKeyId, It.IsAny<CancellationToken>()))
+        _keyStoreMock.Setup(k => k.GetOrCreateCurrentKeyAsync(It.IsAny<KeyScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
-                capturedKey = new byte[32];
-                RandomNumberGenerator.Fill(capturedKey);
-                return capturedKey;
+                var key = new byte[32];
+                RandomNumberGenerator.Fill(key);
+                return new KeyMaterial(TestKeyId, key);
             });
 
         var obj = new FullyEncryptedDto { Name = "Zeroed", Value = 1 };
         await _serializer.SerializeAsync(obj, TestTenantId, TestUserId);
 
-        _keyStoreMock.Verify(k => k.GetDataEncryptionKeyAsync(TestKeyId, It.IsAny<CancellationToken>()), Times.Once);
+        _keyStoreMock.Verify(k => k.GetOrCreateCurrentKeyAsync(It.IsAny<KeyScope>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

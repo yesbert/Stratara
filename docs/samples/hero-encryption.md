@@ -46,10 +46,10 @@ Expected output (abridged):
 | Sample | Real Stratara |
 |---|---|
 | `[Encrypted]` marker (sample-local) | `[EncryptData]` from `Stratara.Abstractions` |
-| `TenantAwareEncryptor` (hardcoded master key) | `IFieldEncryptor` backed by `IKeyStore` — `AzureKeyVaultKeyStore`, `AwsKmsKeyStore`, HSM |
-| Manual `Encrypt` / `Decrypt` calls | EF Core value converter — transparent on save/load |
-| Tenant id passed explicitly | `ISessionContextProvider.Current.TenantId` — ambient per request |
-| One master key, AAD-only separation | Per-tenant HKDF-derived data-encryption keys **on top of** the AAD binding |
+| `TenantAwareEncryptor` (hardcoded master key) | `ISecureJsonSerializer` (fields) / `ISecureBlobEncryptor` (streams) backed by an `IKeyStore` — production `EnvelopeFileKeyStore` from `Stratara.Security`, or Key Vault / KMS / HSM |
+| Manual `Encrypt` / `Decrypt` calls | `[EncryptData]` at the serialization boundary — transparent on save/load |
+| Tenant id passed explicitly | a `KeyScope` resolved from `ISessionContextProvider.Current.TenantId` — ambient per request |
+| One master key, AAD-only separation | KEK-wrapped, versioned per-`KeyScope` data-encryption keys **on top of** the AAD binding |
 
 ## See also
 

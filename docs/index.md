@@ -6,7 +6,7 @@ _layout: landing
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
-Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 20 NuGet packages for .NET 10. Opt in à la carte.
+Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 22 NuGet packages for .NET 10. Opt in à la carte.
 
 ## Why Stratara
 
@@ -14,7 +14,7 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 🛡️ **[Tenant-Aware Encryption](concepts/tenant-aware-encryption.md)** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*.
 
-🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 20 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax.
+🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 22 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax.
 
 ## Where to start
 
@@ -37,4 +37,4 @@ A typical host wires Stratara through one of the umbrella `Add*WorkerServices` e
 
 ## Versioning
 
-Stratara ships in lockstep — all 20 packages share the same `<VersionPrefix>`. See `CHANGELOG.md` for release notes.
+Stratara ships in lockstep — all 22 packages share the same `<VersionPrefix>`. See `CHANGELOG.md` for release notes.

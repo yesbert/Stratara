@@ -8,10 +8,11 @@ Console.WriteLine("=== Stratara TamperProof ===");
 Console.WriteLine();
 Console.WriteLine("Stratara's EventStreamHashing worker chains every event into the next, so any");
 Console.WriteLine("post-commit edit of a row in Postgres is caught at the next verification pass.");
-Console.WriteLine("This sample is the same idea in 100 lines of in-memory code.");
+Console.WriteLine("This sample is that idea — plus the external-anchor escalation — in in-memory code.");
 Console.WriteLine();
 
 var store = new HashChainedEventStore();
+var external = new ExternalAnchorLog();
 var accountId = Guid.NewGuid();
 var now = DateTimeOffset.UtcNow;
 
@@ -27,13 +28,19 @@ Console.WriteLine("  OK — every entry's stored hash matches a fresh re-hash of
 Console.WriteLine("  OK — every entry's previous-hash pointer matches the prior entry's hash.");
 Console.WriteLine();
 
-Console.WriteLine("--- Tamper: rewrite entry #2's deposit from $50 to $5000 ---");
-store.TamperWithPayloadForDemo(1, new AmountDeposited(accountId, 5000m, now.AddMinutes(1)));
-Console.WriteLine("  Done. The malicious row sits in the store. Aggregate replay would now");
-Console.WriteLine("  silently produce a wrong balance. But the hash chain still has the old hash.");
+Console.WriteLine("--- Anchor the clean chain to an external source of truth ---");
+var anchor = external.Publish(3, store.HashAt(3));
+Console.WriteLine($"  Published anchor over #{anchor.Sequence} to an external log (ref {anchor.ExternalTxRef}).");
+Console.WriteLine("  In real Stratara this is the EventChainAnchor row; its BlockchainTxHash column");
+Console.WriteLine("  holds the reference returned by a blockchain / notary / timestamp service.");
 Console.WriteLine();
 
-Console.WriteLine("--- Verify the chain (tampered) ---");
+Console.WriteLine("--- Tamper: rewrite entry #2's deposit from $50 to $5000 ---");
+store.TamperWithPayloadForDemo(1, new AmountDeposited(accountId, 5000m, now.AddMinutes(1)));
+Console.WriteLine("  Done. The malicious row sits in the store with a now-stale hash.");
+Console.WriteLine();
+
+Console.WriteLine("--- Verify the chain (tampered, stale hash) ---");
 try
 {
     ChainVerifier.Verify(store);
@@ -45,9 +52,42 @@ catch (EventStreamCorruptedException ex)
 }
 Console.WriteLine();
 
-Console.WriteLine("In production this verification runs as a background worker (Stratara.EventSourcing.WorkerDefaults");
-Console.WriteLine("composite 'EventStreamHashing'). A failure raises an alert through OpenTelemetry");
-Console.WriteLine("and halts further projection processing until an operator confirms the audit fix.");
+Console.WriteLine("--- A determined insider recomputes EVERY hash ---");
+Console.WriteLine("  An attacker with full database access wouldn't leave a stale hash. Owning both");
+Console.WriteLine("  ends of the chain, they re-hash the entire stream so it is consistent again.");
+store.RechainEntireStoreForDemo();
+Console.WriteLine();
+
+Console.WriteLine("--- Verify the chain (tampered, fully re-chained) ---");
+try
+{
+    ChainVerifier.Verify(store);
+    Console.WriteLine("  PASSES — the local chain is internally consistent again. A self-contained");
+    Console.WriteLine("  hash chain is now blind to the $5000 edit. This is its honest limit.");
+}
+catch (EventStreamCorruptedException ex)
+{
+    Console.WriteLine($"  CAUGHT: {ex.Message} — should not happen after a full re-chain.");
+}
+Console.WriteLine();
+
+Console.WriteLine("--- Verify against the external anchor ---");
+try
+{
+    AnchorVerifier.VerifyAgainstExternalAnchor(store, anchor);
+    Console.WriteLine("  Anchor matches — this should not happen after tampering.");
+}
+catch (EventStreamCorruptedException ex)
+{
+    Console.WriteLine($"  CAUGHT: {ex.Message}");
+}
+Console.WriteLine();
+
+Console.WriteLine("The external anchor closes the gap a self-contained chain cannot: an insider who");
+Console.WriteLine("rewrites every local hash still cannot change the hash already committed outside");
+Console.WriteLine("their reach. In Stratara, EventChainAnchor.BlockchainTxHash is the seam for this —");
+Console.WriteLine("you wire the anchor service (public chain, notary, OpenTimestamps); the framework");
+Console.WriteLine("stays application-agnostic about which one.");
 Console.WriteLine();
 Console.WriteLine("Done.");
 

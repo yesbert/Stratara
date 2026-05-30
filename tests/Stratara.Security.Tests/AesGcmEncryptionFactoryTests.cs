@@ -1,8 +1,7 @@
 using System.Security.Cryptography;
-using Stratara.Infrastructure.Security.Cryptography;
-using Stratara.Abstractions.Security;
+using Xunit;
 
-namespace Stratara.Infrastructure.Tests.Security;
+namespace Stratara.Security.Tests;
 
 public class AesGcmEncryptionFactoryTests
 {
@@ -65,8 +64,7 @@ public class AesGcmEncryptionFactoryTests
 
         var encrypted = _factory.Encrypt(plaintext, key, aad);
 
-        Assert.ThrowsAny<CryptographicException>(() =>
-            _factory.Decrypt(encrypted, wrongKey, aad));
+        Assert.ThrowsAny<CryptographicException>(() => _factory.Decrypt(encrypted, wrongKey, aad));
     }
 
     [Fact]
@@ -79,8 +77,7 @@ public class AesGcmEncryptionFactoryTests
         var encrypted = _factory.Encrypt(plaintext, key, aad);
         encrypted.CipherText[0] ^= 0xFF;
 
-        Assert.ThrowsAny<CryptographicException>(() =>
-            _factory.Decrypt(encrypted, key, aad));
+        Assert.ThrowsAny<CryptographicException>(() => _factory.Decrypt(encrypted, key, aad));
     }
 
     [Fact]
@@ -93,8 +90,7 @@ public class AesGcmEncryptionFactoryTests
         var encrypted = _factory.Encrypt(plaintext, key, aad);
         encrypted.Tag[0] ^= 0xFF;
 
-        Assert.ThrowsAny<CryptographicException>(() =>
-            _factory.Decrypt(encrypted, key, aad));
+        Assert.ThrowsAny<CryptographicException>(() => _factory.Decrypt(encrypted, key, aad));
     }
 
     [Fact]
@@ -107,8 +103,7 @@ public class AesGcmEncryptionFactoryTests
 
         var encrypted = _factory.Encrypt(plaintext, key, aad);
 
-        Assert.ThrowsAny<CryptographicException>(() =>
-            _factory.Decrypt(encrypted, key, wrongAad));
+        Assert.ThrowsAny<CryptographicException>(() => _factory.Decrypt(encrypted, key, wrongAad));
     }
 
     [Fact]

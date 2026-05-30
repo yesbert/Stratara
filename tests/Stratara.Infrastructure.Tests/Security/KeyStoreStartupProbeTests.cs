@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Abstractions.Security;
 using Stratara.Infrastructure.Security.KeyManagement;
+using Stratara.Security;
 
 namespace Stratara.Infrastructure.Tests.Security;
 

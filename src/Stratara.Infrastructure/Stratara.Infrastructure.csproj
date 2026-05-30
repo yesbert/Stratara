@@ -16,6 +16,7 @@
         <ProjectReference Include="..\Stratara.EventSourcing.EntityFrameworkCore\Stratara.EventSourcing.EntityFrameworkCore.csproj"/>
         <ProjectReference Include="..\Stratara.Mediator\Stratara.Mediator.csproj"/>
         <ProjectReference Include="..\Stratara.Outbox.RabbitMQ\Stratara.Outbox.RabbitMQ.csproj"/>
+        <ProjectReference Include="..\Stratara.Security\Stratara.Security.csproj"/>
         <ProjectReference Include="..\Stratara.Sessions\Stratara.Sessions.csproj"/>
         <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
     </ItemGroup>

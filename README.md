@@ -6,13 +6,13 @@
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
-[![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/)
+[![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/)
 
 </div>
 
 ---
 
-Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 20 NuGet packages for .NET 10. Opt in à la carte.
+Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 22 NuGet packages for .NET 10. Opt in à la carte.
 
 > **License:** Stratara ships under **FSL-1.1-MIT** ([Functional Source License 1.1 with MIT Future License](LICENSE)). Source-available, **not OSI-approved OSS** — see [License](#license) before adoption.
 
@@ -22,7 +22,7 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 🛡️ **Tenant-Aware Encryption** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*. Destroy the key → the data is unrecoverable, including in backups (crypto-shredding makes GDPR Article 17 erasure architecturally sound). ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html) · [Hero Sample](samples/Stratara.Sample.Encryption))
 
-🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 20 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
+🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 22 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
 
 ## Why we share this
 
@@ -75,9 +75,11 @@ Lockstep-versioned NuGet family — every package in the table below ships at th
 | B | `Stratara.ServiceDefaults` | OpenTelemetry + Serilog defaults |
 | C | `Stratara.EventSourcing.EntityFrameworkCore` | Write / read / identity stores on PostgreSQL |
 | C | `Stratara.EventSourcing.Pipeline.CommandAudit` | Command-audit pipeline behavior |
+| C | `Stratara.Validation` | Vendor-neutral `IValidator<T>` + validation pipeline behavior |
 | C | `Stratara.EventSourcing.WorkerDefaults` | Worker-host wiring composites |
 | C | `Stratara.Projections` | Projection runtime |
 | C | `Stratara.Sagas` | Saga runtime |
+| C | `Stratara.Security` | Key store (KEK-wrapped versioned DEKs) + AES-GCM envelope encryption |
 | C | `Stratara.Outbox.RabbitMQ` | Outbox + RabbitMQ-backed `IMessageBus` |
 | C | `Stratara.Outbox.AzureServiceBus` | Outbox + Azure Service Bus-backed `IMessageBus` |
 | C | `Stratara.Infrastructure` | Cross-cutting infrastructure glue |

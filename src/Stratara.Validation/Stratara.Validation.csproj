@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Validation</PackageId>
+        <Description>Vendor-neutral request validation for the Stratara framework — a mediator pipeline behavior that runs IValidator&lt;T&gt; implementations before the handler and throws an aggregated StrataraValidationException on failure. No FluentValidation dependency; an optional adapter is shipped separately.</Description>
+        <PackageTags>validation;cqrs;mediator;pipeline-behavior;fluentvalidation-alternative;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="JetBrains.Annotations"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
+        <ProjectReference Include="..\Stratara.Diagnostics\Stratara.Diagnostics.csproj"/>
+        <ProjectReference Include="..\Stratara.Mediator\Stratara.Mediator.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Validation.Tests"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

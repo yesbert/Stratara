@@ -36,6 +36,33 @@ public sealed class HashChainedEventStore
         _entries[index].OverwritePayloadForTamperDemo(newPayload);
     }
 
+    // The hash chain head at a 1-based sequence number — what an anchor captures.
+    // In real Stratara this is the value written to EventChainAnchor.AnchorHash.
+    public byte[] HashAt(long sequence)
+    {
+        if (sequence < 1 || sequence > _entries.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sequence));
+        }
+        return _entries[(int)(sequence - 1)].Hash;
+    }
+
+    // Demo-only: unlike TamperWithPayloadForDemo, this simulates an attacker who ALSO
+    // recomputes every entry's hash after editing a payload, so the local chain is
+    // internally consistent again and ChainVerifier can no longer detect the edit.
+    // This is the realistic insider-with-DB-access threat — and exactly what an
+    // external anchor (ExternalAnchorLog) defends against.
+    public void RechainEntireStoreForDemo()
+    {
+        var previousHash = GenesisHash;
+        foreach (var entry in _entries)
+        {
+            var hash = ComputeHash(previousHash, entry.Payload);
+            entry.RechainForDemo(previousHash, hash);
+            previousHash = hash;
+        }
+    }
+
     internal static byte[] ComputeHash(byte[] previousHash, object payload)
     {
         var payloadJson = JsonSerializer.SerializeToUtf8Bytes(payload, payload.GetType());

@@ -4,6 +4,8 @@
   href: write-a-projection.md
 - name: Write a Saga
   href: write-a-saga.md
+- name: Write a Validator
+  href: write-a-validator.md
 - name: Encrypt Sensitive Data
   href: encrypt-data-setup.md
 - name: Authorization Decorators

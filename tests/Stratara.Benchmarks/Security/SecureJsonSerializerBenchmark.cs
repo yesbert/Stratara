@@ -1,6 +1,6 @@
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
-using Stratara.Infrastructure.Security.Cryptography;
+using Microsoft.Extensions.DependencyInjection;
 using Stratara.Infrastructure.Security.Serialization;
 using Stratara.Abstractions.Security;
 
@@ -30,7 +30,10 @@ public class SecureJsonSerializerBenchmark
     public void Setup()
     {
         var keyStore = new InMemoryKeyStore();
-        var encryptionFactory = new AesGcmEncryptionFactory();
+        var encryptionFactory = new ServiceCollection()
+            .AddStrataraBlobEncryption()
+            .BuildServiceProvider()
+            .GetRequiredService<IEncryptionFactory>();
         _secureSerializer = new SecureJsonSerializer(keyStore, encryptionFactory);
 
         _fieldEncrypted = new PersonFieldEncrypted
@@ -121,15 +124,15 @@ public class SecureJsonSerializerBenchmark
     {
         private readonly Dictionary<string, byte[]> _keys = new();
 
-        public ValueTask<string> EnsureKeyAsync(DataSensitivityLevel level, Guid? tenantId, Guid? userId, CancellationToken cancellationToken = default)
+        public ValueTask<KeyMaterial> GetOrCreateCurrentKeyAsync(KeyScope scope, CancellationToken cancellationToken = default)
         {
-            // For benchmarking, generate stable key per sensitivity level
-            var keyId = $"kid-{level}";
-            if (!_keys.ContainsKey(keyId))
+            // For benchmarking, generate a stable key per sensitivity level.
+            var keyId = $"kid-{scope.Level}";
+            if (!_keys.TryGetValue(keyId, out var key))
             {
-                var key = new byte[32]; // AES-256
-                // Deterministic but unique per level: fill with level code repeated
-                var fill = (byte)((int)level & 0xFF);
+                key = new byte[32]; // AES-256
+                // Deterministic but unique per level: fill with level code repeated.
+                var fill = (byte)((int)scope.Level & 0xFF);
                 for (var i = 0; i < key.Length; i++)
                 {
                     key[i] = (byte)(fill + i);
@@ -138,19 +141,32 @@ public class SecureJsonSerializerBenchmark
                 _keys[keyId] = key;
             }
 
-            return ValueTask.FromResult(keyId);
+            return ValueTask.FromResult(new KeyMaterial(keyId, key.ToArray()));
         }
 
         public ValueTask<byte[]?> GetDataEncryptionKeyAsync(string keyId, CancellationToken cancellationToken = default)
         {
             _keys.TryGetValue(keyId, out var key);
-            // Return a copy to mimic keystore behavior and avoid accidental mutation
+            // Return a copy to mimic keystore behavior and avoid accidental mutation.
             return ValueTask.FromResult(key is null ? null : key.ToArray());
+        }
+
+        public ValueTask<string> RotateAsync(KeyScope scope, CancellationToken cancellationToken = default)
+        {
+            _keys.Remove($"kid-{scope.Level}");
+            var keyMaterial = GetOrCreateCurrentKeyAsync(scope, cancellationToken).GetAwaiter().GetResult();
+            return ValueTask.FromResult(keyMaterial.KeyId);
         }
 
         public ValueTask RevokeAsync(string keyId, CancellationToken cancellationToken = default)
         {
             _keys.Remove(keyId);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask EraseScopeAsync(KeyScope scope, CancellationToken cancellationToken = default)
+        {
+            _keys.Remove($"kid-{scope.Level}");
             return ValueTask.CompletedTask;
         }
     }

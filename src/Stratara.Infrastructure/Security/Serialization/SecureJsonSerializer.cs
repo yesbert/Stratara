@@ -147,16 +147,15 @@ internal sealed class SecureJsonSerializer(IKeyStore keyStore, IEncryptionFactor
     private async Task<EncryptedWrapper> EncryptToWrapperAsync(ReadOnlyMemory<byte> plainJsonUtf8, DataSensitivityLevel level, Guid? tenantId, Guid? userId,
         string scope, CancellationToken cancellationToken)
     {
-        var keyId = await keyStore.EnsureKeyAsync(level, tenantId, userId, cancellationToken);
-        var rawDataEncryptionKey = await keyStore.GetDataEncryptionKeyAsync(keyId, cancellationToken)
-                                   ?? throw new InvalidOperationException("Key revoked or missing.");
-        var dataEncryptionKey = (byte[])rawDataEncryptionKey.Clone();
+        var keyScope = new KeyScope(level, tenantId?.ToString(), userId?.ToString());
+        var keyMaterial = await keyStore.GetOrCreateCurrentKeyAsync(keyScope, cancellationToken);
+        var dataEncryptionKey = keyMaterial.Key.ToArray();
         try
         {
             var aad = BuildAdditionalAuthenticatedData(tenantId, userId, scope);
             return encryptionFactory
                 .Encrypt(plainJsonUtf8.Span, dataEncryptionKey, aad)
-                .MapToEncryptedWrapper(keyId);
+                .MapToEncryptedWrapper(keyMaterial.KeyId);
         }
         finally
         {

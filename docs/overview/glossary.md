@@ -41,6 +41,14 @@ A read-model builder driven by event bundles from the bus. Implements `IProjecti
 
 A long-running process that reacts to events by issuing more commands. Implements `ISaga`. Stratara routes events through `AddSagasFromAssemblyContaining<T>()` + the `SagaOrchestrationWorker`.
 
+## Validation
+
+Request validation as a mediator pipeline behavior. An `IValidator<T>` (from `Stratara.Abstractions.Validation`) runs before the handler; only `ValidationSeverity.Error` failures block (the pipeline throws `StrataraValidationException`), while `Warning`/`Info` pass through and are logged. Wired with `AddStrataraValidation()` + `AddValidatorsFromAssemblyContaining<T>()`.
+
+## Key Scope
+
+The addressing unit for data-encryption keys (`KeyScope` in `Stratara.Abstractions.Security`): a `DataSensitivityLevel` optionally narrowed to a tenant and/or user. The production `EnvelopeFileKeyStore` (from `Stratara.Security`) holds a KEK-wrapped, versioned key per scope; rotation keeps old ciphertext readable, while `RevokeAsync` / `EraseScopeAsync` crypto-shred for GDPR Art. 17.
+
 ## Outbox
 
 The transactional outbox pattern. When a handler emits events, they land in the `outbox_entry` table inside the same DB transaction. The `OutboxWorker` polls + publishes to the bus (RabbitMQ / Azure Service Bus). At-least-once delivery + idempotent consumers.

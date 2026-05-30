@@ -2,7 +2,7 @@
 
 **Stratara takes the boring decisions for you so you can spend your time on aggregates and use-cases — not on wiring an outbox to a mediator to an event store.**
 
-It's a family of 20 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
+It's a family of 22 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
 
 What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is the **integration** plus two properties that none of the standalone libraries ship today:
 
@@ -52,5 +52,5 @@ Twenty packages organized into three tiers — see **[Architecture at a glance](
 ## License + versioning
 
 - Source-available under [FSL-1.1-MIT](https://fsl.software/) — converts to MIT after 2 years.
-- Lockstep versioning — all 20 packages ship at the same `<VersionPrefix>`.
+- Lockstep versioning — all 22 packages ship at the same `<VersionPrefix>`.
 - See `CHANGELOG.md` in the repo root for release notes.

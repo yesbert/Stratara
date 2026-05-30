@@ -75,9 +75,9 @@ DBAs, support engineers, and anyone else with direct database read access see ci
 
 ## How key derivation works
 
-`AddSecurity()` registers `IKeyStore` — by default `DummyKeyStore` (Development only, fails-fast in any other environment). Production hosts register a real implementation: Azure Key Vault, AWS KMS, an HSM, etc.
+`AddSecurity()` registers `IKeyStore` — by default `DummyKeyStore` (Development only, fails-fast in any other environment). Production hosts register a real implementation **before** `AddSecurity()`: the built-in `EnvelopeFileKeyStore` from the dependency-light `Stratara.Security` package (`AddStrataraFileKeyStore(configuration)`), or an Azure Key Vault / AWS KMS / HSM store.
 
-For each tenant, Stratara derives a per-tenant data-encryption key (DEK) from the master via HKDF-SHA256, salted with the tenant id. The per-tenant DEK is the actual AES-GCM key passed to the cipher. This adds belt-and-suspenders separation on top of the AAD binding — even if AES-GCM had a flaw, per-tenant keys would still isolate damage.
+Keys are addressed by a **`KeyScope`** — a `DataSensitivityLevel` optionally narrowed to a tenant and/or user. For each scope, Stratara resolves a versioned data-encryption key (DEK); the `EnvelopeFileKeyStore` keeps each DEK **KEK-wrapped** (never plaintext at rest) and versioned, so rotation keeps older ciphertext readable while `RevokeAsync` / `EraseScopeAsync` crypto-shred. The per-scope DEK is the actual AES-GCM key passed to the cipher — belt-and-suspenders separation on top of the AAD binding: even if AES-GCM had a flaw, per-scope keys would still isolate damage.
 
 ## Why it runs at the serialization boundary
 

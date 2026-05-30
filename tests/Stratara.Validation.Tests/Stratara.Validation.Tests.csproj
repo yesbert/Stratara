@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="xunit.v3"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="coverlet.collector"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+        <PackageReference Include="OpenTelemetry.Api"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="../../src/Stratara.Validation/Stratara.Validation.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Mediator/Stratara.Mediator.csproj"/>
+    </ItemGroup>
+</Project>

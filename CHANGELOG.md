@@ -5,7 +5,7 @@ All notable changes to the Stratara framework are documented in this file.
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning 2.0.0](https://semver.org/).
 
-Stratara is versioned **lockstep** — all 20 packable packages share the same version
+Stratara is versioned **lockstep** — all 22 packable packages share the same version
 number, controlled by `<VersionPrefix>` in `Directory.Build.props`. A single entry here
 applies to the entire NuGet family.
 
@@ -16,7 +16,58 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `3.0.23`._
+_no changes yet since 3.1.0._
+
+## [3.1.0] — 2026-05-30
+
+**Breaking release.** The `IKeyStore` and `ISecureBlobEncryptor` contracts changed shape, a new
+dependency-light `Stratara.Security` package now owns the production key store and envelope
+encryption, and a new vendor-neutral `Stratara.Validation` package adds request validation as a
+`Stratara.Mediator` pipeline behavior. Consumers must recompile and adapt call sites; data
+encrypted under the previous HKDF-style key model is **not** binary-compatible and needs a
+re-encrypt pass on its own schedule.
+
+### Added
+
+- **`Stratara.Validation` — vendor-neutral request validation.** A new package providing a
+  mediator pipeline behavior that runs `IValidator<T>` implementations before the handler and
+  throws an aggregated `StrataraValidationException` on failure. Register with
+  `AddStrataraValidation()` (outermost behavior) and `AddValidatorsFromAssemblyContaining<T>()`.
+  Only `ValidationSeverity.Error` blocks the request; `Warning`/`Info` failures pass through and
+  are logged. The package has no FluentValidation dependency — the contract is intentionally
+  FluentValidation-shape-compatible so an optional adapter can be added later.
+- **Validation contracts in `Stratara.Abstractions`** (namespace `Stratara.Abstractions.Validation`):
+  `IValidator<T>`, `ValidationResult`, `ValidationFailure`, `ValidationSeverity`, and
+  `StrataraValidationException`. Declaring the exception in `Stratara.Abstractions` lets a
+  consumer's global exception handler map validation failures to its own error model (e.g.
+  RFC-7807 ProblemDetails) without referencing the behavior package.
+- **`Stratara.Security` — production key store + envelope encryption (dependency-light).** Adds
+  `EnvelopeFileKeyStore`, a file-backed `IKeyStore` storing **KEK-wrapped, versioned per-scope
+  data-encryption keys** (rotation, single-version revoke, and whole-scope crypto-shred), plus a
+  `FileMasterKeyProvider` (`IMasterKeyProvider`, the KEK custody seam), an AES-GCM
+  `ISecureBlobEncryptor`, and the Development-only `DummyKeyStore`. Register with
+  `AddStrataraFileKeyStore(configuration)`. The package references only `Stratara.Abstractions` +
+  BCL crypto + `Microsoft.Extensions.*` abstractions — no EF Core, RabbitMQ, Redis, or cloud SDKs —
+  so lean consumers can encrypt without pulling in `Stratara.Infrastructure`.
+- **New security contracts in `Stratara.Abstractions.Security`:** `KeyScope`, `KeyMaterial`, and
+  `IMasterKeyProvider`.
+
+### Changed
+
+- **BREAKING — `IKeyStore`.** Replaced `EnsureKeyAsync(level, Guid? tenantId, Guid? userId)` with
+  `GetOrCreateCurrentKeyAsync(KeyScope)` returning `KeyMaterial` (key id + bytes in one call), and
+  added `RotateAsync(KeyScope)` and `EraseScopeAsync(KeyScope)`. `RevokeAsync(string keyId)` now
+  performs a real crypto-shred (the production store no longer treats it as a no-op). Scope
+  identifiers are `string?` (carrying both slugs and `Guid.ToString()` values) rather than `Guid?`.
+- **BREAKING — `ISecureBlobEncryptor`.** `EncryptAsync`/`DecryptAsync` now take a `KeyScope` and a
+  `purpose` instead of a bare `Guid tenantId`. The encrypted stream gains a leading version byte
+  (v2) and a `purpose` field; legacy streams without the version byte remain readable (configurable
+  via `Stratara.Security` options).
+- The AES-GCM encryption factory, blob encryptor, and dev key store moved out of
+  `Stratara.Infrastructure` into `Stratara.Security`; `AddSecurity()` now delegates to it. The
+  field/JSON `[EncryptData]` path (`ISecureJsonSerializer`) stays in `Stratara.Infrastructure`.
+
+This brings the lockstep family to **22 packable packages**.
 
 ## [3.0.23] — 2026-05-28
 
@@ -1838,7 +1889,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.0.23...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.0...main
+[3.1.0]: https://github.com/yesbert/Stratara/releases/tag/v3.1.0
 [3.0.23]: https://github.com/yesbert/Stratara/releases/tag/v3.0.23
 [3.0.22]: https://github.com/yesbert/Stratara/releases/tag/v3.0.22
 [3.0.21]: https://github.com/yesbert/Stratara/releases/tag/v3.0.21

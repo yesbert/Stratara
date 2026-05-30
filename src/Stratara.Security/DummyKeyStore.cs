@@ -3,33 +3,29 @@ using System.Text;
 using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Security;
 
-namespace Stratara.Infrastructure.Security.KeyManagement;
+namespace Stratara.Security;
 
 /// <summary>
-/// Development-only <see cref="IKeyStore"/> implementation that returns a single deterministic key derived
-/// from a fixed pass-phrase.
+/// Development-only <see cref="IKeyStore"/> that returns a single deterministic key derived from a
+/// fixed pass-phrase. Used as the fallback when no production key store (e.g.
+/// <c>AddStrataraFileKeyStore</c>) has been registered.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <strong>Never use in production, staging, QA, or any environment that handles real or
-/// production-derived data.</strong> Since 3.0.11 the constructor enforces a whitelist guard — it
-/// throws <see cref="InvalidOperationException"/> in any environment whose name is not exactly
-/// <c>Development</c>. Round-3-Audit Finding KI-05: before 3.0.11 the guard only blocked
-/// <see cref="HostEnvironmentEnvExtensions.IsProduction"/>, which let staging / QA / preview hosts
-/// silently encrypt with the world-known <c>"StrataraTestKey"</c> pass-phrase baked into the
-/// shipping NuGet.
+/// production-derived data.</strong> The constructor enforces a whitelist guard — it throws
+/// <see cref="InvalidOperationException"/> in any environment whose name is not exactly
+/// <c>Development</c>, so a host can never silently encrypt with the world-known test pass-phrase
+/// baked into the shipping NuGet.
 /// </para>
 /// <para>
-/// Register a real key-store implementation (HSM, Azure Key Vault, AWS KMS, etc.) before calling
-/// <c>AddSecurity()</c> so the <c>TryAddSingleton</c> default never resolves. The
-/// <c>KeyStoreStartupProbe</c> logs a warning at host start when <see cref="DummyKeyStore"/> is the
-/// resolved <see cref="IKeyStore"/> implementation, even in <c>Development</c>, so an unintentional
-/// dependency on the dummy is loud rather than silent.
+/// Register a real <see cref="IKeyStore"/> (the file-backed envelope store, an HSM, Key Vault, KMS,
+/// etc.) before calling the security composition so the <c>TryAdd</c> default never resolves.
 /// </para>
 /// </remarks>
-internal sealed class DummyKeyStore : IKeyStore
+public sealed class DummyKeyStore : IKeyStore
 {
-    private const string FixedKeyId = "dummy-test-key-id";
+    private const string FixedKeyId = "Development::dummy:v1";
     private const string DefaultKeyPhrase = "StrataraTestKey";
 
     private readonly byte[] _fixedKey;
@@ -51,26 +47,30 @@ internal sealed class DummyKeyStore : IKeyStore
         {
             throw new InvalidOperationException(
                 $"DummyKeyStore is restricted to the Development environment (current: '{environment.EnvironmentName}'). " +
-                "Register a real IKeyStore implementation (HSM, Azure Key Vault, AWS KMS, etc.) BEFORE calling AddSecurity() " +
-                "so the TryAddSingleton fallback never resolves. Example: " +
-                "services.AddSingleton<IKeyStore, AzureKeyVaultKeyStore>(); services.AddSecurity();");
+                "Register a real IKeyStore (AddStrataraFileKeyStore, HSM, Azure Key Vault, AWS KMS, etc.) BEFORE the security " +
+                "composition so the TryAdd fallback never resolves.");
         }
 
-        _fixedKey = DeriveKey(keyPhrase);
+        _fixedKey = SHA256.HashData(Encoding.UTF8.GetBytes(keyPhrase));
     }
 
     /// <inheritdoc/>
+    public ValueTask<KeyMaterial> GetOrCreateCurrentKeyAsync(KeyScope scope, CancellationToken cancellationToken = default)
+        => ValueTask.FromResult(new KeyMaterial(FixedKeyId, _fixedKey));
+
+    /// <inheritdoc/>
     public ValueTask<byte[]?> GetDataEncryptionKeyAsync(string keyId, CancellationToken cancellationToken = default)
-        => ValueTask.FromResult<byte[]?>(_fixedKey);
+        => ValueTask.FromResult<byte[]?>((byte[])_fixedKey.Clone());
+
+    /// <inheritdoc/>
+    public ValueTask<string> RotateAsync(KeyScope scope, CancellationToken cancellationToken = default)
+        => ValueTask.FromResult(FixedKeyId);
 
     /// <inheritdoc/>
     public ValueTask RevokeAsync(string keyId, CancellationToken cancellationToken = default)
         => ValueTask.CompletedTask;
 
     /// <inheritdoc/>
-    public ValueTask<string> EnsureKeyAsync(DataSensitivityLevel level, Guid? tenantId, Guid? userId, CancellationToken cancellationToken = default)
-        => ValueTask.FromResult(FixedKeyId);
-
-    private static byte[] DeriveKey(string input) =>
-        SHA256.HashData(Encoding.UTF8.GetBytes(input));
+    public ValueTask EraseScopeAsync(KeyScope scope, CancellationToken cancellationToken = default)
+        => ValueTask.CompletedTask;
 }

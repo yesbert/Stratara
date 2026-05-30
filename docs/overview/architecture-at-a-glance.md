@@ -1,31 +1,33 @@
 # Architecture at a glance
 
-Stratara ships **20 packages** organized into three tiers. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
+Stratara ships **22 packages** organized into three tiers. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
 
 ## Tier layout
 
 ```
 Tier-A  (foundational — no inbound deps from B or C)
 ├── Stratara.Abstractions     IMediator / ICommand / IQuery / IAggregate / ITenantAggregate
-│                              + Persistence/Outbox/Messaging/Session/Security/Auth contracts
+│                              + Persistence/Outbox/Messaging/Session/Security/Validation/Auth contracts
 ├── Stratara.Contracts        Wire-level POCO records (EventMessage, EventBundle, CommandEnvelope, …)
 ├── Stratara.Diagnostics      ActivitySource + Meter + LogEvent-ID schema (100_000 range)
-├── Stratara.Resilience       Polly named pipelines via AddResiliencePipelines()
-└── Stratara.Sessions         Actor / Subject SessionContext + ASP.NET middleware
+└── Stratara.Resilience       Polly named pipelines via AddResiliencePipelines()
 
 Tier-B  (builds on Tier-A only)
-├── Stratara.Mediator         AuthorizingMediator, CommandOutboxDispatcher, pipeline behaviors
+├── Stratara.Mediator         Mediator, AuthorizingMediator, pipeline behaviors
 ├── Stratara.Domain           Tenant aggregate + lifecycle events
 ├── Stratara.Shared           Umbrella re-export + source-gen Logger* extensions
+├── Stratara.Sessions         Actor / Subject SessionContext + ASP.NET middleware
 └── Stratara.ServiceDefaults  OpenTelemetry + Serilog defaults (lean Tier-B)
 
 Tier-C  (builds on Tier-B + Tier-A)
 ├── Stratara.EventSourcing.EntityFrameworkCore       WriteStore + ReadStore + IdentityStore (folded)
 ├── Stratara.EventSourcing.Pipeline.CommandAudit     Command-audit pipeline behavior
 ├── Stratara.EventSourcing.WorkerDefaults            6 worker composites
+├── Stratara.Validation                              IValidator<T> + validation pipeline behavior
 ├── Stratara.Projections                             Projection runtime + ProjectionManager
 ├── Stratara.Sagas                                   ISaga interface + saga dispatcher
-├── Stratara.Outbox.RabbitMQ                         RabbitMQ outbox + worker
+├── Stratara.Security                                Envelope IKeyStore (KEK-wrapped DEKs) + AES-GCM blob encryptor
+├── Stratara.Outbox.RabbitMQ                         RabbitMQ outbox + worker + CommandOutboxDispatcher
 ├── Stratara.Outbox.AzureServiceBus                  Azure Service Bus IMessageBus impl
 ├── Stratara.Infrastructure                          Auth decorators + DI composition glue
 ├── Stratara.Identity.Core                           Channel-agnostic identity primitives
@@ -50,7 +52,9 @@ A package that another packable package `ProjectReferences` must itself be packa
 | Persist events to PostgreSQL | `Stratara.EventSourcing.EntityFrameworkCore` |
 | Run projections on the read side | `Stratara.Projections` |
 | Run sagas / process managers | `Stratara.Sagas` |
-| Encrypt sensitive properties | `Stratara.Infrastructure` (brings the `[EncryptData]` infrastructure with it) |
+| Validate requests before the handler | `Stratara.Validation` |
+| Manage keys + encrypt blobs (production) | `Stratara.Security` (envelope `IKeyStore` + AES-GCM `ISecureBlobEncryptor`, dependency-light) |
+| Encrypt sensitive properties (`[EncryptData]` fields) | `Stratara.Infrastructure` (field/JSON path) + `Stratara.Security` (key store + blob encryption) |
 | Plug in ASP.NET identity | `Stratara.Identity.AspNetCore` |
 | Wire OpenTelemetry + Serilog | `Stratara.ServiceDefaults` (plus `.AspNetCore` for HTTP-host extras) |
 | Just the interfaces, no impl | `Stratara.Abstractions` + `Stratara.Contracts` |
