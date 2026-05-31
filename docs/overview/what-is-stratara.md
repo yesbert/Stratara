@@ -9,17 +9,23 @@ What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is t
 - **Tamper-evident event streams** — see [Tamper-Evident Streams](../concepts/tamper-evident-streams.md).
 - **Tenant-aware field encryption** — see [Tenant-Aware Encryption](../concepts/tenant-aware-encryption.md).
 
+…and it's built to stay out of the way at runtime: reflection-free hot paths, push-driven projections, and deterministic stream partitioning for horizontal scaling — see [Performance and Scaling](../concepts/performance-and-scaling.md).
+
 ## What you get
 
 - **In-process mediator** with pipeline behaviors (authorization, validation, command-audit, retry).
+- **Vendor-neutral request validation** — the `Stratara.Validation` package runs `IValidator<T>` as the outermost mediator behavior, blocking invalid commands before the handler (FluentValidation-shape-compatible, no FluentValidation dependency).
 - **Outbox-pattern dispatcher** for async messaging via RabbitMQ or Azure Service Bus, with publisher-confirms and broker-reconnect.
 - **Event store** on PostgreSQL via EF Core — write store, read store, identity store; snapshot tables, command-log, outbox, event-stream entries.
 - **Hash-chained integrity worker** that verifies the event stream wasn't mutated post-commit.
 - **Field-level encryption** with `[EncryptData]` — AES-GCM with tenant-bound AAD, transparent serialization-boundary seal.
+- **Production key store + envelope encryption** — the dependency-light `Stratara.Security` package (`EnvelopeFileKeyStore`) manages KEK-wrapped, versioned per-`KeyScope` keys with rotation, revoke, and whole-scope crypto-shredding (GDPR Article 17) — no EF Core, RabbitMQ, or cloud SDK required.
 - **Projection runtime** + **saga runtime** that consume event bundles from the bus.
 - **Channel-agnostic identity** (sign-in manager + auth-state provider abstractions usable from ASP.NET, MAUI, console).
 - **Observability defaults** — OpenTelemetry traces + metrics, Serilog log enrichment, source-generated `[LoggerMessage]` extensions.
 - **Polly-backed resilience** via named pipelines.
+- **Horizontal worker scaling** — 4096 deterministically-hashed stream buckets with per-bucket locking let command, projection, and saga workers run as competing consumers across N nodes (RabbitMQ / Azure Service Bus).
+- **Optimistic concurrency + auto-snapshots** — `(bucket, stream, version)` uniqueness catches concurrent writers; automatic snapshots keep replay fast on long streams.
 
 ## What you don't get
 
@@ -47,7 +53,7 @@ The architecture is strict: **no consumer-specific code** lives in the framework
 
 ## How it's structured
 
-Twenty packages organized into three tiers — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
+22 packages organized into three tiers — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
 
 ## License + versioning
 

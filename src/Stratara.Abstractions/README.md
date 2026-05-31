@@ -16,7 +16,8 @@ Use this when you need to reference Stratara types without pulling in any concre
 - `Stratara.Abstractions.Session` — `ISessionContextProvider`.
 - `Stratara.Abstractions.Multitenancy` — `ITenantService`, `ICurrentUserService`.
 - `Stratara.Abstractions.Projections` — `IProjectionReplayState`.
-- `Stratara.Abstractions.Security` — `IEncryptionFactory`, `IKeyStore`, `ISecureBlobEncryptor`, `ISecureJsonSerializer`. Plus wire-types: `EncryptedData`, `DataSensitivityLevel`, `EncryptDataAttribute`.
+- `Stratara.Abstractions.Security` — `IEncryptionFactory`, `IKeyStore`, `IMasterKeyProvider`, `ISecureBlobEncryptor`, `ISecureJsonSerializer`. Plus wire-types: `KeyScope`, `KeyMaterial`, `EncryptedData`, `DataSensitivityLevel`, `EncryptDataAttribute`.
+- `Stratara.Abstractions.Validation` — `IValidator<T>`, `ValidationResult`, `ValidationFailure`, `ValidationSeverity`, `StrataraValidationException`.
 - `Stratara.Abstractions.Entities` — `IEntity`, `IBucket`, `IHasRowVersion`, `IMultiTenant`, `ITenantEntity`, `IUserIdentity`.
 - `Stratara.Abstractions.BackgroundTasks` — `IBackgroundTaskQueue`. Plus wire-types: `BackgroundTaskInfo`, `BackgroundTaskStatus`.
 - `Stratara.Abstractions.Commands` — `IUpdateCommand`.

@@ -68,9 +68,14 @@ A package that another packable package `ProjectReferences` must itself be packa
 ## Event flow (at a glance)
 
 ```
-Command → CommandOutboxDispatcher → RabbitMQ → CommandWorker → Handler
-  → IEventSource → Events → WriteStore → EventBundle
-  → ProjectionWorker → Projections → ReadStore
+Command → CommandOutboxDispatcher → RabbitMQ → CommandWorker → Handler   ← competing consumers, N nodes
+  → IEventSource → Events → WriteStore → EventBundle                      ← ~11 ns/event apply-dispatch (compiled, no reflection)
+  → ProjectionWorker → Projections → ReadStore                           ← push-driven (subscribed), not polled
 ```
 
-The full DI composition story is in **[DI Composition](../getting-started/di-composition.md)**.
+Each stage scales independently: command, projection, and saga workers are competing consumers
+(any number of instances across nodes), streams partition across 4096 deterministic buckets, and
+projections react to pushed event bundles instead of polling. See
+**[Performance and Scaling](../concepts/performance-and-scaling.md)** for the design and the
+measured numbers, and **[DI Composition](../getting-started/di-composition.md)** for the full
+composition story.

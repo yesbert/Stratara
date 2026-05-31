@@ -7,45 +7,48 @@ Stratara mandates source-generated `[LoggerMessage]` for all new logging — no 
 | Range | Owner |
 |---|---|
 | `0 – 99_999` | Reserved (Microsoft / framework defaults) |
-| `100_000 – 199_999` | **Stratara framework** (this repo) |
+| `100_000 – 199_999` | **Stratara framework** (this repo) — currently allocated `100_000 – 113_999` |
 | `200_000+` | Consumer applications |
 
 Sub-buckets inside the framework's `100_000` range are defined in `src/Stratara.Diagnostics/LogEvents.cs`. The current allocation:
 
 | Bucket | Subsystem | LogEvents nested class |
 |---|---|---|
-| `110_000s` | EventBundle / Outbox dispatch | `LogEvents.EventBundle`, `LogEvents.Outbox` |
-| `111_000s` | Bus-Envelope integrity (HMAC) | `LogEvents.BusEnvelopeIntegrity` |
-| `113_000s` | BusEnvelope startup probes | `LogEvents.BusEnvelopeStartupProbe` |
-| `120_000s` | Projection runtime | `LogEvents.Projection`, `LogEvents.ChangeSet` |
-| `130_000s` | Saga runtime | `LogEvents.Saga` |
-| `140_000s` | Identity + auth | `LogEvents.Identity`, `LogEvents.Authorization` |
-| `150_000s` | Security + encryption | `LogEvents.KeyStore`, `LogEvents.Encryption` |
-| `160_000s` | Background tasks + workers | `LogEvents.BackgroundTask`, `LogEvents.Worker` |
-| `170_000s` | Event-stream hashing | `LogEvents.EventStreamHashing` |
+| `100_000s` | Change-set / aggregate-update | `LogEvents.ChangeSet` |
+| `101_000s` | Background-task queue | `LogEvents.BackgroundTasks` |
+| `102_000s` | Event-store append / read | `LogEvents.EventStore` |
+| `103_000s` | Validation | `LogEvents.Validation` |
+| `104_000s` | Projection worker | `LogEvents.Projection` |
+| `105_000s` | Command-handling worker | `LogEvents.CommandProcessing` |
+| `106_000s` | Outbox worker | `LogEvents.OutboxProcessing` |
+| `107_000s` | Event-stream-hash worker | `LogEvents.EventStreamHashing` |
+| `108_000s` | Messaging | `LogEvents.Messaging` |
+| `109_000s` | Aggregate update | `LogEvents.Update` |
+| `110_000s` | Saga worker | `LogEvents.Saga` |
+| `111_000s` | Event-bundle integrity | `LogEvents.EventBundleIntegrity` |
+| `112_000s` | Key management | `LogEvents.KeyManagement` |
+| `113_000s` | Bus-envelope integrity (startup probe) | `LogEvents.BusEnvelopeIntegrity` |
 
-Consult `src/Stratara.Diagnostics/LogEvents.cs` for the authoritative current list — buckets shift as features mature.
+Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `100_101` error). Consult `src/Stratara.Diagnostics/LogEvents.cs` for the authoritative current list — buckets shift as features mature.
 
 ## Authoring a new log event
 
-1. **Pick a bucket** in `LogEvents.cs`. If your subsystem doesn't have one yet, add the nested class with a `_baseId` constant.
-2. **Add the constant**:
+1. **Pick a bucket.** In your own app, start at `200_000+`; the `100_000` block is the framework's. Add a nested class per subsystem.
+2. **Add the constants** as plain literals — even hundreds for info/debug, the `_1xx` band for errors:
    ```csharp
-   public static class Projection
+   public static class OrderProjection
    {
-       private const int _baseId = 120_000;
-       public const int ProjectionStarted = _baseId + 1;
-       public const int EventsNotRelevantForProjection = _baseId + 2;
-       // …
+       public const int OrderProjectionStarted = 200_001;   // info
+       public const int OrderProjectionFailed  = 200_101;   // error
    }
    ```
-3. **Add the `[LoggerMessage]` partial method** in the appropriate `Diagnostics/Extensions/Logger*Extensions.cs`:
+3. **Add the `[LoggerMessage]` partial method** in a `public static partial class` (the source generator requires it):
    ```csharp
    [LoggerMessage(
-       EventId = LogEvents.Projection.ProjectionStarted,
+       EventId = OrderProjection.OrderProjectionStarted,
        Level = LogLevel.Information,
-       Message = "Projection {ProjectionName} started.")]
-   public static partial void LogProjectionStarted(this ILogger logger, string projectionName);
+       Message = "Order projection {ProjectionName} started.")]
+   public static partial void LogOrderProjectionStarted(this ILogger logger, string projectionName);
    ```
 
 ## Logger-extension file naming

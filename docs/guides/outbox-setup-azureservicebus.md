@@ -22,10 +22,7 @@ services.AddAzureServiceBus(options =>
 ### 2. Managed identity (Production-recommended, v3.0.13+)
 
 ```csharp
-services.AddAzureServiceBusWithManagedIdentity(options =>
-{
-    options.FullyQualifiedNamespace = "myappnamespace.servicebus.windows.net";
-});
+services.AddAzureServiceBusWithManagedIdentity("myappnamespace.servicebus.windows.net");
 ```
 
 `AddAzureServiceBusWithManagedIdentity()` resolves via `DefaultAzureCredential` — picks up the host's managed identity, a developer's `az login` session, or a service-principal env var, in that priority. No secrets in your code or appsettings.

@@ -5,7 +5,7 @@ Stratara provides AES-GCM encryption at serialization time via the `[EncryptData
 ## Mark a property
 
 ```csharp
-using Stratara.Abstractions.Security.Encryption;
+using Stratara.Abstractions.Security;
 
 public sealed record CustomerCreated(
     Guid CustomerId,

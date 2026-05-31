@@ -6,7 +6,7 @@
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
-[![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/)
+[![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/) [![GDPR Art. 17 — crypto-shredding](https://img.shields.io/badge/GDPR_Art._17-crypto--shredding-006400?logo=gnuprivacyguard&logoColor=white)](https://docs.stratara.tech/concepts/tenant-aware-encryption.html)
 
 </div>
 
@@ -20,9 +20,56 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 🔒 **Tamper-Evident by Design** — Every event stream is hash-chained. Manipulate a row directly in Postgres, and the next background-worker pass raises `EventStreamCorrupted` at the exact sequence number where the chain breaks. Audit-grade integrity, not a "trust the DBA" promise. ([Concept](https://docs.stratara.tech/concepts/tamper-evident-streams.html) · [Hero Sample](samples/Stratara.Sample.TamperProof))
 
-🛡️ **Tenant-Aware Encryption** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*. Destroy the key → the data is unrecoverable, including in backups (crypto-shredding makes GDPR Article 17 erasure architecturally sound). ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html) · [Hero Sample](samples/Stratara.Sample.Encryption))
+🛡️ **Tenant-Aware Encryption** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*. The tenant binding is cryptographic, not a `WHERE tenant_id = …` you hope nobody forgets. ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html) · [Hero Sample](samples/Stratara.Sample.Encryption))
+
+⚖️ **GDPR Article 17 by Construction** — Append-only event sourcing and the right to erasure are natural enemies: you cannot delete an immutable event. Stratara's answer is **crypto-shredding** — each subject's data is encrypted under a destroyable per-scope key, and a single `EraseScopeAsync` call shreds that key so every copy — events, snapshots, replicas, *and backup tapes you can't even reach* — becomes undecryptable noise. Erasure without rewriting history, provable on a 30-day regulatory clock. The same per-subject-key model underwrites SOC 2 / ISO 27001 key-lifecycle controls and HIPAA per-patient separation. ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html))
 
 🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 22 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
+
+⚡ **Fast by Default, Scales Horizontally** — Reflection-free hot paths: commands, event replay, and projection dispatch run through compiled expressions, not `MethodInfo.Invoke`. Projections are push-driven — subscribed to the event bus, never polling a table. And every stream maps to one of 4096 deterministic buckets, so command, projection, and saga workers scale out as competing consumers across N nodes on RabbitMQ or Azure Service Bus. The measured numbers — replay throughput, reflection-free property access, constant-memory rebuilds — are in [Performance & horizontal scale](#performance--horizontal-scale) just below.
+
+## Performance & horizontal scale
+
+Numbers, not adjectives — measured with [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet) on a **fanless MacBook Air M4** (Apple M4, .NET 10, Arm64 RyuJIT). Passively-cooled *laptop* hardware, so read these as conservative ratios, not a tuned server's ceiling. Re-run them yourself: `dotnet run -c Release --project tests/Stratara.Benchmarks -- --filter '*'`.
+
+**Replay stays cheap — and flat on memory.** In-memory aggregate replay through the compiled-expression apply-dispatch (excludes the database read a real rehydration adds):
+
+| Events replayed | Time | Allocated |
+|---|---:|---:|
+| 10,000 | 0.11 ms | 64 B |
+| 100,000 | 1.13 ms | 64 B |
+| 1,000,000 | 11.6 ms | **64 B** |
+
+~11 ns per event — and the allocation stays **constant at 64 bytes** no matter how long the stream is. A million-event aggregate rebuilds without producing garbage.
+
+**Reflection-free hot paths.** Commands, event-apply, projections, and sagas dispatch through compiled `Expression` delegates, never `MethodInfo.Invoke`. The same machinery drives property access:
+
+| Property access | Reflection | Compiled delegate | Speedup |
+|---|---:|---:|---:|
+| Write | 6.04 ns | 0.47 ns | **~13× faster** |
+| Read | 3.86 ns | 0.62 ns | **~6× faster** |
+
+Both allocation-free. Source-generated logging adds **~0.5 ns / 0 B** when its level is off (classic interpolated logging allocates regardless); tamper-evident chain hashing runs **sub-microsecond per event** (hardware-accelerated SHA-256). Full methodology and the honest caveats live in [Performance & Scaling](https://docs.stratara.tech/concepts/performance-and-scaling.html).
+
+**Scales horizontally.** Commands flow through a message bus to *competing-consumer* workers — you add nodes, not bigger machines. Stream ids partition deterministically across 4096 buckets (single-writer per aggregate, full parallelism across aggregates), and projections are pushed from the event bus, never polled.
+
+```mermaid
+flowchart LR
+    A1[API / host 1] --> BUS
+    A2[API / host 2] --> BUS
+    A3[API / host N] --> BUS
+    BUS{{"Message Bus<br/>RabbitMQ / Azure Service Bus"}}
+    BUS -->|competing consumers| C1[Command Worker 1]
+    BUS --> C2[Command Worker 2]
+    BUS --> C3[Command Worker N]
+    C1 --> ES
+    C2 --> ES
+    C3 --> ES
+    ES[("Event Store<br/>4096 stream buckets")] -->|pushed event bundles| P1[Projection / Saga Worker 1]
+    ES --> P2[Projection / Saga Worker N]
+    P1 --> RM[(Read Models)]
+    P2 --> RM
+```
 
 ## Why we share this
 
@@ -68,7 +115,7 @@ Lockstep-versioned NuGet family — every package in the table below ships at th
 | A | `Stratara.Contracts` | Wire-level POCO contracts |
 | A | `Stratara.Diagnostics` | `ActivitySource` / `Meter` / log-event-ID schema |
 | A | `Stratara.Resilience` | Polly named pipelines |
-| A | `Stratara.Sessions` | Actor / Subject session model + ASP.NET middleware |
+| B | `Stratara.Sessions` | Actor / Subject session model + ASP.NET middleware |
 | B | `Stratara.Mediator` | In-process mediator + pipeline behaviors |
 | B | `Stratara.Domain` | Tenant aggregate + lifecycle events |
 | B | `Stratara.Shared` | Umbrella re-export of A/B abstractions + source-generated logger extensions |

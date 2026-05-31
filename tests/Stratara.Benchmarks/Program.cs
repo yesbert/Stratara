@@ -1,10 +1,10 @@
-﻿using BenchmarkDotNet.Running;
-using Stratara.Benchmarks.Security;
+using BenchmarkDotNet.Running;
 
-// BenchmarkRunner.Run<LoggerExtensionsBenchmark>();
-// BenchmarkRunner.Run<SmartMergerBenchmark>();
-// BenchmarkRunner.Run<PropertySetterBenchmark>();
-// BenchmarkRunner.Run<EventStreamBenchmark>();
-// BenchmarkRunner.Run<EventStreamHashing>();
-// BenchmarkRunner.Run<HashComputeBenchmarks>();
-BenchmarkRunner.Run<SecureJsonSerializerBenchmark>();
+// Run any subset via the command line, e.g.:
+//   dotnet run -c Release -- --filter '*PropertySetterBenchmark*'
+//   dotnet run -c Release -- --filter '*'                 (everything)
+//   dotnet run -c Release -- --list flat                  (list available benchmarks)
+BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+
+/// <summary>Assembly entry-point marker for the BenchmarkDotNet switcher.</summary>
+public partial class Program;

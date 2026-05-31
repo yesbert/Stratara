@@ -14,11 +14,13 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 🛡️ **[Tenant-Aware Encryption](concepts/tenant-aware-encryption.md)** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*.
 
+⚖️ **[GDPR Article 17 by Construction](concepts/tenant-aware-encryption.md)** — You can't delete an immutable event, but you can destroy the key that decrypts it. Crypto-shredding erases a subject's data everywhere it landed — events, snapshots, replicas, unreachable backups — with one `EraseScopeAsync` call. The same per-subject-key model underwrites SOC 2 / ISO 27001 and HIPAA separation.
+
 🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 22 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax.
 
 ## Where to start
 
-- **[Concepts](concepts/index.md)** — the three load-bearing ideas. Read these first.
+- **[Concepts](concepts/index.md)** — the load-bearing ideas. Read these first.
 - **[Hero Samples](samples/index.md#hero-samples)** — TamperProof and Encryption, runnable in under a second.
 - **[What is Stratara](overview/what-is-stratara.md)** — the 5-minute pitch, who it's for, and who it's not for.
 - **[Architecture at a glance](overview/architecture-at-a-glance.md)** — tier layout, package boundaries, dependency direction.
