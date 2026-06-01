@@ -16,7 +16,34 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since 3.1.0._
+## [3.1.1] — 2026-06-01
+
+### Fixed
+
+- **`FileMasterKeyProvider` now rejects a master KEK that is not exactly 32 bytes at startup.**
+  The KEK is used directly as an AES-256-GCM key, which accepts only 16/24/32-byte keys. The
+  provider previously required merely *at least* 32 bytes, so a longer KEK (for example the
+  48-byte output of `openssl rand -base64 48`, a common HKDF master-key recipe) passed both
+  construction and the eager `FileKeyStoreStartupProbe`, then threw
+  `CryptographicException: Specified key is not a valid size for this algorithm` on the **first**
+  key creation at runtime — defeating the purpose of the boot-time probe. The provider now
+  validates the decoded length is exactly 32 bytes and fails fast at boot with an actionable
+  message (`Generate one with: openssl rand -base64 32`). A 32-byte KEK is unaffected.
+- **`EnvelopeFileKeyStore` is now safe for multiple processes sharing one store file** (for
+  example several containers bind-mounting the same host directory). Previously a process only
+  read the store once at construction, so a data-encryption key created by another process after
+  startup was invisible (`GetDataEncryptionKeyAsync` returned `null`, breaking decryption), and
+  two processes creating keys concurrently could overwrite each other's keys or mint colliding
+  versions for the same scope. Reads now reload from disk on a cache miss (guarded by the file's
+  last-write time to avoid reload storms), and every mutation serializes through an exclusive
+  cross-process lock file and re-reads the latest on-disk state before writing. A networked file
+  system (NFS/SMB) remains unsupported — it guarantees neither atomic rename nor reliable advisory
+  locks.
+
+### Added
+
+- **`LogEvents.KeyManagement.KeyStoreReloaded` (112_006)** — debug-level event emitted when the
+  file key store reloads its state from disk to pick up keys written by another process.
 
 ## [3.1.0] — 2026-05-30
 

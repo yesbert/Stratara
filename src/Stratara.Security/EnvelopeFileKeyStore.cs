@@ -20,6 +20,15 @@ namespace Stratara.Security;
 /// version unusable; <see cref="EraseScopeAsync"/> deletes every wrapped DEK for a scope, making
 /// its ciphertext permanently undecryptable (GDPR Art. 17 crypto-shred).
 /// </remarks>
+/// <remarks>
+/// The store is safe for several processes that share one store file (for example containers
+/// bind-mounting the same host directory). Mutations serialize through an exclusive cross-process
+/// lock file and reload the latest on-disk state before mutating, so concurrent writers neither lose
+/// each other's keys nor create colliding versions for the same scope. Reads that miss the in-memory
+/// cache reload once from disk (guarded by the file's last-write time) to pick up keys another process
+/// created after this instance started. A networked file system (NFS/SMB) is unsupported because it
+/// guarantees neither atomic rename nor reliable advisory locks.
+/// </remarks>
 internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -28,11 +37,19 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    /// <summary>Poll interval while waiting for the cross-process lock file to become free.</summary>
+    private static readonly TimeSpan LockRetryDelay = TimeSpan.FromMilliseconds(25);
+
+    /// <summary>Maximum number of lock-acquisition attempts (≈10s at <see cref="LockRetryDelay"/>).</summary>
+    private const int MaxLockAttempts = 400;
+
     private readonly IMasterKeyProvider _masterKeyProvider;
     private readonly ILogger<EnvelopeFileKeyStore> _logger;
     private readonly string _filePath;
+    private readonly string _lockPath;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly KeyStoreFile _state;
+    private KeyStoreFile _state = new();
+    private DateTime _lastLoadedWriteUtc;
 
     public EnvelopeFileKeyStore(
         IMasterKeyProvider masterKeyProvider,
@@ -43,7 +60,8 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         _masterKeyProvider = masterKeyProvider;
         _logger = logger;
         _filePath = Path.GetFullPath(options.Value.StorePath);
-        _state = LoadFromDisk(_filePath);
+        _lockPath = _filePath + ".lock";
+        ReloadStateUnlocked();
     }
 
     /// <inheritdoc/>
@@ -55,6 +73,12 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
+
+            // Re-evaluate on the freshest on-disk state so a scope another process created after our
+            // start is reused instead of being recreated with a colliding ":v1" / divergent DEK.
+            ReloadStateUnlocked();
+
             var currentKeyId = HighestNonRevokedKeyId(scopeKey);
             if (currentKeyId is null)
             {
@@ -81,9 +105,18 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            foreach (var scope in _state.Scopes.Values)
+            if (TryFindWrapped(keyId, out var wrapped))
             {
-                if (scope.Keys.TryGetValue(keyId, out var wrapped))
+                return wrapped.Revoked ? null : Unwrap(wrapped, keyId, kek.Span);
+            }
+
+            // Cache miss: another process may have created this key since our last load. Reload once —
+            // but only if the file actually changed, so repeated genuine misses (e.g. an erased scope)
+            // don't trigger a reload storm. Writes commit via atomic rename, so an unlocked read is safe.
+            if (DiskChangedSinceLastLoad())
+            {
+                ReloadStateUnlocked();
+                if (TryFindWrapped(keyId, out wrapped))
                 {
                     return wrapped.Revoked ? null : Unwrap(wrapped, keyId, kek.Span);
                 }
@@ -106,6 +139,9 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
+            ReloadStateUnlocked();
+
             var keyId = CreateKeyUnlocked(scopeKey, kek.Span);
             await PersistUnlockedAsync(cancellationToken);
             LogKeyRotated(_logger, keyId);
@@ -123,18 +159,16 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            foreach (var scope in _state.Scopes.Values)
-            {
-                if (scope.Keys.TryGetValue(keyId, out var wrapped))
-                {
-                    if (!wrapped.Revoked)
-                    {
-                        wrapped.Revoked = true;
-                        await PersistUnlockedAsync(cancellationToken);
-                        LogKeyRevoked(_logger, keyId);
-                    }
+            using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
+            ReloadStateUnlocked();
 
-                    return;
+            if (TryFindWrapped(keyId, out var wrapped))
+            {
+                if (!wrapped.Revoked)
+                {
+                    wrapped.Revoked = true;
+                    await PersistUnlockedAsync(cancellationToken);
+                    LogKeyRevoked(_logger, keyId);
                 }
             }
         }
@@ -152,6 +186,9 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
+            ReloadStateUnlocked();
+
             if (_state.Scopes.Remove(scopeKey))
             {
                 await PersistUnlockedAsync(cancellationToken);
@@ -258,30 +295,88 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
 
     private static string BuildScopeKey(KeyScope scope) => $"{scope.Level}:{scope.TenantId}:{scope.UserId}";
 
-    private static KeyStoreFile LoadFromDisk(string filePath)
+    private bool TryFindWrapped(string keyId, out WrappedKeyEntry wrapped)
     {
-        if (!File.Exists(filePath))
+        foreach (var scope in _state.Scopes.Values)
         {
-            return new KeyStoreFile();
+            if (scope.Keys.TryGetValue(keyId, out var found))
+            {
+                wrapped = found;
+                return true;
+            }
         }
 
-        var json = File.ReadAllText(filePath);
-        return JsonSerializer.Deserialize<KeyStoreFile>(json, JsonOptions) ?? new KeyStoreFile();
+        wrapped = null!;
+        return false;
     }
 
-    private async Task PersistUnlockedAsync(CancellationToken cancellationToken)
+    private bool DiskChangedSinceLastLoad() =>
+        File.Exists(_filePath) && File.GetLastWriteTimeUtc(_filePath) != _lastLoadedWriteUtc;
+
+    private void ReloadStateUnlocked()
+    {
+        if (!File.Exists(_filePath))
+        {
+            _state = new KeyStoreFile();
+            _lastLoadedWriteUtc = DateTime.MinValue;
+            return;
+        }
+
+        var previousWriteUtc = _lastLoadedWriteUtc;
+        var json = File.ReadAllText(_filePath);
+        _state = JsonSerializer.Deserialize<KeyStoreFile>(json, JsonOptions) ?? new KeyStoreFile();
+        _lastLoadedWriteUtc = File.GetLastWriteTimeUtc(_filePath);
+
+        // Only the initial load has no prior mtime; an unchanged reload is a no-op. Log solely when we
+        // actually picked up newer on-disk content (i.e. another process wrote since our last load).
+        if (previousWriteUtc != DateTime.MinValue && _lastLoadedWriteUtc != previousWriteUtc)
+        {
+            LogKeyStoreReloaded(_logger, _filePath);
+        }
+    }
+
+    private async Task<FileStream> AcquireCrossProcessLockAsync(CancellationToken cancellationToken)
+    {
+        EnsureDirectoryExists();
+
+        for (var attempt = 0; attempt < MaxLockAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // FileShare.None maps to an exclusive advisory lock (flock) on Unix, shared across all
+                // processes — and containers bind-mounting the same host inode — on the same kernel.
+                // The OS releases it automatically if the holder crashes, so there is no stale-lock risk.
+                return new FileStream(_lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                await Task.Delay(LockRetryDelay, cancellationToken);
+            }
+        }
+
+        throw new TimeoutException($"Could not acquire the key-store lock '{_lockPath}' within the timeout.");
+    }
+
+    private void EnsureDirectoryExists()
     {
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
         }
+    }
+
+    private async Task PersistUnlockedAsync(CancellationToken cancellationToken)
+    {
+        EnsureDirectoryExists();
 
         var tempPath = _filePath + ".tmp";
         var json = JsonSerializer.Serialize(_state, JsonOptions);
         await File.WriteAllTextAsync(tempPath, json, cancellationToken);
         RestrictToOwner(tempPath);
         File.Move(tempPath, _filePath, overwrite: true);
+        _lastLoadedWriteUtc = File.GetLastWriteTimeUtc(_filePath);
     }
 
     private static void RestrictToOwner(string path)
@@ -306,4 +401,7 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
 
     [LoggerMessage(EventId = LogEvents.KeyManagement.ScopeErased, Level = LogLevel.Information, Message = "Erased all key versions for scope {ScopeKey} (crypto-shred).")]
     private static partial void LogScopeErased(ILogger logger, string scopeKey);
+
+    [LoggerMessage(EventId = LogEvents.KeyManagement.KeyStoreReloaded, Level = LogLevel.Debug, Message = "Reloaded key-store state from {FilePath} to pick up keys written by another process.")]
+    private static partial void LogKeyStoreReloaded(ILogger logger, string filePath);
 }

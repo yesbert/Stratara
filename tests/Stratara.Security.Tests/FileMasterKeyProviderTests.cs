@@ -23,17 +23,35 @@ public class FileMasterKeyProviderTests
         Assert.Contains("base64", ex.Message);
     }
 
-    [Fact]
-    public void ShortKey_Throws()
+    [Theory]
+    [InlineData(16)]
+    [InlineData(24)]
+    [InlineData(31)]
+    [InlineData(33)]
+    public void NonAes256Length_Throws(int keyBytes)
     {
-        var ex = Assert.Throws<InvalidOperationException>(() => Create(Convert.ToBase64String(RandomNumberGenerator.GetBytes(16))));
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => Create(Convert.ToBase64String(RandomNumberGenerator.GetBytes(keyBytes))));
         Assert.Contains("32", ex.Message);
+        Assert.Contains("openssl rand", ex.Message);
     }
 
     [Fact]
-    public async Task ValidKey_IsReturned()
+    public void OversizeKey_RejectedAtConstruction()
     {
-        var bytes = RandomNumberGenerator.GetBytes(48);
+        // A 48-byte KEK (e.g. `openssl rand -base64 48`, common for HKDF master keys) is NOT a
+        // valid AES key size. Before the fix it passed construction and the startup probe, then
+        // crashed inside AesGcm on the first key creation. It must now be rejected at boot.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => Create(Convert.ToBase64String(RandomNumberGenerator.GetBytes(48))));
+        Assert.Contains("48 bytes", ex.Message);
+        Assert.Contains("openssl rand -base64 32", ex.Message);
+    }
+
+    [Fact]
+    public async Task ValidAes256Key_IsReturned()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
         var provider = Create(Convert.ToBase64String(bytes));
 
         var key = await provider.GetMasterKeyAsync();

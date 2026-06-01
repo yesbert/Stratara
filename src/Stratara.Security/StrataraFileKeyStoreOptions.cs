@@ -10,8 +10,9 @@ public sealed class StrataraFileKeyStoreOptions
     public const string SectionName = "Stratara:KeyStore";
 
     /// <summary>
-    /// Base64-encoded master key-encryption key (KEK). Must decode to at least 32 bytes (AES-256).
-    /// Generate with <c>openssl rand -base64 48</c> and supply via a secret store, not source control.
+    /// Base64-encoded master key-encryption key (KEK). Must decode to exactly 32 bytes (AES-256) —
+    /// it is used directly as an AES-GCM key, which accepts only 16/24/32-byte keys.
+    /// Generate with <c>openssl rand -base64 32</c> and supply via a secret store, not source control.
     /// </summary>
     public string? MasterKeyBase64 { get; set; }
 

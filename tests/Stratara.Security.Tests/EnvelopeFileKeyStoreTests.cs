@@ -128,4 +128,65 @@ public class EnvelopeFileKeyStoreTests
         Assert.NotEqual(tenantA.KeyId, tenantB.KeyId);
         Assert.NotEqual(tenantA.Key.ToArray(), tenantB.Key.ToArray());
     }
+
+    [Fact]
+    public async Task ReloadOnMiss_ReaderSeesKeyCreatedByAnotherInstance()
+    {
+        // Two stores share one file; the reader (B) is constructed before the writer (A) creates a key,
+        // so the key is absent from B's initial in-memory snapshot.
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var reader = TestSupport.NewKeyStore(options);
+        var writer = TestSupport.NewKeyStore(options);
+
+        var created = await writer.GetOrCreateCurrentKeyAsync(Scope);
+
+        // Without reload-on-miss this returns null; with it, B reloads from disk and finds the key.
+        var resolved = await reader.GetDataEncryptionKeyAsync(created.KeyId);
+
+        Assert.NotNull(resolved);
+        Assert.Equal(created.Key.ToArray(), resolved);
+    }
+
+    [Fact]
+    public async Task ConcurrentWriters_DifferentScopes_BothKeysSurvive()
+    {
+        // A and B start from the same (empty) snapshot and each create a key for a different scope.
+        // A naive full-state rewrite would let the second persist clobber the first scope's key.
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var storeA = TestSupport.NewKeyStore(options);
+        var storeB = TestSupport.NewKeyStore(options);
+
+        var scopeX = new KeyScope(DataSensitivityLevel.TenantScoped, "tenant-x");
+        var scopeY = new KeyScope(DataSensitivityLevel.TenantScoped, "tenant-y");
+
+        var keyX = await storeA.GetOrCreateCurrentKeyAsync(scopeX);
+        var keyY = await storeB.GetOrCreateCurrentKeyAsync(scopeY);
+
+        // A fresh instance reading the file must recover BOTH keys.
+        var reopened = TestSupport.NewKeyStore(options);
+        var resolvedX = await reopened.GetDataEncryptionKeyAsync(keyX.KeyId);
+        var resolvedY = await reopened.GetDataEncryptionKeyAsync(keyY.KeyId);
+
+        Assert.NotNull(resolvedX);
+        Assert.NotNull(resolvedY);
+        Assert.Equal(keyX.Key.ToArray(), resolvedX);
+        Assert.Equal(keyY.Key.ToArray(), resolvedY);
+    }
+
+    [Fact]
+    public async Task ConcurrentWriters_SameScope_StaleInstanceReusesExistingKey()
+    {
+        // The dangerous case: a stale instance creating a key for a scope another instance already
+        // created must NOT mint a divergent second ":v1" — it must reuse the existing version, so the
+        // same key id always maps to the same DEK and existing ciphertext stays decryptable.
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var storeA = TestSupport.NewKeyStore(options);
+        var storeB = TestSupport.NewKeyStore(options);
+
+        var keyFromA = await storeA.GetOrCreateCurrentKeyAsync(Scope);
+        var keyFromB = await storeB.GetOrCreateCurrentKeyAsync(Scope);
+
+        Assert.Equal(keyFromA.KeyId, keyFromB.KeyId);
+        Assert.Equal(keyFromA.Key.ToArray(), keyFromB.Key.ToArray());
+    }
 }

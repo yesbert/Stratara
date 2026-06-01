@@ -31,7 +31,6 @@ builder.Services.AddHostedService<OutboxDrainWorker>();
 builder.Services.AddHostedService<MediatorCommandWorker>();
 
 using var host = builder.Build();
-await host.StartAsync();
 
 var dispatcher = host.Services.GetRequiredService<CommandOutboxDispatcher>();
 using var scope = host.Services.CreateScope();
@@ -49,7 +48,10 @@ dispatcher.Enqueue(new DepositCommand(accountId, 25m));
 Console.WriteLine($"  Enqueued — outbox has {host.Services.GetRequiredService<InMemoryOutbox>().PendingCount} pending");
 Console.WriteLine();
 
-Console.WriteLine("--- Wait for outbox-drain + command-worker to catch up ---");
+// Start the workers only after the pending snapshot above, otherwise the drain worker races the
+// enqueue and the reported count is nondeterministic.
+Console.WriteLine("--- Start the workers; they drain the outbox and handle the commands ---");
+await host.StartAsync();
 await Task.Delay(TimeSpan.FromMilliseconds(500));
 Console.WriteLine($"  Outbox now has {host.Services.GetRequiredService<InMemoryOutbox>().PendingCount} pending");
 Console.WriteLine();

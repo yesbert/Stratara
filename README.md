@@ -187,12 +187,12 @@ You may use Stratara for any purpose other than building a directly competing pr
 
 ## Contributing
 
-Stratara's GitHub repository is a one-way mirror of an internal Azure DevOps source-of-truth, force-pushed as a single squashed commit per release. **We do not currently accept pull requests** — any PR opened against the mirror would be lost on the next sync.
-
-What we welcome:
+Issues, questions, and ideas are genuinely welcome — they shape where Stratara goes next:
 
 - **Bug reports** — [open an issue](https://github.com/yesbert/Stratara/issues/new/choose) with the bug template.
-- **Questions** — open an issue with the question template (check [docs.stratara.tech](https://docs.stratara.tech) first).
-- **Security issues** — see [`SECURITY.md`](SECURITY.md), please do not file a public issue.
+- **Feature ideas & questions** — open an issue with the question template (check [docs.stratara.tech](https://docs.stratara.tech) first).
+- **Security issues** — see [`SECURITY.md`](SECURITY.md); please don't file a public issue.
+
+A note on the workflow: this GitHub repository is a one-way mirror of an internal Azure DevOps source-of-truth, force-pushed as a squashed commit per release. We can't merge pull requests here — they'd be overwritten on the next sync — so please open an issue instead. Good ideas make their way in through the internal repo, with credit.
 
 Full details on the contribution model: [`CONTRIBUTING.md`](CONTRIBUTING.md). Community standards: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Getting help: [`SUPPORT.md`](SUPPORT.md).

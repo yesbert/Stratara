@@ -11,7 +11,7 @@ crypto-shred), a file-backed master-key provider, and an AES-GCM blob encryptor 
 
 ```csharp
 // appsettings / secrets:
-// "Stratara": { "KeyStore": { "MasterKeyBase64": "<openssl rand -base64 48>", "StorePath": "/var/run/secrets/keystore.json" } }
+// "Stratara": { "KeyStore": { "MasterKeyBase64": "<openssl rand -base64 32>", "StorePath": "/var/run/secrets/keystore.json" } }
 
 builder.Services.AddStrataraFileKeyStore(builder.Configuration);
 
@@ -28,9 +28,9 @@ await using var plain = await encryptor.DecryptAsync(encrypted, scope);
   The store file holds only wrapped DEKs + metadata, never plaintext. `RotateAsync` adds a version;
   `RevokeAsync` makes one version undecryptable; `EraseScopeAsync` deletes all versions for a scope
   (GDPR Art. 17 crypto-shred). DEKs are zeroed after use; the store file is written `0600` on Unix.
-- **`FileMasterKeyProvider`** (`IMasterKeyProvider`) — KEK from `MasterKeyBase64`, validated ≥32
-  bytes at startup. The custody seam: swap for an HSM / KMS / vault provider later without touching
-  the stored data.
+- **`FileMasterKeyProvider`** (`IMasterKeyProvider`) — KEK from `MasterKeyBase64`, validated to
+  decode to exactly 32 bytes (AES-256) at startup. The custody seam: swap for an HSM / KMS / vault
+  provider later without touching the stored data.
 - **`AesGcmSecureBlobEncryptor`** (`ISecureBlobEncryptor`) — AES-GCM stream encryption with a
   `purpose`-bound AAD (`{tenant}||{purpose}`) and a versioned, self-describing format (v2 leading
   byte). Reads legacy streams without the version byte; set

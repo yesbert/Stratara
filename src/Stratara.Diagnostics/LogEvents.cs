@@ -201,5 +201,7 @@ public static class LogEvents
         public const int KeyRevoked = 112_004;
         /// <summary>All key versions for a scope were erased (GDPR Art. 17 crypto-shred).</summary>
         public const int ScopeErased = 112_005;
+        /// <summary>The in-memory key-store state was reloaded from disk to pick up keys written by another process.</summary>
+        public const int KeyStoreReloaded = 112_006;
     }
 }

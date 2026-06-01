@@ -30,11 +30,11 @@ You **must** register a real `IKeyStore` in non-Development environments. The de
 The built-in production store ships in the dependency-light **`Stratara.Security`** package. Register it **before** `AddSecurity()` so it wins the `TryAdd` race:
 
 ```csharp
-// appsettings: "Stratara:KeyStore": { "MasterKeyBase64": "<48 random bytes, base64>", "StorePath": "keystore.json" }
+// appsettings: "Stratara:KeyStore": { "MasterKeyBase64": "<32 random bytes, base64>", "StorePath": "keystore.json" }
 builder.Services.AddStrataraFileKeyStore(builder.Configuration);
 ```
 
-`AddStrataraFileKeyStore` registers an `EnvelopeFileKeyStore` — it stores **KEK-wrapped, versioned per-`KeyScope` data-encryption keys** (the KEK comes from `IMasterKeyProvider`; the default `FileMasterKeyProvider` reads the base64 KEK from config). Generate the KEK with `openssl rand -base64 48` and supply it via a secret store, never source control. Prefer an HSM / Key Vault / KMS `IKeyStore` implementation for the KEK custody seam in regulated environments — register it the same way, before `AddSecurity()`.
+`AddStrataraFileKeyStore` registers an `EnvelopeFileKeyStore` — it stores **KEK-wrapped, versioned per-`KeyScope` data-encryption keys** (the KEK comes from `IMasterKeyProvider`; the default `FileMasterKeyProvider` reads the base64 KEK from config). Generate the KEK with `openssl rand -base64 32` (it must decode to **exactly 32 bytes** — the KEK is used directly as an AES-256-GCM key) and supply it via a secret store, never source control. Prefer an HSM / Key Vault / KMS `IKeyStore` implementation for the KEK custody seam in regulated environments — register it the same way, before `AddSecurity()`.
 
 ## Keys, scopes, and blobs
 
