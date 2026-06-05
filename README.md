@@ -12,7 +12,7 @@
 
 ---
 
-Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 22 NuGet packages for .NET 10. Opt in à la carte.
+Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 24 NuGet packages for .NET 10. Opt in à la carte.
 
 > **License:** Stratara ships under **FSL-1.1-MIT** ([Functional Source License 1.1 with MIT Future License](LICENSE)). Source-available, **not OSI-approved OSS** — see [License](#license) before adoption.
 
@@ -24,7 +24,7 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 ⚖️ **GDPR Article 17 by Construction** — Append-only event sourcing and the right to erasure are natural enemies: you cannot delete an immutable event. Stratara's answer is **crypto-shredding** — each subject's data is encrypted under a destroyable per-scope key, and a single `EraseScopeAsync` call shreds that key so every copy — events, snapshots, replicas, *and backup tapes you can't even reach* — becomes undecryptable noise. Erasure without rewriting history, provable on a 30-day regulatory clock. The same per-subject-key model underwrites SOC 2 / ISO 27001 key-lifecycle controls and HIPAA per-patient separation. ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html))
 
-🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 22 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
+🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 24 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
 
 ⚡ **Fast by Default, Scales Horizontally** — Reflection-free hot paths: commands, event replay, and projection dispatch run through compiled expressions, not `MethodInfo.Invoke`. Projections are push-driven — subscribed to the event bus, never polling a table. And every stream maps to one of 4096 deterministic buckets, so command, projection, and saga workers scale out as competing consumers across N nodes on RabbitMQ or Azure Service Bus. The measured numbers — replay throughput, reflection-free property access, constant-memory rebuilds — are in [Performance & horizontal scale](#performance--horizontal-scale) just below.
 
@@ -133,6 +133,8 @@ Lockstep-versioned NuGet family — every package in the table below ships at th
 | C | `Stratara.Identity.Core` | Channel-agnostic identity primitives |
 | C | `Stratara.Identity.AspNetCore` | Channel-agnostic ASP.NET Core identity wiring (sign-in manager wrapper + i18n + email-sender stub) |
 | C | `Stratara.ServiceDefaults.AspNetCore` | ASP.NET health checks + request OpenTelemetry |
+| — | `Stratara.Testing` | Test doubles (in-memory key store / message bus / session) + given/when/then aggregate harness — reference from test projects only |
+| — | `Stratara.Testing.EntityFrameworkCore` | Run the real event-sourcing write stack on in-memory SQLite (`EventStoreTestHost`) — reference from test projects only |
 
 **Tier order**: a Tier-N package may only reference Tier-(≤N). Tier-A has no inbound dependencies from B or C.
 

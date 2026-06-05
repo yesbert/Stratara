@@ -162,14 +162,11 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
             using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
             ReloadStateUnlocked();
 
-            if (TryFindWrapped(keyId, out var wrapped))
+            if (TryFindWrapped(keyId, out var wrapped) && !wrapped.Revoked)
             {
-                if (!wrapped.Revoked)
-                {
-                    wrapped.Revoked = true;
-                    await PersistUnlockedAsync(cancellationToken);
-                    LogKeyRevoked(_logger, keyId);
-                }
+                wrapped.Revoked = true;
+                await PersistUnlockedAsync(cancellationToken);
+                LogKeyRevoked(_logger, keyId);
             }
         }
         finally

@@ -25,7 +25,11 @@
             "Stratara.Identity.Core/Stratara.Identity.Core.csproj",
             "Stratara.Identity.AspNetCore/Stratara.Identity.AspNetCore.csproj",
             "Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj",
-            "Stratara.ServiceDefaults.AspNetCore/Stratara.ServiceDefaults.AspNetCore.csproj"
+            "Stratara.ServiceDefaults.AspNetCore/Stratara.ServiceDefaults.AspNetCore.csproj",
+            "Stratara.Validation/Stratara.Validation.csproj",
+            "Stratara.Security/Stratara.Security.csproj",
+            "Stratara.Testing/Stratara.Testing.csproj",
+            "Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj"
           ]
         }
       ],

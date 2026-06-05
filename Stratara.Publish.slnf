@@ -23,6 +23,8 @@
       "src/Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj",
       "src/Stratara.Sessions/Stratara.Sessions.csproj",
       "src/Stratara.Shared/Stratara.Shared.csproj",
+      "src/Stratara.Testing/Stratara.Testing.csproj",
+      "src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj",
       "src/Stratara.Validation/Stratara.Validation.csproj",
       "tests/Stratara.EntityFrameworkCore.Tests/Stratara.EntityFrameworkCore.Tests.csproj",
       "tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests.csproj",
@@ -39,6 +41,8 @@
       "tests/Stratara.ServiceDefaults.Tests/Stratara.ServiceDefaults.Tests.csproj",
       "tests/Stratara.Shared.Tests/Stratara.Shared.Tests.csproj",
       "tests/Stratara.SmokeTests/Stratara.SmokeTests.csproj",
+      "tests/Stratara.Testing.Tests/Stratara.Testing.Tests.csproj",
+      "tests/Stratara.Testing.EntityFrameworkCore.Tests/Stratara.Testing.EntityFrameworkCore.Tests.csproj",
       "tests/Stratara.Validation.Tests/Stratara.Validation.Tests.csproj",
       "tests/Stratara.WriteStore.Tests/Stratara.WriteStore.Tests.csproj"
     ]

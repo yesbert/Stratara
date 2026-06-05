@@ -5,7 +5,7 @@ All notable changes to the Stratara framework are documented in this file.
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning 2.0.0](https://semver.org/).
 
-Stratara is versioned **lockstep** — all 22 packable packages share the same version
+Stratara is versioned **lockstep** — all 24 packable packages share the same version
 number, controlled by `<VersionPrefix>` in `Directory.Build.props`. A single entry here
 applies to the entire NuGet family.
 
@@ -15,6 +15,44 @@ applies to the entire NuGet family.
 > they have been rewritten retroactively for public consumption.
 
 ## [Unreleased]
+
+## [3.1.2] — 2026-06-05
+
+### Added
+
+- **New package `Stratara.Testing`** — test doubles and assertion helpers so consumers can
+  unit-test Stratara-based code without Postgres or RabbitMQ testcontainers. Reference it from
+  test projects only.
+  - `AggregateTestHarness<T>` + `Aggregate.Rehydrate<T>(...)` — given/when/then rehydration of an
+    aggregate from events using the same reflection-based `Apply(...)` dispatch as the production
+    aggregation service. It throws on an event with no matching `Apply` overload so a forgotten or
+    mistyped overload fails the test; opt back into the production-lenient skip with
+    `IgnoringUnmappedEvents()`.
+  - `InMemoryKeyStore` — an `IKeyStore` that mints random 256-bit DEKs per `KeyScope` and supports
+    rotation / revocation / scope-erasure without a master KEK or key file.
+  - `TestBlobEncryptor.CreateAesGcm()` — the real AES-GCM `ISecureBlobEncryptor` over an
+    `InMemoryKeyStore`, so blob round-trips exercise production encryption.
+  - `InMemoryMessageBus` — an `IMessageBus` with synchronous in-process dispatch and a `Published`
+    list for assertions.
+  - `TestSessionContext` / `TestSessionContextProvider` — preset Actor/Subject `SessionContext`
+    values and an `ISessionContextProvider` double.
+  - `TestTenants.Of("acme")` — stable, deterministic tenant/user ids from readable slugs.
+    `TestSessionContext` sets both correlation and causation ids so the context can drive
+    event-store writes.
+  - `TestEvent.Create(payload, ...)` — wrap an event payload in `IEvent<T>` with realistic
+    metadata; `ProjectionTester.HandleAsync(projection, event)` — invoke a projection's private
+    `HandleAsync` handler directly to unit-test it against mocked repositories.
+- **New package `Stratara.Testing.EntityFrameworkCore`** — spins up the **real** event-sourcing
+  write stack (`IEventSource`, `IAggregationService`, snapshots, the EF Core write store) against a
+  shared in-memory SQLite database in one call, so tests exercise production code paths without
+  Postgres or Docker. Reference it from test projects only.
+  - `EventStoreTestHost.Create(...)` — owns the SQLite connection + service provider; exposes
+    `ExecuteAsync(IEventSource)`, `AggregateAsync<T>(streamId)`, the preset `Session`, and the
+    recording `Outbox`.
+  - `AddStrataraTestingEventStore<TWriteDbContext>(connection, tenantId)` — the lower-level DI
+    extension; `StrataraTestWriteDbContext` — a ready-made concrete write context;
+    `RecordingEventBundleOutboxDispatcher` — captures emitted bundles for assertions.
+  - The lockstep family grows from 22 to 24 packable packages.
 
 ## [3.1.1] — 2026-06-01
 
@@ -1916,7 +1954,9 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.2...main
+[3.1.2]: https://github.com/yesbert/Stratara/releases/tag/v3.1.2
+[3.1.1]: https://github.com/yesbert/Stratara/releases/tag/v3.1.1
 [3.1.0]: https://github.com/yesbert/Stratara/releases/tag/v3.1.0
 [3.0.23]: https://github.com/yesbert/Stratara/releases/tag/v3.0.23
 [3.0.22]: https://github.com/yesbert/Stratara/releases/tag/v3.0.22

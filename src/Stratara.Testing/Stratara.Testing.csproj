@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Testing</PackageId>
+        <Description>Test doubles and assertion helpers for applications built on the Stratara framework — an in-memory IKeyStore, an in-memory IMessageBus, a preset ISessionContextProvider, deterministic tenant ids, and a given/when/then aggregate rehydration harness. Drop the Postgres/RabbitMQ testcontainers for unit tests.</Description>
+        <PackageTags>testing;test-doubles;in-memory;cqrs;event-sourcing;aggregate;mediator;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
+        <ProjectReference Include="..\Stratara.Contracts\Stratara.Contracts.csproj"/>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
+        <ProjectReference Include="..\Stratara.Security\Stratara.Security.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Testing.Tests"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

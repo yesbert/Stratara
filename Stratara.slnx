@@ -32,6 +32,8 @@
     <Project Path="src/Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj" />
     <Project Path="src/Stratara.Sessions/Stratara.Sessions.csproj" />
     <Project Path="src/Stratara.Shared/Stratara.Shared.csproj" />
+    <Project Path="src/Stratara.Testing/Stratara.Testing.csproj" />
+    <Project Path="src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj" />
     <Project Path="src/Stratara.Validation/Stratara.Validation.csproj" />
   </Folder>
   <Folder Name="/samples/">
@@ -62,6 +64,8 @@
     <Project Path="tests/Stratara.ServiceDefaults.Tests/Stratara.ServiceDefaults.Tests.csproj" />
     <Project Path="tests/Stratara.Shared.Tests/Stratara.Shared.Tests.csproj" />
     <Project Path="tests/Stratara.SmokeTests/Stratara.SmokeTests.csproj" />
+    <Project Path="tests/Stratara.Testing.Tests/Stratara.Testing.Tests.csproj" />
+    <Project Path="tests/Stratara.Testing.EntityFrameworkCore.Tests/Stratara.Testing.EntityFrameworkCore.Tests.csproj" />
     <Project Path="tests/Stratara.Validation.Tests/Stratara.Validation.Tests.csproj" />
     <Project Path="tests/Stratara.WriteStore.Tests/Stratara.WriteStore.Tests.csproj" />
   </Folder>

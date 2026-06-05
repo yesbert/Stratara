@@ -6,7 +6,7 @@ _layout: landing
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
-Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 22 NuGet packages for .NET 10. Opt in à la carte.
+Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 24 NuGet packages for .NET 10. Opt in à la carte.
 
 ## Why Stratara
 
@@ -16,7 +16,7 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 ⚖️ **[GDPR Article 17 by Construction](concepts/tenant-aware-encryption.md)** — You can't delete an immutable event, but you can destroy the key that decrypts it. Crypto-shredding erases a subject's data everywhere it landed — events, snapshots, replicas, unreachable backups — with one `EraseScopeAsync` call. The same per-subject-key model underwrites SOC 2 / ISO 27001 and HIPAA separation.
 
-🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 22 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax.
+🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 24 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax.
 
 ## Where to start
 
@@ -39,4 +39,4 @@ A typical host wires Stratara through one of the umbrella `Add*WorkerServices` e
 
 ## Versioning
 
-Stratara ships in lockstep — all 22 packages share the same `<VersionPrefix>`. See `CHANGELOG.md` for release notes.
+Stratara ships in lockstep — all 24 packages share the same `<VersionPrefix>`. See `CHANGELOG.md` for release notes.

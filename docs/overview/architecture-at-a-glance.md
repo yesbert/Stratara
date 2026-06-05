@@ -1,6 +1,6 @@
 # Architecture at a glance
 
-Stratara ships **22 packages** organized into three tiers. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
+Stratara ships **24 packages**: 22 runtime packages organized into three tiers (below), plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
 
 ## Tier layout
 

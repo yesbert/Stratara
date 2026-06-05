@@ -28,6 +28,50 @@ dotnet test tests/Stratara.Shared.Tests
 
 Builds the full repo (`Stratara.slnx`), runs every unit test project, then `dotnet pack`s every packable project as a sanity check.
 
+## The `Stratara.Testing` package
+
+`Stratara.Testing` ships test doubles and a rehydration harness so you can unit-test
+Stratara-based code without a Postgres or RabbitMQ testcontainer. Reference it from test
+projects only:
+
+```xml
+<PackageReference Include="Stratara.Testing" />
+```
+
+**Rehydrate an aggregate (given/when/then).** `AggregateTestHarness<T>` applies events through the
+same `Apply(...)` dispatch as the production aggregation service. It throws if an event has no
+matching `Apply` overload, so a forgotten overload fails the test:
+
+```csharp
+var account = AggregateTestHarness<Account>
+    .Given(new AccountOpened(id, "Ada", 100m))
+    .And(new AmountWithdrawn(id, 30m))
+    .Build();
+
+Assert.Equal(70m, account.Balance);
+// One-liner: Aggregate.Rehydrate<Account>(new AccountOpened(...), new AmountWithdrawn(...));
+```
+
+**Encryption without a key file.** `InMemoryKeyStore` is a full `IKeyStore` (rotation, revocation,
+scope-erasure); `TestBlobEncryptor.CreateAesGcm()` builds the real AES-GCM encryptor over it:
+
+```csharp
+var keyStore = new InMemoryKeyStore();
+var encryptor = TestBlobEncryptor.CreateAesGcm(keyStore);
+```
+
+**Messaging + session.** `InMemoryMessageBus` dispatches in-process and records every message in
+`Published` for assertions; `TestSessionContextProvider.ForTenant(tenantId)` presets the ambient
+Actor/Subject session; `TestTenants.Of("acme")` yields stable, readable tenant ids.
+
+**Projections.** Projection handlers are private (the runtime finds them by reflection), so call them
+in a test with `ProjectionTester.HandleAsync(projection, TestEvent.Create(new MyEvent(...)))` and
+assert on your mocked repository / unit-of-work.
+
+**Real event store.** For an end-to-end write-side test on the genuine `IEventSource` (no mocks, no
+Postgres), add `Stratara.Testing.EntityFrameworkCore` and use `EventStoreTestHost` — it runs the
+real stack on in-memory SQLite. See its package README.
+
 ## Test conventions
 
 - **`[Fact]` over `[Theory]`** unless there's genuine data-table variation. A `[Theory]` with 2 rows is usually 2 `[Fact]`s in disguise.
