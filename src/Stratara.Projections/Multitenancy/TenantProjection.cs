@@ -1,4 +1,5 @@
 using JetBrains.Annotations;
+using Stratara.Abstractions.Persistence;
 using Stratara.Domain;
 using Stratara.Projections.Abstractions;
 using Stratara.Projections.Multitenancy.Models;
@@ -59,7 +60,18 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
         }
 
         await repository.DeleteAsync(@event.StreamId, cancellationToken);
-        await transaction.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await transaction.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // A parallel projection bundle (typically a consumer's cascade saga that emits
+            // both CustomerTenantsDeleted and a follow-up TenantDeleted for the same tenants)
+            // has already deleted the row. The desired end-state is reached — swallow the
+            // exception silently so the surrounding event bundle commits its remaining work.
+        }
     }
 
     [UsedImplicitly]
@@ -79,7 +91,14 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
             await repository.DeleteAsync(tenantId, cancellationToken);
         }
 
-        await transaction.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await transaction.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // See HandleAsync(TenantDeleted) — same idempotent-delete rationale.
+        }
     }
 
     [UsedImplicitly]

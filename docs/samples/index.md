@@ -1,8 +1,8 @@
 # Samples
 
-Seven runnable demos. The two **Hero Samples** show what makes Stratara different — tamper-evident streams and tenant-aware encryption — in ~100 lines each. The five **Learning Path** samples walk through the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order.
+Runnable demos. The two **Hero Samples** show what makes Stratara different — tamper-evident streams and tenant-aware encryption — in ~100 lines each. The five **Learning Path** samples walk through the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order. A **Pipeline Behaviors** sample covers request validation.
 
-All samples share the same bank-account / money-transfer domain so you don't have to re-learn the problem space for each one.
+The hero + learning-path samples share the same bank-account / money-transfer domain so you don't have to re-learn the problem space for each one.
 
 ## Hero Samples
 
@@ -26,6 +26,14 @@ End-to-end runnable demos along a CQRS-→-Event-Sourcing-→-Saga progression. 
 | 5 | [ASP.NET Core API](05-aspnetcore-api.md) | HTTP minimal-API endpoints → mediator wiring | ~250 | 10–15 min |
 
 Samples 2–4 build conceptually on the one before; sample 5 is parallel to 1 and can be read at any point.
+
+## Pipeline Behaviors
+
+Cross-cutting mediator behaviors that run before the handler. Self-contained, with a small user-registration command.
+
+| Sample | Concept | Read |
+|---|---|---|
+| [Validation](06-validation.md) | `IValidator<T>` as a mediator pipeline behavior — valid, warning-only (still handled), and invalid (blocked) | 5–10 min |
 
 Each sample is **self-contained code** (no shared "Stratara.Sample.Common" project) — duplication between samples is intentional so each one reads from top to bottom without jumping to a shared library. Every sample is smoke-tested in CI via [`tests/Stratara.Samples.SmokeTests/`](https://github.com/yesbert/Stratara/tree/main/tests/Stratara.Samples.SmokeTests) — releases ship only after each sample's `stdout` has been asserted line-for-line.
 

@@ -1,8 +1,8 @@
 # Stratara Samples
 
-Two **Hero Samples** show what makes Stratara different — tamper-evident event streams and tenant-aware encryption — in ~100 lines each. Five **Learning Path** samples walk the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order. Every sample is self-contained (no shared common project) and runs in under a second.
+Two **Hero Samples** show what makes Stratara different — tamper-evident event streams and tenant-aware encryption — in ~100 lines each. Five **Learning Path** samples walk the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order. A **Pipeline Behaviors** sample shows request validation. Every sample is self-contained (no shared common project) and runs in under a second.
 
-All seven share the same **bank-account / money-transfer** domain so you don't have to re-learn the problem space for each one.
+The seven hero + learning-path samples share the same **bank-account / money-transfer** domain so you don't have to re-learn the problem space for each one.
 
 ## 🌟 Hero Samples
 
@@ -26,6 +26,15 @@ End-to-end runnable demos in a teaching order. Each builds on the prior.
 | 5 | [`Stratara.Sample.AspNetCoreApi`](Stratara.Sample.AspNetCoreApi) | HTTP minimal-API endpoints → mediator wiring | ~250 | 10–15 min |
 
 Samples 2–4 build conceptually on the one before; sample 5 is parallel to 1 and can be read at any point.
+
+## 🧩 Pipeline Behaviors
+
+Cross-cutting mediator behaviors that run before your handler. Self-contained, with a tiny
+user-registration command instead of the bank-account domain.
+
+| Sample | Concept |
+|---|---|
+| [`Stratara.Sample.Validation`](Stratara.Sample.Validation) | `IValidator<T>` as a mediator pipeline behavior — a valid command, a warning-only command (still handled), and an invalid command (blocked with `StrataraValidationException`). |
 
 Each sample is **self-contained code** — duplication between samples is intentional so each one reads from top to bottom without jumping to a shared library.
 

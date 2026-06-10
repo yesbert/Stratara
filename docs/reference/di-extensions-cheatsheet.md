@@ -45,6 +45,13 @@ These tell Stratara *what* to dispatch / project / saga. Call once per assembly 
 | `services.AddStrataraValidation()` | Registers the validation pipeline behavior. Call **before** other `AddPipelineBehavior*` so it runs outermost. |
 | `services.AddValidatorsFromAssemblyContaining<T>()` | Discovers + registers every concrete `IValidator<T>` in the marker's assembly as scoped. |
 
+## Tenant isolation
+
+| Extension | What it does |
+|---|---|
+| `services.AddStrataraTenantIsolation()` | Registers the tenant-isolation pipeline behavior. Acts only on requests implementing `ITenantScopedRequest`; rejects a request whose `TenantId` ≠ the session's data-owner tenant with `TenantAccessDeniedException` (→ HTTP 403). Call **after** `AddStrataraValidation()`. |
+| `services.AddStrataraTenantIsolation(o => o.Mode = TenantIsolationMode.Strict)` | Strict mode — additionally routes every cross-tenant operation (actor tenant ≠ data-owner tenant) through `ICrossTenantAuthorizer`. The shipped default denies all; register your own `ICrossTenantAuthorizer` to grant the cross-tenant case (e.g. a platform admin). |
+
 ## Resilience
 
 | Extension | What it does |

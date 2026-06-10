@@ -188,6 +188,17 @@ public static class LogEvents
         public const int IntegrityEnabledWithoutSigner = 113_002;
     }
 
+    /// <summary>Tenant-isolation event-IDs (114_000s) — emitted by the mediator tenant-isolation pipeline behavior.</summary>
+    public static class TenantIsolation
+    {
+        /// <summary>A tenant-scoped request named a data-owner tenant that does not match the current session's tenant (rejected).</summary>
+        public const int SubjectMismatchRejected = 114_101;
+        /// <summary>Strict mode observed a cross-tenant operation (actor tenant ≠ data-owner tenant) that the cross-tenant authorizer did not permit (rejected).</summary>
+        public const int CrossTenantRejected = 114_102;
+        /// <summary>Strict mode permitted a cross-tenant operation after the cross-tenant authorizer granted it.</summary>
+        public const int CrossTenantAllowed = 114_003;
+    }
+
     /// <summary>Key-management event-IDs (112_000s) — emitted by the key-store startup probe and related lifecycle.</summary>
     public static class KeyManagement
     {

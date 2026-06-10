@@ -38,8 +38,14 @@ public class UnitOfWork<TDbContext>(IDbContextFactory<TDbContext> contextFactory
 
         public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            var count = await context.SaveChangesAsync(cancellationToken);
-            return count;
+            try
+            {
+                return await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                throw new ConcurrencyConflictException(ex.Message, ex);
+            }
         }
 
         public async ValueTask DisposeAsync()

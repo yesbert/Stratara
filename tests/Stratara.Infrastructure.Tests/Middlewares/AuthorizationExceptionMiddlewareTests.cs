@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Stratara.Infrastructure.Middlewares;
 using Stratara.Abstractions.Authorization;
+using Stratara.Abstractions.Multitenancy;
 
 namespace Stratara.Infrastructure.Tests.Middlewares;
 
@@ -29,6 +30,19 @@ public class AuthorizationExceptionMiddlewareTests
     {
         var middleware = new AuthorizationExceptionMiddleware(_ =>
             throw new AuthorizationException("forbidden"));
+
+        var httpContext = new DefaultHttpContext();
+
+        await middleware.InvokeAsync(httpContext);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TenantAccessDeniedException_Returns403()
+    {
+        var middleware = new AuthorizationExceptionMiddleware(_ =>
+            throw new TenantAccessDeniedException(Guid.NewGuid(), Guid.NewGuid(), "cross-tenant denied"));
 
         var httpContext = new DefaultHttpContext();
 

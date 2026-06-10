@@ -18,5 +18,6 @@
         <ProjectReference Include="..\..\samples\Stratara.Sample.MoneyTransferSaga\Stratara.Sample.MoneyTransferSaga.csproj" ReferenceOutputAssembly="false" />
         <ProjectReference Include="..\..\samples\Stratara.Sample.OutboxWorker\Stratara.Sample.OutboxWorker.csproj" ReferenceOutputAssembly="false" />
         <ProjectReference Include="..\..\samples\Stratara.Sample.TamperProof\Stratara.Sample.TamperProof.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\..\samples\Stratara.Sample.Validation\Stratara.Sample.Validation.csproj" ReferenceOutputAssembly="false" />
     </ItemGroup>
 </Project>

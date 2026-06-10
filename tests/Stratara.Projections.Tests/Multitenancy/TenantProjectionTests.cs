@@ -1,4 +1,5 @@
 using Moq;
+using Stratara.Abstractions.Persistence;
 using Stratara.Domain;
 using Stratara.Projections.Multitenancy;
 using Stratara.Projections.Multitenancy.Models;
@@ -164,6 +165,31 @@ public class TenantProjectionTests : ProjectionTestBase
         TransactionMock.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task HandleAsync_TenantDeleted_SwallowsConcurrencyFailure_WhenRowAlreadyGone()
+    {
+        // Consumer scenario (NextPA customer-delete cascade): a parallel projection bundle for
+        // CustomerTenantsDeleted already deleted the row. SaveChangesAsync reports 0 affected rows
+        // and throws DbUpdateConcurrencyException. The desired end-state (row gone) is reached, so
+        // swallow the exception silently — re-throwing would abort the bundle and trigger a
+        // RabbitMQ requeue that does not recover (sibling cascades are already committed).
+        var tenantId = Guid.NewGuid();
+        var data = new TenantDeleted(DateTimeOffset.UtcNow);
+        var @event = EventFactory.Create(data, streamId: tenantId);
+
+        var existingTenant = new TenantView { Id = tenantId, Name = "Existing" };
+        TenantRepositoryMock.Setup(r => r.GetAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingTenant);
+        TransactionMock
+            .Setup(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConcurrencyConflictException(
+                "The database operation was expected to affect 1 row(s), but actually affected 0 row(s)."));
+
+        var ex = await Record.ExceptionAsync(() => ProjectionTestHelper.HandleAsync(_projection, @event));
+
+        Assert.Null(ex);
+    }
+
     #endregion
 
     #region CustomerTenantsDeleted
@@ -218,6 +244,24 @@ public class TenantProjectionTests : ProjectionTestBase
 
         TenantRepositoryMock.Verify(r => r.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         UnitOfWorkMock.Verify(u => u.StartAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_CustomerTenantsDeleted_SwallowsConcurrencyFailure_WhenRowAlreadyGone()
+    {
+        // Mirror of HandleAsync_TenantDeleted_SwallowsConcurrencyFailure for the bulk handler.
+        var tenantIds = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
+        var data = new CustomerTenantsDeleted(Guid.NewGuid(), tenantIds, DateTimeOffset.UtcNow);
+        var @event = EventFactory.Create(data);
+
+        TransactionMock
+            .Setup(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConcurrencyConflictException(
+                "The database operation was expected to affect 1 row(s), but actually affected 0 row(s)."));
+
+        var ex = await Record.ExceptionAsync(() => ProjectionTestHelper.HandleAsync(_projection, @event));
+
+        Assert.Null(ex);
     }
 
     #endregion

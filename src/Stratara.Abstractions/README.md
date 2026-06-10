@@ -14,7 +14,7 @@ Use this when you need to reference Stratara types without pulling in any concre
 - `Stratara.Abstractions.Outbox` — `ICommandOutboxDispatcher`, `IEventBundleOutboxDispatcher`, `IOutboxRepository`. Plus wire-type `OutboxEntry`.
 - `Stratara.Abstractions.Messaging` — `IMessageBus`, `IMessagingIdentifier`, `IEventBusConsumer`, `IEventBusPublisher`.
 - `Stratara.Abstractions.Session` — `ISessionContextProvider`.
-- `Stratara.Abstractions.Multitenancy` — `ITenantService`, `ICurrentUserService`.
+- `Stratara.Abstractions.Multitenancy` — `ITenantService`, `ICurrentUserService`, `ITenantScopedRequest`, `ICrossTenantAuthorizer`, `TenantAccessDeniedException`.
 - `Stratara.Abstractions.Projections` — `IProjectionReplayState`.
 - `Stratara.Abstractions.Security` — `IEncryptionFactory`, `IKeyStore`, `IMasterKeyProvider`, `ISecureBlobEncryptor`, `ISecureJsonSerializer`. Plus wire-types: `KeyScope`, `KeyMaterial`, `EncryptedData`, `DataSensitivityLevel`, `EncryptDataAttribute`.
 - `Stratara.Abstractions.Validation` — `IValidator<T>`, `ValidationResult`, `ValidationFailure`, `ValidationSeverity`, `StrataraValidationException`.

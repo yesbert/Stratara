@@ -16,6 +16,55 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `3.1.3`._
+
+## [3.1.3] — 2026-06-10
+
+### Added
+
+- **Mediator tenant-isolation behavior** (`Stratara.Mediator`) — `AddStrataraTenantIsolation()`
+  registers a pipeline behavior that enforces tenant isolation at the mediator entrance, before the
+  handler runs, for any request that opts in via the new `ITenantScopedRequest` marker
+  (`Stratara.Abstractions.Multitenancy`). The behavior compares the request's `TenantId` (data owner)
+  against the ambient session's data-owner tenant and rejects a mismatch with the new
+  `TenantAccessDeniedException` (translated to HTTP 403 on ASP.NET hosts). `TenantIsolationMode.Default`
+  enforces only the subject match (privileged cross-tenant operations pass when the endpoint promoted
+  the session subject to the target); `TenantIsolationMode.Strict` additionally routes every
+  cross-tenant operation through the new `ICrossTenantAuthorizer`, whose shipped default denies all
+  cross-tenant access until a consumer registers its own authorizer. Complements the existing
+  database-side `ApplyGlobalTenantQueryFilters` with a command-/query-entrance guard. New log-event
+  IDs `114_101`/`114_102`/`114_003` in `Stratara.Diagnostics`.
+- **`Stratara.Abstractions.Persistence.ConcurrencyConflictException`** — provider-agnostic
+  wrapper for an optimistic-concurrency conflict detected during commit. Allows framework-level
+  code in `Stratara.Projections` (and any consumer outside the `EntityFrameworkCore` package) to
+  react to concurrency without taking an EF Core dependency. EF Core's `DbUpdateConcurrencyException`
+  (and provider equivalents) flow through this type.
+
+### Changed
+
+- **`EfTransaction.SaveChangesAsync`** (in `Stratara.EventSourcing.EntityFrameworkCore`) now
+  wraps `DbUpdateConcurrencyException` thrown by EF Core in the new
+  `ConcurrencyConflictException`. PostgreSQL unique-violation paths remain on `DbUpdateException`
+  (different semantics — duplicate-key on insert vs. stale-row on update/delete).
+- **`EventSource.SaveChangesAsync`** (write-side append flow) extends its concurrency-handling
+  catch to the new exception type so the existing append-conflict recovery path keeps working
+  after the wrap. Behaviour for both EF concurrency conflicts and PostgreSQL unique violations
+  is unchanged.
+
+### Fixed
+
+- **`TenantProjection` no longer aborts the event bundle on a parallel delete race.** The two
+  delete handlers (`TenantDeleted`, `CustomerTenantsDeleted`) now swallow
+  `ConcurrencyConflictException` silently — a missing row is the desired end-state of a delete.
+  Before this fix, a consumer-side customer-delete cascade saga that emits both
+  `CustomerTenantsDeleted` and a follow-up `TenantDeleted` for the same tenants would race the
+  two parallel projection bundles on the same `TenantView` row; the loser threw
+  `DbUpdateConcurrencyException` out of `SaveChangesAsync`, which propagated through
+  `ProjectionWorker` and caused `RabbitMqBus` to roll back the entire bundle — including
+  sibling projections that had already committed. Update handlers (rename / activate /
+  deactivate / locale / customer-assigned) keep their current behaviour: a concurrency failure
+  there is a real race that propagates.
+
 ## [3.1.2] — 2026-06-05
 
 ### Added
@@ -1954,7 +2003,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.2...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.3...main
+[3.1.3]: https://github.com/yesbert/Stratara/releases/tag/v3.1.3
 [3.1.2]: https://github.com/yesbert/Stratara/releases/tag/v3.1.2
 [3.1.1]: https://github.com/yesbert/Stratara/releases/tag/v3.1.1
 [3.1.0]: https://github.com/yesbert/Stratara/releases/tag/v3.1.0

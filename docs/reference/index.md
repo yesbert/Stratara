@@ -19,3 +19,4 @@ Browse via the **API Reference** entry in the left navigation, or jump straight 
 - `Stratara.Abstractions.Outbox` — outbox dispatchers + repository contracts.
 - `Stratara.Abstractions.Messaging` — bus envelopes + integrity contracts.
 - `Stratara.Abstractions.Security` — encryption, key-store, AAD contracts.
+- `Stratara.Abstractions.Multitenancy` — tenant-scoped request marker + cross-tenant authorizer.

@@ -8,6 +8,11 @@ Task-oriented how-tos for the most common Stratara operations. Each guide assume
 - **[Write a Projection](write-a-projection.md)** — read-side stores driven by event bundles.
 - **[Write a Saga](write-a-saga.md)** — process managers that fan one event into many commands.
 
+## Pipeline behaviors
+
+- **[Write a Validator](write-a-validator.md)** — `IValidator<T>` that runs before the handler.
+- **[Enforce Tenant Isolation](enforce-tenant-isolation.md)** — reject cross-tenant requests at the mediator entrance.
+
 ## Security
 
 - **[Encrypt Sensitive Data](encrypt-data-setup.md)** — `[EncryptData]` + AES-GCM + tenant-aware AAD.

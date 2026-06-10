@@ -142,7 +142,7 @@ internal sealed class EventSource(
         {
             await transaction.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException ex) when (IsConcurrencyConflict(ex))
+        catch (Exception ex) when (IsConcurrencyOrUniqueViolation(ex))
         {
             var firstEntry = _eventStreamEntries.FirstOrDefault();
             var streamId = firstEntry?.StreamId ?? Guid.Empty;
@@ -167,18 +167,28 @@ internal sealed class EventSource(
         _explicitSubjectOverrides.Clear();
     }
 
-    private static bool IsConcurrencyConflict(DbUpdateException ex)
+    private static bool IsConcurrencyOrUniqueViolation(Exception ex)
     {
-        if (ex is DbUpdateConcurrencyException)
+        // Provider-agnostic concurrency conflict surfaced by Stratara's EfTransaction wrap
+        // (DbUpdateConcurrencyException -> ConcurrencyConflictException).
+        if (ex is ConcurrencyConflictException)
         {
             return true;
         }
 
-        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+        if (ex is DbUpdateException dbEx)
         {
-            if (inner is PostgresException pg && pg.SqlState == PostgresUniqueViolationSqlState)
+            if (dbEx is DbUpdateConcurrencyException)
             {
                 return true;
+            }
+
+            for (var inner = dbEx.InnerException; inner is not null; inner = inner.InnerException)
+            {
+                if (inner is PostgresException pg && pg.SqlState == PostgresUniqueViolationSqlState)
+                {
+                    return true;
+                }
             }
         }
 

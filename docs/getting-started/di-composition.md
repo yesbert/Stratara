@@ -61,6 +61,23 @@ services
 
 See **[Write a Validator](../guides/write-a-validator.md)**.
 
+## Opt-in: tenant isolation
+
+Also opt-in, registered **after** validation so it runs just inside it. The behavior guards requests that implement `ITenantScopedRequest`, rejecting any whose `TenantId` doesn't match the session's data-owner tenant — the command-/query-entrance complement to the database-side tenant query filters:
+
+```csharp
+services
+    .AddStrataraValidation()
+    .AddStrataraTenantIsolation();                    // guards ITenantScopedRequest
+
+// Strict mode + a platform-admin cross-tenant escape:
+services
+    .AddStrataraTenantIsolation(o => o.Mode = TenantIsolationMode.Strict);
+services.AddScoped<ICrossTenantAuthorizer, PlatformAdminCrossTenantAuthorizer>();
+```
+
+See **[Enforce Tenant Isolation](../guides/enforce-tenant-isolation.md)**.
+
 ## Example: a worker that runs everything
 
 ```csharp

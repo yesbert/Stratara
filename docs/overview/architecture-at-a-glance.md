@@ -53,6 +53,7 @@ A package that another packable package `ProjectReferences` must itself be packa
 | Run projections on the read side | `Stratara.Projections` |
 | Run sagas / process managers | `Stratara.Sagas` |
 | Validate requests before the handler | `Stratara.Validation` |
+| Enforce tenant isolation at the mediator entrance | `Stratara.Mediator` (`AddStrataraTenantIsolation()` + `ITenantScopedRequest`) |
 | Manage keys + encrypt blobs (production) | `Stratara.Security` (envelope `IKeyStore` + AES-GCM `ISecureBlobEncryptor`, dependency-light) |
 | Encrypt sensitive properties (`[EncryptData]` fields) | `Stratara.Infrastructure` (field/JSON path) + `Stratara.Security` (key store + blob encryption) |
 | Plug in ASP.NET identity | `Stratara.Identity.AspNetCore` |
