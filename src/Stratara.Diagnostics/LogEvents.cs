@@ -83,6 +83,8 @@ public static class LogEvents
         public const int CommandWorkerStarted = 105_001;
         /// <summary>Command-handling worker has stopped.</summary>
         public const int CommandWorkerStopped = 105_002;
+        /// <summary>A command-worker lane (interactive or heavy) has bound to its topic/subscription.</summary>
+        public const int CommandWorkerLaneStarted = 105_005;
         /// <summary>Command envelope integrity-signature verification failed under Permissive mode (warning, payload still dispatched).</summary>
         public const int CommandEnvelopeIntegrityWarning = 105_003;
         /// <summary>Command envelope integrity-signature verification failed under Strict mode (rejected, payload dropped).</summary>

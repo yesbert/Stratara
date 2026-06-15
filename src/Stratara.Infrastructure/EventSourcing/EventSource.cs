@@ -250,6 +250,11 @@ internal sealed class EventSource(
         _streamVersions[streamId] = streamVersion;
         _streamSubjects[streamId] = subject;
         _explicitSubjectOverrides.Remove(@event);
+
+        ApplicationDiagnostics.Metrics.EventsAppended.Add(
+            1,
+            new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.EventType, @event.GetType().Name),
+            new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.AggregateType, typeof(TAggregate).Name));
     }
 
     /// <summary>

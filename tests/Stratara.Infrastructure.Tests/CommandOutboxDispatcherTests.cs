@@ -40,6 +40,7 @@ public class CommandOutboxDispatcherTests
         var replayState = new Mock<IProjectionReplayState>();
 
         ids.SetupGet(i => i.CommandTopic).Returns("commands");
+        ids.Setup(i => i.GetCommandTopic(It.IsAny<Type>())).Returns("commands");
         session.SetupGet(s => s.Current).Returns(SessionContext.Empty());
         provider.Setup(p => p.GetPipeline(ResilienceNames.CommandDispatcher))
             .Returns(CreateNoOpPipeline());

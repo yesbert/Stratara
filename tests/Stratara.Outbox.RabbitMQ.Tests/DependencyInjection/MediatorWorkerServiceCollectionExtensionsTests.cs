@@ -33,4 +33,28 @@ public class MediatorWorkerServiceCollectionExtensionsTests
         var registrations = services.Where(d => d.ImplementationType == typeof(MediatorCommandWorker)).ToList();
         Assert.Single(registrations);
     }
+
+    [Fact]
+    public void AddHeavyCommandWorker_RegistersHostedServiceViaFactory()
+    {
+        var services = new ServiceCollection();
+
+        services.AddHeavyCommandWorker(degreeOfParallelism: 2);
+
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(IHostedService));
+        Assert.NotNull(descriptor.ImplementationFactory);
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+    }
+
+    [Fact]
+    public void AddMediatorWorker_AndAddHeavyCommandWorker_RegisterTwoDistinctHostedServices()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMediatorWorker();
+        services.AddHeavyCommandWorker();
+
+        var hostedServices = services.Where(d => d.ServiceType == typeof(IHostedService)).ToList();
+        Assert.Equal(2, hostedServices.Count);
+    }
 }

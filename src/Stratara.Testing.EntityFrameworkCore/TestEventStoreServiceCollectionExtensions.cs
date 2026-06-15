@@ -51,6 +51,7 @@ public static class TestEventStoreServiceCollectionExtensions
         services.AddDbContextFactory<TWriteDbContext>(
             (_, options) => options.UseSqlite(sharedConnection),
             ServiceLifetime.Scoped);
+        services.TryAddScoped<IWriteDbContext>(sp => sp.GetRequiredService<IDbContextFactory<TWriteDbContext>>().CreateDbContext());
         services.AddScoped<IWriteUnitOfWork>(sp => new WriteUnitOfWork<TWriteDbContext>(
             sp.GetRequiredService<IDbContextFactory<TWriteDbContext>>(),
             sp.GetRequiredService<ISessionContextProvider>(),

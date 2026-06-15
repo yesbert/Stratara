@@ -8,6 +8,7 @@ using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Projections;
+using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Shared.Diagnostics.Extensions;
@@ -32,7 +33,7 @@ namespace Stratara.Outbox.RabbitMQ.Outbox;
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
     Justification = "DI-resolved sealed internal dispatcher; primary-constructor parameters reflect intrinsic " +
                     "framework dependencies (logger, unit-of-work, bus, messaging identifier, session, pipeline, " +
-                    "replay state, serializer, signer) and are not a hand-called API surface.")]
+                    "replay state, serializer, signer, trusted-type resolver) and are not a hand-called API surface.")]
 internal sealed class CommandOutboxDispatcher(
     ILogger<CommandOutboxDispatcher> logger,
     IWriteUnitOfWork unitOfWork,
@@ -42,7 +43,8 @@ internal sealed class CommandOutboxDispatcher(
     ResiliencePipelineProvider<string> pipelineProvider,
     IProjectionReplayState replayState,
     ISecureJsonSerializer serializer,
-    IBusEnvelopeSigner? signer = null) : ICommandOutboxDispatcher
+    IBusEnvelopeSigner? signer = null,
+    ITrustedTypeResolver? typeResolver = null) : ICommandOutboxDispatcher
 {
     private readonly ResiliencePipeline _pipeline = pipelineProvider.GetPipeline(ResilienceNames.CommandDispatcher);
 
@@ -55,7 +57,8 @@ internal sealed class CommandOutboxDispatcher(
         {
             commandEnvelope = commandEnvelope with { Signature = signer.Sign(BusEnvelopeCanonical.Of(commandEnvelope)) };
         }
-        if (!replayState.IsReplayActive && await TrySendCommandEnvelopeAsync(commandEnvelope, cancellationToken))
+        var topic = messagingIdentifier.GetCommandTopic(command.GetType());
+        if (!replayState.IsReplayActive && await TrySendCommandEnvelopeAsync(commandEnvelope, topic, cancellationToken))
         {
             return commandEnvelope.Id;
         }
@@ -83,7 +86,8 @@ internal sealed class CommandOutboxDispatcher(
         foreach (var outboxEntry in outboxEntries)
         {
             var commandEnvelope = outboxEntry.MapTo<CommandEnvelope>();
-            if (await TrySendCommandEnvelopeAsync(commandEnvelope, cancellationToken))
+            var topic = ResolveTopic(commandEnvelope.CommandTypeName);
+            if (await TrySendCommandEnvelopeAsync(commandEnvelope, topic, cancellationToken))
             {
                 await repository.DeleteAsync(outboxEntry.Id, cancellationToken);
             }
@@ -92,22 +96,38 @@ internal sealed class CommandOutboxDispatcher(
         await transaction.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<bool> TrySendCommandEnvelopeAsync(CommandEnvelope commandEnvelope, CancellationToken cancellationToken)
+    private async Task<bool> TrySendCommandEnvelopeAsync(CommandEnvelope commandEnvelope, string topic, CancellationToken cancellationToken)
     {
         try
         {
             await _pipeline.ExecuteAsync(
                 static async (state, ct) =>
                 {
-                    await state.messageBus.PublishAsync(state.messagingIdentifier.CommandTopic, state.commandEnvelope, ct);
-                }, (messageBus, messagingIdentifier, commandEnvelope), cancellationToken);
+                    await state.messageBus.PublishAsync(state.topic, state.commandEnvelope, ct);
+                }, (messageBus, topic, commandEnvelope), cancellationToken);
 
             return true;
         }
         catch (Exception ex)
         {
-            logger.LogCommandEnvelopeDispatchFailed(messagingIdentifier.CommandTopic, ex);
+            logger.LogCommandEnvelopeDispatchFailed(topic, ex);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Resolves the command topic for an outbox entry from its persisted command type name. Heavy
+    /// commands route to the dedicated heavy topic; when the type is not registered in the trusted-type
+    /// resolver (or no resolver is available) the entry falls back to the default command topic so the
+    /// outbox still drains rather than stalling.
+    /// </summary>
+    private string ResolveTopic(string commandTypeName)
+    {
+        if (typeResolver is not null && typeResolver.TryResolve(commandTypeName, out var type) && type is not null)
+        {
+            return messagingIdentifier.GetCommandTopic(type);
+        }
+
+        return messagingIdentifier.CommandTopic;
     }
 }

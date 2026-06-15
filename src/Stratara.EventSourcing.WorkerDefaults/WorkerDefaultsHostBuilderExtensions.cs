@@ -70,6 +70,40 @@ public static class WorkerDefaultsHostBuilderExtensions
     }
 
     /// <summary>
+    /// Registers the heavy-command-worker stack: the same full command-handling stack as
+    /// <see cref="AddCommandWorkerServices"/> but with a dedicated heavy-command lane instead of the
+    /// interactive one. Use it in a separate, independently scaled host that drains commands marked
+    /// <c>IHeavyCommand</c> so long-running work never starves the interactive command lane.
+    /// </summary>
+    /// <param name="builder">The host application builder.</param>
+    /// <param name="degreeOfParallelism">
+    /// Concurrent subscriptions the heavy lane opens; <see langword="null"/> defaults to
+    /// <see cref="System.Environment.ProcessorCount"/>. Cap it low to bound heavy-command resource use.
+    /// </param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// Compose a dedicated heavy-command worker host that drains <c>IHeavyCommand</c> commands at a
+    /// bounded concurrency, leaving interactive command hosts unaffected:
+    /// <code>
+    /// var builder = Host.CreateApplicationBuilder(args);
+    /// builder.AddHeavyCommandWorkerServices(degreeOfParallelism: 2);
+    /// builder.Services.AddCommandHandlersFromAssemblyContaining&lt;IAppMarker&gt;();
+    /// builder.Build().Run();
+    /// </code>
+    /// </example>
+    public static IHostApplicationBuilder AddHeavyCommandWorkerServices(this IHostApplicationBuilder builder, int? degreeOfParallelism = null)
+    {
+        builder.AddCommonFrameworkServices();
+        builder.Services
+            .AddMediator()
+            .AddHeavyCommandWorker(degreeOfParallelism)
+            .AddWriteStore(builder.Configuration)
+            .AddEventSourcing()
+            .AddOutboxDispatcher();
+        return builder;
+    }
+
+    /// <summary>
     /// Registers the event-projection-worker stack: common framework services + write store + projection
     /// replay state + projection worker (hosted service).
     /// </summary>

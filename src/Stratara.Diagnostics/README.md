@@ -6,7 +6,24 @@ Generic observability primitives shared by all Stratara packages. Use this to em
 
 ## Contents
 
-- `ApplicationDiagnostics` — `ActivitySource("Stratara.Application")` + `Meter("Stratara.Service")` + tag-name constants (`correlation.id`, `causation.id`, `tenant.id`, `user.id`) + metric names (`event_source.append.conflicts`). These names are part of the public observability contract — renaming them breaks downstream Grafana/Tempo queries.
+- `ApplicationDiagnostics` — `ActivitySource("Stratara.Application")` + `Meter("Stratara.Service")` + tag-name constants (`correlation.id`, `causation.id`, `tenant.id`, `user.id`, `event.type`, `request.type`, `outcome`, `outbox.kind`) + the metric instruments below. These names are part of the public observability contract — renaming them breaks downstream Grafana/Tempo queries.
+
+### Metric instruments (`ApplicationDiagnostics.Metrics`)
+
+| Instrument | Type | Tags |
+|---|---|---|
+| `event_source.append.conflicts` | counter | `aggregate.type` |
+| `event_source.events.appended` | counter | `event.type`, `aggregate.type` |
+| `outbox.published` | counter | `outbox.kind` (`command` / `event`) |
+| `command.duration` (ms) | histogram | `request.type`, `outcome` |
+| `projection.events.processed` | counter | `event.type`, `outcome` |
+| `projection.bundle.duration` (ms) | histogram | `outcome` |
+| `saga.events.processed` | counter | `event.type`, `outcome` |
+| `saga.bundle.duration` (ms) | histogram | `outcome` |
+| `saga.inflight` | up/down counter | — |
+
+Projections and sagas are real-time bus subscribers without a persisted checkpoint, so these report **throughput and latency**, not consumer lag.
+
 - `LogEvents` — `[LoggerMessage]` event-ID ranges per domain (ChangeSet=100_000s, BackgroundTasks=101_000s, EventStore=102_000s, …, Messaging=108_000s, Update=109_000s, Saga=110_000s). Even hundreds = info/debug, `_1xx` = error.
 - `LoggerScopeExtensions.BeginCreateAggregateScope` / `BeginUpdateAggregateScope` — pre-baked logging scopes for the create/update aggregate flows.
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +15,7 @@ using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
+using Stratara.Diagnostics;
 using Stratara.Mediator;
 using Stratara.Shared.Diagnostics.Extensions;
 using Stratara.Shared.Partitioning;
@@ -29,10 +31,13 @@ namespace Stratara.Outbox.RabbitMQ.Mediator;
 /// dispatches to the same aggregate do not race.
 /// </summary>
 /// <remarks>
-/// The worker runs <see cref="Environment.ProcessorCount"/> parallel subscriptions, each wrapped
-/// in the <c>MessageBus</c> resilience pipeline. Failures inside <c>DispatchAsync</c> propagate to
-/// the subscription handler, which is NACKed by the <see cref="Stratara.Abstractions.Messaging.IMessageBus"/>
-/// implementation (with concurrency conflicts requeued and other errors dead-lettered).
+/// The worker runs <see cref="CommandWorkerLane.EffectiveDegreeOfParallelism"/> parallel subscriptions
+/// (defaulting to <see cref="Environment.ProcessorCount"/>), each wrapped in the <c>MessageBus</c>
+/// resilience pipeline. Failures inside <c>DispatchAsync</c> propagate to the subscription handler,
+/// which is NACKed by the <see cref="Stratara.Abstractions.Messaging.IMessageBus"/> implementation
+/// (with concurrency conflicts requeued and other errors dead-lettered). The <see cref="CommandWorkerLane"/>
+/// selects the interactive (default) or heavy command topic/subscription so a dedicated heavy-command
+/// worker can drain long-running commands without starving the interactive lane.
 /// </remarks>
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
     Justification = "DI-resolved sealed internal worker; primary-constructor parameters reflect intrinsic " +
@@ -48,7 +53,8 @@ internal sealed class MediatorCommandWorker(
     ISecureJsonSerializer serializer,
     IOptions<BusEnvelopeJsonOptions> envelopeOptions,
     IOptions<BusEnvelopeIntegrityOptions> integrityOptions,
-    IBusEnvelopeSigner? signer = null) : BackgroundService
+    IBusEnvelopeSigner? signer = null,
+    CommandWorkerLane? lane = null) : BackgroundService
 {
     private readonly ResiliencePipeline _pipeline = pipelineProvider.GetPipeline(ResilienceNames.MessageBus);
     private readonly BucketLockPool _bucketLockPool = new();
@@ -57,6 +63,7 @@ internal sealed class MediatorCommandWorker(
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly BusEnvelopeIntegrityMode _integrityMode = integrityOptions.Value.Mode;
+    private readonly CommandWorkerLane _lane = lane ?? CommandWorkerLane.Interactive;
 
     /// <inheritdoc/>
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -82,23 +89,27 @@ internal sealed class MediatorCommandWorker(
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var degreeOfParallelism = Environment.ProcessorCount;
+        var topic = _lane.ResolveTopic(messagingIdentifier);
+        var subscription = _lane.ResolveSubscription(messagingIdentifier);
+        var degreeOfParallelism = _lane.EffectiveDegreeOfParallelism;
+        logger.LogCommandWorkerLaneStarted(subscription, topic, degreeOfParallelism);
+
         var workers = new Task[degreeOfParallelism];
         for (var i = 0; i < degreeOfParallelism; i++)
         {
-            workers[i] = CreateSubscriptionAsync(stoppingToken);
+            workers[i] = CreateSubscriptionAsync(topic, subscription, stoppingToken);
         }
 
         await Task.WhenAll(workers);
     }
 
-    private async Task CreateSubscriptionAsync(CancellationToken stoppingToken)
+    private async Task CreateSubscriptionAsync(string topic, string subscription, CancellationToken stoppingToken)
     {
         await _pipeline.ExecuteAsync(async ct =>
         {
             await messageBus.SubscribeAsync<CommandEnvelope>(
-                messagingIdentifier.CommandTopic,
-                messagingIdentifier.CommandSubscription,
+                topic,
+                subscription,
                 async commandEnvelope => await DispatchAsync(commandEnvelope, ct),
                 ct);
         }, stoppingToken);
@@ -107,22 +118,36 @@ internal sealed class MediatorCommandWorker(
     internal async Task DispatchAsync(CommandEnvelope commandEnvelope, CancellationToken cancellationToken)
     {
         var type = GetCommandType(commandEnvelope.CommandTypeName);
-        BusEnvelopeJsonGuard.EnsureWithinSizeLimit(Encoding.UTF8.GetByteCount(commandEnvelope.SessionContextJson), _envelopeOptions.MaxBodyBytes, "SessionContextJson");
-        VerifyEnvelopeIntegrity(commandEnvelope);
-        var sessionContext = JsonSerializer.Deserialize<SessionContext>(commandEnvelope.SessionContextJson, _deserializeOptions)
-            ?? throw new InvalidOperationException("Failed to deserialize session context from command envelope.");
-        var command = await _serializer.DeserializeAsync(commandEnvelope.CommandJson, type, sessionContext.TenantId, sessionContext.ActorUserId, cancellationToken)
-            ?? throw new InvalidOperationException($"Failed to deserialize command of type {type.FullName}.");
+        var startTimestamp = Stopwatch.GetTimestamp();
+        var outcome = ApplicationDiagnostics.Outcomes.Failure;
+        try
+        {
+            BusEnvelopeJsonGuard.EnsureWithinSizeLimit(Encoding.UTF8.GetByteCount(commandEnvelope.SessionContextJson), _envelopeOptions.MaxBodyBytes, "SessionContextJson");
+            VerifyEnvelopeIntegrity(commandEnvelope);
+            var sessionContext = JsonSerializer.Deserialize<SessionContext>(commandEnvelope.SessionContextJson, _deserializeOptions)
+                ?? throw new InvalidOperationException("Failed to deserialize session context from command envelope.");
+            var command = await _serializer.DeserializeAsync(commandEnvelope.CommandJson, type, sessionContext.TenantId, sessionContext.ActorUserId, cancellationToken)
+                ?? throw new InvalidOperationException($"Failed to deserialize command of type {type.FullName}.");
 
-        if (command is IAggregateScopedCommand scoped)
-        {
-            var bucketId = BucketCalculator.GetBucketId(scoped.AggregateId);
-            using var releaser = await _bucketLockPool.AcquireAsync(bucketId, cancellationToken);
-            await ExecuteHandlerAsync(command, sessionContext, cancellationToken);
+            if (command is IAggregateScopedCommand scoped)
+            {
+                var bucketId = BucketCalculator.GetBucketId(scoped.AggregateId);
+                using var releaser = await _bucketLockPool.AcquireAsync(bucketId, cancellationToken);
+                await ExecuteHandlerAsync(command, sessionContext, cancellationToken);
+            }
+            else
+            {
+                await ExecuteHandlerAsync(command, sessionContext, cancellationToken);
+            }
+
+            outcome = ApplicationDiagnostics.Outcomes.Success;
         }
-        else
+        finally
         {
-            await ExecuteHandlerAsync(command, sessionContext, cancellationToken);
+            ApplicationDiagnostics.Metrics.CommandDuration.Record(
+                Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds,
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.RequestType, type.Name),
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.Outcome, outcome));
         }
     }
 

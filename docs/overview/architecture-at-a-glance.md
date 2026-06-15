@@ -22,7 +22,7 @@ Tier-B  (builds on Tier-A only)
 Tier-C  (builds on Tier-B + Tier-A)
 ├── Stratara.EventSourcing.EntityFrameworkCore       WriteStore + ReadStore + IdentityStore (folded)
 ├── Stratara.EventSourcing.Pipeline.CommandAudit     Command-audit pipeline behavior
-├── Stratara.EventSourcing.WorkerDefaults            6 worker composites
+├── Stratara.EventSourcing.WorkerDefaults            7 worker composites (incl. heavy-command lane)
 ├── Stratara.Validation                              IValidator<T> + validation pipeline behavior
 ├── Stratara.Projections                             Projection runtime + ProjectionManager
 ├── Stratara.Sagas                                   ISaga interface + saga dispatcher

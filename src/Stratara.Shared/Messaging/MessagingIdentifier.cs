@@ -14,6 +14,8 @@ public sealed class MessagingIdentifier(IOptions<MessagingOptions> options) : IM
     private readonly MessagingOptions _config = options.Value;
     private string _commandSubscription = string.Empty;
     private string _commandTopic = string.Empty;
+    private string _heavyCommandSubscription = string.Empty;
+    private string _heavyCommandTopic = string.Empty;
     private string _eventBundleSubscription = string.Empty;
     private string _eventBundleSagaSubscription = string.Empty;
     private string _eventStreamTopic = string.Empty;
@@ -90,6 +92,35 @@ public sealed class MessagingIdentifier(IOptions<MessagingOptions> options) : IM
 
             return _commandSubscription =
                 _config.GetSubscriptionValue("Command", "CommandSubscription") ?? "command-subscription";
+        }
+    }
+
+    /// <inheritdoc/>
+    public string HeavyCommandTopic
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(_heavyCommandTopic))
+            {
+                return _heavyCommandTopic;
+            }
+
+            return _heavyCommandTopic = _config.GetTopicValue("HeavyCommand") ?? "heavy-command";
+        }
+    }
+
+    /// <inheritdoc/>
+    public string HeavyCommandSubscription
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(_heavyCommandSubscription))
+            {
+                return _heavyCommandSubscription;
+            }
+
+            return _heavyCommandSubscription =
+                _config.GetSubscriptionValue("HeavyCommand", "HeavyCommandSubscription") ?? "heavy-command-subscription";
         }
     }
 

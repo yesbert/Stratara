@@ -9,7 +9,8 @@ These wire entire worker / host concerns in one call. **Pick one per host.**
 | Extension | Brings | Use for |
 |---|---|---|
 | `builder.AddBackendServices()` | Mediator, Identity, Session, Security, Resilience | ASP.NET API hosts |
-| `builder.AddCommandWorkerServices()` | Common framework + command-handling worker | Worker hosts that consume the `stratara.commands` topic |
+| `builder.AddCommandWorkerServices()` | Common framework + command-handling worker (interactive lane) | Worker hosts that consume the `command` topic |
+| `builder.AddHeavyCommandWorkerServices(dop?)` | Common framework + dedicated heavy-command worker | Worker hosts that drain long-running `IHeavyCommand` commands on a separate lane, so they don't starve interactive commands |
 | `builder.AddEventProjectionWorkerServices()` | Common framework + projection worker | Worker hosts that update read-models |
 | `builder.AddSagaWorkerServices()` | Common framework + saga worker | Worker hosts that orchestrate processes |
 | `builder.AddEventStreamHashWorkerServices()` | Common framework + event-stream-hash worker | Worker hosts that hash event streams for tamper-evidence |

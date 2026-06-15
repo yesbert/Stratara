@@ -1,10 +1,85 @@
 using Microsoft.Extensions.Options;
+using Stratara.Abstractions.Mediator;
+using Stratara.Abstractions.Messaging;
 using Stratara.Shared.Messaging;
 
 namespace Stratara.Shared.Tests.Messaging;
 
 public class MessagingIdentifierTests
 {
+    private sealed record InteractiveCommand : ICommand;
+
+    private sealed record HeavyCommand : ICommand, IHeavyCommand;
+
+    [Fact]
+    public void HeavyCommandTopic_NoConfig_ReturnsDefault()
+    {
+        var identifier = new MessagingIdentifier(Options.Create(new MessagingOptions()));
+
+        Assert.Equal("heavy-command", identifier.HeavyCommandTopic);
+    }
+
+    [Fact]
+    public void HeavyCommandSubscription_NoConfig_ReturnsDefault()
+    {
+        var identifier = new MessagingIdentifier(Options.Create(new MessagingOptions()));
+
+        Assert.Equal("heavy-command-subscription", identifier.HeavyCommandSubscription);
+    }
+
+    [Fact]
+    public void HeavyCommandTopic_WithConfig_ReturnsConfigured()
+    {
+        var options = Options.Create(new MessagingOptions
+        {
+            Topics =
+            [
+                new MessagingOptions.TopicOptions
+                {
+                    Name = "HeavyCommand",
+                    Value = "custom-heavy",
+                    Subscriptions =
+                    [
+                        new MessagingOptions.TopicOptions.SubscriptionOptions
+                        {
+                            Name = "HeavyCommandSubscription",
+                            Value = "custom-heavy-sub"
+                        }
+                    ]
+                }
+            ]
+        });
+        var identifier = new MessagingIdentifier(options);
+
+        Assert.Equal("custom-heavy", identifier.HeavyCommandTopic);
+        Assert.Equal("custom-heavy-sub", identifier.HeavyCommandSubscription);
+    }
+
+    [Fact]
+    public void GetCommandTopic_RoutesHeavyAndInteractiveCommands()
+    {
+        IMessagingIdentifier identifier = new MessagingIdentifier(Options.Create(new MessagingOptions()));
+
+        Assert.Equal("command", identifier.GetCommandTopic(typeof(InteractiveCommand)));
+        Assert.Equal("heavy-command", identifier.GetCommandTopic(typeof(HeavyCommand)));
+    }
+
+    [Fact]
+    public void GetCommandSubscription_RoutesHeavyAndInteractiveCommands()
+    {
+        IMessagingIdentifier identifier = new MessagingIdentifier(Options.Create(new MessagingOptions()));
+
+        Assert.Equal("command-subscription", identifier.GetCommandSubscription(typeof(InteractiveCommand)));
+        Assert.Equal("heavy-command-subscription", identifier.GetCommandSubscription(typeof(HeavyCommand)));
+    }
+
+    [Fact]
+    public void IsHeavy_DetectsHeavyMarker()
+    {
+        Assert.True(IMessagingIdentifier.IsHeavy(typeof(HeavyCommand)));
+        Assert.False(IMessagingIdentifier.IsHeavy(typeof(InteractiveCommand)));
+    }
+
     [Fact]
     public void EventBundleTopic_NoConfig_ReturnsDefault()
     {

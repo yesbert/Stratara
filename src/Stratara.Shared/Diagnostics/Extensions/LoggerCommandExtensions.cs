@@ -26,6 +26,17 @@ public static partial class LoggerCommandExtensions
         Message = "Stopping Command-Worker.")]
     public static partial void LogCommandWorkerStopped(this ILogger logger);
 
+    /// <summary>Logs that a command-worker lane has bound to its topic and subscription.</summary>
+    /// <param name="logger">The logger to emit through.</param>
+    /// <param name="subscription">The subscription the lane consumes (interactive or heavy).</param>
+    /// <param name="topic">The command topic the lane consumes.</param>
+    /// <param name="degreeOfParallelism">The number of concurrent subscriptions the lane opens.</param>
+    [LoggerMessage(
+        EventId = LogEvents.CommandProcessing.CommandWorkerLaneStarted,
+        Level = LogLevel.Information,
+        Message = "Command-Worker lane bound to subscription {Subscription} on topic {Topic} with degree-of-parallelism {DegreeOfParallelism}.")]
+    public static partial void LogCommandWorkerLaneStarted(this ILogger logger, string subscription, string topic, int degreeOfParallelism);
+
     /// <summary>Logs that a command envelope failed integrity verification under Permissive mode and is still being dispatched.</summary>
     /// <param name="logger">The logger to emit through.</param>
     /// <param name="envelopeId">The id of the offending envelope.</param>

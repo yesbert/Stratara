@@ -32,3 +32,29 @@ internal sealed class Account : ITenantAggregate
 
     public void Apply(AmountWithdrawn @event) => Balance -= @event.Amount;
 }
+
+internal sealed record MetricsProbeCreated(Guid ProbeId, Guid TenantId) : IAggregateCreationEvent;
+
+internal sealed record MetricsProbeTouched;
+
+/// <summary>
+/// Dedicated aggregate used only by the observability-metrics tests so their event-append
+/// measurements can be isolated by the <c>aggregate.type</c> tag from events appended by other
+/// concurrently-running test classes on the process-global meter.
+/// </summary>
+internal sealed class MetricsProbe : ITenantAggregate
+{
+    public Guid Id { get; set; }
+
+    public Guid TenantId { get; set; }
+
+    public int Touches { get; set; }
+
+    public void Apply(MetricsProbeCreated @event)
+    {
+        Id = @event.ProbeId;
+        TenantId = @event.TenantId;
+    }
+
+    public void Apply(MetricsProbeTouched @event) => Touches++;
+}

@@ -29,8 +29,24 @@ builder.Services.AddNpgsqlReadStore<MyAppReadDbContext>(builder.Configuration);
 
 Then derive `MyAppWriteDbContext : Stratara.EventSourcing.EntityFrameworkCore.WriteStore.WriteDbContext` and `MyAppReadDbContext : Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ReadDbContext`.
 
+## Health checks
+
+Two opt-in readiness checks plug into any `IHealthChecksBuilder` (they require the write store above to be registered):
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddEventStoreHealthCheck()                                  // write-side DB reachable?
+    .AddOutboxHealthCheck(degradedThreshold: 1_000,             // outbox backlog depth
+                          unhealthyThreshold: 10_000);
+```
+
+- `AddEventStoreHealthCheck()` — probes write-store connectivity; `Unhealthy` when the database cannot be reached.
+- `AddOutboxHealthCheck(degradedThreshold?, unhealthyThreshold?)` — reports the pending outbox backlog under the `pending` data key and escalates to `Degraded` / `Unhealthy` when the count crosses the supplied thresholds (omit them to stay healthy while reachable).
+
+Both are tagged `ready` by default, so they show up on a readiness endpoint rather than the liveness (`live`) one.
+
 ## Dependencies
 
 - `Stratara.Projections` — for projection types used by `ProjectionsUnitOfWork`.
 - `Stratara.Shared` — for diagnostics + abstractions + resilience.
-- `Npgsql.EntityFrameworkCore.PostgreSQL`, `EFCore.NamingConventions`, `Microsoft.AspNetCore.Identity.EntityFrameworkCore`, `Microsoft.EntityFrameworkCore`, `Pgvector.EntityFrameworkCore`.
+- `Npgsql.EntityFrameworkCore.PostgreSQL`, `EFCore.NamingConventions`, `Microsoft.AspNetCore.Identity.EntityFrameworkCore`, `Microsoft.EntityFrameworkCore`, `Microsoft.Extensions.Diagnostics.HealthChecks`, `Pgvector.EntityFrameworkCore`.

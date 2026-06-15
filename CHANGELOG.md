@@ -16,7 +16,58 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `3.1.3`._
+## [3.1.4] — 2026-06-15
+
+### Added
+
+- **Command-workload isolation (heavy-command lane)** — long-running commands can now be routed to a
+  dedicated worker lane so they cannot starve interactive commands. Mark a command with the new
+  `Stratara.Abstractions.Mediator.IHeavyCommand` marker and the `ICommandOutboxDispatcher`
+  automatically publishes it to a separate heavy-command topic (`IMessagingIdentifier.HeavyCommandTopic` /
+  `HeavyCommandSubscription`, configurable under `Messaging:HeavyCommand`, defaulting to `heavy-command` /
+  `heavy-command-subscription`). Run a dedicated heavy-command worker with the new
+  `services.AddHeavyCommandWorker(degreeOfParallelism?)` extension, or the
+  `builder.AddHeavyCommandWorkerServices(degreeOfParallelism?)` host composite — in the same process as
+  the interactive worker (two lanes) or in a separately scaled host. Each worker's degree of parallelism
+  is configurable per lane. `IMessagingIdentifier` gains `HeavyCommandTopic`, `HeavyCommandSubscription`,
+  and the `GetCommandTopic(Type)` / `GetCommandSubscription(Type)` routing helpers. The interactive lane
+  (`AddMediatorWorker()`) is unchanged and remains the default; commands not marked heavy keep their
+  existing routing. If a heavy command is dispatched while no heavy worker is bound, the publish is
+  rejected and the command is preserved in the outbox until a heavy-command worker comes online — it is
+  never dropped. Works over both the RabbitMQ and Azure Service Bus message buses (Azure Service Bus
+  requires the heavy-command topic/subscription to be provisioned, like the existing command topic). New
+  log-event ID `105_005` (`CommandWorkerLaneStarted`) in `Stratara.Diagnostics`.
+- **Observability metrics across the worker pipeline** (`Stratara.Diagnostics`) — the shared
+  `Stratara.Service` meter now publishes throughput and latency instruments so operators can see how the
+  event-sourcing pipeline is behaving instead of flying blind on a single counter. New instruments:
+  `event_source.events.appended` (counter, tagged by `event.type` / `aggregate.type`),
+  `outbox.published` (counter, tagged by `outbox.kind` = `command` / `event`), `command.duration`
+  (histogram, ms, tagged by `request.type` / `outcome`), `projection.events.processed` (counter) +
+  `projection.bundle.duration` (histogram, ms), `saga.events.processed` (counter) +
+  `saga.bundle.duration` (histogram, ms), and `saga.inflight` (up/down counter). They are recorded by the
+  event source, command worker, projection worker, saga worker, and outbox worker respectively. Because
+  projections and sagas are real-time bus subscribers without a persisted checkpoint, these report
+  **throughput and latency**, not consumer lag. No configuration is required — point any OpenTelemetry
+  metrics exporter at the `Stratara.Service` meter.
+- **Operational health checks for the event store and outbox** (`Stratara.EventSourcing.EntityFrameworkCore`) —
+  two opt-in readiness checks added to any `IHealthChecksBuilder`: `AddEventStoreHealthCheck()` verifies
+  the write-side database is reachable, and `AddOutboxHealthCheck(degradedThreshold?, unhealthyThreshold?)`
+  reports the pending outbox backlog (exposed under the `pending` data key) and escalates to
+  `Degraded` / `Unhealthy` when the backlog crosses the supplied thresholds. Both are tagged `ready` by
+  default (so they map to a readiness endpoint, not liveness) and require the Stratara write store to be
+  registered. The write-store DbContext is now also resolvable as a scoped `IWriteDbContext` service to
+  support these checks.
+- **Polly-backed mediator resilience behavior** (`Stratara.Resilience`) — an opt-in pipeline behavior
+  wraps the in-process dispatch of a request marked with the new
+  `Stratara.Abstractions.Resilience.IResilientRequest` in the named Polly pipeline the request selects
+  (`ResiliencePipelineName`). Register it with the new `AddStrataraResilienceBehavior()` (after
+  `AddStrataraValidation()` / `AddStrataraTenantIsolation()` so the retry wraps the handler, not the
+  guards); requests without the marker are unaffected. A new built-in pipeline
+  `ResilienceNames.ConcurrencyConflict` retries **only** on
+  `Stratara.Abstractions.Persistence.ConcurrencyConflictException` (5 attempts, short exponential
+  backoff) so a handler that re-reads and re-applies on an optimistic-concurrency clash succeeds without
+  bespoke retry loops; it is registered by `AddResiliencePipelines()` alongside the existing message-bus
+  and dispatcher pipelines. Only mark handlers that are safe to re-run (idempotent or concurrency-guarded).
 
 ## [3.1.3] — 2026-06-10
 

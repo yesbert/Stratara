@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,7 @@ using Stratara.Sagas.Abstractions;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Session;
+using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 using Stratara.Resilience;
 
@@ -87,19 +89,41 @@ internal sealed class SagaWorker(
 
     internal async Task HandleEventBundleAsync(EventBundle eventBundle, CancellationToken cancellationToken)
     {
-        BusEnvelopeJsonGuard.EnsureWithinSizeLimit(Encoding.UTF8.GetByteCount(eventBundle.SessionContextJson), _envelopeOptions.MaxBodyBytes, "SessionContextJson");
-        VerifyEnvelopeIntegrity(eventBundle);
+        var startTimestamp = Stopwatch.GetTimestamp();
+        var outcome = ApplicationDiagnostics.Outcomes.Failure;
+        ApplicationDiagnostics.Metrics.SagasInFlight.Add(1);
+        try
+        {
+            BusEnvelopeJsonGuard.EnsureWithinSizeLimit(Encoding.UTF8.GetByteCount(eventBundle.SessionContextJson), _envelopeOptions.MaxBodyBytes, "SessionContextJson");
+            VerifyEnvelopeIntegrity(eventBundle);
 
-        using var scope = scopeFactory.CreateScope();
+            using var scope = scopeFactory.CreateScope();
 
-        var sessionContextProvider = scope.ServiceProvider.GetRequiredService<ISessionContextProvider>();
-        var sessionContext = JsonSerializer.Deserialize<SessionContext>(eventBundle.SessionContextJson, _deserializeOptions)
-            ?? throw new InvalidOperationException("Failed to deserialize session context from event bundle.");
-        sessionContextProvider.Set(sessionContext);
+            var sessionContextProvider = scope.ServiceProvider.GetRequiredService<ISessionContextProvider>();
+            var sessionContext = JsonSerializer.Deserialize<SessionContext>(eventBundle.SessionContextJson, _deserializeOptions)
+                ?? throw new InvalidOperationException("Failed to deserialize session context from event bundle.");
+            sessionContextProvider.Set(sessionContext);
 
-        var sagaManager = scope.ServiceProvider.GetRequiredService<ISagaManager>();
-        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
-        await sagaManager.HandleAsync(events, cancellationToken);
+            var sagaManager = scope.ServiceProvider.GetRequiredService<ISagaManager>();
+            var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
+            await sagaManager.HandleAsync(events, cancellationToken);
+
+            outcome = ApplicationDiagnostics.Outcomes.Success;
+        }
+        finally
+        {
+            ApplicationDiagnostics.Metrics.SagasInFlight.Add(-1);
+            ApplicationDiagnostics.Metrics.SagaBundleDuration.Record(
+                Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds,
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.Outcome, outcome));
+            foreach (var @event in eventBundle.Events)
+            {
+                ApplicationDiagnostics.Metrics.SagaEventsProcessed.Add(
+                    1,
+                    new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.EventType, @event.EventTypeName),
+                    new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.Outcome, outcome));
+            }
+        }
     }
 
     private void VerifyEnvelopeIntegrity(EventBundle bundle)

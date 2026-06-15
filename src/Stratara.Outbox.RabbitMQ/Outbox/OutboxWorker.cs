@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Stratara.Contracts.Messages;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
+using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 
 namespace Stratara.Outbox.RabbitMQ.Outbox;
@@ -96,6 +97,9 @@ internal sealed class OutboxWorker(
         while (outboxEntries.Count > 0 && !stoppingToken.IsCancellationRequested)
         {
             await dispatcher.EnqueueOutboxEntriesAsync(outboxEntries, stoppingToken);
+            ApplicationDiagnostics.Metrics.OutboxEntriesPublished.Add(
+                outboxEntries.Count,
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.OutboxKind, ApplicationDiagnostics.OutboxKinds.Command));
             outboxEntries = await repository.GetManyAsync<CommandEnvelope>(_batchSize, stoppingToken);
         }
     }
@@ -114,6 +118,9 @@ internal sealed class OutboxWorker(
         while (outboxEntries.Count > 0 && !stoppingToken.IsCancellationRequested)
         {
             await dispatcher.EnqueueOutboxEntriesAsync(outboxEntries, stoppingToken);
+            ApplicationDiagnostics.Metrics.OutboxEntriesPublished.Add(
+                outboxEntries.Count,
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.OutboxKind, ApplicationDiagnostics.OutboxKinds.Event));
             outboxEntries = await repository.GetManyAsync<EventBundle>(_batchSize, stoppingToken);
         }
     }

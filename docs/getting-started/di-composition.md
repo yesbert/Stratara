@@ -12,11 +12,13 @@ Stratara composes via à-la-carte `Add*Services()` extension methods on `IServic
 │      builder.Services.MapStrataraDefaults()        (health endpoints + OpenAPI)
 │
 └─ Worker host (background service)
-   ├─ Need to handle commands?    → builder.AddCommandWorkerServices()
-   ├─ Need to run projections?    → builder.AddEventProjectionWorkerServices()
-   ├─ Need to run sagas?          → builder.AddSagaWorkerServices()
-   ├─ Need to hash event streams? → builder.AddEventStreamHashWorkerServices()
-   └─ Need to drain the outbox?   → builder.AddOutboxWorkerServices()
+   ├─ Need to handle commands?         → builder.AddCommandWorkerServices()
+   ├─ Need a dedicated lane for slow,  → builder.AddHeavyCommandWorkerServices(dop?)
+   │  long-running commands?              (drains IHeavyCommand — see "Opt-in: heavy-command lane")
+   ├─ Need to run projections?         → builder.AddEventProjectionWorkerServices()
+   ├─ Need to run sagas?               → builder.AddSagaWorkerServices()
+   ├─ Need to hash event streams?      → builder.AddEventStreamHashWorkerServices()
+   └─ Need to drain the outbox?        → builder.AddOutboxWorkerServices()
 ```
 
 You'll typically run **one host per worker concern** in production — each `Add*WorkerServices()` boots the right `IHostedService`s and the supporting infrastructure.
@@ -78,12 +80,34 @@ services.AddScoped<ICrossTenantAuthorizer, PlatformAdminCrossTenantAuthorizer>()
 
 See **[Enforce Tenant Isolation](../guides/enforce-tenant-isolation.md)**.
 
+## Opt-in: heavy-command lane
+
+Long-running commands (bulk back-fills, crawls, re-indexing) can monopolise every command-worker slot and starve interactive commands. Mark such a command with `IHeavyCommand` and it is published to a separate topic that a dedicated heavy-command worker drains, so the interactive lane stays free:
+
+```csharp
+public sealed record ReindexCorpusCommand(Guid CorpusId) : ICommand, IHeavyCommand;
+```
+
+Run the heavy lane either alongside the interactive worker (two lanes, one host) or as a separately scaled host:
+
+```csharp
+// Two lanes in one host:
+builder.AddCommandWorkerServices();
+builder.Services.AddHeavyCommandWorker(degreeOfParallelism: 2);
+
+// Or a dedicated, independently scaled heavy host:
+builder.AddHeavyCommandWorkerServices(degreeOfParallelism: 2);
+```
+
+`degreeOfParallelism` bounds how many heavy commands run at once. If no heavy worker is running, heavy commands are held in the outbox (never dropped) until one comes online. Over Azure Service Bus, provision the `heavy-command` topic + subscription up front (as with the default command topic). Topic/subscription names are configurable under `Messaging:HeavyCommand`.
+
 ## Example: a worker that runs everything
 
 ```csharp
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.AddCommandWorkerServices();
+builder.Services.AddHeavyCommandWorker(degreeOfParallelism: 2);   // dedicated lane for IHeavyCommand
 builder.AddEventProjectionWorkerServices();
 builder.AddSagaWorkerServices();
 builder.AddOutboxWorkerServices();

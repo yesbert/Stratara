@@ -28,6 +28,7 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     public static IServiceCollection AddNpsqlWriteDbContextFactory<TDbContext>(this IServiceCollection services) where TDbContext : DbContext, IWriteDbContext
     {
         services.AddDbContextFactory<TDbContext>((sp, options) => ConfigureDbOptions(options, sp), ServiceLifetime.Scoped);
+        services.TryAddScoped<IWriteDbContext>(sp => sp.GetRequiredService<IDbContextFactory<TDbContext>>().CreateDbContext());
         services.TryAddScoped<IDbResolver, DefaultDbResolver>();
         return services;
     }

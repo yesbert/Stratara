@@ -45,6 +45,19 @@ public class WorkerDefaultsCompositesTests
     }
 
     [Fact]
+    public void AddHeavyCommandWorkerServices_RegistersHeavyWorkerHostedServiceAndDispatcher()
+    {
+        var builder = NewBuilder();
+
+        builder.AddHeavyCommandWorkerServices(degreeOfParallelism: 2);
+
+        // The heavy lane is registered via an implementation factory, so it has no ImplementationType.
+        Assert.Contains(builder.Services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationFactory is not null);
+        AssertRegistered<IMediator>(builder);
+        AssertRegistered<ICommandOutboxDispatcher>(builder);
+    }
+
+    [Fact]
     public void AddEventProjectionWorkerServices_RegistersProjectionReplayStateAndWorker()
     {
         var builder = NewBuilder();
@@ -111,6 +124,7 @@ public class WorkerDefaultsCompositesTests
                  {
                      b => b.AddBackendServices(),
                      b => b.AddCommandWorkerServices(),
+                     b => b.AddHeavyCommandWorkerServices(),
                      b => b.AddEventProjectionWorkerServices(),
                      b => b.AddSagaWorkerServices(),
                      b => b.AddEventStreamHashWorkerServices(),

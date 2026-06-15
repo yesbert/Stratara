@@ -18,8 +18,27 @@ namespace Stratara.Outbox.RabbitMQ.Tests.Outbox;
 public class CommandOutboxDispatcherTests
 {
     private const string CommandTopic = "stratara.commands";
+    private const string HeavyCommandTopic = "stratara.heavy-commands";
 
     public sealed record TestCommand(Guid Marker) : ICommand;
+
+    public sealed record HeavyTestCommand(Guid Marker) : ICommand, IHeavyCommand;
+
+    [Fact]
+    public async Task EnqueueCommandAsync_HeavyCommand_PublishesToHeavyTopic()
+    {
+        var harness = new Harness();
+        harness.SessionContext.Setup(s => s.Current).Returns(SessionContext.Empty());
+
+        await harness.Sut.EnqueueCommandAsync(new HeavyTestCommand(Guid.NewGuid()));
+
+        harness.MessageBus.Verify(
+            b => b.PublishAsync(HeavyCommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        harness.MessageBus.Verify(
+            b => b.PublishAsync(CommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 
     [Fact]
     public async Task EnqueueCommandAsync_DirectPublishSucceeds_DoesNotWriteToOutbox()
@@ -152,6 +171,9 @@ public class CommandOutboxDispatcherTests
         public Harness()
         {
             MessagingIdentifier.SetupGet(m => m.CommandTopic).Returns(CommandTopic);
+            MessagingIdentifier.SetupGet(m => m.HeavyCommandTopic).Returns(HeavyCommandTopic);
+            MessagingIdentifier.Setup(m => m.GetCommandTopic(It.IsAny<Type>()))
+                .Returns<Type>(t => IMessagingIdentifier.IsHeavy(t) ? HeavyCommandTopic : CommandTopic);
             UnitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Transaction.Object);
             UnitOfWork.Setup(u => u.CreateOutboxRepository(It.IsAny<ITransaction>())).Returns(OutboxRepository.Object);
             PipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(ResiliencePipeline.Empty);

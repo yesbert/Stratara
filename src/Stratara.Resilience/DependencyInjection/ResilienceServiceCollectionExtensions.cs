@@ -12,8 +12,8 @@ public static class ResilienceServiceCollectionExtensions
 {
     /// <summary>
     /// Register every Stratara named resilience pipeline (<see cref="ResilienceNames.MessageBus"/>,
-    /// <see cref="ResilienceNames.CommandDispatcher"/>, <see cref="ResilienceNames.EventBundleDispatcher"/>)
-    /// with the application's Polly registry.
+    /// <see cref="ResilienceNames.CommandDispatcher"/>, <see cref="ResilienceNames.EventBundleDispatcher"/>,
+    /// <see cref="ResilienceNames.ConcurrencyConflict"/>) with the application's Polly registry.
     /// </summary>
     /// <remarks>
     /// Idempotent — subsequent calls re-register the same pipelines, which Polly tolerates by
@@ -27,6 +27,7 @@ public static class ResilienceServiceCollectionExtensions
         services.AddMessageBusResilience();
         services.AddCommandDispatcherPipeline();
         services.AddEventBundleDispatcherPipeline();
+        services.AddConcurrencyConflictPipeline();
         return services;
     }
 
@@ -45,6 +46,12 @@ public static class ResilienceServiceCollectionExtensions
     private static IServiceCollection AddEventBundleDispatcherPipeline(this IServiceCollection services)
     {
         services.AddResiliencePipeline(ResilienceNames.EventBundleDispatcher, ResilienceFactory.CreateEventBundleDispatcherPipeline);
+        return services;
+    }
+
+    private static IServiceCollection AddConcurrencyConflictPipeline(this IServiceCollection services)
+    {
+        services.AddResiliencePipeline(ResilienceNames.ConcurrencyConflict, ResilienceFactory.CreateConcurrencyConflictPipeline);
         return services;
     }
 }
