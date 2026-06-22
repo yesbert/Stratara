@@ -1,6 +1,6 @@
 # Stratara.EventSourcing.EntityFrameworkCore
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 EF Core persistence for the Stratara event-sourced stack — PostgreSQL flavoured via Npgsql + pgvector. Bundles four previously-separate Stratara projects into one NuGet because they always ship together:
 

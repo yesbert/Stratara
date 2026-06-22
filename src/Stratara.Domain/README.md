@@ -1,6 +1,6 @@
 # Stratara.Domain
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 The Stratara framework's concrete multitenancy domain — the `Tenant` aggregate and its event vocabulary. Use this when your application wants Stratara's opinionated tenant model (one tenant per customer, lifecycle events for activate / deactivate / rename / locale-change / assignment) and the corresponding aggregate.
 

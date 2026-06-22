@@ -1,6 +1,6 @@
 # Stratara.Abstractions
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Contract interfaces and wire-level POCO records for the Stratara framework. Library-safe — depends only on `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Logging.Abstractions`, and `Stratara.Contracts`. No EF Core or message-bus runtime.
 

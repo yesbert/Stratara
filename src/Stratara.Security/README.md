@@ -1,6 +1,6 @@
 # Stratara.Security
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Dependency-light key store and envelope encryption for Stratara. Provides a production
 `IKeyStore` with KEK-wrapped, versioned per-scope data-encryption keys (rotation, revoke, and

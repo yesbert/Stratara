@@ -1,6 +1,6 @@
 # Stratara.Resilience
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Polly-based named resilience pipelines pre-wired for Stratara's messaging + outbox dispatch paths.
 

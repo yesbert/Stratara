@@ -1,6 +1,6 @@
 # Stratara.Mediator
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 In-process mediator with DI-resolved handlers and pipeline behaviors. Drop-in replacement for MediatR-style routing without the runtime cost of `MethodInfo.Invoke` — uses a typed wrapper cache and direct DI dispatch.
 

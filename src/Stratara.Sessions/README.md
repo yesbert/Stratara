@@ -1,6 +1,6 @@
 # Stratara.Sessions
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Concrete session-context provider + ASP.NET Core middleware for Stratara's Actor/Subject session model. Reads tenant + user identity from JWT claims (with optional `X-Tenant-Id` / `X-Client-Id` header fallbacks), populates the ambient `ISessionContextProvider`, and exposes the Actor/Subject pair to every request.
 

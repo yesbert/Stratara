@@ -1,6 +1,6 @@
 # Stratara.ServiceDefaults.AspNetCore
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 ASP.NET Core extensions on top of `Stratara.ServiceDefaults`. Reference from every API host.
 

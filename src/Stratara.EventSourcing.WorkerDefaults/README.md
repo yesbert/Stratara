@@ -1,6 +1,6 @@
 # Stratara.EventSourcing.WorkerDefaults
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 One-stop `IHostApplicationBuilder` composites that wire together the Stratara event-sourced stack for each host shape (API, command worker, event-projection worker, saga worker, event-stream-hash worker, outbox worker). Reference this package from each host instead of repeating the per-concern DI call chain.
 

@@ -1,6 +1,6 @@
 # Stratara.Identity.AspNetCore
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Channel-agnostic ASP.NET Core identity wiring for the Stratara stack. Provides the `AddAspNetIdentity` / `AddAspNetIdentityWithSignInManager` extension methods and an `IStrataraSignInManager` wrapper around the ASP.NET Core `SignInManager`. Channel-specific glue (Blazor Server's `AuthenticationStateProvider`, MAUI session-state forwarders, etc.) is the consumer's responsibility — Stratara intentionally stops at the ASP.NET-Core-generic surface to stay application-agnostic.
 

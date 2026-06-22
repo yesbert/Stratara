@@ -10,7 +10,7 @@
 
         <!-- Lockstep version across the whole Stratara NuGet family. Bumped together
              even when only one package changed (Microsoft.Extensions.* convention). -->
-        <VersionPrefix>3.1.5</VersionPrefix>
+        <VersionPrefix>3.1.6</VersionPrefix>
         <VersionSuffix Condition="'$(ContinuousIntegrationBuild)' != 'true'">dev</VersionSuffix>
 
         <ContinuousIntegrationBuild Condition="'$(TF_BUILD)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
@@ -42,9 +42,10 @@
         <PackageProjectUrl>https://github.com/yesbert/Stratara</PackageProjectUrl>
         <RepositoryUrl>https://github.com/yesbert/Stratara.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <!-- FSL-1.1-MIT is not on the SPDX license list, so the license must be embedded as a file
-             rather than referenced via PackageLicenseExpression. See LICENSE at the repo root. -->
-        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <!-- MIT is an SPDX-listed license, so it is referenced via the SPDX expression. nuget.org
+             renders this as a clickable "MIT" license label. The LICENSE file is still bundled into
+             each package via the <None Include="..\..\LICENSE"> directive in each packable csproj. -->
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>

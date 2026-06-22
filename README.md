@@ -6,7 +6,7 @@
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
-[![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/) [![GDPR Art. 17 — crypto-shredding](https://img.shields.io/badge/GDPR_Art._17-crypto--shredding-006400?logo=gnuprivacyguard&logoColor=white)](https://docs.stratara.tech/concepts/tenant-aware-encryption.html)
+[![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/) [![GDPR Art. 17 — crypto-shredding](https://img.shields.io/badge/GDPR_Art._17-crypto--shredding-006400?logo=gnuprivacyguard&logoColor=white)](https://docs.stratara.tech/concepts/tenant-aware-encryption.html)
 
 </div>
 
@@ -14,7 +14,7 @@
 
 Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 24 NuGet packages for .NET 10. Opt in à la carte.
 
-> **License:** Stratara ships under **FSL-1.1-MIT** ([Functional Source License 1.1 with MIT Future License](LICENSE)). Source-available, **not OSI-approved OSS** — see [License](#license) before adoption.
+> **License:** Stratara ships under the **MIT License** ([LICENSE](LICENSE)) — OSI-approved open source, free for any use including commercial.
 
 ## Why Stratara
 
@@ -79,7 +79,7 @@ Stratara is the integrated CQRS / Event Sourcing / audit stack we built for our 
 
 We're publishing it because the .NET ecosystem deserves these primitives without the composition tax of stitching together Marten + Wolverine + MassTransit + your own crypto layer. Compliance-relevant integrity (GDPR Article 17 via crypto-shredding, SOC 2 audit-trail, HIPAA data integrity) should not be locked behind a license tier — it should be how the storage layer works by default.
 
-The **FSL-1.1-MIT** license is our two-part commitment: source-available today (with a no-direct-competition clause), automatic conversion to plain MIT two years after each release. Stratara becomes true open source, version by version, on a schedule everyone can plan around. The clock has started with v3.0.20.
+That's why Stratara ships under the **MIT License** — true open source, free for any use including commercial, with no competition clause and no time-delay. Take what you need, fork it, build on it.
 
 ## Documentation
 
@@ -185,9 +185,9 @@ Lockstep across the whole family — one `<VersionPrefix>` in `Directory.Build.p
 
 ## License
 
-**FSL-1.1-MIT** — [Functional Source License 1.1 with MIT Future License](LICENSE).
+**MIT** — see [`LICENSE`](LICENSE).
 
-You may use Stratara for any purpose other than building a directly competing product. After **two years**, each released version converts to plain **MIT** under the FSL "Grant of Future License" clause. The full MIT future-license text is included in the [`LICENSE`](LICENSE) file.
+Stratara is OSI-approved open source. You may use, copy, modify, and distribute it for any purpose — including commercial — subject only to the MIT License's attribution requirement.
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 # Stratara.Infrastructure
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Cross-cutting infrastructure plumbing for the Stratara framework — the Tier-C glue that lets downstream apps wire authorization, DI composition, and worker-stack configuration with a single reference.
 

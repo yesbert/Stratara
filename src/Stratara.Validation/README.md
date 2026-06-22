@@ -1,6 +1,6 @@
 # Stratara.Validation
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Vendor-neutral request validation for Stratara's CQRS pipeline. A mediator pipeline behavior
 runs your `IValidator<T>` implementations before the handler and throws an aggregated

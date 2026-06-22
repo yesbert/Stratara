@@ -1,6 +1,6 @@
 # Stratara.Shared
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Umbrella of shared utilities for the Stratara framework. Re-exports the Tier-A/B stack (Abstractions, Contracts, Diagnostics, Domain, Resilience, SessionContext) so consumers can pull one package and reach every common type.
 

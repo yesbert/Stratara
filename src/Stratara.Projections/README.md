@@ -1,6 +1,6 @@
 # Stratara.Projections
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Projection runtime for the Stratara event-sourced stack. Discovers `IProjection` implementations in the consumer's application assemblies, dispatches event bundles to them, and applies the resulting change sets atomically via the read-model repository layer.
 

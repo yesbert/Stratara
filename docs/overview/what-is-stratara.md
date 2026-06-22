@@ -57,6 +57,6 @@ The architecture is strict: **no consumer-specific code** lives in the framework
 
 ## License + versioning
 
-- Source-available under [FSL-1.1-MIT](https://fsl.software/) — converts to MIT after 2 years.
+- Licensed under the [MIT License](https://opensource.org/license/mit) — OSI-approved open source, free for any use including commercial.
 - Lockstep versioning — all 24 packages ship at the same `<VersionPrefix>`.
 - See `CHANGELOG.md` in the repo root for release notes.

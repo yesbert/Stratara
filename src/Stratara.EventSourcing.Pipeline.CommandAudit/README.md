@@ -1,6 +1,6 @@
 # Stratara.EventSourcing.Pipeline.CommandAudit
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Mediator pipeline behavior that records an audit row for every dispatched command in the Stratara event-sourced stack. Both arities are provided so consumers can register a single behavior pair and have it apply to all command shapes.
 

@@ -1,6 +1,6 @@
 # Stratara.Contracts
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Wire-level POCO contracts shared by every Stratara package. Pure data records — no runtime, no DI, no infrastructure deps. Safe to reference from any layer.
 

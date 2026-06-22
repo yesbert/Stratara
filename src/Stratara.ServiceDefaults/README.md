@@ -1,6 +1,6 @@
 # Stratara.ServiceDefaults
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Cross-host observability + service-discovery defaults for the Stratara stack. Reference from every host (API, worker) to get OpenTelemetry + Serilog wired up with sensible defaults.
 

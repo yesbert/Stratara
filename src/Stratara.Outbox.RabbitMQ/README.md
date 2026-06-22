@@ -1,6 +1,6 @@
 # Stratara.Outbox.RabbitMQ
 
-> **License:** [FSL-1.1-MIT](../../LICENSE) (Functional Source License — source-available; converts to MIT after 2 years). Not OSI-approved OSS.
+> **License:** [MIT](../../LICENSE).
 
 Outbox-pattern command + event dispatch for the Stratara event-sourced stack with a RabbitMQ / Azure Service Bus message-bus implementation. Contains the write-side dispatchers, the outbox-retry worker, the read-side mediator command worker, the message-bus implementations, and the Redis-backed `ProjectionReplayState` that coordinates dispatch skip during projection replay.
 

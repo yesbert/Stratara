@@ -16,6 +16,21 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+## [3.1.6] — 2026-06-22
+
+### Changed
+
+- **License changed from FSL-1.1-MIT to the MIT License.** Stratara is now OSI-approved open
+  source — free for any use, including commercial, with no competition clause and no two-year
+  conversion delay. The previous Functional Source License (source-available, converting to MIT
+  two years after each release) has been replaced outright. Package metadata now declares the
+  SPDX expression `MIT` (`PackageLicenseExpression`), so nuget.org renders a standard clickable
+  MIT license label instead of an embedded custom-license file. The `LICENSE` file at the repo
+  root now contains the standard MIT text and is still bundled into every package. No code or API
+  changes accompany this — it is purely a licensing and metadata change. Previously published
+  versions (3.0.20 through 3.1.5) remain under the FSL terms they shipped with; this change applies
+  to all versions released from here on.
+
 ## [3.1.5] — 2026-06-22
 
 ### Added
@@ -2079,7 +2094,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.5...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.6...main
+[3.1.6]: https://github.com/yesbert/Stratara/releases/tag/v3.1.6
 [3.1.5]: https://github.com/yesbert/Stratara/releases/tag/v3.1.5
 [3.1.4]: https://github.com/yesbert/Stratara/releases/tag/v3.1.4
 [3.1.3]: https://github.com/yesbert/Stratara/releases/tag/v3.1.3

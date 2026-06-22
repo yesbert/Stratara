@@ -49,6 +49,6 @@ agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-Stratara is licensed under [FSL-1.1-MIT](LICENSE). Filing an issue does not transfer
+Stratara is licensed under the [MIT License](LICENSE). Filing an issue does not transfer
 any IP to the project — but any code you might contribute in the future (once PRs
 are accepted) would be licensed under the same terms.
