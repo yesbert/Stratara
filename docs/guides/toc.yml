@@ -18,5 +18,7 @@
   href: outbox-setup-azureservicebus.md
 - name: Bus-Envelope Integrity (HMAC)
   href: hmac-bus-envelope.md
+- name: Configure Snapshots
+  href: configure-snapshots.md
 - name: Testing Patterns
   href: testing-patterns.md

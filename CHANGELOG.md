@@ -16,6 +16,31 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+## [3.1.5] — 2026-06-22
+
+### Added
+
+- **Configurable snapshot strategy** (`Stratara.Abstractions`, `Stratara.Infrastructure`) — the
+  snapshot cadence is no longer hard-coded. A new `Stratara.Abstractions.EventSourcing.ISnapshotStrategy`
+  decides, per stream, whether the event-sourcing runtime should write a snapshot:
+  `bool ShouldSnapshot(Type aggregateType, long currentVersion, long lastSnapshotVersion)`.
+  `AddEventSourcing()` registers the default `VersionThresholdSnapshotStrategy` (snapshot every 50
+  versions — identical to the previous behaviour) via `TryAddSingleton`, so existing consumers see no
+  change. To take over the policy, register your own singleton `ISnapshotStrategy` (it overrides the
+  default whether registered before or after `AddEventSourcing()`): vary the threshold per aggregate
+  type, construct `new VersionThresholdSnapshotStrategy(threshold)` for a different uniform cadence, or
+  register `NoSnapshotStrategy` to disable snapshotting entirely. This replaces the previously
+  hard-coded `UseSnapshots`/`SnapshotRange` constants in the default snapshot service, which were not
+  actually configurable despite the documentation implying they were.
+- **`AddDomainEventTypesFromAssemblyContaining<T>()`** (`Stratara.Abstractions`) — registers *only* the
+  domain event types consumed by an assembly's aggregate `Apply(TEvent)` methods in the trusted-type
+  resolver, without registering the aggregate types themselves and without pulling any projection / saga
+  / command-handler classes into DI. Use it in a host that only needs to deserialize event payloads off
+  the message bus or event stream — typically a dedicated projection or saga worker — but must not wire
+  the handler classes (and their runtime dependencies) that `AddProjectionsFromAssemblyContaining<T>`
+  would register. Complements the existing `AddAggregatesFromAssemblyContaining<T>` (which additionally
+  registers the aggregate types) and `AddTrustedType<T>` (single type).
+
 ## [3.1.4] — 2026-06-15
 
 ### Added
@@ -2054,7 +2079,9 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.3...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.5...main
+[3.1.5]: https://github.com/yesbert/Stratara/releases/tag/v3.1.5
+[3.1.4]: https://github.com/yesbert/Stratara/releases/tag/v3.1.4
 [3.1.3]: https://github.com/yesbert/Stratara/releases/tag/v3.1.3
 [3.1.2]: https://github.com/yesbert/Stratara/releases/tag/v3.1.2
 [3.1.1]: https://github.com/yesbert/Stratara/releases/tag/v3.1.1

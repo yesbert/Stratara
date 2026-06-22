@@ -28,8 +28,8 @@ These tell Stratara *what* to dispatch / project / saga. Call once per assembly 
 | `services.AddQueryHandlersFromAssemblyContaining<T>()` | `IQueryHandler<TQuery, TResult>` | Per-handler `AddScoped` |
 | `services.AddProjectionsFromAssemblyContaining<T>()` | `IProjection` impls + their `HandleAsync(SomeEvent)` overloads | Per-projection `AddSingleton<IProjection>` + event-allowlist registration |
 | `services.AddSagasFromAssemblyContaining<T>()` | `ISaga` impls + their `HandleAsync(SomeEvent)` overloads | Per-saga `AddSingleton<ISaga>` + event-allowlist registration |
-| `services.AddAggregatesFromAssemblyContaining<T>()` | `IAggregate` impls + their `Apply(SomeEvent)` methods | Adds each aggregate + each apply-target type to `ITrustedTypeResolver` |
-| `services.AddDomainEventTypesFromAssemblyContaining<T>()` | Types matching event marker conventions | Adds them to `ITrustedTypeResolver` |
+| `services.AddAggregatesFromAssemblyContaining<T>()` | `IAggregate` impls + their `Apply(SomeEvent)` methods | Adds each aggregate **and** each apply-target event type to `ITrustedTypeResolver` |
+| `services.AddDomainEventTypesFromAssemblyContaining<T>()` | The `Apply(SomeEvent)` parameter types of the assembly's aggregates | Adds **only** those event types to `ITrustedTypeResolver` — no aggregate types, no handler classes. For event-only hosts (projection/saga workers) that must deserialize bus/stream payloads without wiring handler dependencies |
 
 ## Security + integrity
 

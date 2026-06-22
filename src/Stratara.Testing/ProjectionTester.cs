@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Stratara.Abstractions.EventSourcing;
 
@@ -49,6 +50,9 @@ public static class ProjectionTester
             $"or '{HandlerMethodName}({typeof(TData).Name}, CancellationToken)' method.");
     }
 
+    [SuppressMessage("Major Code Smell", "S3011:Reflection should not be used to increase accessibility of classes, methods, or fields",
+        Justification = "Stratara projections declare HandleAsync as a non-public member (the runtime discovers it by reflection); " +
+                        "this test helper must reflect over non-public members to invoke the handler under test.")]
     private static MethodInfo? FindHandler(Type projectionType, Type firstParameterType) =>
         projectionType
             .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Infrastructure.EventSourcing;
 using Stratara.Abstractions.EventSourcing;
 
@@ -11,8 +12,14 @@ public static class EventSourcingServiceCollectionExtensions
     /// <summary>
     /// Registers the core event-sourcing services as scoped: <see cref="IEventSource"/>,
     /// <see cref="IAggregationService"/>, <see cref="IChangeSetHandler"/>, <see cref="IEventTypeResolver"/>,
-    /// and <see cref="ISnapshotService"/>.
+    /// and <see cref="ISnapshotService"/>. Also contributes the default
+    /// <see cref="VersionThresholdSnapshotStrategy"/> via <c>TryAddSingleton</c>.
     /// </summary>
+    /// <remarks>
+    /// To control the snapshot cadence — vary it per aggregate type, change the threshold, or
+    /// disable snapshots with <see cref="NoSnapshotStrategy"/> — register your own singleton
+    /// <see cref="ISnapshotStrategy"/>. A custom registration overrides the default.
+    /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddEventSourcing(this IServiceCollection services)
@@ -22,6 +29,7 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IChangeSetHandler, ChangeSetHandler>();
         services.AddScoped<IEventTypeResolver, EventTypeResolver>();
         services.AddScoped<ISnapshotService, SnapshotService>();
+        services.TryAddSingleton<ISnapshotStrategy, VersionThresholdSnapshotStrategy>();
         return services;
     }
 

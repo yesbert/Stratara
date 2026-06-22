@@ -121,10 +121,10 @@ public static class OpenTelemetryExtensions
     private const string OtlpTimeoutKey = "OTEL_EXPORTER_OTLP_TIMEOUT";
     private const string DefaultOtlpTimeoutMilliseconds = "5000";
 
-    private static TBuilder AddOpenTelemetryExporters<TBuilder>(this TBuilder builder)
+    private static void AddOpenTelemetryExporters<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
-        if (string.IsNullOrWhiteSpace(builder.Configuration[OtlpEndpointKey])) return builder;
+        if (string.IsNullOrWhiteSpace(builder.Configuration[OtlpEndpointKey])) return;
 
         if (string.IsNullOrWhiteSpace(builder.Configuration[OtlpTimeoutKey])
             && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(OtlpTimeoutKey)))
@@ -133,7 +133,5 @@ public static class OpenTelemetryExtensions
         }
 
         builder.Services.AddOpenTelemetry().UseOtlpExporter();
-
-        return builder;
     }
 }

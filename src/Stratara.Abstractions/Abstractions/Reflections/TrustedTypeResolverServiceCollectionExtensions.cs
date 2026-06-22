@@ -65,23 +65,64 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     public static IServiceCollection AddAggregatesFromAssemblyContaining<T>(this IServiceCollection services)
     {
         var resolver = GetOrAddResolver(services);
-        var assembly = typeof(T).Assembly;
-        foreach (var aggregateType in assembly.GetTypes()
-                     .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IAggregate).IsAssignableFrom(t)))
+        foreach (var aggregateType in DiscoverAggregateTypes(typeof(T).Assembly))
         {
             resolver.Register(aggregateType);
-            foreach (var applyMethod in aggregateType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                         .Where(m => m.Name == "Apply"))
-            {
-                var parameters = applyMethod.GetParameters();
-                if (parameters.Length != 1)
-                {
-                    continue;
-                }
-                resolver.Register(parameters[0].ParameterType);
-            }
+            RegisterApplyEventParameters(resolver, aggregateType);
         }
         return services;
+    }
+
+    /// <summary>
+    /// Scans the assembly containing <typeparamref name="T"/> and registers <strong>only</strong> the
+    /// event types consumed by the aggregates' <c>Apply(TEvent)</c> methods — without registering the
+    /// aggregate types themselves and without registering any projection / saga / command-handler
+    /// classes into DI.
+    /// </summary>
+    /// <typeparam name="T">A marker type from the assembly that contains the aggregates and their events.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Use this in a host that only needs to <em>deserialize</em> event payloads coming off the message
+    /// bus or event stream — typically a dedicated projection or saga worker — but must not pull the
+    /// aggregate or its handler classes into the container, because those handlers depend on runtime
+    /// services the worker does not wire. <c>AddProjectionsFromAssemblyContaining&lt;T&gt;</c> would
+    /// register both the event types and the handler classes; this method registers the event types
+    /// alone.
+    /// </para>
+    /// <para>
+    /// Discovery follows the same convention as <see cref="AddAggregatesFromAssemblyContaining{T}"/>:
+    /// every public, single-parameter instance method named <c>Apply</c> on a concrete
+    /// <see cref="IAggregate"/> contributes its parameter type to the allowlist.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddDomainEventTypesFromAssemblyContaining<T>(this IServiceCollection services)
+    {
+        var resolver = GetOrAddResolver(services);
+        foreach (var aggregateType in DiscoverAggregateTypes(typeof(T).Assembly))
+        {
+            RegisterApplyEventParameters(resolver, aggregateType);
+        }
+        return services;
+    }
+
+    private static IEnumerable<Type> DiscoverAggregateTypes(Assembly assembly) =>
+        assembly.GetTypes()
+            .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IAggregate).IsAssignableFrom(t));
+
+    private static void RegisterApplyEventParameters(TrustedTypeResolver resolver, Type aggregateType)
+    {
+        foreach (var applyMethod in aggregateType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                     .Where(m => m.Name == "Apply"))
+        {
+            var parameters = applyMethod.GetParameters();
+            if (parameters.Length != 1)
+            {
+                continue;
+            }
+            resolver.Register(parameters[0].ParameterType);
+        }
     }
 
     /// <summary>

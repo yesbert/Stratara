@@ -9,31 +9,26 @@ using Stratara.Shared.Reflections;
 namespace Stratara.Infrastructure.EventSourcing;
 
 /// <summary>
-/// Default <see cref="ISnapshotService"/> that adds a snapshot for any stream whose version has
-/// advanced by at least <c>SnapshotRange</c> (50) events since the last snapshot.
+/// Default <see cref="ISnapshotService"/> that delegates the snapshot decision to the registered
+/// <see cref="ISnapshotStrategy"/> and persists a fresh snapshot whenever the strategy approves.
 /// </summary>
 /// <remarks>
 /// Snapshots are tenant-scoped and persisted through <see cref="ISecureJsonSerializer"/> (tenant
-/// AAD). Disabling snapshots globally toggles <c>UseSnapshots</c> off (default: enabled).
+/// AAD). The cadence (and whether snapshots run at all) is owned entirely by the injected
+/// <see cref="ISnapshotStrategy"/>; the default <see cref="VersionThresholdSnapshotStrategy"/>
+/// snapshots every 50 versions, and <see cref="NoSnapshotStrategy"/> turns snapshotting off.
 /// </remarks>
 internal sealed class SnapshotService(
     IAggregationService aggregationService,
     IEventMapperFactory eventMapperFactory,
     ISecureJsonSerializer serializer,
     IWriteUnitOfWork unitOfWork,
-    ITrustedTypeResolver typeResolver) : ISnapshotService
+    ITrustedTypeResolver typeResolver,
+    ISnapshotStrategy snapshotStrategy) : ISnapshotService
 {
-    private static readonly bool UseSnapshots = true;
-    private static readonly int SnapshotRange = 50;
-
     /// <inheritdoc/>
     public async Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default)
     {
-        if (!UseSnapshots)
-        {
-            return;
-        }
-
         var streamGroups = eventStreamEntries.GroupBy(x => x.StreamId);
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
@@ -65,9 +60,9 @@ internal sealed class SnapshotService(
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
         var snapshotVersion = await snapshotRepository.GetLatestVersionOrDefaultAsync(streamId, cancellationToken);
-        var versionDifference = currentVersion - snapshotVersion;
+        var aggregateType = typeResolver.Resolve(streamEntries[0].AggregateTypeName);
 
-        return versionDifference >= SnapshotRange;
+        return snapshotStrategy.ShouldSnapshot(aggregateType, currentVersion, snapshotVersion);
     }
 
     private async Task<Snapshot> CreateSnapshot(Guid streamId, List<EventStreamEntry> streamEntries, CancellationToken cancellationToken)

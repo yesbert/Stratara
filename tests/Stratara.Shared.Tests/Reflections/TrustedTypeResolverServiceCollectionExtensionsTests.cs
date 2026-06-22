@@ -150,6 +150,52 @@ public class TrustedTypeResolverServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddDomainEventTypesFromAssemblyContaining_RegistersApplyEventParametersOnly()
+    {
+        var services = new ServiceCollection();
+
+        services.AddDomainEventTypesFromAssemblyContaining<FakeAggregateWithApplyMethods>();
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+
+        Assert.Contains(resolver.RegisteredTypes, t => t == typeof(FakeAggregateCreated));
+        Assert.Contains(resolver.RegisteredTypes, t => t == typeof(FakeAggregateRenamed));
+    }
+
+    [Fact]
+    public void AddDomainEventTypesFromAssemblyContaining_DoesNotRegisterAggregateTypes()
+    {
+        var services = new ServiceCollection();
+
+        services.AddDomainEventTypesFromAssemblyContaining<FakeAggregateWithApplyMethods>();
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+
+        Assert.DoesNotContain(resolver.RegisteredTypes, t => t == typeof(FakeAggregateWithApplyMethods));
+        Assert.DoesNotContain(resolver.RegisteredTypes, t => t == typeof(FakeAggregateOne));
+        Assert.DoesNotContain(resolver.RegisteredTypes, t => t == typeof(FakeAggregateTwo));
+    }
+
+    [Fact]
+    public void AddDomainEventTypesFromAssemblyContaining_IgnoresApplyOverloadsThatAreNotSingleParameter()
+    {
+        var services = new ServiceCollection();
+
+        services.AddDomainEventTypesFromAssemblyContaining<FakeAggregateWithApplyMethods>();
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+
+        Assert.DoesNotContain(resolver.RegisteredTypes, t => t == typeof(UnrelatedEvent));
+    }
+
+    [Fact]
+    public void AddDomainEventTypesFromAssemblyContaining_ReturnsSameCollection()
+    {
+        var services = new ServiceCollection();
+
+        var result = services.AddDomainEventTypesFromAssemblyContaining<FakeAggregateWithApplyMethods>();
+
+        Assert.Same(services, result);
+    }
+
+    [Fact]
     public void GetOrAddResolver_CreatesNewWhenNothingRegistered()
     {
         var services = new ServiceCollection();

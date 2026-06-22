@@ -34,8 +34,18 @@ public class SnapshotServiceTests
             _eventMapperFactoryMock.Object,
             _serializerMock.Object,
             _unitOfWorkMock.Object,
-            _typeResolver);
+            _typeResolver,
+            new VersionThresholdSnapshotStrategy());
     }
+
+    private SnapshotService CreateService(ISnapshotStrategy strategy) =>
+        new(
+            _aggregationServiceMock.Object,
+            _eventMapperFactoryMock.Object,
+            _serializerMock.Object,
+            _unitOfWorkMock.Object,
+            _typeResolver,
+            strategy);
 
     private sealed class TestAggregate
     {
@@ -200,5 +210,69 @@ public class SnapshotServiceTests
             It.IsAny<CancellationToken>()), Times.Once);
 
         _transactionMock.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddSnapshotIfNeeded_NoSnapshotStrategy_NeverSnapshots()
+    {
+        var streamId = Guid.NewGuid();
+        var entries = Enumerable.Range(1, 200).Select(i => CreateEntry(streamId, i)).ToList();
+        var service = CreateService(new NoSnapshotStrategy());
+
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+
+        await service.AddSnapshotIfNeededAsync(entries);
+
+        _snapshotRepoMock.Verify(r => r.AddAsync(It.IsAny<Snapshot>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddSnapshotIfNeeded_CustomThresholdStrategy_SnapshotsBelowDefaultRange()
+    {
+        var streamId = Guid.NewGuid();
+        var entries = Enumerable.Range(1, 10).Select(i => CreateEntry(streamId, i)).ToList();
+        var aggregate = new TestAggregate { Name = "Custom" };
+        var service = CreateService(new VersionThresholdSnapshotStrategy(threshold: 10));
+
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(aggregate);
+        _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
+
+        await service.AddSnapshotIfNeededAsync(entries);
+
+        _snapshotRepoMock.Verify(r => r.AddAsync(It.IsAny<Snapshot>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddSnapshotIfNeeded_PassesResolvedAggregateTypeAndVersionsToStrategy()
+    {
+        var streamId = Guid.NewGuid();
+        var entries = Enumerable.Range(51, 30).Select(i => CreateEntry(streamId, i)).ToList();
+        var recording = new RecordingSnapshotStrategy();
+        var service = CreateService(recording);
+
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(50L);
+
+        await service.AddSnapshotIfNeededAsync(entries);
+
+        Assert.Equal(typeof(TestAggregate), recording.AggregateType);
+        Assert.Equal(80L, recording.CurrentVersion);
+        Assert.Equal(50L, recording.LastSnapshotVersion);
+    }
+
+    private sealed class RecordingSnapshotStrategy : ISnapshotStrategy
+    {
+        public Type? AggregateType { get; private set; }
+        public long CurrentVersion { get; private set; }
+        public long LastSnapshotVersion { get; private set; }
+
+        public bool ShouldSnapshot(Type aggregateType, long currentVersion, long lastSnapshotVersion)
+        {
+            AggregateType = aggregateType;
+            CurrentVersion = currentVersion;
+            LastSnapshotVersion = lastSnapshotVersion;
+            return false;
+        }
     }
 }

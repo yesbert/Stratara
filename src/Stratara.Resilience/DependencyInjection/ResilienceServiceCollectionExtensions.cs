@@ -31,27 +31,23 @@ public static class ResilienceServiceCollectionExtensions
         return services;
     }
 
-    private static IServiceCollection AddMessageBusResilience(this IServiceCollection services)
+    private static void AddMessageBusResilience(this IServiceCollection services)
     {
         services.AddResiliencePipeline(ResilienceNames.MessageBus, ResilienceFactory.CreateMessageBusPipeline);
-        return services;
     }
 
-    private static IServiceCollection AddCommandDispatcherPipeline(this IServiceCollection services)
+    private static void AddCommandDispatcherPipeline(this IServiceCollection services)
     {
         services.AddResiliencePipeline(ResilienceNames.CommandDispatcher, ResilienceFactory.CreateCommandDispatcherPipeline);
-        return services;
     }
 
-    private static IServiceCollection AddEventBundleDispatcherPipeline(this IServiceCollection services)
+    private static void AddEventBundleDispatcherPipeline(this IServiceCollection services)
     {
         services.AddResiliencePipeline(ResilienceNames.EventBundleDispatcher, ResilienceFactory.CreateEventBundleDispatcherPipeline);
-        return services;
     }
 
-    private static IServiceCollection AddConcurrencyConflictPipeline(this IServiceCollection services)
+    private static void AddConcurrencyConflictPipeline(this IServiceCollection services)
     {
         services.AddResiliencePipeline(ResilienceNames.ConcurrencyConflict, ResilienceFactory.CreateConcurrencyConflictPipeline);
-        return services;
     }
 }

@@ -64,6 +64,21 @@ You also need a worker host that runs the projection worker. Typically:
 builder.AddEventProjectionWorkerServices();
 ```
 
+### Event-only hosts (no handler dependencies)
+
+`AddProjectionsFromAssemblyContaining<T>()` registers both the event types (in the trusted-type
+allowlist, so payloads can be deserialised) **and** the projection handler classes (in DI). If you run
+a host that must deserialise events off the bus or stream but should *not* wire the handler classes —
+for example a worker whose projections depend on runtime services it deliberately doesn't compose —
+register just the event types instead:
+
+```csharp
+services.AddDomainEventTypesFromAssemblyContaining<AccountOpened>();
+```
+
+This adds only the aggregates' `Apply(SomeEvent)` parameter types to the allowlist — no aggregate
+types, no handler classes. See the [DI Extensions Cheatsheet](../reference/di-extensions-cheatsheet.md).
+
 ## Idempotency
 
 Sagas + projections must be **idempotent**: the bus can replay event bundles after a transient broker outage. Two common patterns:
