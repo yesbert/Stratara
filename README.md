@@ -6,7 +6,7 @@
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
-[![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/) [![GDPR Art. 17 — crypto-shredding](https://img.shields.io/badge/GDPR_Art._17-crypto--shredding-006400?logo=gnuprivacyguard&logoColor=white)](https://docs.stratara.tech/concepts/tenant-aware-encryption.html)
+[![CI](https://github.com/yesbert/Stratara/actions/workflows/ci.yml/badge.svg)](https://github.com/yesbert/Stratara/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/) [![GDPR Art. 17 — crypto-shredding](https://img.shields.io/badge/GDPR_Art._17-crypto--shredding-006400?logo=gnuprivacyguard&logoColor=white)](https://docs.stratara.tech/concepts/tenant-aware-encryption.html)
 
 </div>
 

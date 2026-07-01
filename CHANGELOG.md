@@ -16,6 +16,12 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Changed
+
+- **Copyright holder corrected to the full legal name "Norbert Heinz Rosenwinkel"** in the `LICENSE`
+  file and in the `Authors` / `Copyright` package metadata. No code or licensing-terms change — the
+  license remains MIT.
+
 ## [3.1.6] — 2026-06-22
 
 ### Changed

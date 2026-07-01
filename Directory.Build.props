@@ -36,8 +36,8 @@
         <!-- Shared NuGet metadata. Per-package PackageId + Description +
              PackageTags + the <None Include="icon.png|README.md"> directives
              are set inside each packable csproj. -->
-        <Authors>Norbert Rosenwinkel</Authors>
-        <Copyright>Copyright © Norbert Rosenwinkel</Copyright>
+        <Authors>Norbert Heinz Rosenwinkel</Authors>
+        <Copyright>Copyright © Norbert Heinz Rosenwinkel</Copyright>
         <Product>Stratara Framework</Product>
         <PackageProjectUrl>https://github.com/yesbert/Stratara</PackageProjectUrl>
         <RepositoryUrl>https://github.com/yesbert/Stratara.git</RepositoryUrl>

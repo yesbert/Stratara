@@ -1,0 +1,83 @@
+# Public CI — build + unit tests on the GitHub mirror.
+#
+# The authoritative CI is Azure DevOps (Pipeline 24 runs on every PR + main);
+# this workflow gives the *public* mirror a visible, independently-runnable
+# "tests passing" signal — the mirror ships src/ and tests/, so anyone can see
+# the suite go green without access to the internal pipelines.
+#
+# Triggers:
+#   - push to main: the mirror's main is advanced once per release (append-history
+#     sync), so this runs on each release commit and lights up the badge.
+#   - schedule: a weekly run keeps the badge fresh (and catches SDK/dependency
+#     drift) even between releases.
+#   - workflow_dispatch: manual re-run.
+#
+# Build + test operate on Stratara.Publish.slnf — the same solution filter
+# Pipeline 24 uses. Integration suites (*IntegrationTests) need Docker and are
+# excluded here; they run in the dedicated Azure integration pipeline.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Stratara.Publish.slnf
+
+      - name: Build (Release)
+        run: dotnet build Stratara.Publish.slnf -c Release --no-restore --nologo
+
+      - name: Unit tests (integration suites excluded — need Docker)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Mirrors the local gauntlet's test loop: run each MTP test dll directly
+          # (dotnet test on the csproj reports "Zero tests ran" with Stratara's MTP
+          # config). Projects not in Publish.slnf produce no Release dll and are
+          # skipped; *IntegrationTests are skipped by name.
+          failed=0
+          for test_proj in tests/*/*.csproj; do
+            name="$(basename "$(dirname "${test_proj}")")"
+            case "${name}" in
+              Stratara.Benchmarks) continue ;;
+              *IntegrationTests) continue ;;
+            esac
+            dll="tests/${name}/bin/Release/net10.0/${name}.dll"
+            if [[ ! -f "${dll}" ]]; then
+              echo "--- ${name} --- (no Release dll; not in Publish.slnf — skipping)"
+              continue
+            fi
+            echo ""
+            echo "--- ${name} ---"
+            if ! dotnet "${dll}"; then
+              failed=1
+            fi
+          done
+          if [[ ${failed} -ne 0 ]]; then
+            echo "Unit tests failed." >&2
+            exit 1
+          fi
