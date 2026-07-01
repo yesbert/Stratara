@@ -16,6 +16,20 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+## [3.1.7] — 2026-07-01
+
+### Added
+
+- **Event upcasting (`IEventUpcaster`).** Persisted events can now be transformed from an older
+  on-disk schema into the shape the current event record expects, applied on read before the payload
+  is deserialized. Register upcasters with `AddEventUpcaster<TUpcaster>()`; each implements
+  `IEventUpcaster` (`SourceEventTypeName` / `TargetEventTypeName` plus `JsonNode Upcast(JsonNode)`) and
+  they chain across successive schema versions (v1→v2→v3), including event-type renames — the source
+  type no longer needs to exist in the assembly. Matching ignores the assembly `Version` segment, and
+  a cyclic or duplicate-source chain is rejected. Hosts that register no upcasters are unaffected
+  (transparent pass-through). Snapshots are not upcasted — change an aggregate's shape and rebuild its
+  snapshots.
+
 ### Changed
 
 - **Copyright holder corrected to the full legal name "Norbert Heinz Rosenwinkel"** in the `LICENSE`
@@ -2100,7 +2114,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.6...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.7...main
+[3.1.7]: https://github.com/yesbert/Stratara/releases/tag/v3.1.7
 [3.1.6]: https://github.com/yesbert/Stratara/releases/tag/v3.1.6
 [3.1.5]: https://github.com/yesbert/Stratara/releases/tag/v3.1.5
 [3.1.4]: https://github.com/yesbert/Stratara/releases/tag/v3.1.4

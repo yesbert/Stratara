@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Moq;
 using Stratara.Contracts.Messages;
 using Stratara.Abstractions.EventSourcing;
@@ -12,12 +13,21 @@ public class EventMapperFactoryTests
 {
     private record UserCreated(string Name);
 
+    private sealed class DelegateUpcaster(string source, string target, Func<JsonNode, JsonNode> transform) : IEventUpcaster
+    {
+        public string SourceEventTypeName => source;
+        public string TargetEventTypeName => target;
+        public JsonNode Upcast(JsonNode payload) => transform(payload);
+    }
+
     private static TrustedTypeResolver CreateResolverWithUserCreated()
     {
         var resolver = new TrustedTypeResolver();
         resolver.Register(typeof(UserCreated));
         return resolver;
     }
+
+    private static EventUpcasterPipeline EmptyPipeline() => new([]);
 
     private static EventStreamEntry CreateEntry(Guid tenantId, Guid userId, Guid streamId, long version, object data)
     {
@@ -66,7 +76,7 @@ public class EventMapperFactoryTests
         serializer.Setup(s => s.DeserializeAsync("{}", typeof(UserCreated), tenantId, (Guid?)null, It.IsAny<CancellationToken>()))
                   .ReturnsAsync(data);
 
-        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated());
+        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated(), EmptyPipeline());
 
         // Act
         var events = await sut.MapToEventsAsync(new[] { entry });
@@ -97,7 +107,7 @@ public class EventMapperFactoryTests
         serializer.Setup(s => s.DeserializeAsync("{}", typeof(UserCreated), tenantId, (Guid?)null, It.IsAny<CancellationToken>()))
                   .ReturnsAsync(data);
 
-        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated());
+        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated(), EmptyPipeline());
 
         // Act
         var events = await sut.MapToEventsAsync(new[] { message });
@@ -131,7 +141,7 @@ public class EventMapperFactoryTests
         };
 
         var serializer = new Mock<ISecureJsonSerializer>(MockBehavior.Strict);
-        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated());
+        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated(), EmptyPipeline());
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.MapToEventsAsync(new[] { entry }));
@@ -168,7 +178,7 @@ public class EventMapperFactoryTests
         serializer.Setup(s => s.DeserializeAsync("{}", typeof(UserCreated), tenantId, (Guid?)null, It.IsAny<CancellationToken>()))
                   .ReturnsAsync(data);
 
-        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated());
+        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated(), EmptyPipeline());
 
         // Act
         var events = await sut.MapToEventsAsync(new[] { entry });
@@ -205,9 +215,60 @@ public class EventMapperFactoryTests
         serializer.Setup(s => s.DeserializeAsync("{}", dataType, tenantId, (Guid?)null, It.IsAny<CancellationToken>()))
                   .ReturnsAsync((object?)null);
 
-        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated());
+        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated(), EmptyPipeline());
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.MapToEventsAsync(new[] { entry }));
+    }
+
+    [Fact]
+    public async Task MapToEvents_Applies_Upcaster_Renaming_Type_And_Payload_Field()
+    {
+        // Arrange — the stored event is an old, since-removed type whose payload used a different
+        // field name. The upcaster renames both the type (to the current UserCreated) and the field.
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var streamId = Guid.NewGuid();
+        const string oldTypeName = "Stratara.Shared.Tests.UserRegistered, Stratara.Shared.Tests";
+
+        var entry = new EventStreamEntry
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            ActorTenantId = tenantId,
+            ActorUserId = userId,
+            StreamId = streamId,
+            Version = 1,
+            EventTypeName = oldTypeName,
+            AggregateTypeName = "Agg",
+            DataJson = "{\"fullName\":\"A\"}",
+            BucketId = 0
+        };
+
+        var upcaster = new DelegateUpcaster(oldTypeName, typeof(UserCreated).AssemblyQualifiedName!, node =>
+        {
+            var obj = node.AsObject();
+            var name = (string?)obj["fullName"];
+            obj.Remove("fullName");
+            obj["name"] = name;
+            return obj;
+        });
+        var pipeline = new EventUpcasterPipeline([upcaster]);
+
+        var serializer = new Mock<ISecureJsonSerializer>();
+        serializer.Setup(s => s.DeserializeAsync(
+                      It.Is<string>(j => j.Contains("\"name\"") && !j.Contains("fullName")),
+                      typeof(UserCreated), tenantId, (Guid?)null, It.IsAny<CancellationToken>()))
+                  .ReturnsAsync(new UserCreated("A"));
+
+        var sut = new EventMapperFactory(serializer.Object, CreateResolverWithUserCreated(), pipeline);
+
+        // Act
+        var events = await sut.MapToEventsAsync(new[] { entry });
+
+        // Assert
+        var ev = events.Single();
+        Assert.IsType<Event<UserCreated>>(ev);
+        Assert.Equal("A", ((Event<UserCreated>)ev).Data.Name);
     }
 }

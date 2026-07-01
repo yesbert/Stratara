@@ -20,7 +20,7 @@ namespace Stratara.Shared.EventSourcing.Mapping;
 /// types per host. AAD on the encrypted payload uses the subject (data-owner) tenant id, which
 /// matches <see cref="EventStreamEntry.TenantId"/>.
 /// </remarks>
-public sealed class EventMapperFactory(ISecureJsonSerializer serializer, ITrustedTypeResolver typeResolver) : IEventMapperFactory
+public sealed class EventMapperFactory(ISecureJsonSerializer serializer, ITrustedTypeResolver typeResolver, IEventUpcasterPipeline upcasterPipeline) : IEventMapperFactory
 {
     private static readonly ConcurrentDictionary<Type, EventFactoryDelegate> s_factoryCache = new();
 
@@ -48,8 +48,9 @@ public sealed class EventMapperFactory(ISecureJsonSerializer serializer, ITruste
 
     private async Task<IEvent> MapToEventAsync(EventStreamEntry entry, CancellationToken cancellationToken)
     {
-        var eventType = typeResolver.Resolve(entry.EventTypeName);
-        var data = await serializer.DeserializeAsync(entry.DataJson, eventType, entry.TenantId, entry.UserId, cancellationToken) ??
+        var upcasted = upcasterPipeline.Upcast(entry.EventTypeName, entry.DataJson);
+        var eventType = typeResolver.Resolve(upcasted.EventTypeName);
+        var data = await serializer.DeserializeAsync(upcasted.DataJson, eventType, entry.TenantId, entry.UserId, cancellationToken) ??
                    throw new InvalidOperationException("Event data could not be deserialized.");
 
         var factory = s_factoryCache.GetOrAdd(eventType, static type => CreateEventFactory(type));
@@ -58,8 +59,9 @@ public sealed class EventMapperFactory(ISecureJsonSerializer serializer, ITruste
 
     private async Task<IEvent> MapToEventEnvelopesAsync(EventMessage message, CancellationToken cancellationToken)
     {
-        var eventType = typeResolver.Resolve(message.EventTypeName);
-        var data = await serializer.DeserializeAsync(message.DataJson, eventType, message.TenantId, message.UserId, cancellationToken) ??
+        var upcasted = upcasterPipeline.Upcast(message.EventTypeName, message.DataJson);
+        var eventType = typeResolver.Resolve(upcasted.EventTypeName);
+        var data = await serializer.DeserializeAsync(upcasted.DataJson, eventType, message.TenantId, message.UserId, cancellationToken) ??
                    throw new InvalidOperationException("Event data could not be deserialized.");
 
         var factory = s_factoryCache.GetOrAdd(eventType, static type => CreateEventFactory(type));

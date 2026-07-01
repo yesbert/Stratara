@@ -21,7 +21,7 @@ public sealed class TrustedTypeResolver : ITrustedTypeResolver
     public Type Resolve(string typeName)
     {
         ArgumentNullException.ThrowIfNull(typeName);
-        var key = ToVersionIndependent(typeName);
+        var key = TypeNameNormalization.ToVersionIndependent(typeName);
         if (_types.TryGetValue(key, out var type))
         {
             return type;
@@ -36,7 +36,7 @@ public sealed class TrustedTypeResolver : ITrustedTypeResolver
     public bool TryResolve(string typeName, out Type? type)
     {
         ArgumentNullException.ThrowIfNull(typeName);
-        var key = ToVersionIndependent(typeName);
+        var key = TypeNameNormalization.ToVersionIndependent(typeName);
         return _types.TryGetValue(key, out type);
     }
 
@@ -46,7 +46,7 @@ public sealed class TrustedTypeResolver : ITrustedTypeResolver
         ArgumentNullException.ThrowIfNull(type);
         var assemblyQualifiedName = type.AssemblyQualifiedName
             ?? throw new InvalidOperationException($"Cannot register type '{type.FullName}' — no AssemblyQualifiedName.");
-        var key = ToVersionIndependent(assemblyQualifiedName);
+        var key = TypeNameNormalization.ToVersionIndependent(assemblyQualifiedName);
         _types.TryAdd(key, type);
     }
 
@@ -55,18 +55,4 @@ public sealed class TrustedTypeResolver : ITrustedTypeResolver
         Justification = "Snapshot semantics are documented on ITrustedTypeResolver.RegisteredTypes; " +
                         "only consumer is the EncryptionMetadataDriftGuard at host start-up — not a hot path.")]
     public IReadOnlyCollection<Type> RegisteredTypes => _types.Values.ToArray();
-
-    private static string ToVersionIndependent(string assemblyQualifiedName)
-    {
-        var commaIndex = assemblyQualifiedName.IndexOf(',');
-        if (commaIndex < 0)
-        {
-            return assemblyQualifiedName;
-        }
-
-        var secondCommaIndex = assemblyQualifiedName.IndexOf(',', commaIndex + 1);
-        return secondCommaIndex < 0
-            ? assemblyQualifiedName
-            : assemblyQualifiedName[..secondCommaIndex].Trim();
-    }
 }

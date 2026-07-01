@@ -20,6 +20,7 @@ public static class MappingServiceCollectionExtensions
     /// <returns>The same <paramref name="services"/> instance to allow fluent chaining.</returns>
     public static IServiceCollection AddMapping(this IServiceCollection services)
     {
+        services.AddEventUpcasterPipeline();
         services.AddSingleton<IEventMapperFactory, EventMapperFactory>();
         return services;
     }
