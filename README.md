@@ -85,6 +85,8 @@ That's why Stratara ships under the **MIT License** — true open source, free f
 
 Full docs, conceptual overview, getting-started walkthrough, guides, samples and the auto-generated API reference live at **[docs.stratara.tech](https://docs.stratara.tech)**.
 
+**Using an AI assistant?** Stratara ships an [`llms.txt`](llms.txt) at the repo root — a machine-readable index of the core interfaces, routing conventions, tier rules, and package map, following the [llms.txt convention](https://llmstxt.org). Point your assistant at it, or connect any MCP-capable client to `gitmcp.io/yesbert/Stratara` (which reads `llms.txt` first) so it grounds on current Stratara APIs instead of stale training data.
+
 ## Install
 
 ```bash
