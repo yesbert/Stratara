@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <RootNamespace>Stratara.Sample.IdentityDirectory</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Stratara.Mediator\Stratara.Mediator.csproj" />
+        <ProjectReference Include="..\..\src\Stratara.Identity.EntityFrameworkCore\Stratara.Identity.EntityFrameworkCore.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+        <PackageReference Include="OpenTelemetry.Api" />
+    </ItemGroup>
+
+</Project>

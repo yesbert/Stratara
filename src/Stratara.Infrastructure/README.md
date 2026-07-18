@@ -6,7 +6,7 @@ Cross-cutting infrastructure plumbing for the Stratara framework — the Tier-C 
 
 ## Contents
 
-- Authorization decorators over command-outbox dispatch (`AuthorizingCommandOutboxDispatcher`).
+- Authorization decorators over command-outbox dispatch (`AuthorizingCommandOutboxDispatcher`) — enforces `[RequireRole]` and `[RequirePermission]` on the command's runtime type before it reaches the outbox.
 - DI composition helpers that wire Mediator, Outbox, Identity, and EFCore into a hosted app.
 - Configuration providers and option binders used by the worker stack.
 
@@ -28,10 +28,16 @@ if (builder.Environment.IsDevelopment())
 }
 else
 {
-    builder.Services.AddSingleton<IKeyStore, AzureKeyVaultKeyStore>();  // or AwsKmsKeyStore, HsmKeyStore, ...
+    // The production key store Stratara ships (Stratara.Security): KEK-wrapped, versioned
+    // per-scope DEKs. Register it before AddSecurity() so it wins the TryAdd race.
+    builder.Services.AddStrataraFileKeyStore(builder.Configuration);
     builder.Services.AddSecurity();
 }
 ```
+
+Stratara ships one production `IKeyStore` — `EnvelopeFileKeyStore`, via `AddStrataraFileKeyStore`.
+There is no built-in Azure Key Vault / AWS KMS / HSM store; if you need one, implement `IKeyStore`
+against your provider and register it in place of the file store.
 
 `KeyStoreStartupProbe` logs a `Warning` (event id `LogEvents.KeyManagement.DummyKeyStoreActive` = `112_001`) at host start when the resolved `IKeyStore` is `DummyKeyStore` — even in Development — so an accidental dependency on the dummy is loud rather than silent.
 

@@ -6,17 +6,17 @@ _layout: landing
 
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
-Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 24 NuGet packages for .NET 10. Opt in à la carte.
+Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 25 NuGet packages for .NET 10. Opt in à la carte.
 
 ## Why Stratara
 
-🔒 **[Tamper-Evident by Design](concepts/tamper-evident-streams.md)** — Every event stream is hash-chained. Manipulate a row directly in Postgres, and the next background-worker pass raises `EventStreamCorrupted` at the exact sequence number where the chain breaks. Audit-grade integrity, not a "trust the DBA" promise.
+🔒 **[Tamper-Evident by Design](concepts/tamper-evident-streams.md)** — Every event stream is hash-chained by a background worker, and periodic anchors pin the chain head outside your infrastructure. Edit a row directly in Postgres and the chain no longer recomputes: a verification pass — your audit job, or the anchor check — names the exact sequence where it broke. The framework preserves the evidence and leaves the schedule to you; it does not scan for tampering on its own. Audit-grade evidence, not a "trust the DBA" promise.
 
 🛡️ **[Tenant-Aware Encryption](concepts/tenant-aware-encryption.md)** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*.
 
 ⚖️ **[GDPR Article 17 by Construction](concepts/tenant-aware-encryption.md)** — You can't delete an immutable event, but you can destroy the key that decrypts it. Crypto-shredding erases a subject's data everywhere it landed — events, snapshots, replicas, unreachable backups — with one `EraseScopeAsync` call. The same per-subject-key model underwrites SOC 2 / ISO 27001 and HIPAA separation.
 
-🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 24 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax.
+🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 25 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax.
 
 ## Where to start
 
@@ -39,4 +39,4 @@ A typical host wires Stratara through one of the umbrella `Add*WorkerServices` e
 
 ## Versioning
 
-Stratara ships in lockstep — all 24 packages share the same `<VersionPrefix>`. See `CHANGELOG.md` for release notes.
+Stratara ships in lockstep — all 25 packages share the same `<VersionPrefix>`. See `CHANGELOG.md` for release notes.

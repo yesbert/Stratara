@@ -17,6 +17,10 @@ or RabbitMQ testcontainers.
   list for assertions.
 - `TestSessionContext` / `TestSessionContextProvider` — preset Actor/Subject `SessionContext`
   values and an `ISessionContextProvider` double.
+- `InMemoryTenantMembershipStore` — an `ITenantMembershipStore` mirroring the EF store's contract
+  semantics, including the membership-guarded active-tenant selection and the erasure sweeps.
+- `InMemorySettingStore` — an `ISettingStore` with exact-scope reads/writes, so the scoped-settings
+  fallback chain can be exercised without a database.
 - `TestTenants.Of("acme")` — stable, deterministic tenant/user ids derived from readable slugs.
 - `TestEvent.Create(payload, ...)` — wrap an event payload in `IEvent<T>` with realistic metadata.
 - `ProjectionTester.HandleAsync(projection, event)` — invoke a projection's (private) `HandleAsync`

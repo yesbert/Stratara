@@ -33,6 +33,8 @@
   <!-- Azure Identity library for managing authentication and authorization -->
   <ItemGroup Label="Authentication and Authorization">
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.8" />
     <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="10.0.8" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity.UI" Version="10.0.8" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.8" />

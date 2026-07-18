@@ -3,7 +3,7 @@
 **Concept**: Hash-chained event streams catch direct-DB tampering at the next verification pass. The full *why* lives in the [Tamper-Evident Streams](../concepts/tamper-evident-streams.md) concept page; this is the runnable proof.
 
 - **Code**: [`samples/Stratara.Sample.TamperProof`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.TamperProof)
-- **Lines**: ~100
+- **Lines**: ~320
 - **Read time**: 5–10 min
 - **Dependencies**: none — pure in-memory, no database, no DI container.
 
@@ -46,7 +46,8 @@ Expected output (abridged):
 | Sample | Real Stratara |
 |---|---|
 | `HashChainedEventStore` (in-memory list) | Hash columns on `event_stream_entry` populated by EF Core |
-| `ChainVerifier.Verify` (on-demand) | `EventStreamHashingWorker` from the `Stratara.EventSourcing.WorkerDefaults` composite — runs as a background service, processes batches, surfaces breaks via OpenTelemetry counters + structured logs |
+| `HashChainedEventStore.Append` computing the hash inline | The `EventStreamHashing` worker (`AddEventStreamHashWorkerServices()`) — a background service that hashes each newly-committed event a beat behind the write, in batches, so appends stay cheap |
+| `ChainVerifier.Verify` (on-demand) | **No framework equivalent — this stays your job.** Stratara writes the chain and the anchors; recomputing them to look for a break is a deliberate pass you schedule (an audit job, or the external-anchor check). Nothing in the framework scans for tampering on its own |
 | `TamperWithPayloadForDemo` | No equivalent — production code has no public mutation path on persisted entries |
 
 ## Sister hero sample

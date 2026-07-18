@@ -7,7 +7,7 @@
 
         <IsPackable>true</IsPackable>
         <PackageId>Stratara.Resilience</PackageId>
-        <Description>Polly-based named resilience pipelines pre-wired for the Stratara framework's messaging and command/event dispatch paths. Three named pipelines registered via AddResiliencePipelines().</Description>
+        <Description>Polly-based named resilience pipelines pre-wired for the Stratara framework's messaging and command/event dispatch paths. Four named pipelines registered via AddResiliencePipelines().</Description>
         <PackageTags>polly;resilience;retry;circuit-breaker;fault-tolerance;timeout;dotnet;stratara</PackageTags>
     </PropertyGroup>
 

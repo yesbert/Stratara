@@ -7,7 +7,7 @@
 
         <IsPackable>true</IsPackable>
         <PackageId>Stratara.EventSourcing.WorkerDefaults</PackageId>
-        <Description>Worker-host wiring composites for the Stratara event-sourced stack. IHostApplicationBuilder extensions (AddBackendServices, AddCommandWorkerServices, AddEventProjectionWorkerServices, AddSagaWorkerServices, AddOutboxWorkerServices) bundle the per-concern DI calls so each worker host opts in with one line.</Description>
+        <Description>Worker-host wiring composites for the Stratara event-sourced stack. IHostApplicationBuilder extensions (AddBackendServices, AddCommandWorkerServices, AddHeavyCommandWorkerServices, AddEventProjectionWorkerServices, AddEventStreamHashWorkerServices, AddSagaWorkerServices, AddOutboxWorkerServices) bundle the per-concern DI calls so each worker host opts in with one line.</Description>
         <PackageTags>event-sourcing;cqrs;mediator;worker;background-service;hosting;dependency-injection;hosted-service;dotnet;stratara</PackageTags>
         <RootNamespace>Microsoft.Extensions.Hosting</RootNamespace>
     </PropertyGroup>

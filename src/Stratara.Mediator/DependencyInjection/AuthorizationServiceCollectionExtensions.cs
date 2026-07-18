@@ -22,8 +22,12 @@ public static class AuthorizationServiceCollectionExtensions
     /// <remarks>
     /// <para>
     /// Use this instead of <see cref="MediatorServiceCollectionExtensions.AddMediator"/> when
-    /// command/query types may carry <c>[RequireRole("...")]</c> guards. Multiple
-    /// <c>[RequireRole]</c> attributes on the same request are ANDed — every role must match.
+    /// command/query types may carry <c>[RequireRole("...")]</c> or
+    /// <c>[RequirePermission("...")]</c> guards. Multiple attributes of either kind on the same
+    /// request are ANDed — every role and every permission must match. Permission enforcement
+    /// additionally requires a registered <see cref="IPermissionResolver"/> and an ambient
+    /// session (<c>ISessionContextProvider</c>), both resolved optionally so role-only hosts are
+    /// unaffected; a permission-guarded type without a resolver fails fast at startup.
     /// </para>
     /// <para>
     /// The registered <see cref="IMediator"/> instance implements
@@ -44,7 +48,9 @@ public static class AuthorizationServiceCollectionExtensions
         services.AddScoped<IMediator>(sp =>
             new AuthorizingMediator(
                 sp.GetRequiredService<Mediator>(),
-                sp.GetRequiredService<IAuthorizationProvider>()));
+                sp.GetRequiredService<IAuthorizationProvider>(),
+                sp.GetService<IPermissionResolver>(),
+                sp.GetService<Stratara.Abstractions.Session.ISessionContextProvider>()));
 
         return services;
     }

@@ -57,23 +57,70 @@ These tell Stratara *what* to dispatch / project / saga. Call once per assembly 
 
 | Extension | What it does |
 |---|---|
-| `services.AddResiliencePipelines()` | Registers Polly named pipelines (`Stratara.OutboxPublish`, `Stratara.HandlerRetry`, …) |
+| `services.AddResiliencePipelines()` | Registers the four Polly named pipelines — `ResilienceNames.MessageBus`, `.CommandDispatcher`, `.EventBundleDispatcher`, `.ConcurrencyConflict` |
+| `services.AddStrataraResilienceBehavior()` | Mediator behavior that dispatches `IResilientRequest` through its chosen pipeline |
+
+Use the `ResilienceNames` constants rather than the literal pipeline strings.
 
 ## Outbox transport (pick one per host)
 
 | Extension | Bus |
 |---|---|
-| `services.AddRabbitMqBus(opts)` | RabbitMQ |
-| `services.AddAzureServiceBus(opts)` | Azure Service Bus (connection-string) |
-| `services.AddAzureServiceBusWithManagedIdentity(opts)` | Azure Service Bus (DefaultAzureCredential) |
+| `builder.AddMessaging()` | RabbitMQ — extends `IHostApplicationBuilder`, and is what the worker composites call |
+| `services.AddAzureServiceBus(connectionString)` | Azure Service Bus (connection-string) |
+| `services.AddAzureServiceBusWithManagedIdentity(...)` | Azure Service Bus (DefaultAzureCredential) |
+
+**One transport per host — the explicit one wins.** `AddMessaging()` registers `IMessageBus` for
+RabbitMQ; the Azure Service Bus extensions *replace* it, so an explicit `AddAzureServiceBus` takes
+effect even after a worker composite wired the RabbitMQ umbrella. Order no longer decides the
+transport, but registering both in one host is still a smell — pick one.
+
+## Identity directory (`Stratara.Identity.EntityFrameworkCore`)
+
+`TContext` is any `DbContext` whose model includes the directory tables — derive from
+`IdentityDirectoryDbContext<TContext>` or call `modelBuilder.ApplyIdentityDirectoryModel()` in your
+own `OnModelCreating`.
+
+| Extension | What it does |
+|---|---|
+| `services.AddTenantMembershipStore<TContext>()` | EF `ITenantMembershipStore` (`tenant_membership`, `active_tenant`) |
+| `services.AddMembershipAuthorization()` | `IAuthorizationProvider` over tenant-scoped membership roles |
+| `services.AddMembershipAuthorization<TUser>()` | Above ∪ global ASP.NET Identity roles |
+| `services.AddMembershipCrossTenantAuthorizer(opts?)` | `ICrossTenantAuthorizer` for strict tenant isolation (membership OR a configured platform role) |
+| `services.AddPermissionCatalog(c => …)` | Declares the permission vocabulary + role grants (throws on an undeclared grant) |
+| `services.AddCatalogPermissionResolver()` | `IPermissionResolver` — membership roles through the catalog |
+| `services.AddCatalogPermissionResolver<TUser>()` | Above ∪ global ASP.NET Identity roles |
+| `services.AddSettingCatalog(c => …)` | Declares the setting vocabulary (defaults, `IsInherited`, `IsEncrypted`) |
+| `services.AddSettingStore<TContext>()` | EF `ISettingStore` (`setting_entry`) **+** the `ISettingProvider` fallback facade |
+| `services.AddApiKeyStore<TContext>()` | EF `IApiKeyStore` (`api_key`) — issue / validate / revoke / sweep |
+
+`[RequirePermission]` is only enforced when the host also registers an authorizing mediator
+(`services.AddAuthorizingMediator<MembershipAuthorizationProvider>()`). Without it — or without an
+`IPermissionResolver` — the mediator's startup validator throws rather than let a guarded request
+through unchecked.
 
 ## ASP.NET specific
 
 | Extension | What it does |
 |---|---|
-| `builder.AddAspNetIdentity()` | Channel-agnostic ASP.NET Core identity wiring |
-| `builder.AddAspNetIdentityWithSignInManager()` | Above + `SignInManager<TUser>` wrapper |
-| `builder.AddDevelopmentNoOpEmailSender()` | Stub `IEmailSender` for development |
-| `app.MapStrataraDefaults()` | Health endpoints + OpenAPI |
+| `builder.AddAspNetIdentity<TUser, TIdentityDbContext>()` | Channel-agnostic ASP.NET Core identity wiring (password/schema-v3/passkey defaults — **no lockout**) |
+| `builder.AddAspNetIdentityWithSignInManager<TUser, TIdentityDbContext>()` | Above + **lockout defaults** + `IStrataraSignInManager` wrapper + localization |
+| `builder.AddDevelopmentNoOpEmailSender<TUser>()` | Stub `IEmailSender` for development (throws in Production) |
+| `services.AddMembershipTenantClaim<TUser>()` | Stamps `stratara:tenant_id` into every issued principal (claims-factory decorator) |
+| `services.AddMembershipTenantClaimsTransformation()` | Resolves `stratara:tenant_id` live per request — a tenant switch applies without re-issuing the sign-in |
+| `services.AddStrataraPermissionPolicies()` | Turns every catalog permission into an on-demand policy → `[Authorize("sims.read")]` |
+| `services.AddStrataraExternalLoginProvisioning<TUser>(opts?)` | JIT create/link of the local account on first external sign-in (fail-closed) |
+| `app.MapDefaultEndpoints()` | `/health` + `/alive` endpoints (`Stratara.ServiceDefaults.AspNetCore`) |
 
-These three are extension members of `IHostApplicationBuilder` and live in the `Microsoft.Extensions.Hosting` namespace (Microsoft convention since v3.0.15).
+### Authentication schemes (`AuthenticationBuilder`)
+
+| Extension | Scheme |
+|---|---|
+| `.AddStrataraOpenIdConnect(configuration)` | Interactive external login, from `Identity:OpenIdConnect` |
+| `.AddStrataraJwtBearer(configuration)` | API access tokens, from `Identity:JwtBearer` (multi-issuer by `iss`) |
+| `.AddStrataraApiKey(opts?)` | `StrataraApiKey` — `X-Api-Key` header (opt-in query parameter) |
+| `.AddStrataraAuthSchemeSelector(opts?)` | Policy scheme routing by request shape: API key → Bearer → cookie |
+
+The `builder.Add*` identity rows are extension members of `IHostApplicationBuilder` in the
+`Microsoft.Extensions.Hosting` namespace (Microsoft convention since v3.0.15). The `services.Add*`
+rows and the authentication-scheme extensions above live in `Microsoft.Extensions.DependencyInjection`.

@@ -2,7 +2,7 @@
 
 **Stratara takes the boring decisions for you so you can spend your time on aggregates and use-cases — not on wiring an outbox to a mediator to an event store.**
 
-It's a family of 24 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
+It's a family of 25 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
 
 What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is the **integration** plus two properties that none of the standalone libraries ship today:
 
@@ -22,6 +22,7 @@ What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is t
 - **Production key store + envelope encryption** — the dependency-light `Stratara.Security` package (`EnvelopeFileKeyStore`) manages KEK-wrapped, versioned per-`KeyScope` keys with rotation, revoke, and whole-scope crypto-shredding (GDPR Article 17) — no EF Core, RabbitMQ, or cloud SDK required.
 - **Projection runtime** + **saga runtime** that consume event bundles from the bus.
 - **Channel-agnostic identity** (sign-in manager + auth-state provider abstractions usable from ASP.NET, MAUI, console).
+- **Identity directory** — user↔tenant membership with tenant-scoped roles, permission catalog + `[RequirePermission]` enforcement, scoped settings (global/tenant/user with fallback and transparent encryption), and API keys/PATs that flow through the same role/permission plane as human users (`Stratara.Identity.EntityFrameworkCore`).
 - **Observability defaults** — OpenTelemetry traces + metrics, Serilog log enrichment, source-generated `[LoggerMessage]` extensions.
 - **Polly-backed resilience** via named pipelines.
 - **Horizontal worker scaling** — 4096 deterministically-hashed stream buckets with per-bucket locking let command, projection, and saga workers run as competing consumers across N nodes (RabbitMQ / Azure Service Bus).
@@ -53,10 +54,10 @@ The architecture is strict: **no consumer-specific code** lives in the framework
 
 ## How it's structured
 
-24 packages: 22 runtime packages organized into three tiers, plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
+25 packages: 23 runtime packages organized into three tiers, plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
 
 ## License + versioning
 
 - Licensed under the [MIT License](https://opensource.org/license/mit) — OSI-approved open source, free for any use including commercial.
-- Lockstep versioning — all 24 packages ship at the same `<VersionPrefix>`.
+- Lockstep versioning — all 25 packages ship at the same `<VersionPrefix>`.
 - See `CHANGELOG.md` in the repo root for release notes.

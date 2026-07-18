@@ -36,6 +36,13 @@ user-registration command instead of the bank-account domain.
 |---|---|
 | [`Stratara.Sample.Validation`](Stratara.Sample.Validation) | `IValidator<T>` as a mediator pipeline behavior — a valid command, a warning-only command (still handled), and an invalid command (blocked with `StrataraValidationException`). |
 
+## 🔐 Identity & Access
+
+| Sample | Concept |
+|---|---|
+| [`Stratara.Sample.Identity`](Stratara.Sample.Identity) | External OpenID Connect sign-in + hardened JIT provisioning — create/link a local account on first sign-in with the nOAuth account-takeover defenses on by default — composed with API JWT-bearer validation behind the auth-scheme selector, plus API-key/PAT authentication for machine callers. |
+| [`Stratara.Sample.IdentityDirectory`](Stratara.Sample.IdentityDirectory) | The identity-directory plane in one console run: tenant membership (one user, many tenants, roles scoped per membership), `[RequirePermission]` enforced by the authorizing mediator, and the scoped-settings fallback chain — including a non-inherited setting that refuses to fall back. |
+
 Each sample is **self-contained code** — duplication between samples is intentional so each one reads from top to bottom without jumping to a shared library.
 
 ## Running

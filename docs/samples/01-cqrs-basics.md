@@ -3,7 +3,7 @@
 **Concept**: `IMediator` + `ICommand` / `IQuery` + handler discovery — the minimum viable Stratara app.
 
 - **Code**: [`samples/Stratara.Sample.CqrsBasics`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.CqrsBasics)
-- **Lines**: ~200
+- **Lines**: ~190
 - **Read time**: 5–10 min
 - **What it doesn't have**: event store, outbox, broker, persistence — everything is in-memory.
 

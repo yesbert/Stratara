@@ -2,68 +2,60 @@
 
 A saga (a.k.a. process manager) reacts to events by issuing more commands. Stratara registers sagas via `AddSagasFromAssemblyContaining<T>()` + the `SagaOrchestrationWorker`.
 
-## The interface
+## The contract
 
-```csharp
-public interface ISaga
-{
-    Task HandleAsync(IReadOnlyList<IEvent> relevantEvents, CancellationToken cancellationToken);
-}
-```
-
-Mechanically identical to `IProjection`. The difference is semantic: a **projection** updates a read-model; a **saga** issues more commands.
+`ISaga` (`Stratara.Sagas.Abstractions`) is an **empty marker**, exactly like `IProjection`. The
+runtime reflects over your class for `HandleAsync(IEvent<TEvent>, CancellationToken)` methods and
+routes matching events to them. The difference from a projection is semantic: a projection updates a
+read model; a saga issues more commands.
 
 ## A minimal saga
 
 ```csharp
+using JetBrains.Annotations;
+using Stratara.Abstractions.EventSourcing;
+using Stratara.Sagas.Abstractions;
+
 public sealed class TransferSaga(
     ICommandOutboxDispatcher dispatcher,
     IAccountQueryStore accounts) : ISaga
 {
-    public async Task HandleAsync(IReadOnlyList<IEvent> relevantEvents, CancellationToken ct)
+    [UsedImplicitly]
+    private async Task HandleAsync(IEvent<TransferRequested> @event, CancellationToken ct)
     {
-        foreach (var ev in relevantEvents)
+        var transfer = @event.Data;
+        var sourceBalance = await accounts.GetBalanceAsync(transfer.FromAccountId, ct);
+        if (sourceBalance < transfer.Amount)
         {
-            if (ev is IEvent<TransferRequested> requested)
-            {
-                await HandleAsync(requested.Payload, ct);
-            }
-        }
-    }
-
-    private async Task HandleAsync(TransferRequested ev, CancellationToken ct)
-    {
-        var sourceBalance = await accounts.GetBalanceAsync(ev.FromAccountId, ct);
-        if (sourceBalance < ev.Amount)
-        {
-            // Validation failed — saga emits no commands, transfer never happens
-            return;
+            return;   // validation failed — the saga emits no commands, the transfer never happens
         }
 
-        await dispatcher.EnqueueAsync(new WithdrawCommand(ev.FromAccountId, ev.Amount), ct);
-        await dispatcher.EnqueueAsync(new DepositCommand(ev.ToAccountId, ev.Amount), ct);
+        await dispatcher.EnqueueCommandAsync(new WithdrawCommand(transfer.FromAccountId, transfer.Amount), ct);
+        await dispatcher.EnqueueCommandAsync(new DepositCommand(transfer.ToAccountId, transfer.Amount), ct);
     }
 }
 ```
 
+Write one `HandleAsync(IEvent<TEvent>, CancellationToken)` per event you react to — the payload is
+`@event.Data`. Handlers may be private; mark them `[UsedImplicitly]` so analyzers don't flag them.
+Commands go out through `ICommandOutboxDispatcher.EnqueueCommandAsync`.
+
 ## Register
 
 ```csharp
-services.AddSagasFromAssemblyContaining<TransferSaga>();
+builder.AddSagaWorkerServices();                            // the worker host composite
+builder.Services.AddSagasFromAssemblyContaining<TransferSaga>();
 ```
 
-And on the worker host:
-
-```csharp
-builder.AddSagaWorkerServices();
-```
+`AddSagaWorkerServices()` (from `Stratara.EventSourcing.WorkerDefaults`) brings the hosted
+`SagaWorker` and its dependencies; `AddSagasFromAssemblyContaining<T>()` registers your sagas.
 
 ## Idempotency
 
-Sagas **must be idempotent** — at-least-once delivery means the bus can replay the same event after a broker reconnect. Use one of:
+Sagas **must be idempotent** — at-least-once delivery means the bus can replay the same event after a broker reconnect. Because a redelivery re-runs `HandleAsync`, guard the enqueue:
 
-- **Idempotency key** on the down-stream commands (Stratara's `CommandEnvelope` carries an `IdempotencyKey`; consumers can dedup).
-- **State tracking** in your own read-store (`HasTransferBeenStarted(transferId)` before enqueueing).
+- **State tracking** in your own read-store — `HasTransferBeenStarted(transferId)` before enqueueing, so a replay is a no-op.
+- **Deterministic command identity** — derive the down-stream command's own key from the source event so a duplicate enqueue collapses at the handler rather than moving money twice.
 
 ## Compensation is your job
 
@@ -73,5 +65,5 @@ The pattern: the saga listens for both `WithdrawSucceeded` and `DepositFailed`. 
 
 ## Anti-patterns
 
-- **Don't `await` commands issued via the outbox.** `dispatcher.EnqueueAsync(…)` returns as soon as the row is written. If you want a synchronous response, use `IMediator.HandleAsync(…)` directly (but you give up at-least-once delivery).
+- **Don't expect a result from an outbox command.** `dispatcher.EnqueueCommandAsync(…)` returns once the row is written, not once the command runs — you get the envelope id, not the outcome. If you need a synchronous result, dispatch through `IMediator.HandleAsync(…)` instead (but you give up the outbox's at-least-once delivery).
 - **Don't query write-store state from the saga.** Query a projection or a read-store. The saga is a read-side actor that produces write-side effects — keep its reads on the read side.

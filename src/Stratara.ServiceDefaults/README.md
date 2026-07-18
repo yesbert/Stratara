@@ -2,14 +2,14 @@
 
 > **License:** [MIT](../../LICENSE).
 
-Cross-host observability + service-discovery defaults for the Stratara stack. Reference from every host (API, worker) to get OpenTelemetry + Serilog wired up with sensible defaults.
+Cross-host observability defaults for the Stratara stack. Reference from every host (API, worker) to get OpenTelemetry + Serilog wired up with sensible defaults.
 
 ## What's in the box
 
 | Extension | Purpose |
 |---|---|
 | `ConfigureOpenTelemetry` | Logging + metrics + tracing with HTTP, EF Core, RabbitMQ, runtime instrumentation; OTLP exporter wired up automatically when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Accepts optional `MeterProviderBuilder` / `TracerProviderBuilder` callbacks for host-specific extras. |
-| `ConfigureSerilog` | Structured logging with destructuring attributes, async console sink, OTLP sink (gRPC or HTTP/Protobuf based on `OTEL_EXPORTER_OTLP_PROTOCOL`), dev-mode log cleanup at `/tmp/stratara-logs/{service-name}.log`. |
+| `ConfigureSerilog` | Structured logging with destructuring attributes, async console sink, OTLP sink (gRPC or HTTP/Protobuf based on `OTEL_EXPORTER_OTLP_PROTOCOL`), dev-mode log cleanup at `{Path.GetTempPath()}/stratara-logs/{service-name}.log` — the OS temp directory, so not literally `/tmp` on Windows or macOS. |
 | `ConfigureSerilogBootstrapLogger` | Sets up `Log.Logger` as a bootstrap logger before the host is built, so early-startup errors surface to the console. |
 
 ## Quick start

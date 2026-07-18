@@ -3,7 +3,7 @@
 **Concept**: Outbox + message bus + two background workers (async dispatch). What changes when commands stop running in the caller's thread.
 
 - **Code**: [`samples/Stratara.Sample.OutboxWorker`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.OutboxWorker)
-- **Lines**: ~300
+- **Lines**: ~310
 - **Read time**: 15–20 min
 - **Prerequisite**: [Sample 2 — Event Sourced](02-event-sourced.md).
 
@@ -30,7 +30,7 @@ Expected output (abridged):
 --- Publisher enqueues 3 commands (returns immediately, doesn't wait for handlers) ---
   Enqueued — outbox has 3 pending
 
---- Wait for outbox-drain + command-worker to catch up ---
+--- Start the workers; they drain the outbox and handle the commands ---
   Outbox now has 0 pending
 
 --- Read-side: query the repository synchronously ---
@@ -46,7 +46,7 @@ Done.
 
 | Sample 2 (sync event-sourced) | Sample 3 (async via outbox) |
 |---|---|
-| `mediator.HandleAsync(cmd)` runs the handler in the caller's thread | `dispatcher.EnqueueAsync(cmd)` returns immediately after appending to the outbox |
+| `mediator.HandleAsync(cmd)` runs the handler in the caller's thread | `dispatcher.Enqueue(cmd)` returns immediately after appending to the outbox — in the real framework that is `await dispatcher.EnqueueCommandAsync(cmd, ct)` on `ICommandOutboxDispatcher` |
 | Handler exceptions bubble back to the caller | Handler exceptions are caught + the outbox-entry retried (with backoff) |
 | Strict ordering — caller controls when the next command runs | At-least-once delivery — consumers must be idempotent |
 

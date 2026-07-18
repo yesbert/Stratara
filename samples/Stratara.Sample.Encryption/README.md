@@ -10,7 +10,7 @@ Stratara's `[EncryptData]` adds a **hard fence**: AES-GCM with the authenticatio
 
 ## What to look at, in order
 
-1. **`Crypto/EncryptedAttribute.cs`** — the marker attribute. In real Stratara it's `[EncryptData]` and is read by an EF Core value converter; here it's just a marker so the *intent* on `Customer.SocialSecurityNumber` is visible.
+1. **`Crypto/EncryptedAttribute.cs`** — the marker attribute. In real Stratara it's `[EncryptData]`, read by `ISecureJsonSerializer` as the payload is serialized; here it's just a marker so the *intent* on `Customer.SocialSecurityNumber` is visible.
 
 2. **`Crypto/SealedField.cs`** — a tiny record holding `(Nonce, Ciphertext, Tag)`. This is what hits the database in place of the plaintext. The AAD (tenant id) is **not** stored — it's reconstructed from the row's tenant context at decryption time. That coupling *is* the security property.
 
@@ -35,10 +35,10 @@ Expected: same-tenant decryption succeeds, both cross-tenant attempts raise `Cry
 | Sample | Real Stratara |
 |---|---|
 | `[Encrypted]` marker | `[EncryptData]` from `Stratara.Abstractions` |
-| `TenantAwareEncryptor` (master key hardcoded) | `IFieldEncryptor` backed by `IKeyStore` (`AzureKeyVaultKeyStore`, `AwsKmsKeyStore`, …) |
-| Manual `Encrypt` / `Decrypt` call | EF Core value converter — transparent, fires automatically on save/load |
-| Tenant id passed explicitly | `ISessionContextProvider.Current.TenantId` — ambient per request |
-| One master key, AAD-only separation | Per-tenant key derivation via HKDF **on top of** AAD binding (belt and suspenders) |
+| `TenantAwareEncryptor` (master key hardcoded) | `ISecureJsonSerializer` over `IKeyStore` — the shipped `EnvelopeFileKeyStore` holds versioned per-`KeyScope` DEKs, each wrapped by a KEK from `IMasterKeyProvider` (`DummyKeyStore` is the Development-only fallback) |
+| Manual `Encrypt` / `Decrypt` call | Transparent at the **serialization boundary** — `ISecureJsonSerializer` seals and opens `[EncryptData]` properties as the payload is written and read |
+| Tenant id passed explicitly | `ISessionContextProvider.Current` — ambient per request; the AAD binds tenant, user, and scope |
+| One master key, AAD-only separation | A separate DEK per `KeyScope` **on top of** the AAD binding — which is also what makes `IKeyStore.EraseScopeAsync` a crypto-shred (GDPR Art. 17) |
 
 ## Concept doc
 

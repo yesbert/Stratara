@@ -32,11 +32,11 @@ The regulator's question is rarely "show me the transactions" — it's "prove th
 
 ### 🏥 Healthcare records (HIPAA Security Rule)
 
-HIPAA's Security Rule §164.312(c) — *Integrity controls* — requires covered entities to "implement electronic mechanisms to corroborate that electronic protected health information has not been altered or destroyed in an unauthorized manner." Hash-chained event streams are exactly such a mechanism: integrity verification is automatic, continuous, and produces audit-trail evidence by default. Combined with `[EncryptData]` on sensitive fields, the data layer addresses both §164.312(a) (access control) and §164.312(c) (integrity) in the same construction.
+HIPAA's Security Rule §164.312(c) — *Integrity controls* — requires covered entities to "implement electronic mechanisms to corroborate that electronic protected health information has not been altered or destroyed in an unauthorized manner." Hash-chained event streams are exactly such a mechanism: the chain is written continuously by the hashing worker, so the evidence needed to corroborate integrity is always there. Corroborating it is a verification pass **you** schedule — Stratara does not run one for you, and the schedule is part of what you would present to an auditor. Combined with `[EncryptData]` on sensitive fields, the data layer addresses both §164.312(a) (access control) and §164.312(c) (integrity) in the same construction.
 
 ### 📜 Forensic admissibility / legal evidence
 
-When an incident produces a legal proceeding — internal investigation, regulator probe, civil suit — the question is whether the event stream is *admissible* as evidence. Append-only storage alone is not enough; the prosecution will ask "could anyone have modified a row after the fact?". Hash chaining lets you answer: *yes, but the chain would have broken at sequence N, and our automated verifier would have alerted at time T*. The chain is the chain-of-custody.
+When an incident produces a legal proceeding — internal investigation, regulator probe, civil suit — the question is whether the event stream is *admissible* as evidence. Append-only storage alone is not enough; the prosecution will ask "could anyone have modified a row after the fact?". Hash chaining lets you answer: *yes, but the chain would have broken at sequence N, and here is the verification pass that would surface it — plus the external anchor committed at time T, which no amount of re-chaining can forge*. The chain is the chain-of-custody; the anchor is what makes it hold against someone who owns the database. What turns that into an answer a court accepts is the verification schedule you can show — so run it on a cadence and keep its output.
 
 ### 🕵️ Insider-threat detection
 

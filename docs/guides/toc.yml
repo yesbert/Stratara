@@ -12,6 +12,16 @@
   href: encrypt-data-setup.md
 - name: Authorization Decorators
   href: auth-decorators.md
+- name: Tenant Membership
+  href: tenant-membership.md
+- name: Permission-Based Authorization
+  href: require-permission.md
+- name: Scoped Settings
+  href: scoped-settings.md
+- name: API Keys and Personal Access Tokens
+  href: api-keys-and-pats.md
+- name: External Login (OpenID Connect) + JIT Provisioning
+  href: external-login-oidc.md
 - name: Outbox — RabbitMQ
   href: outbox-setup-rabbitmq.md
 - name: Outbox — Azure Service Bus

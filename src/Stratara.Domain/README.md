@@ -7,7 +7,8 @@ The Stratara framework's concrete multitenancy domain — the `Tenant` aggregate
 ## Contents
 
 - `Stratara.Domain.Multitenancy.Tenant` — the aggregate. Implements `IAggregate` (from `Stratara.Abstractions`).
-- `Stratara.Domain.TenantCreated` / `TenantRenamed` / `TenantActivated` / `TenantDeactivated` / `TenantDefaultLocaleChanged` / `TenantAssignedToCustomer` / `TenantDeleted` / `CustomerTenantsDeleted` — the event records consumed by the aggregate's `Apply()` methods + persisted to the event stream.
+- `Stratara.Domain.TenantCreated` / `TenantRenamed` / `TenantActivated` / `TenantDeactivated` / `TenantDefaultLocaleChanged` / `TenantAssignedToCustomer` / `TenantDeleted` — the event records consumed by the aggregate's `Apply()` methods + persisted to the event stream.
+- `Stratara.Domain.CustomerTenantsDeleted` — a **read-side** event: it carries a customer's deleted tenant ids for `TenantProjection` and has no `Apply()` overload on the aggregate. Rehydration skips unmapped events silently, so don't expect it to move aggregate state.
 
 ## When to skip this package
 

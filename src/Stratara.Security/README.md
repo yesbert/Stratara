@@ -16,7 +16,7 @@ crypto-shred), a file-backed master-key provider, and an AES-GCM blob encryptor 
 builder.Services.AddStrataraFileKeyStore(builder.Configuration);
 
 // Encrypt a blob bound to a tenant scope + purpose:
-var scope = new KeyScope(DataSensitivityLevel.TenantScoped, tenantId: "acme-corp");
+var scope = new KeyScope(DataSensitivityLevel.TenantScoped, TenantId: "acme-corp");
 await using var encrypted = await encryptor.EncryptAsync(plainStream, scope, purpose: "attachment");
 await using var plain = await encryptor.DecryptAsync(encrypted, scope);
 ```

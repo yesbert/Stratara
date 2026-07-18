@@ -15,5 +15,6 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="../../src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj"/>
     </ItemGroup>
 </Project>

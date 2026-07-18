@@ -50,18 +50,21 @@ Both topics are **fanout exchanges** + per-app queues. Multiple worker hosts can
 
 ## Backpressure
 
-The `OutboxWorker` polls the outbox table every `OutboxOptions.PollInterval` (default 5s) and publishes pending rows. If the broker is unreachable, rows sit in the table — at-least-once delivery preserved. The next poll-cycle retries.
+The `OutboxWorker` polls the outbox table every `OutboxOptions.PollingIntervalSeconds` (default 30) and publishes pending rows. If the broker is unreachable, rows sit in the table — at-least-once delivery preserved. The next poll-cycle retries.
 
-`OutboxOptions.MaxBatchSize` (default 100) caps how many rows the worker tries to publish per cycle. Tune for your broker capacity.
+`OutboxOptions.BatchSize` (default 10_000) caps how many rows the worker claims per cycle, and `LockLeaseSeconds` (default 60) is how long a claimed batch stays leased to one worker. Bind them under the `Outbox` configuration section.
 
 ## Connection health
 
 `Stratara.Outbox.RabbitMQ` uses `RabbitMQ.Client`'s automatic recovery + topology recovery. `NetworkRecoveryInterval` is set to a small default; consumers re-subscribe automatically after a reconnect.
 
-The startup probe `RabbitMqBusProductionGuard` (v3.0.14+) verifies the connection can be established before the worker reports `Healthy` to the host's readiness check.
+On startup the bus fails fast in Production if the broker connection can't be established, rather than starting a worker that silently publishes nowhere.
 
 ## Observability
 
-`RabbitMqBus.PublishAsync` emits a `Stratara.Outbox.Publish` activity with `messaging.system=rabbitmq` + the topic name as tags. The `Stratara.ServiceDefaults` OpenTelemetry config picks these up automatically.
+The outbox worker records the `outbox.published` counter (on the `Stratara.Service` meter), tagged
+by entry kind — `command` or `event` — so you can watch command-dispatch and event-bundle throughput
+separately. The `Stratara.ServiceDefaults` OpenTelemetry config wires the `Stratara.Service` meter
+and the `Stratara.Application` activity source automatically.
 
 Failure paths (`PublishReturnException` on no-binding, broker-disconnect, …) emit warning-level log events from `Stratara.Shared.Diagnostics.Extensions.LoggerOutboxExtensions` — see the [LogEvents Schema](../reference/log-events-schema.md).

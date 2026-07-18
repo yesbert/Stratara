@@ -29,6 +29,11 @@ public class AuthorizingMediatorTests
     [RequireRole("SuperAdmin")]
     private sealed record MultiRoleQuery : IQuery<int>;
 
+    private record OpenBaseCommand : ICommand;
+
+    [RequireRole("Admin")]
+    private sealed record GuardedDerivedCommand : OpenBaseCommand;
+
     [Fact]
     public async Task HandleAsync_Query_Authorized_ReturnsResult()
     {
@@ -111,6 +116,19 @@ public class AuthorizingMediatorTests
         Assert.Equal(42, result);
         _authProviderMock.Verify(a => a.IsInRoleAsync("Admin", It.IsAny<CancellationToken>()), Times.Once);
         _authProviderMock.Verify(a => a.IsInRoleAsync("SuperAdmin", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_Command_DispatchedViaBaseType_EnforcesRuntimeTypeGuards()
+    {
+        OpenBaseCommand command = new GuardedDerivedCommand();
+        _authProviderMock.Setup(a => a.IsInRoleAsync("Admin", It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var ex = await Assert.ThrowsAsync<AuthorizationException>(() =>
+            _mediator.HandleAsync(command));
+
+        Assert.Equal("Admin", ex.RequiredRole);
+        _innerMock.Verify(i => i.HandleAsync(It.IsAny<OpenBaseCommand>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

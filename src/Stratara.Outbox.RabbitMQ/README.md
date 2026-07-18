@@ -2,7 +2,7 @@
 
 > **License:** [MIT](../../LICENSE).
 
-Outbox-pattern command + event dispatch for the Stratara event-sourced stack with a RabbitMQ / Azure Service Bus message-bus implementation. Contains the write-side dispatchers, the outbox-retry worker, the read-side mediator command worker, the message-bus implementations, and the Redis-backed `ProjectionReplayState` that coordinates dispatch skip during projection replay.
+Outbox-pattern command + event dispatch for the Stratara event-sourced stack with a RabbitMQ message-bus implementation. Contains the write-side dispatchers, the outbox-retry worker, the read-side mediator command worker, the RabbitMQ bus, and the Redis-backed `ProjectionReplayState` that coordinates dispatch skip during projection replay. Azure Service Bus ships separately as `Stratara.Outbox.AzureServiceBus`.
 
 ## What's in the box
 

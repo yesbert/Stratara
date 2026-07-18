@@ -32,7 +32,10 @@ public static class AzureServiceBusServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrEmpty(connectionString);
 
         services.TryAddSingleton(_ => new ServiceBusClient(connectionString));
-        services.TryAddSingleton<IMessageBus, AzureServiceBusBus>();
+        // Replace (not TryAdd) so an explicit Azure Service Bus registration wins the IMessageBus
+        // slot even when the RabbitMQ umbrella (AddMessaging) already claimed it. One transport per
+        // host; the explicitly-chosen one is the transport.
+        services.Replace(ServiceDescriptor.Singleton<IMessageBus, AzureServiceBusBus>());
 
         return services;
     }
@@ -58,7 +61,10 @@ public static class AzureServiceBusServiceCollectionExtensions
 
         var tokenCredential = credential ?? new DefaultAzureCredential();
         services.TryAddSingleton(_ => new ServiceBusClient(fullyQualifiedNamespace, tokenCredential));
-        services.TryAddSingleton<IMessageBus, AzureServiceBusBus>();
+        // Replace (not TryAdd) so an explicit Azure Service Bus registration wins the IMessageBus
+        // slot even when the RabbitMQ umbrella (AddMessaging) already claimed it. One transport per
+        // host; the explicitly-chosen one is the transport.
+        services.Replace(ServiceDescriptor.Singleton<IMessageBus, AzureServiceBusBus>());
 
         return services;
     }

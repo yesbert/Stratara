@@ -3,7 +3,7 @@
 **Concept**: HTTP minimal-API endpoints wired straight to the mediator. Parallel to Sample 1 — pick this one if you want an HTTP front instead of a console.
 
 - **Code**: [`samples/Stratara.Sample.AspNetCoreApi`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.AspNetCoreApi)
-- **Lines**: ~250
+- **Lines**: ~205
 - **Read time**: 10–15 min
 - **Prerequisite**: any of Samples 1–4. This one is parallel — readable at any point.
 

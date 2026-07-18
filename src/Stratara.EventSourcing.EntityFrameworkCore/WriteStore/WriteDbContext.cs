@@ -17,7 +17,7 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 /// predicate yields <c>PendingModelChangesWarning</c> at runtime — a regression that escapes
 /// unit tests and only surfaces against a real Postgres in the consumer's E2E pipeline.
 /// </remarks>
-/// <param name="options">Options bound by the host's <c>AddNpsqlWriteDbContextFactory</c> registration.</param>
+/// <param name="options">Options bound by the host's <c>AddNpgsqlWriteDbContextFactory</c> registration.</param>
 public class WriteDbContext<TContext>(DbContextOptions<TContext> options) : DbContext(options), IWriteDbContext where TContext : DbContext
 {
     /// <inheritdoc/>

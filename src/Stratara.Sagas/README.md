@@ -9,7 +9,7 @@ Saga runtime for the Stratara event-sourced stack. Discovers `ISaga` implementat
 | Folder | Contents |
 |---|---|
 | `Abstractions/` | `ISaga` (marker for handler discovery), `ISagaManager`, `ISagaHandler`, `ISagaMethodInvoker` |
-| `Services/` | `SagaManager` (event-bundle → matching saga fan-out), `SagaHandler` (per-saga scoped execution + retries), `SagaMethodInvoker` (reflection-cached method-pointer dispatch into consumer sagas), `SagaWorker` (hosted service consuming the event-bundle subscription), `SagaOptions` (subscription + concurrency knobs) |
+| `Services/` | The runtime, all `internal` except `SagaOptions`: `SagaManager` (event-bundle → matching saga fan-out), `SagaHandler` (invokes a saga's matching methods per event), `SagaMethodInvoker` (reflection-cached method-pointer dispatch into consumer sagas), `SagaWorker` (hosted service consuming the event-bundle subscription — owns the per-bundle DI scope and the retry pipeline), `SagaOptions` (carries only `SectionName`) |
 | `DependencyInjection/` | `AddSagaWorker(IConfiguration)` + `AddSagasFromAssemblyContaining<T>()` |
 
 ## Quick start
@@ -77,8 +77,9 @@ The class itself (`ISaga` implementation) is registered through `AddSagasFromAss
 
 ## Dependencies
 
-- `Stratara.Contracts` — for `EventBundle` + `IEvent<T>`.
-- `Stratara.Domain` — for the framework's aggregate interfaces (sagas typically dispatch commands referencing tenant-scoped aggregates).
+- `Stratara.Abstractions` — for `ISaga`'s event contracts (`IEvent` / `IEvent<T>`), `IAggregate`, and `ICommandOutboxDispatcher`.
+- `Stratara.Contracts` — for `EventBundle`.
+- `Stratara.Domain` — referenced by the package but not used by its code today; it comes along transitively. Don't rely on it being here.
 - `Stratara.Shared` — for messaging primitives, the source-generated `LoggerSagaExtensions` diagnostics surface, and DI conventions.
 - `Microsoft.Extensions.Hosting.Abstractions` + `Microsoft.Extensions.Options.ConfigurationExtensions` — for `SagaWorker` hosting + `SagaOptions` binding.
 - `JetBrains.Annotations` — for static-analysis attributes on saga-handler conventions.

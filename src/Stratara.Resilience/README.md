@@ -22,7 +22,7 @@ await pipeline.ExecuteAsync(async ct => {
 
 | Name | Constant | Strategy |
 |---|---|---|
-| Message bus | `ResilienceNames.MessageBus` | Exponential retry up to `int.MaxValue`, 10s → 60s, jitter |
+| Message bus | `ResilienceNames.MessageBus` | Exponential retry up to `int.MaxValue`, 10s → 60s, jitter, **then a circuit breaker** — opens after 10 consecutive failures and stays open 60s before a trial call |
 | Command dispatcher | `ResilienceNames.CommandDispatcher` | 3 retries, exponential, 200ms, jitter |
 | Event bundle dispatcher | `ResilienceNames.EventBundleDispatcher` | 3 retries, exponential, 200ms, jitter |
 | Concurrency conflict | `ResilienceNames.ConcurrencyConflict` | Retry **only** on `ConcurrencyConflictException`, 5 attempts, short exponential, jitter |

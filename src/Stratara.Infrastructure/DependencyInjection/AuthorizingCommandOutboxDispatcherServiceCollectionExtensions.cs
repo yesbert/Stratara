@@ -10,7 +10,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Service-collection extensions that wrap the default <see cref="ICommandOutboxDispatcher"/>
 /// with <see cref="AuthorizingCommandOutboxDispatcher"/>, enforcing <see cref="RequireRoleAttribute"/>
-/// checks on every enqueued command.
+/// and <see cref="RequirePermissionAttribute"/> checks on every enqueued command (permission
+/// enforcement activates when an <see cref="IPermissionResolver"/> is registered).
 /// </summary>
 public static class AuthorizingCommandOutboxDispatcherServiceCollectionExtensions
 {
@@ -26,7 +27,9 @@ public static class AuthorizingCommandOutboxDispatcherServiceCollectionExtension
         services.AddScoped<ICommandOutboxDispatcher>(sp =>
             new AuthorizingCommandOutboxDispatcher(
                 sp.GetRequiredService<CommandOutboxDispatcher>(),
-                sp.GetRequiredService<IAuthorizationProvider>()));
+                sp.GetRequiredService<IAuthorizationProvider>(),
+                sp.GetService<IPermissionResolver>(),
+                sp.GetService<Stratara.Abstractions.Session.ISessionContextProvider>()));
 
         return services;
     }

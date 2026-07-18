@@ -1,91 +1,99 @@
 # Write a Projection
 
-Projections are read-models driven by event bundles from the bus. The `EventProjectionWorker` (registered via `AddEventProjectionWorkerServices()`) consumes the event-bundle topic and routes each event to every projection that's marked it as "relevant".
+A projection turns an event stream into a read model. `Stratara.Projections` discovers your
+projections at startup, matches each incoming event bundle against the events a projection cares
+about, and invokes only the matching methods.
 
-## The interface
+`IProjection` (`Stratara.Projections.Abstractions`) is an **empty marker** — it declares nothing.
+The contract is a naming convention: the runtime reflects over your class for `HandleAsync` methods
+whose first parameter is an `IEvent<TEvent>`. That method's event type is what makes a projection
+"interested" in an event; events outside that set are skipped without invoking the projection.
 
-```csharp
-public interface IProjection
-{
-    Task HandleAsync(IReadOnlyList<IEvent> relevantEvents, CancellationToken cancellationToken);
-}
-```
-
-Stratara doesn't dictate *how* you store the read-model — that's your decision (an in-memory dictionary, a Postgres table via your own DbContext, an Elasticsearch document, …).
-
-## Declare which events you care about
-
-Stratara discovers a projection's "interesting" events by reflection: it scans the projection class for `HandleAsync(SomeEvent)` overloads.
+## The shape
 
 ```csharp
+using JetBrains.Annotations;
+using Stratara.Abstractions.EventSourcing;
+using Stratara.Projections.Abstractions;
+
 public sealed class AccountBalanceProjection(IAccountBalanceStore store) : IProjection
 {
-    public async Task HandleAsync(IReadOnlyList<IEvent> relevantEvents, CancellationToken ct)
-    {
-        foreach (var ev in relevantEvents)
-        {
-            switch (ev)
-            {
-                case IEvent<AccountOpened> opened:
-                    await HandleAsync(opened.Payload, ct);
-                    break;
-                case IEvent<AmountDeposited> deposited:
-                    await HandleAsync(deposited.Payload, ct);
-                    break;
-                case IEvent<AmountWithdrawn> withdrawn:
-                    await HandleAsync(withdrawn.Payload, ct);
-                    break;
-            }
-        }
-    }
+    [UsedImplicitly]
+    private Task HandleAsync(IEvent<AccountOpened> @event, CancellationToken ct) =>
+        store.UpsertAsync(@event.Data.AccountId, @event.Data.InitialBalance, ct);
 
-    private Task HandleAsync(AccountOpened ev, CancellationToken ct) =>
-        store.UpsertAsync(ev.AccountId, ev.InitialBalance, ct);
+    [UsedImplicitly]
+    private Task HandleAsync(IEvent<AmountDeposited> @event, CancellationToken ct) =>
+        store.AddAsync(@event.Data.AccountId, @event.Data.Amount, ct);
 
-    private Task HandleAsync(AmountDeposited ev, CancellationToken ct) =>
-        store.AddAsync(ev.AccountId, ev.Amount, ct);
-
-    private Task HandleAsync(AmountWithdrawn ev, CancellationToken ct) =>
-        store.AddAsync(ev.AccountId, -ev.Amount, ct);
+    [UsedImplicitly]
+    private Task HandleAsync(IEvent<AmountWithdrawn> @event, CancellationToken ct) =>
+        store.AddAsync(@event.Data.AccountId, -@event.Data.Amount, ct);
 }
 ```
 
-The per-event `HandleAsync(SomeEvent, …)` overloads are what `AddProjectionsFromAssemblyContaining<T>()` scans for. Stratara reads them by reflection to compute the projection's "event allowlist" — events outside the allowlist are skipped without invoking the projection.
+You write one `HandleAsync(IEvent<TEvent>, CancellationToken)` per event you care about — no manual
+`switch`, no base-method override. The payload is `@event.Data`: `IEvent<TEvent>` re-declares `Data`
+as the typed event, while the non-generic `IEvent` also carries `StreamId`, `Version`, `TenantId`
+and `UserId`.
 
-## Register
+Handlers may be **private** — discovery uses `BindingFlags.NonPublic`, so they stay off the
+projection's public surface. Mark them `[UsedImplicitly]` so analyzers don't flag them; the runtime
+is the only caller. Where you store the read model is your choice — a Postgres table via your own
+DbContext, an in-memory dictionary, an Elasticsearch document. `Stratara.Projections`' own
+`TenantProjection` is written exactly this way and is the canonical example.
+
+## Register it
 
 ```csharp
-services.AddProjectionsFromAssemblyContaining<AccountBalanceProjection>();
+builder.Services
+    .AddProjectionWorker(builder.Configuration)                       // runtime + hosted service
+    .AddProjectionsFromAssemblyContaining<AccountBalanceProjection>(); // your IProjection types
 ```
 
-You also need a worker host that runs the projection worker. Typically:
-
-```csharp
-builder.AddEventProjectionWorkerServices();
-```
+Both calls matter. `AddProjectionsFromAssemblyContaining<T>()` registers the projections **and** the
+event types they consume (so payloads deserialize); `AddProjectionWorker(IConfiguration)` registers
+the manager, the method invoker, and the hosted service that consumes the event-bundle subscription.
+Most hosts take both from the `AddEventProjectionWorkerServices()` composite in
+`Stratara.EventSourcing.WorkerDefaults`.
 
 ### Event-only hosts (no handler dependencies)
 
-`AddProjectionsFromAssemblyContaining<T>()` registers both the event types (in the trusted-type
-allowlist, so payloads can be deserialised) **and** the projection handler classes (in DI). If you run
-a host that must deserialise events off the bus or stream but should *not* wire the handler classes —
-for example a worker whose projections depend on runtime services it deliberately doesn't compose —
-register just the event types instead:
+If a host must deserialize events off the bus but should *not* wire the projection classes —
+a worker whose projections depend on runtime services it deliberately doesn't compose — register
+only the event types:
 
 ```csharp
 services.AddDomainEventTypesFromAssemblyContaining<AccountOpened>();
 ```
 
-This adds only the aggregates' `Apply(SomeEvent)` parameter types to the allowlist — no aggregate
-types, no handler classes. See the [DI Extensions Cheatsheet](../reference/di-extensions-cheatsheet.md).
+This adds only the aggregates' `Apply(SomeEvent)` parameter types to the trusted-type allowlist — no
+aggregate types, no handler classes. See the [DI Extensions Cheatsheet](../reference/di-extensions-cheatsheet.md).
 
-## Idempotency
+## Idempotency is your job
 
-Sagas + projections must be **idempotent**: the bus can replay event bundles after a transient broker outage. Two common patterns:
+Event bundles are delivered at-least-once, so a projection may see the same event twice — after a
+retry or during a replay. Write handlers that converge rather than accumulate:
 
-1. **Replay-safe upsert** — `INSERT … ON CONFLICT DO UPDATE` patterns; same event lands at the same result.
-2. **Event-id deduplication** — the read-store tracks already-projected event IDs and skips duplicates.
+| Pattern | Safe on redelivery? |
+|---|---|
+| `store.UpsertAsync(id, absoluteValue)` | Yes — replays write the same value |
+| `store.AddAsync(id, delta)` | **No** — a redelivery double-counts unless you guard on `@event.Version` |
 
-## Backfill / replay
+The `AddAsync` lines above are the honest trade-off this example makes for brevity. In production,
+either derive the absolute value, or record the last applied `Version` per stream and skip anything
+already seen.
 
-`ProjectionReplayWorker` walks the historical event stream and re-applies events to a projection from scratch. Useful when you add a new projection — boot the replay-worker once against the new projection, then switch to the live `EventProjectionWorker`.
+## What the framework does not do
+
+There is **no checkpoint store**. Projections are driven push-wise off the event bus; Stratara does
+not track how far each projection has progressed, so there is no consumer-lag metric and no
+resume-from-sequence. The observability you get is throughput and latency
+(`projection.events.processed`, `projection.bundle.duration`). If you need lag, you own the
+checkpoint. Replay of the historical stream is coordinated separately, via the
+`IProjectionReplayState` in `Stratara.Outbox.RabbitMQ`.
+
+## See also
+
+- **[Sample 2 — Event Sourced](../samples/02-event-sourced.md)** — an aggregate and its projection end to end.
+- **[Write a Saga](write-a-saga.md)** — the sibling pattern that reacts to events by issuing commands.

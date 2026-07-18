@@ -39,12 +39,12 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// </para>
 /// </remarks>
 /// <example>
-/// Replace the default <see cref="IMessageBus"/> registration (RabbitMQ) with Azure Service Bus:
+/// Register Azure Service Bus as the host's <see cref="IMessageBus"/>:
 /// <code>
-/// builder.Services
-///     .AddSingleton(_ =&gt; new ServiceBusClient(builder.Configuration.GetConnectionString("ServiceBus")!))
-///     .AddSingleton&lt;IMessageBus, AzureServiceBusBus&gt;();
+/// builder.Services.AddAzureServiceBus(builder.Configuration.GetConnectionString("ServiceBus")!);
 /// </code>
+/// This registration <c>Replace</c>s the <see cref="IMessageBus"/> slot, so it wins even when the
+/// RabbitMQ umbrella (<c>AddMessaging()</c>) already claimed it. Choose one transport per host.
 /// </example>
 internal sealed class AzureServiceBusBus(ILogger<AzureServiceBusBus> logger, ServiceBusClient client, IOptions<BusEnvelopeJsonOptions> envelopeOptions) : IMessageBus
 {

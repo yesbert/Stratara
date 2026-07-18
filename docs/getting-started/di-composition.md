@@ -9,7 +9,7 @@ Stratara composes via à-la-carte `Add*Services()` extension methods on `IServic
 │
 ├─ HTTP host (ASP.NET Core minimal-API / MVC)
 │  └─→ builder.AddBackendServices()                 (Mediator, Identity, Session, Security, Resilience)
-│      builder.Services.MapStrataraDefaults()        (health endpoints + OpenAPI)
+│      app.MapDefaultEndpoints()                     (/health + /alive endpoints)
 │
 └─ Worker host (background service)
    ├─ Need to handle commands?         → builder.AddCommandWorkerServices()
@@ -132,7 +132,7 @@ builder.Services.AddCommandHandlersFromAssemblyContaining<Program>();
 builder.Services.AddQueryHandlersFromAssemblyContaining<Program>();
 
 var app = builder.Build();
-app.MapStrataraDefaults();
+app.MapDefaultEndpoints();
 app.MapAccountEndpoints();
 app.Run();
 ```

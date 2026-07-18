@@ -7,7 +7,7 @@
 
         <IsPackable>true</IsPackable>
         <PackageId>Stratara.Shared</PackageId>
-        <Description>Umbrella package for the Stratara framework — source-generated logger extensions for outbox / saga / projection / messaging, domain-event helpers, merge primitives, and the Tier-A/B abstractions surface re-exported as one transitive bundle.</Description>
+        <Description>Umbrella package for the Stratara framework — source-generated logger extensions for command flows, domain-event helpers, merge primitives, and the Tier-A/B abstractions surface re-exported as one transitive bundle.</Description>
         <PackageTags>cqrs;event-sourcing;mediator;logging;source-generated-logging;utilities;dotnet;net10;framework;stratara</PackageTags>
     </PropertyGroup>
 

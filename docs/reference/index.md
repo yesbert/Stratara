@@ -19,4 +19,7 @@ Browse via the **API Reference** entry in the left navigation, or jump straight 
 - `Stratara.Abstractions.Outbox` — outbox dispatchers + repository contracts.
 - `Stratara.Abstractions.Messaging` — bus envelopes + integrity contracts.
 - `Stratara.Abstractions.Security` — encryption, key-store, AAD contracts.
-- `Stratara.Abstractions.Multitenancy` — tenant-scoped request marker + cross-tenant authorizer.
+- `Stratara.Abstractions.Multitenancy` — tenant-scoped request marker + cross-tenant authorizer + tenant membership.
+- `Stratara.Abstractions.Authorization` — role/permission attributes, authorization provider, permission catalog.
+- `Stratara.Abstractions.Settings` — scoped-settings catalog, store, and read facade.
+- `Stratara.Abstractions.ApiKeys` — API-key/PAT issuance + validation contracts.

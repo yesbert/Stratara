@@ -3,7 +3,7 @@
 **Concept**: `[EncryptData]` fields stay confidential across tenants by binding the AES-GCM authentication tag to the tenant id as AAD. Cross-tenant decryption fails by cryptography, not by query filtering. The full *why* lives in the [Tenant-Aware Encryption](../concepts/tenant-aware-encryption.md) concept page; this is the runnable proof.
 
 - **Code**: [`samples/Stratara.Sample.Encryption`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.Encryption)
-- **Lines**: ~120
+- **Lines**: ~155
 - **Read time**: 5–10 min
 - **Dependencies**: none — pure in-memory, no database, no DI container, no real key store.
 

@@ -16,5 +16,6 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="../../src/Stratara.Identity.AspNetCore/Stratara.Identity.AspNetCore.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Testing/Stratara.Testing.csproj"/>
     </ItemGroup>
 </Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <RootNamespace>Stratara.Sample.Identity</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Stratara.Identity.AspNetCore\Stratara.Identity.AspNetCore.csproj" />
+        <ProjectReference Include="..\..\src\Stratara.Identity.EntityFrameworkCore\Stratara.Identity.EntityFrameworkCore.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    </ItemGroup>
+
+</Project>

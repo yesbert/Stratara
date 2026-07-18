@@ -12,13 +12,13 @@
 
 ---
 
-Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 24 NuGet packages for .NET 10. Opt in à la carte.
+Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 25 NuGet packages for .NET 10. Opt in à la carte.
 
 > **License:** Stratara ships under the **MIT License** ([LICENSE](LICENSE)) — OSI-approved open source, free for any use including commercial.
 
 ## Why Stratara
 
-🔒 **Tamper-Evident by Design** — Every event stream is hash-chained. Manipulate a row directly in Postgres, and the next background-worker pass raises `EventStreamCorrupted` at the exact sequence number where the chain breaks. Audit-grade integrity, not a "trust the DBA" promise. ([Concept](https://docs.stratara.tech/concepts/tamper-evident-streams.html) · [Hero Sample](samples/Stratara.Sample.TamperProof))
+🔒 **Tamper-Evident by Design** — Every event stream is hash-chained by a background worker, and periodic anchors pin the chain head to a source of truth outside your infrastructure. Edit a row directly in Postgres and the chain no longer recomputes: a verification pass — your audit job, or the anchor check — names the exact sequence where it broke. The framework preserves the evidence and leaves the schedule to you; it does not scan for tampering on its own. Audit-grade evidence, not a "trust the DBA" promise. ([Concept](https://docs.stratara.tech/concepts/tamper-evident-streams.html) · [Hero Sample](samples/Stratara.Sample.TamperProof))
 
 🛡️ **Tenant-Aware Encryption** — `[EncryptData]` fields are sealed with AES-GCM and an authentication tag bound to the tenant id as Associated Data. A row leaked from one tenant cannot be decrypted in another tenant's session — *even with the correct master key*. The tenant binding is cryptographic, not a `WHERE tenant_id = …` you hope nobody forgets. ([Concept](https://docs.stratara.tech/concepts/tenant-aware-encryption.html) · [Hero Sample](samples/Stratara.Sample.Encryption))
 
@@ -26,7 +26,7 @@ Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise
 
 🚦 **Tenant Isolation at the Door** — Beyond field-level encryption: a request that names a tenant other than the caller's is rejected at the *mediator entrance*, before your handler runs — opt-in via the `ITenantScopedRequest` marker. A strict mode routes every privileged cross-tenant operation (a platform admin acting on another tenant's data) through one auditable `ICrossTenantAuthorizer` that denies by default. The command-/query-side complement to the database tenant filters, so isolation isn't a `WHERE tenant_id = …` each handler has to remember. ([Guide](https://docs.stratara.tech/guides/enforce-tenant-isolation.html))
 
-🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 24 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
+🧩 **Integrated, not Assembled** — Mediator + Outbox + Event Store + Sagas + Projections + Identity, lockstep-versioned across 25 packages. One `<VersionPrefix>` bump moves everything together. No multi-library composition tax, no version-skew puzzles, no integration tests to prove your bus and your event store still see eye-to-eye.
 
 ⚡ **Fast by Default, Scales Horizontally** — Reflection-free hot paths: commands, event replay, and projection dispatch run through compiled expressions, not `MethodInfo.Invoke`. Projections are push-driven — subscribed to the event bus, never polling a table. And every stream maps to one of 4096 deterministic buckets, so command, projection, and saga workers scale out as competing consumers across N nodes on RabbitMQ or Azure Service Bus. The measured numbers — replay throughput, reflection-free property access, constant-memory rebuilds — are in [Performance & horizontal scale](#performance--horizontal-scale) just below.
 
@@ -103,10 +103,18 @@ Hello-mediator in five lines:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
+
+// The mediator traces each dispatch — AddMediator() does not register the Tracer for you.
+builder.Services.AddSingleton(TracerProvider.Default.GetTracer("MyApp"));
 builder.Services.AddMediator();
 builder.Services.AddCommandHandlersFromAssemblyContaining<Program>();
+
 var app = builder.Build();
-await app.Services.GetRequiredService<IMediator>().HandleAsync(new MyCommand(), CancellationToken.None);
+
+// IMediator is scoped — resolve it from a scope, not from app.Services.
+using var scope = app.Services.CreateScope();
+var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+await mediator.HandleAsync(new MyCommand(), CancellationToken.None);
 ```
 
 ## Package map
@@ -135,7 +143,8 @@ Lockstep-versioned NuGet family — every package in the table below ships at th
 | C | `Stratara.Outbox.AzureServiceBus` | Outbox + Azure Service Bus-backed `IMessageBus` |
 | C | `Stratara.Infrastructure` | Cross-cutting infrastructure glue |
 | C | `Stratara.Identity.Core` | Channel-agnostic identity primitives |
-| C | `Stratara.Identity.AspNetCore` | Channel-agnostic ASP.NET Core identity wiring (sign-in manager wrapper + i18n + email-sender stub) |
+| C | `Stratara.Identity.AspNetCore` | Channel-agnostic ASP.NET Core identity wiring (sign-in manager wrapper + membership tenant-claim bridge + i18n + email-sender stub) |
+| C | `Stratara.Identity.EntityFrameworkCore` | Identity directory: user↔tenant membership, membership-backed authorization (roles + permissions), scoped settings store |
 | C | `Stratara.ServiceDefaults.AspNetCore` | ASP.NET health checks + request OpenTelemetry |
 | — | `Stratara.Testing` | Test doubles (in-memory key store / message bus / session) + given/when/then aggregate harness — reference from test projects only |
 | — | `Stratara.Testing.EntityFrameworkCore` | Run the real event-sourcing write stack on in-memory SQLite (`EventStoreTestHost`) — reference from test projects only |
@@ -162,6 +171,19 @@ The fastest path is to run the **samples** under [`samples/`](samples/) — each
 | 3 | [`Stratara.Sample.OutboxWorker`](samples/Stratara.Sample.OutboxWorker) | Outbox + message bus + background worker |
 | 4 | [`Stratara.Sample.MoneyTransferSaga`](samples/Stratara.Sample.MoneyTransferSaga) | Saga / process manager |
 | 5 | [`Stratara.Sample.AspNetCoreApi`](samples/Stratara.Sample.AspNetCoreApi) | HTTP minimal-API → mediator wiring |
+
+### 🧩 Pipeline behaviors
+
+| Sample | Concept |
+|---|---|
+| [`Stratara.Sample.Validation`](samples/Stratara.Sample.Validation) | `IValidator<T>` running before the handler — errors block, warnings pass through |
+
+### 🔐 Identity & access
+
+| Sample | Concept |
+|---|---|
+| [`Stratara.Sample.Identity`](samples/Stratara.Sample.Identity) | External OpenID Connect sign-in + hardened JIT provisioning, API keys / PATs, auth-scheme selector |
+| [`Stratara.Sample.IdentityDirectory`](samples/Stratara.Sample.IdentityDirectory) | Tenant membership with per-membership roles, `[RequirePermission]`, and scoped settings |
 
 ```bash
 dotnet run --project samples/Stratara.Sample.TamperProof

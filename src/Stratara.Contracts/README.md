@@ -8,7 +8,7 @@ Wire-level POCO contracts shared by every Stratara package. Pure data records �
 
 - `Messages/EventMessage`, `EventBundle`, `CommandEnvelope` — the cross-process envelope shapes that messaging adapters (`Stratara.Outbox.RabbitMQ` etc.) serialise on and off the bus.
 - `Requests/PagedRequest` — shared pagination + sort record used by query handlers across the family.
-- `Session/SessionContext` — public data shape for actor/subject identity, correlation, causation, and connection routing. The corresponding service abstractions live in `Stratara.Sessions`.
+- `Session/SessionContext` — public data shape for actor/subject identity, correlation, causation, and connection routing. The `ISessionContextProvider` service abstraction lives in `Stratara.Abstractions`; the ASP.NET Core middleware that populates it lives in `Stratara.Sessions`.
 
 ## Quick reference
 

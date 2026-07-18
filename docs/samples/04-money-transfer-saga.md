@@ -1,18 +1,25 @@
 # Sample 4 — Money-Transfer Saga
 
-**Concept**: Saga / process manager. One `TransferCommand` fans out into a `WithdrawCommand` + `DepositCommand` via the outbox.
+**Concept**: Process manager. One `RequestMoneyTransferCommand` fans out into a `WithdrawCommand` + `DepositCommand` via the outbox.
 
 - **Code**: [`samples/Stratara.Sample.MoneyTransferSaga`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.MoneyTransferSaga)
-- **Lines**: ~330
+- **Lines**: ~340
 - **Read time**: 15–20 min
 - **Prerequisite**: [Sample 3 — Outbox + Worker](03-outbox-worker.md).
 
 ## What you'll see
 
-1. **`TransferCommand(from, to, amount)`** — the input. A saga, not a handler, reacts to it.
-2. **`MoneyTransferSaga`** — implements `ISaga`. Validates the transfer (source-account balance), then **enqueues two commands** in one transaction: `WithdrawCommand(from, amount)` + `DepositCommand(to, amount)`.
-3. The withdraw + deposit run **asynchronously, in parallel** through the outbox + command-worker. The saga doesn't wait for them.
-4. **Rejection path** — if the saga sees the transfer is invalid (insufficient balance), it never enqueues the down-stream commands. The rejection happens **before fan-out**.
+1. **`RequestMoneyTransferCommand(SourceAccountId, DestinationAccountId, Amount)`** — the input, an ordinary `ICommand`.
+2. **`MoneyTransferSagaHandler : ICommandHandler<RequestMoneyTransferCommand>`** — checks the source-account balance, then **enqueues two commands**: `WithdrawCommand(from, amount)` + `DepositCommand(to, amount)`.
+3. The withdraw + deposit run **asynchronously** through the outbox + command-worker. The handler doesn't wait for them.
+4. **Rejection path** — an insufficient balance throws `InsufficientBalanceException` and the down-stream commands are never enqueued. The rejection happens **before fan-out**.
+
+> **This is a process manager, not an event-driven saga.** The sample deliberately models the fan-out
+> with a plain command handler and does not reference `Stratara.Sagas` at all. The framework's
+> `ISaga` is invoked by the saga worker for each `IEvent` in an event bundle — a canonical
+> money-transfer saga would react to `MoneyTransferRequestedEvent`, then to `AmountWithdrawnEvent`,
+> across several invocations. Same fan-out, spread over event bundles instead of one synchronous
+> handler; the sample's README walks through that fuller choreography.
 
 ## Running
 
@@ -41,13 +48,13 @@ Done.
 
 ## What changed vs. Sample 3
 
-| Sample 3 (one command → one handler) | Sample 4 (one command → saga → many commands) |
+| Sample 3 (one command → one handler) | Sample 4 (one command → process manager → many commands) |
 |---|---|
-| Caller's `EnqueueAsync(WithdrawCommand)` directly hits the withdraw handler | Caller's `EnqueueAsync(TransferCommand)` hits a saga first; the saga fans out |
-| No business rule "withdraw and deposit must agree" | Saga *is* that rule — validates before issuing the pair |
-| Stratara's `ICommandHandler<T>` | Stratara's `ISaga` — handles **events**, not commands; emits commands |
+| `dispatcher.Enqueue(new WithdrawCommand(...))` directly hits the withdraw handler | `dispatcher.Enqueue(new RequestMoneyTransferCommand(...))` hits `MoneyTransferSagaHandler` first; it fans out |
+| No business rule "withdraw and deposit must agree" | The handler *is* that rule — validates before issuing the pair |
+| A handler that mutates one aggregate | A handler that issues further commands and holds no state across calls |
 
 ## Common pitfalls
 
-- **Sagas should not depend on at-most-once delivery.** If the bus replays a `Transferred` event, the saga's handler must be idempotent (e.g. keyed by `TransferId`).
+- **Don't depend on at-most-once delivery.** The outbox redelivers, so a fan-out handler must be idempotent — enqueueing the pair twice must not move the money twice. Key the work by a transfer id.
 - **Two-phase commit is not what Stratara provides.** A failed `WithdrawCommand` after `DepositCommand` succeeded is a compensation-saga problem — Stratara gives you the runtime; the compensation logic is yours.

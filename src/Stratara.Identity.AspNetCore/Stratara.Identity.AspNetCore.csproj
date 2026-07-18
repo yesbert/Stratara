@@ -7,8 +7,8 @@
 
         <IsPackable>true</IsPackable>
         <PackageId>Stratara.Identity.AspNetCore</PackageId>
-        <Description>Channel-agnostic ASP.NET Core identity wiring for the Stratara stack — AddAspNetIdentity and AddAspNetIdentityWithSignInManager extensions, IStrataraSignInManager wrapper, EF stores, i18n'd failure messages, optional passkey support. Consumers wire their own AuthenticationStateProvider (Blazor Server, MAUI, etc.).</Description>
-        <PackageTags>aspnetcore;identity;authentication;authorization;asp-net-identity;sign-in;jwt;passkey;dotnet;stratara</PackageTags>
+        <Description>Channel-agnostic ASP.NET Core identity wiring for the Stratara stack — AddAspNetIdentity and AddAspNetIdentityWithSignInManager extensions, IStrataraSignInManager wrapper, EF stores, i18n'd failure messages, optional passkey support, external-login OpenID Connect + JWT-bearer helpers, and hardened JIT external-login provisioning. Consumers wire their own AuthenticationStateProvider (Blazor Server, MAUI, etc.).</Description>
+        <PackageTags>aspnetcore;identity;authentication;authorization;asp-net-identity;sign-in;jwt;passkey;oidc;openid-connect;external-login;dotnet;stratara</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>
@@ -16,6 +16,12 @@
     </ItemGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Identity.AspNetCore.Tests"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer"/>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect"/>
         <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore"/>
         <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens"/>
         <PackageReference Include="System.IdentityModel.Tokens.Jwt"/>

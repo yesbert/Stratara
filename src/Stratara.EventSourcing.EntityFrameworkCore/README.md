@@ -11,7 +11,7 @@ EF Core persistence for the Stratara event-sourced stack — PostgreSQL flavoure
 | `ReadStore/` | `ReadDbContext`, `ReadUnitOfWork`, `ProjectionsUnitOfWork`, Tenant repository, projection entity configurations | `Stratara.EventSourcing.EntityFrameworkCore.ReadStore` |
 | `IdentityStore/` | Generic ASP.NET Identity `IdentityDbContext` + marker | `Stratara.EventSourcing.EntityFrameworkCore.IdentityStore` |
 
-Namespaces are unchanged from the pre-fold layout (`Stratara.EntityFrameworkCore`, `Stratara.EventSourcing.EntityFrameworkCore.WriteStore`, `Stratara.EventSourcing.EntityFrameworkCore.ReadStore`, `Stratara.EventSourcing.EntityFrameworkCore.IdentityStore`) so consumer `using` directives don't change.
+Everything lives under `Stratara.EventSourcing.EntityFrameworkCore` and its sub-namespaces (`.WriteStore`, `.ReadStore`, `.IdentityStore`, `.Abstractions`, `.Conventions`, `.Extensions`, `.HealthChecks`, `.Migration`). The DI extensions sit in `Microsoft.Extensions.DependencyInjection`, per the Microsoft convention, so they resolve without an extra `using`.
 
 ## Why folded
 
@@ -21,13 +21,36 @@ If your application doesn't use ASP.NET Identity, simply don't reference `Identi
 
 ## Quick start
 
+Derive your contexts from the generic base classes — the type argument is the context itself:
+
 ```csharp
-// In your AppHost / Worker / Web project:
-builder.Services.AddNpgsqlWriteStore<MyAppWriteDbContext>(builder.Configuration);
-builder.Services.AddNpgsqlReadStore<MyAppReadDbContext>(builder.Configuration);
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
+
+public sealed class MyAppWriteDbContext(DbContextOptions<MyAppWriteDbContext> options)
+    : WriteDbContext<MyAppWriteDbContext>(options);
+
+public sealed class MyAppReadDbContext(DbContextOptions<MyAppReadDbContext> options)
+    : ReadDbContext<MyAppReadDbContext>(options);
 ```
 
-Then derive `MyAppWriteDbContext : Stratara.EventSourcing.EntityFrameworkCore.WriteStore.WriteDbContext` and `MyAppReadDbContext : Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ReadDbContext`.
+Then register the Npgsql context factories and the write store:
+
+```csharp
+// In your AppHost / Worker / Web project:
+builder.Services
+    .AddNpgsqlWriteDbContextFactory<MyAppWriteDbContext>()
+    .AddNpgsqlReadDbContextFactory<MyAppReadDbContext>()
+    .AddWriteStore(builder.Configuration);                    // binds Stratara:EventSourcing options
+```
+
+Most hosts don't call these directly — the worker composites in `Stratara.EventSourcing.WorkerDefaults`
+(`AddCommandWorkerServices()`, `AddEventProjectionWorkerServices()`, …) already compose `AddWriteStore`
+for you. Reach for the explicit form when you build a host that none of the composites fit.
+
+> **Renamed in 3.2.0:** the write-side factory was `AddNpsqlWriteDbContextFactory` (missing the `g`)
+> through 3.1.x. The correctly-spelled `AddNpgsqlWriteDbContextFactory` is now the canonical name; the
+> old spelling still compiles as an `[Obsolete]` alias and will be removed in the next major version.
 
 ## Health checks
 

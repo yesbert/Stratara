@@ -61,9 +61,9 @@ catch (CryptographicException)
 }
 Console.WriteLine();
 
-Console.WriteLine("In production this is wired automatically: Stratara's EF Core value converter calls");
-Console.WriteLine("the encryptor on every read/write of an [EncryptData]-marked property, with the AAD");
-Console.WriteLine("supplied by ISessionContextProvider.Current.TenantId. A row filtered out by query but");
-Console.WriteLine("leaked through a DB-level mistake still cannot be opened from another tenant's session.");
+Console.WriteLine("In production this is wired automatically: Stratara's ISecureJsonSerializer seals every");
+Console.WriteLine("[EncryptData]-marked property as it serializes the payload, with the AAD supplied by");
+Console.WriteLine("ISessionContextProvider.Current. A row filtered out by query but leaked through a");
+Console.WriteLine("DB-level mistake still cannot be opened from another tenant's session.");
 Console.WriteLine();
 Console.WriteLine("Done.");

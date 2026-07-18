@@ -7,6 +7,10 @@ In-process mediator with DI-resolved handlers and pipeline behaviors. Drop-in re
 ## Quick start
 
 ```csharp
+// The mediator traces every dispatch, so an OpenTelemetry Tracer must be resolvable.
+// AddMediator() does not register one — pick your own instrumentation name:
+services.AddSingleton(TracerProvider.Default.GetTracer("Your.App"));
+
 services.AddMediator()
     .AddCommandHandlersFromAssemblyContaining<Program>()
     .AddQueryHandlersFromAssemblyContaining<Program>()
@@ -17,12 +21,16 @@ services.AddMediator()
 services.AddAuthorizingMediator<MyAuthorizationProvider>();
 ```
 
+`IMediator` is registered **scoped**. Resolve it from a scope (a request scope in ASP.NET Core, or
+an explicit `IServiceProvider.CreateScope()` in a console host) — resolving it from the root
+provider throws.
+
 ## What's in the box
 
 - `IMediator.HandleAsync<TResult>(IRequest<TResult>, CancellationToken)` — routes queries and commands-with-result to `IQueryHandler<TRequest, TResult>` through any registered `IPipelineBehavior<TRequest, TResult>` chain.
 - `IMediator.HandleAsync<TRequest>(TRequest, CancellationToken)` — routes void commands to `ICommandHandler<TRequest>` through any registered `IPipelineBehavior<TRequest>` chain.
-- `AuthorizingMediator` decorator — checks `[RequireRole]` attributes on the request type via `IAuthorizationProvider` before delegating to the inner mediator.
-- `BucketLockPool` — concurrency primitive that serialises `IAggregateScopedCommand` dispatch per bucket id. Used by message-bus consumers (e.g. `Stratara.Infrastructure`'s `MediatorCommandWorker`) to keep aggregate writes single-writer.
+- `AuthorizingMediator` decorator — checks `[RequireRole]` attributes via `IAuthorizationProvider` and `[RequirePermission]` attributes via `IPermissionResolver` (both AND) on the request's **runtime** type before delegating to the inner mediator. Its startup validator fails fast when a permission-guarded type is registered without an authorizing mediator or without a resolver, so a guard can never be silently skipped.
+- `BucketLockPool` — concurrency primitive that serialises `IAggregateScopedCommand` dispatch per bucket id. Used by message-bus consumers (e.g. the `MediatorCommandWorker` in `Stratara.Outbox.RabbitMQ`) to keep aggregate writes single-writer.
 
 ## Pipeline behavior contract
 

@@ -3,7 +3,7 @@
 **Concept**: Event-sourced aggregate + projection (read/write separation) — what changes when you replace the in-memory repository with an event store.
 
 - **Code**: [`samples/Stratara.Sample.EventSourced`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.EventSourced)
-- **Lines**: ~250
+- **Lines**: ~290
 - **Read time**: 10–15 min
 - **Prerequisite**: [Sample 1 — CQRS Basics](01-cqrs-basics.md).
 

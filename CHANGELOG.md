@@ -5,7 +5,7 @@ All notable changes to the Stratara framework are documented in this file.
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning 2.0.0](https://semver.org/).
 
-Stratara is versioned **lockstep** — all 24 packable packages share the same version
+Stratara is versioned **lockstep** — all 25 packable packages share the same version
 number, controlled by `<VersionPrefix>` in `Directory.Build.props`. A single entry here
 applies to the entire NuGet family.
 
@@ -15,6 +15,161 @@ applies to the entire NuGet family.
 > they have been rewritten retroactively for public consumption.
 
 ## [Unreleased]
+
+## [3.2.0] — 2026-07-17
+
+### Added
+
+- **User↔tenant membership (`Stratara.Identity.EntityFrameworkCore`, new package).** First wave of
+  the identity-directory plane: a many-to-many membership model (`TenantMembership` +
+  `ITenantMembershipStore` in `Stratara.Abstractions.Multitenancy`) records which tenants a user
+  belongs to and which tenant-scoped roles the user holds in each — single-tenant apps are the
+  degenerate case of one membership. The EF-backed store ships both lookup directions (a user's
+  tenants, a tenant's members), upsert semantics, per-user/per-tenant erasure sweeps for GDPR
+  flows, and a membership-guarded active-tenant selection for users who belong to more than one
+  tenant. Host the tables in your existing DbContext via
+  `modelBuilder.ApplyIdentityDirectoryModel()` (one migration lineage) or derive a standalone
+  context from `IdentityDirectoryDbContext<TContext>`; register with
+  `AddTenantMembershipStore<TContext>()`. The lockstep family grows from 24 to 25 packable
+  packages.
+- **Membership-backed authorization providers.** The framework now ships its first
+  `IAuthorizationProvider` implementations: `MembershipAuthorizationProvider` (role checks pass on
+  tenant-scoped membership roles within the session's data-owner tenant) and
+  `MembershipAuthorizationProvider<TUser>` (additionally consults global ASP.NET Identity roles —
+  platform roles such as a platform administrator — on a membership miss). Wire directly
+  (`AddMembershipAuthorization[<TUser>]()`) or through the authorizing mediator
+  (`AddAuthorizingMediator<MembershipAuthorizationProvider<TUser>>()`). Both are fail-closed.
+- **Membership-backed cross-tenant authorizer.** `AddMembershipCrossTenantAuthorizer(...)`
+  replaces strict tenant isolation's deny-all default with stored facts: a cross-tenant operation
+  passes when the actor holds an active membership in the data-owner tenant or one of the
+  configured `CrossTenantRoles` (the operator-impersonation path for platform administrators).
+- **Sign-in tenant-claim bridge (`Stratara.Identity.AspNetCore`).** The `stratara:tenant_id`
+  claim the session-context middleware reads is now emitted by the framework instead of
+  consumer-owned code. Two composable modes: `AddMembershipTenantClaim<TUser>()` decorates the
+  ASP.NET Identity claims factory and stamps the claim into every issued principal (cookies and
+  Identity bearer tokens), and `AddMembershipTenantClaimsTransformation()` resolves it live per
+  request so tenant switches apply without re-issuing the sign-in. Tenant resolution prefers the
+  user's persisted active-tenant selection, falls back to the only/first active membership, and
+  stamps nothing for users without an active membership (tenant resolution stays fail-closed).
+  Principals that already carry the claim pass through untouched.
+- **`InMemoryTenantMembershipStore` (`Stratara.Testing`).** Drop-in membership-store double
+  mirroring the EF store's contract semantics, including the membership-guarded active-tenant
+  selection and the erasure sweeps.
+- **Permission-based authorization (`[RequirePermission]`).** Fine-grained sibling of
+  `[RequireRole]`: applications declare their permission vocabulary once in a code-first
+  `PermissionCatalog` (`AddPermissionCatalog(c => { c.Add("sims.read"); c.GrantToRole("TenantAdmin",
+  "sims.read"); })` — granting an undeclared permission throws, so grant typos surface at startup),
+  and guard commands/queries with `[RequirePermission("sims.read")]`. Enforcement runs in the
+  authorizing mediator and the authorizing outbox dispatcher (multiple attributes AND; missing
+  permission throws the new `PermissionAuthorizationException`, which derives from
+  `AuthorizationException` so existing 403 mappings catch it unchanged; `AuthorizationException` is
+  now unsealed for that reason). The mediator's startup validator fails fast when
+  permission-guarded types exist without an authorizing mediator or without a registered
+  `IPermissionResolver` — a permission attribute can never be silently ignored. Role guards are
+  unaffected; roles and permissions compose freely on the same request type.
+- **Catalog permission resolvers (`Stratara.Identity.EntityFrameworkCore`).**
+  `AddCatalogPermissionResolver()` maps the actor's active tenant-scoped membership roles through
+  the catalog's role grants; `AddCatalogPermissionResolver<TUser>()` additionally maps global
+  ASP.NET Identity roles (platform roles), so `GrantToRole` works regardless of which level a role
+  lives on. Resolution is memoized per `(userId, tenantId)` within a scope and fail-closed;
+  permission sets are deliberately never carried in `SessionContext`, cookies, or tokens.
+- **HTTP permission policies (`Stratara.Identity.AspNetCore`).** `AddStrataraPermissionPolicies()`
+  turns every declared catalog permission into an on-demand ASP.NET Core authorization policy —
+  plain `[Authorize("sims.read")]` / `.RequireAuthorization("sims.read")` works without hand-registering
+  policies. Undeclared policy names defer to the default provider; evaluation goes through the
+  registered `IPermissionResolver` (user id from the name-identifier claim, tenant scope from
+  `stratara:tenant_id`), never through claims-embedded permissions.
+- **Scoped settings plane (`Stratara.Abstractions.Settings` + `Stratara.Identity.EntityFrameworkCore`).**
+  Provider-neutral settings with four scopes — global, tenant, user, user-in-tenant. Applications
+  declare their vocabulary code-first in a `SettingCatalog` (`AddSettingCatalog(c => c.Add(new
+  SettingDefinition("Ui.Theme", "system")))`); values are stored row-per-key via `ISettingStore`
+  (EF default: `setting_entry` table, registered with `AddSettingStore<TContext>()`, exact-scope
+  reads/writes, `null` deletes). The `ISettingProvider` read facade resolves for the current
+  session's Subject through the fixed fallback chain user-in-tenant → user → tenant → global →
+  host configuration (`Stratara:Settings:<name>`) → code default, with typed access
+  (`GetAsync<T>`); definitions with `IsInherited = false` consult only the most specific scope.
+  Reading or redeclaring an undeclared name throws — typos surface immediately.
+- **Encrypted settings + GDPR erasure.** Definitions marked `IsEncrypted = true` are stored
+  AES-GCM-encrypted at rest through the security plane's `ISecureBlobEncryptor` — key scope
+  derived from the setting scope and the purpose bound to the setting name, so a leaked row can
+  neither be decrypted under another scope's key nor replayed as a different setting; because the
+  keys live in `IKeyStore`, `EraseScopeAsync` crypto-shreds a user's encrypted settings.
+  `ISettingStore.DeleteScopeAsync` completes the plane's erasure story: a user scope sweeps the
+  user's values across all tenants, a tenant scope sweeps the tenant's values across all users.
+- **`InMemorySettingStore` (`Stratara.Testing`).** Drop-in settings-store double mirroring the EF
+  store's contract semantics, including the widened erasure-sweep behavior.
+
+- **API-key / personal-access-token authentication (`IApiKeyStore` + `StrataraApiKey` scheme).**
+  Machine-to-machine auth as a standard ASP.NET Core authentication scheme, not a parallel
+  system. `AddApiKeyStore<TContext>()` (Stratara.Identity.EntityFrameworkCore) issues
+  `stk_`-prefixed keys with 256-bit entropy — the raw key is shown exactly once, storage holds
+  only its SHA-256 digest (`api_key` table, unique hash index) — and validates fail-closed
+  (unknown/revoked/expired → null). **Machine keys are materialized as tenant memberships of the
+  key id**, so role checks, permission resolution, and cross-tenant authorization treat a key
+  exactly like a human actor; revocation and the tenant-erasure sweep remove those memberships
+  again. **Personal access tokens** bind a key to a user (issuance requires the user's active
+  membership; PATs carry no roles of their own) and authenticate as that user. On the HTTP side,
+  `AddStrataraApiKey()` (Stratara.Identity.AspNetCore) registers the handler — `X-Api-Key`
+  header by default, opt-in `access_token` query for header-less transports — whose ticket
+  carries the name-identifier and `stratara:tenant_id` claims the session-context middleware
+  already reads.
+- **Auth-scheme selector (`AddStrataraAuthSchemeSelector()`).** A policy scheme that routes each
+  request by shape — API-key header → API-key scheme, `Authorization: Bearer` → bearer scheme,
+  everything else → the cookie scheme (all three routable scheme names configurable) — so mixed
+  API/browser hosts set one default scheme instead of per-endpoint scheme lists.
+- **External-login OpenID Connect + JWT-bearer helpers (`Stratara.Identity.AspNetCore`).** Two
+  configuration-driven authentication-builder extensions add the external identity providers as
+  ordinary schemes. `AddStrataraOpenIdConnect(configuration)` wires the interactive "log in with
+  &lt;provider&gt;" flow (Entra, Keycloak, generic OIDC) from an `Identity:OpenIdConnect` section;
+  `AddStrataraJwtBearer(configuration)` validates API access tokens from an `Identity:JwtBearer`
+  section, routing a multi-issuer API by the token's `iss`. Both key the principal on the issuer
+  `sub`, never on email. The package now depends on
+  `Microsoft.AspNetCore.Authentication.OpenIdConnect` and
+  `Microsoft.AspNetCore.Authentication.JwtBearer`.
+- **Hardened JIT external-login provisioning (`AddStrataraExternalLoginProvisioning<TUser>()`).** On
+  a user's first external sign-in, `ExternalLoginProvisioningService<TUser>` creates a local
+  ASP.NET Identity account and links the external login, or links to an existing account — with the
+  account-takeover defenses as hard defaults, not opt-ins. It links on the issuer's `(provider,
+  sub)` (never on the mutable email claim); auto-links to a pre-existing account only when the email
+  is verified by the provider (`email_verified`/Entra `xms_edov`) **and** already confirmed locally,
+  returning `RequiresInteractiveLinking` rather than merging otherwise; honors an optional
+  invitation gate and an `AutoProvision` switch; and fails closed on every unsatisfied check. The
+  callable service leaves the sign-in callback/UI to the consumer; `Stratara.Sample.Identity`
+  demonstrates the full wiring.
+- **Documentation and runnable samples for the whole capability.** Five new guides cover the
+  identity surface — tenant membership and the sign-in claim bridge, permission-based authorization,
+  scoped settings, API keys and personal access tokens, and external login with JIT provisioning.
+  Two samples back them: the new `Stratara.Sample.IdentityDirectory` runs membership, permissions
+  and scoped settings end to end against SQLite, and `Stratara.Sample.Identity` gains the API-key
+  lane alongside its external-login wiring. Both are smoke-tested in CI like every other sample.
+
+### Changed
+
+- **`AddNpsqlWriteDbContextFactory` corrected to `AddNpgsqlWriteDbContextFactory`** (`Stratara.EventSourcing.EntityFrameworkCore`).
+  The write-side context-factory extension was missing the `g` in "Npgsql". The correctly-spelled
+  name is now canonical; the old spelling remains as an `[Obsolete]` alias that forwards verbatim,
+  so hosts registered against the 3.1.x name keep compiling. The alias will be removed in the next
+  major version.
+- **`AddAzureServiceBus` now replaces the `IMessageBus` registration** (`Stratara.Outbox.AzureServiceBus`).
+  Previously it used `TryAdd`, so calling it after the RabbitMQ umbrella (`AddMessaging()`, which the
+  worker composites call) was a silent no-op that left RabbitMQ in place. It now `Replace`s the slot,
+  so an explicitly-chosen transport wins regardless of registration order. Use one transport per host.
+
+### Fixed
+
+- **Authorization decorators now guard the runtime request type.** The authorizing mediator's
+  void-request path and the authorizing outbox dispatcher previously read `[RequireRole]` (and now
+  `[RequirePermission]`) attributes from the statically inferred generic type. A command dispatched
+  through a base-typed variable (class-hierarchy dispatch) therefore skipped guards declared on the
+  derived type. Both decorators now inspect `request.GetType()`, so runtime-type guards are always
+  enforced — strictly fail-closed relative to the previous behavior.
+- **Public docs and package pages corrected against source.** A pre-release audit found the READMEs,
+  DocFX guides, `llms.txt`, and several csproj `<Description>` fields describing APIs and behavior the
+  code does not have — fabricated extension methods, a compile-breaking `KeyScope` snippet, quick
+  starts that threw at runtime, `internal` types shown as wire-up, and an overstated
+  "automatic verification" claim for tamper-evident streams. All corrected; a new
+  `scripts/check-doc-symbols.py` gate fails the build on any documented `Add*`/`Map*`/`Use*` call
+  that no longer resolves in `src/`.
 
 ## [3.1.7] — 2026-07-01
 
@@ -2114,7 +2269,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.1.7...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.0...main
+[3.2.0]: https://github.com/yesbert/Stratara/releases/tag/v3.2.0
 [3.1.7]: https://github.com/yesbert/Stratara/releases/tag/v3.1.7
 [3.1.6]: https://github.com/yesbert/Stratara/releases/tag/v3.1.6
 [3.1.5]: https://github.com/yesbert/Stratara/releases/tag/v3.1.5

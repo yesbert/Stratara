@@ -32,7 +32,7 @@ Projections and sagas are real-time bus subscribers without a persisted checkpoi
 ```csharp
 using var activity = ApplicationDiagnostics.Activity.Source
     .StartActivity("CreateOrder");
-activity?.SetTag(ApplicationDiagnostics.TagNames.TenantId, tenantId);
+activity?.SetTag(ApplicationDiagnostics.TenantIdTagName, tenantId);
 
 ApplicationDiagnostics.Metrics.EventSourceAppendConflicts.Add(1,
     new("aggregate.type", "Order"));

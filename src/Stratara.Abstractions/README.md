@@ -14,14 +14,16 @@ Use this when you need to reference Stratara types without pulling in any concre
 - `Stratara.Abstractions.Outbox` — `ICommandOutboxDispatcher`, `IEventBundleOutboxDispatcher`, `IOutboxRepository`. Plus wire-type `OutboxEntry`.
 - `Stratara.Abstractions.Messaging` — `IMessageBus`, `IMessagingIdentifier`, `IEventBusConsumer`, `IEventBusPublisher`.
 - `Stratara.Abstractions.Session` — `ISessionContextProvider`.
-- `Stratara.Abstractions.Multitenancy` — `ITenantService`, `ICurrentUserService`, `ITenantScopedRequest`, `ICrossTenantAuthorizer`, `TenantAccessDeniedException`.
+- `Stratara.Abstractions.Multitenancy` — `ITenantService`, `ICurrentUserService`, `ITenantScopedRequest`, `ICrossTenantAuthorizer`, `TenantAccessDeniedException`, `ITenantMembershipStore`. Plus wire-types: `TenantMembership`, `MembershipStatus`.
 - `Stratara.Abstractions.Projections` — `IProjectionReplayState`.
 - `Stratara.Abstractions.Security` — `IEncryptionFactory`, `IKeyStore`, `IMasterKeyProvider`, `ISecureBlobEncryptor`, `ISecureJsonSerializer`. Plus wire-types: `KeyScope`, `KeyMaterial`, `EncryptedData`, `DataSensitivityLevel`, `EncryptDataAttribute`.
 - `Stratara.Abstractions.Validation` — `IValidator<T>`, `ValidationResult`, `ValidationFailure`, `ValidationSeverity`, `StrataraValidationException`.
 - `Stratara.Abstractions.Entities` — `IEntity`, `IBucket`, `IHasRowVersion`, `IMultiTenant`, `ITenantEntity`, `IUserIdentity`.
 - `Stratara.Abstractions.BackgroundTasks` — `IBackgroundTaskQueue`. Plus wire-types: `BackgroundTaskInfo`, `BackgroundTaskStatus`.
 - `Stratara.Abstractions.Commands` — `IUpdateCommand`.
-- `Stratara.Abstractions.Authorization` — `RequireRoleAttribute`, `IAuthorizationProvider`, `AuthorizationException`.
+- `Stratara.Abstractions.Authorization` — `RequireRoleAttribute`, `RequirePermissionAttribute`, `IAuthorizationProvider`, `IPermissionResolver`, `PermissionCatalog`, `AuthorizationException`, `PermissionAuthorizationException`.
+- `Stratara.Abstractions.Settings` — `ISettingProvider`, `ISettingStore`, `SettingCatalog`. Plus wire-types: `SettingDefinition`, `SettingScope`.
+- `Stratara.Abstractions.ApiKeys` — `IApiKeyStore`. Plus wire-types: `ApiKeyDescriptor`, `ApiKeyIssueRequest`, `IssuedApiKey`.
 
 ## Why split
 

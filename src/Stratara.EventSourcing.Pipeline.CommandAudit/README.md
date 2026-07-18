@@ -8,8 +8,9 @@ Mediator pipeline behavior that records an audit row for every dispatched comman
 
 | Type | Purpose |
 |---|---|
-| `CommandAuditBehavior<TRequest>` | Runs the audit-write step before delegating to `next()` for `IRequest` (commands without result). |
-| `CommandAuditBehavior<TRequest, TResult>` | Same, for `IRequest<TResult>` (commands with result + queries). Only records when the request also implements `ICommandBase` — queries flow through untouched. |
+| `AddCommandAuditing()` | The package's public surface — registers both behavior arities in one call. |
+| `CommandAuditBehavior<TRequest>` (internal) | Runs the audit-write step before delegating to `next()` for `IRequest` (commands without result). |
+| `CommandAuditBehavior<TRequest, TResult>` (internal) | Same, for `IRequest<TResult>` (commands with result + queries). Only records when the request also implements `ICommandBase` — queries flow through untouched. |
 | `CommandAuditWriter` (internal) | Opens a transaction on `IWriteUnitOfWork`, writes via `ICommandAuditRepository.AddAsync`, commits. |
 
 The behavior only audits commands — query requests reach the same generic interface but are filtered by the `is ICommandBase` check, so registering both behaviors application-wide is safe.
@@ -18,10 +19,11 @@ The behavior only audits commands — query requests reach the same generic inte
 
 ```csharp
 // At composition time, alongside the other framework pipeline behaviors:
-builder.Services
-    .AddPipelineBehaviorWithResult(typeof(CommandAuditBehavior<,>))
-    .AddPipelineBehavior(typeof(CommandAuditBehavior<>));
+builder.Services.AddCommandAuditing();
 ```
+
+That one call registers both behavior arities. The behavior types themselves are `internal` — they
+are an implementation detail, not something to name from your composition root.
 
 The behaviors resolve `IWriteUnitOfWork` from DI (ships with `Stratara.EventSourcing.EntityFrameworkCore` in the default deployment). No additional registration is needed.
 

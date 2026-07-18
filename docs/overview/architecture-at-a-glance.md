@@ -1,6 +1,6 @@
 # Architecture at a glance
 
-Stratara ships **24 packages**: 22 runtime packages organized into three tiers (below), plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
+Stratara ships **25 packages**: 23 runtime packages organized into three tiers (below), plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
 
 ## Tier layout
 
@@ -31,7 +31,8 @@ Tier-C  (builds on Tier-B + Tier-A)
 ├── Stratara.Outbox.AzureServiceBus                  Azure Service Bus IMessageBus impl
 ├── Stratara.Infrastructure                          Auth decorators + DI composition glue
 ├── Stratara.Identity.Core                           Channel-agnostic identity primitives
-├── Stratara.Identity.AspNetCore                     ASP.NET Core identity wiring
+├── Stratara.Identity.AspNetCore                     ASP.NET Core identity wiring + tenant-claim bridge
+├── Stratara.Identity.EntityFrameworkCore            Identity directory: membership, permissions, scoped settings, API keys
 └── Stratara.ServiceDefaults.AspNetCore              ASP.NET OTel + health + endpoints
 ```
 
@@ -57,6 +58,7 @@ A package that another packable package `ProjectReferences` must itself be packa
 | Manage keys + encrypt blobs (production) | `Stratara.Security` (envelope `IKeyStore` + AES-GCM `ISecureBlobEncryptor`, dependency-light) |
 | Encrypt sensitive properties (`[EncryptData]` fields) | `Stratara.Infrastructure` (field/JSON path) + `Stratara.Security` (key store + blob encryption) |
 | Plug in ASP.NET identity | `Stratara.Identity.AspNetCore` |
+| Record user↔tenant membership, resolve permissions, store scoped settings, issue API keys | `Stratara.Identity.EntityFrameworkCore` |
 | Wire OpenTelemetry + Serilog | `Stratara.ServiceDefaults` (plus `.AspNetCore` for HTTP-host extras) |
 | Just the interfaces, no impl | `Stratara.Abstractions` + `Stratara.Contracts` |
 
@@ -64,7 +66,7 @@ A package that another packable package `ProjectReferences` must itself be packa
 
 - **Stable Tier-A surface.** Consumers can pin Tier-A interfaces and let Tier-B/C bump independently within a major version.
 - **No consumer pollution.** Anything specific to a downstream consumer stays in the consumer — Stratara absorbs none of it.
-- **Composable workers.** `Stratara.EventSourcing.WorkerDefaults` provides 6 named worker composites (CommandHandling, EventProjection, EventStreamHashing, OutboxHandling, SagaOrchestration, ServiceDefaults). Consumer hosts opt in à la carte.
+- **Composable workers.** `Stratara.EventSourcing.WorkerDefaults` provides 7 named worker composites (CommandHandling, HeavyCommandHandling, EventProjection, EventStreamHashing, OutboxHandling, SagaOrchestration, ServiceDefaults). Consumer hosts opt in à la carte.
 
 ## Event flow (at a glance)
 

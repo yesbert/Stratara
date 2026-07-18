@@ -217,4 +217,17 @@ public static class LogEvents
         /// <summary>The in-memory key-store state was reloaded from disk to pick up keys written by another process.</summary>
         public const int KeyStoreReloaded = 112_006;
     }
+
+    /// <summary>External-login provisioning event-IDs (115_000s) — emitted by the JIT external-login provisioning service.</summary>
+    public static class ExternalLoginProvisioning
+    {
+        /// <summary>A first external sign-in provisioned a new local account and linked the external login.</summary>
+        public const int UserProvisioned = 115_001;
+        /// <summary>An external login was linked to an existing local account after the verified-email checks passed.</summary>
+        public const int LoginLinked = 115_002;
+        /// <summary>Auto-linking to an existing account was refused because the local or asserted email was not verified — interactive linking is required (fail-closed, nOAuth defense).</summary>
+        public const int LinkRefusedUnverified = 115_103;
+        /// <summary>Provisioning was denied — auto-provisioning is disabled with no matching account, or the invitation gate rejected the sign-in.</summary>
+        public const int ProvisioningDenied = 115_104;
+    }
 }

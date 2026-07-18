@@ -16,3 +16,7 @@
   href: 05-aspnetcore-api.md
 - name: 6. Validation
   href: 06-validation.md
+- name: 7. Identity — External Login + API Keys
+  href: 07-identity.md
+- name: 8. Identity Directory — Membership, Permissions, Settings
+  href: 08-identity-directory.md

@@ -4,7 +4,7 @@
 commands are rejected at the edge; the handler stays free of guard clauses.
 
 - **Code**: [`samples/Stratara.Sample.Validation`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.Validation)
-- **Lines**: ~80
+- **Lines**: ~130
 - **Read time**: 5 min
 - **What it doesn't have**: persistence, HTTP — it's a console program focused on the validation pipeline.
 

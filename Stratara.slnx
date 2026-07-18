@@ -19,6 +19,7 @@
     <Project Path="src/Stratara.EventSourcing.Pipeline.CommandAudit/Stratara.EventSourcing.Pipeline.CommandAudit.csproj" />
     <Project Path="src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj" />
     <Project Path="src/Stratara.Identity.AspNetCore/Stratara.Identity.AspNetCore.csproj" />
+    <Project Path="src/Stratara.Identity.EntityFrameworkCore/Stratara.Identity.EntityFrameworkCore.csproj" />
     <Project Path="src/Stratara.Identity.Core/Stratara.Identity.Core.csproj" />
     <Project Path="src/Stratara.Infrastructure/Stratara.Infrastructure.csproj" />
     <Project Path="src/Stratara.Mediator/Stratara.Mediator.csproj" />
@@ -41,6 +42,8 @@
     <Project Path="samples/Stratara.Sample.CqrsBasics/Stratara.Sample.CqrsBasics.csproj" />
     <Project Path="samples/Stratara.Sample.Encryption/Stratara.Sample.Encryption.csproj" />
     <Project Path="samples/Stratara.Sample.EventSourced/Stratara.Sample.EventSourced.csproj" />
+    <Project Path="samples/Stratara.Sample.Identity/Stratara.Sample.Identity.csproj" />
+    <Project Path="samples/Stratara.Sample.IdentityDirectory/Stratara.Sample.IdentityDirectory.csproj" />
     <Project Path="samples/Stratara.Sample.MoneyTransferSaga/Stratara.Sample.MoneyTransferSaga.csproj" />
     <Project Path="samples/Stratara.Sample.OutboxWorker/Stratara.Sample.OutboxWorker.csproj" />
     <Project Path="samples/Stratara.Sample.TamperProof/Stratara.Sample.TamperProof.csproj" />
@@ -52,6 +55,7 @@
     <Project Path="tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests.csproj" />
     <Project Path="tests/Stratara.EventSourcing.WorkerDefaults.Tests/Stratara.EventSourcing.WorkerDefaults.Tests.csproj" />
     <Project Path="tests/Stratara.Identity.AspNetCore.Tests/Stratara.Identity.AspNetCore.Tests.csproj" />
+    <Project Path="tests/Stratara.Identity.EntityFrameworkCore.Tests/Stratara.Identity.EntityFrameworkCore.Tests.csproj" />
     <Project Path="tests/Stratara.Identity.Core.Tests/Stratara.Identity.Core.Tests.csproj" />
     <Project Path="tests/Stratara.Infrastructure.Tests/Stratara.Infrastructure.Tests.csproj" />
     <Project Path="tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj" />

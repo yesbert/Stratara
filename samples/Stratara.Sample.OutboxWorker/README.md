@@ -68,7 +68,7 @@ Expected: outbox holds 3 entries momentarily, then drops to 0 as the drain + wor
 | `InMemoryMessageBus` | `RabbitMqBus` (dev) or `ServiceBus` (Azure prod) in `Stratara.Outbox.RabbitMQ/Messaging/` |
 | `MediatorCommandWorker` | `MediatorCommandWorker` in the same package |
 
-The composition is the same: `services.AddOutboxWorker(builder.Configuration)` + `services.AddMediatorWorker()` + `services.AddMessaging()` wires the whole production stack.
+The composition is the same: `services.AddOutboxWorker(builder.Configuration)` + `services.AddMediatorWorker()` + `builder.AddMessaging()` wires the whole production stack. Note the receivers differ — `AddMessaging` extends `IHostApplicationBuilder`, the other two extend `IServiceCollection`.
 
 ## Where to go next
 

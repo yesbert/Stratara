@@ -8,7 +8,7 @@
 
         <IsPackable>true</IsPackable>
         <PackageId>Stratara.ServiceDefaults</PackageId>
-        <Description>Observability and service-discovery defaults for the Stratara stack — ConfigureOpenTelemetry (HTTP, EF Core, RabbitMQ, runtime instrumentation; OTLP exporter) and ConfigureSerilog (structured logging, OTLP sink). Reference from every host.</Description>
+        <Description>Observability defaults for the Stratara stack — ConfigureOpenTelemetry (HTTP, EF Core, RabbitMQ, runtime instrumentation; OTLP exporter) and ConfigureSerilog (structured logging, OTLP sink). Reference from every host.</Description>
         <PackageTags>opentelemetry;otel;serilog;observability;logging;tracing;metrics;hosting;service-discovery;dotnet;stratara</PackageTags>
         <!-- NU5104: OpenTelemetry.Instrumentation.EntityFrameworkCore and RabbitMQ.Client.OpenTelemetry
              have no stable nuget.org releases yet (only beta / rc tracks, which are their production
