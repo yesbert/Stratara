@@ -73,7 +73,7 @@ public class SnapshotServiceTests
         var streamId = Guid.NewGuid();
         var entries = Enumerable.Range(1, 10).Select(i => CreateEntry(streamId, i)).ToList();
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
 
         await _service.AddSnapshotIfNeededAsync(entries);
 
@@ -87,7 +87,7 @@ public class SnapshotServiceTests
         var entries = Enumerable.Range(1, 50).Select(i => CreateEntry(streamId, i)).ToList();
         var aggregate = new TestAggregate { Name = "Snapshotted" };
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
@@ -104,7 +104,7 @@ public class SnapshotServiceTests
         var entries = Enumerable.Range(1, 60).Select(i => CreateEntry(streamId, i)).ToList();
         var aggregate = new TestAggregate { Name = "Snapshotted" };
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
@@ -121,14 +121,14 @@ public class SnapshotServiceTests
         var entries = Enumerable.Range(1, 50).Select(i => CreateEntry(streamId, i)).ToList();
         var aggregate = new TestAggregate { Name = "Test" };
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
 
         await _service.AddSnapshotIfNeededAsync(entries);
 
-        _snapshotRepoMock.Verify(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>()), Times.Once);
+        _snapshotRepoMock.Verify(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         _snapshotRepoMock.Verify(r => r.AddAsync(It.IsAny<Snapshot>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -139,7 +139,7 @@ public class SnapshotServiceTests
         var entries = Enumerable.Range(51, 50).Select(i => CreateEntry(streamId, i)).ToList();
         var aggregate = new TestAggregate { Name = "Updated" };
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(50L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(50L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
@@ -161,7 +161,7 @@ public class SnapshotServiceTests
 
         var aggregate = new TestAggregate { Name = "Test" };
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId1, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
@@ -178,7 +178,7 @@ public class SnapshotServiceTests
         var entries = Enumerable.Range(1, 50).Select(i => CreateEntry(streamId, i)).ToList();
         var aggregate = new TestAggregate { Name = "Serialized" };
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
@@ -195,7 +195,7 @@ public class SnapshotServiceTests
         var entries = Enumerable.Range(1, 50).Select(i => CreateEntry(streamId, i)).ToList();
         var aggregate = new TestAggregate { Name = "Persisted" };
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
@@ -219,7 +219,7 @@ public class SnapshotServiceTests
         var entries = Enumerable.Range(1, 200).Select(i => CreateEntry(streamId, i)).ToList();
         var service = CreateService(new NoSnapshotStrategy());
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
 
         await service.AddSnapshotIfNeededAsync(entries);
 
@@ -234,7 +234,7 @@ public class SnapshotServiceTests
         var aggregate = new TestAggregate { Name = "Custom" };
         var service = CreateService(new VersionThresholdSnapshotStrategy(threshold: 10));
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
         _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), streamId, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(aggregate);
         _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<IEvent>());
@@ -252,7 +252,7 @@ public class SnapshotServiceTests
         var recording = new RecordingSnapshotStrategy();
         var service = CreateService(recording);
 
-        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(50L);
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(streamId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(50L);
 
         await service.AddSnapshotIfNeededAsync(entries);
 

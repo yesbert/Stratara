@@ -29,20 +29,20 @@ internal sealed class SnapshotService(
     /// <inheritdoc/>
     public async Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default)
     {
-        var streamGroups = eventStreamEntries.GroupBy(x => x.StreamId);
+        var streamGroups = eventStreamEntries.GroupBy(x => (x.StreamId, TypeKey: x.AggregateTypeName.GetVersionIndependentTypeName()));
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
 
         foreach (var streamGroup in streamGroups)
         {
-            var streamId = streamGroup.Key;
+            var streamId = streamGroup.Key.StreamId;
             var streamEntries = streamGroup.ToList();
             if (!await ShouldCreateSnapshot(streamId, streamEntries, cancellationToken))
             {
                 continue;
             }
 
-            var aggregatedEvent = await CreateSnapshot(streamId, streamGroup.ToList(), cancellationToken);
+            var aggregatedEvent = await CreateSnapshot(streamId, streamEntries, cancellationToken);
             await snapshotRepository.AddAsync(aggregatedEvent, cancellationToken);
         }
 
@@ -57,10 +57,11 @@ internal sealed class SnapshotService(
         }
 
         var currentVersion = streamEntries.Max(x => x.Version);
+        var aggregateTypeName = streamEntries[0].AggregateTypeName;
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
-        var snapshotVersion = await snapshotRepository.GetLatestVersionOrDefaultAsync(streamId, cancellationToken);
-        var aggregateType = typeResolver.Resolve(streamEntries[0].AggregateTypeName);
+        var snapshotVersion = await snapshotRepository.GetLatestVersionOrDefaultAsync(streamId, aggregateTypeName, cancellationToken);
+        var aggregateType = typeResolver.Resolve(aggregateTypeName);
 
         return snapshotStrategy.ShouldSnapshot(aggregateType, currentVersion, snapshotVersion);
     }

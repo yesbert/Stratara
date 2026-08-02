@@ -20,7 +20,11 @@ public sealed class Snapshot : IEntity, IMultiTenant, IBucket, IHasRowVersion
     /// <summary>Stream version the snapshot reflects (inclusive).</summary>
     public long Version { get; set; }
 
-    /// <summary>Fully-qualified, version-independent type name of the owning aggregate.</summary>
+    /// <summary>
+    /// Assembly-qualified type name of the owning aggregate, as produced when the snapshot is
+    /// written. It carries the assembly version, so reads must match it version-independently
+    /// (see <see cref="ISnapshotRepository.GetAsync(System.Guid, string, long?, System.Threading.CancellationToken)"/>).
+    /// </summary>
     public required string AggregateTypeName { get; set; }
 
     /// <summary>Serialised aggregate state as JSON.</summary>

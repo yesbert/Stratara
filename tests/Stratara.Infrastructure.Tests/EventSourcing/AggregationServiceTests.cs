@@ -54,7 +54,7 @@ public class AggregationServiceTests
     {
         var streamId = Guid.NewGuid();
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Snapshot?)null);
 
         var entries = new List<EventStreamEntry>();
@@ -90,7 +90,7 @@ public class AggregationServiceTests
         };
 
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
 
         var snapshotAggregate = new TestAggregate { Name = "Snapshotted", Value = 100 };
@@ -116,7 +116,7 @@ public class AggregationServiceTests
     {
         var streamId = Guid.NewGuid();
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Snapshot?)null);
 
         var entries = new List<EventStreamEntry>();
@@ -150,7 +150,7 @@ public class AggregationServiceTests
         };
 
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
 
         var snapshotAggregate = new TestAggregate { Name = "Old", Value = 1 };
@@ -177,7 +177,7 @@ public class AggregationServiceTests
     {
         var streamId = Guid.NewGuid();
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Snapshot?)null);
 
         var entries = new List<EventStreamEntry>();
@@ -222,7 +222,7 @@ public class AggregationServiceTests
         };
 
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
         _serializerMock.Setup(s => s.DeserializeAsync(snapshot.DataJson, typeof(TestAggregate), tenantId, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync((object?)null);
@@ -254,7 +254,7 @@ public class AggregationServiceTests
         };
 
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
 
         var snapshotAggregate = new TestAggregate { Name = "OK", Value = 1 };

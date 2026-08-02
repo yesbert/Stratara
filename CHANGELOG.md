@@ -16,6 +16,28 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_no changes yet since `3.2.1`._
+
+## [3.2.1] — 2026-07-28
+
+### Fixed
+
+- **Snapshot loads are now scoped to the aggregate type.** The snapshot read previously filtered
+  only by stream id, so when two aggregate types shared a stream id, rehydrating one type could
+  pick up the other type's (higher-versioned) snapshot and deserialize it into the requested type —
+  silently returning an aggregate with default/empty fields. Snapshot reads now match the aggregate
+  type (version-independently, so an assembly rev-bump does not invalidate existing snapshots), and
+  snapshot writes are grouped per `(stream, aggregate type)` so a stream carrying more than one type
+  snapshots each type independently. A snapshot of type X may now only ever rehydrate type X.
+
+### Changed
+
+- **`ISnapshotRepository` gained type-scoped read overloads.** `GetAsync(streamId,
+  aggregateTypeName, toVersion, ct)` and `GetLatestVersionOrDefaultAsync(streamId,
+  aggregateTypeName, ct)` are the correct lookups; the previous type-less overloads are now
+  `[Obsolete]` because they can return a foreign aggregate type's snapshot on a shared stream.
+  Custom `ISnapshotRepository` implementers should add the new overloads.
+
 ## [3.2.0] — 2026-07-17
 
 ### Added
@@ -2269,7 +2291,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.1...main
+[3.2.1]: https://github.com/yesbert/Stratara/releases/tag/v3.2.1
 [3.2.0]: https://github.com/yesbert/Stratara/releases/tag/v3.2.0
 [3.1.7]: https://github.com/yesbert/Stratara/releases/tag/v3.1.7
 [3.1.6]: https://github.com/yesbert/Stratara/releases/tag/v3.1.6

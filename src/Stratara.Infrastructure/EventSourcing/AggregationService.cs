@@ -1,6 +1,7 @@
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Security;
+using Stratara.Shared.Reflections;
 
 namespace Stratara.Infrastructure.EventSourcing;
 
@@ -40,7 +41,7 @@ internal sealed class AggregationService(
         }
 
         var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
-        var snapshot = await snapshotRepository.GetAsync(streamId, toVersion, cancellationToken);
+        var snapshot = await snapshotRepository.GetAsync(streamId, aggregateType.GetQualifiedTypeName(), toVersion, cancellationToken);
         var snapshotVersion = snapshot?.Version + 1 ?? 0;
 
         var eventStreamEntries = await eventStreamRepository.GetManyAsync(streamId, snapshotVersion, toVersion, cancellationToken);
