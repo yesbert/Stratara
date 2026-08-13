@@ -10,6 +10,7 @@
         <PackageReference Include="Azure.Messaging.ServiceBus"/>
         <PackageReference Include="Microsoft.Extensions.Configuration"/>
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+        <PackageReference Include="SSH.NET"/>
         <PackageReference Include="StackExchange.Redis"/>
         <PackageReference Include="Testcontainers.RabbitMq"/>
         <PackageReference Include="Testcontainers.Redis"/>
