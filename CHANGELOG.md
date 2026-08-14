@@ -16,7 +16,37 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `3.2.1`._
+### Added
+
+- **`IApiKeyStore.ImportAsync` — store a machine key whose raw value the caller already holds.**
+  Issuance generates the key itself, which is the wrong shape when server and caller must share it
+  *before* either boots: container orchestration, CI provisioning, self-hosted bundles, end-to-end
+  test hosts. Without this path, consumers bypassed the store and reimplemented its internals (the
+  digest format and the machine-key membership row) — a copy that keeps compiling after the store
+  changes and fails as a runtime 401. Import is idempotent, so it can run unconditionally on every
+  boot: a value that is already stored returns the existing descriptor and the stored key is never
+  mutated, so a changed configuration cannot escalate a key's roles or extend its expiry unnoticed.
+  Revoked, expired, and foreign-tenant values are rejected rather than silently adopted, and
+  concurrent replicas racing the same first import converge on one key. Machine keys only —
+  `ApiKeyImportRequest` carries no `UserId`.
+- **`ApiKeyFormat` (`Stratara.Abstractions.ApiKeys`) — the canonical raw-key format as public API.**
+  `CreateRawKey()` generates `stk_` plus the Base64Url encoding of 32 CSPRNG bytes; `IsWellFormed()`
+  checks that shape. `ImportAsync` accepts only well-formed values: the store keeps its stored
+  digest unsalted because a generated key carries 256 bits of entropy, and a hand-picked value would
+  quietly invalidate that. Generate keys out of band with `CreateRawKey()` and keep them in a secret
+  store — the type lives in the abstractions package so host-builder and orchestration projects can
+  reach it without referencing the storage implementation.
+- **`InMemoryApiKeyStore` (`Stratara.Testing`) — the drop-in double for the API-key store**,
+  mirroring issuance, import, fail-closed validation, revocation, and the erasure sweeps, and
+  materializing machine keys into a membership store you can share and inspect.
+
+### Changed
+
+- **API-key lifecycle events are now logged** (`Stratara.Diagnostics` event-ID range 116_000):
+  import, idempotent repeat, and a repeat that supplied different parameters. Key ids and tenant
+  ids only — never the raw key or its digest.
+- **For implementers of `IApiKeyStore`:** the interface gained `ImportAsync`. Custom implementations
+  need the new member; callers are unaffected.
 
 ## [3.2.1] — 2026-07-28
 

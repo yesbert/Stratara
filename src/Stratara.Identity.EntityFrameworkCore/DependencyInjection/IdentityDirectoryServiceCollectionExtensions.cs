@@ -39,10 +39,10 @@ public static class IdentityDirectoryServiceCollectionExtensions
 
     /// <summary>
     /// Register the EF Core <see cref="IApiKeyStore"/> against
-    /// <typeparamref name="TContext"/> — issuance (raw key shown once, hash stored), fail-closed
-    /// validation, revocation, and per-tenant/per-user erasure sweeps. Machine keys are
-    /// materialized as memberships of their tenant, so they flow through the same role/permission
-    /// plane as human actors.
+    /// <typeparamref name="TContext"/> — issuance (raw key shown once, hash stored), idempotent
+    /// import of a caller-supplied key for bootstrap scenarios, fail-closed validation, revocation,
+    /// and per-tenant/per-user erasure sweeps. Machine keys are materialized as memberships of
+    /// their tenant, so they flow through the same role/permission plane as human actors.
     /// </summary>
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>

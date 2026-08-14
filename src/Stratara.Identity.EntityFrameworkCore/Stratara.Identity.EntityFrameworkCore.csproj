@@ -16,10 +16,12 @@
         <PackageReference Include="Microsoft.EntityFrameworkCore.Relational"/>
         <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"/>
         <PackageReference Include="Microsoft.Extensions.Identity.Core"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
+        <ProjectReference Include="..\Stratara.Diagnostics\Stratara.Diagnostics.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

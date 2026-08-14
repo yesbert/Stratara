@@ -230,4 +230,15 @@ public static class LogEvents
         /// <summary>Provisioning was denied — auto-provisioning is disabled with no matching account, or the invitation gate rejected the sign-in.</summary>
         public const int ProvisioningDenied = 115_104;
     }
+
+    /// <summary>API-key lifecycle event-IDs (116_000s) — emitted by the API-key store.</summary>
+    public static class ApiKeys
+    {
+        /// <summary>A caller-supplied machine key was imported and is now stored.</summary>
+        public const int KeyImported = 116_001;
+        /// <summary>An import found the key value already stored and left it untouched (idempotent repeat).</summary>
+        public const int KeyImportNoOp = 116_002;
+        /// <summary>An import repeated an already-stored key with different parameters; the stored key was left untouched (warning).</summary>
+        public const int KeyImportDiffers = 116_103;
+    }
 }

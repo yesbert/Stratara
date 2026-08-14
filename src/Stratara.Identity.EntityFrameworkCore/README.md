@@ -27,7 +27,9 @@ with tenant-scoped roles), active-tenant selection, and membership-backed author
 - `AddApiKeyStore<TContext>()` — API keys and personal access tokens: `stk_`-prefixed 256-bit
   keys (hash-only storage), fail-closed validation with expiry/revocation, erasure sweeps.
   Machine keys are materialized as tenant memberships, so they flow through the same
-  role/permission plane as human actors; PATs act as their bound user.
+  role/permission plane as human actors; PATs act as their bound user. `ImportAsync` stores a
+  machine key the caller already holds (generated with `ApiKeyFormat.CreateRawKey()`) for setups
+  where the key must exist before boot — idempotent, never mutating an already-stored key.
 - `AddSettingCatalog(...)` + `AddSettingStore<TContext>()` — scoped settings plane: code-declared
   `SettingDefinition`s, row-per-key EF storage (`setting_entry`), a Subject-fed `ISettingProvider`
   fallback chain (user-in-tenant → user → tenant → global → configuration → default), transparent

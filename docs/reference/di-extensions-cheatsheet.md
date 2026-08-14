@@ -92,7 +92,7 @@ own `OnModelCreating`.
 | `services.AddCatalogPermissionResolver<TUser>()` | Above ∪ global ASP.NET Identity roles |
 | `services.AddSettingCatalog(c => …)` | Declares the setting vocabulary (defaults, `IsInherited`, `IsEncrypted`) |
 | `services.AddSettingStore<TContext>()` | EF `ISettingStore` (`setting_entry`) **+** the `ISettingProvider` fallback facade |
-| `services.AddApiKeyStore<TContext>()` | EF `IApiKeyStore` (`api_key`) — issue / validate / revoke / sweep |
+| `services.AddApiKeyStore<TContext>()` | EF `IApiKeyStore` (`api_key`) — issue / import / validate / revoke / sweep |
 
 `[RequirePermission]` is only enforced when the host also registers an authorizing mediator
 (`services.AddAuthorizingMediator<MembershipAuthorizationProvider>()`). Without it — or without an

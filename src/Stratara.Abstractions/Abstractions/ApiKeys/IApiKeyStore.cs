@@ -30,6 +30,39 @@ public interface IApiKeyStore
     Task<IssuedApiKey> IssueAsync(ApiKeyIssueRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Stores a machine key whose raw value the caller already holds — for setups where the key
+    /// must be known before the store exists: container orchestration, CI provisioning, self-hosted
+    /// bundles, end-to-end test hosts. Idempotent, so it can run on every boot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The supplied value must match <see cref="ApiKeyFormat"/> — generate it with
+    /// <see cref="ApiKeyFormat.CreateRawKey"/>. The shape requirement is load-bearing: stores keep
+    /// the key's digest unsalted because a generated key carries 256 bits of entropy, and a
+    /// hand-picked value would quietly invalidate that.
+    /// </para>
+    /// <para>
+    /// Importing a value that is already stored is a no-op that returns the existing descriptor.
+    /// The stored key is never mutated — a differing name, role set, or expiry leaves the stored
+    /// key as it is, so a changed configuration can neither escalate a key's roles nor extend its
+    /// life unnoticed. Compare the returned descriptor when that matters. Nothing about the "shown
+    /// once" guarantee of <see cref="IssueAsync"/> changes: import returns no raw key, because the
+    /// caller already has it.
+    /// </para>
+    /// </remarks>
+    /// <param name="request">The import parameters, including the raw key.</param>
+    /// <param name="cancellationToken">Token to observe while importing.</param>
+    /// <returns>The stored descriptor — newly created, or the existing one on a repeat import.</returns>
+    /// <exception cref="ArgumentException">
+    /// The raw key does not match the canonical format, or the name is empty.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The key value is already stored for a different tenant, as a personal access token, or in a
+    /// revoked or expired state — none of which an import may silently adopt.
+    /// </exception>
+    Task<ApiKeyDescriptor> ImportAsync(ApiKeyImportRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates a presented raw key: hash lookup, then revocation and expiry checks.
     /// </summary>
     /// <param name="rawKey">The presented plaintext key.</param>

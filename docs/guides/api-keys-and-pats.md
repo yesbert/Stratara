@@ -33,6 +33,41 @@ list (`GetForTenantAsync`) and audit freely. Issuance is guarded: roles on a per
 throw, as does a token for a user without an **active membership** in the target tenant — a token
 can never out-scope the user behind it.
 
+## Bootstrapping a key the caller already knows
+
+Issuance is the wrong shape when server and caller must share a key **before either boots** —
+container orchestration, CI provisioning, self-hosted bundles, end-to-end test hosts. A key that
+comes into existence at start-up and is only written to a log arrives too late: the calling side
+reads its configuration when *it* starts. `ImportAsync` is that path:
+
+```csharp
+// Once, out of band — then keep the value in your secret store:
+var rawKey = ApiKeyFormat.CreateRawKey();      // stk_…
+
+// On every boot — idempotent, so it is safe to run unconditionally:
+var descriptor = await keys.ImportAsync(new ApiKeyImportRequest(
+    rawKey, tenantId, Name: "bootstrap-admin", Roles: ["Admin"]));
+```
+
+The imported key is stored exactly like an issued one, membership row included, so nothing
+downstream can tell the two apart. Import is a **machine-key** path only — `ApiKeyImportRequest`
+has no `UserId`, because a personal access token acts as its bound user and is issued by that user.
+
+Three properties make this safe to run on every start of every replica:
+
+- **Idempotent.** Importing a value that is already stored returns the existing descriptor. The
+  stored key is never mutated, so a changed configuration cannot escalate a key's roles or extend
+  its expiry unnoticed — a differing name, role set, or expiry is logged and otherwise ignored.
+  Concurrent replicas racing the same first import converge on one key rather than failing.
+- **Never resurrecting.** A revoked or expired key value is rejected, not silently reinstated, and a
+  value already bound to another tenant cannot be re-bound.
+- **Format-checked.** Only canonical values are accepted — this is what keeps the unsalted digest
+  defensible (see below). Generate them with `ApiKeyFormat.CreateRawKey()`; a hand-picked value like
+  `stk_dev-local` is refused.
+
+Do not log an imported key. Unlike the one-shot value from `IssueAsync`, it is a durable
+configuration secret and belongs in the same place as your database password.
+
 ## No parallel authorization path
 
 This is the load-bearing decision. Issuing a machine key writes a `tenant_membership` row keyed by
@@ -98,6 +133,9 @@ everything else → the cookie fallback. Set it as the default and no endpoint n
 |---|---|
 | Raw key = `stk_` + Base64Url over 32 CSPRNG bytes; the prefix helps secret scanners flag leaks | always |
 | The raw key is returned once and never persisted | always |
+| An imported key must match that exact format | always — `ImportAsync` rejects anything else |
+| A repeated import mutates the stored key | never — it returns the existing descriptor |
+| An import reinstates a revoked or expired key | never — it throws |
 | Storage holds only the SHA-256 hex digest | always — deliberately unsalted |
 | Unknown, revoked, or expired key → authentication fails, never falls through to anonymous | always (fail-closed) |
 | Machine-key roles resolve through `tenant_membership` like any actor's | always — no parallel authorization path |
@@ -111,6 +149,12 @@ secrets — passwords — against precomputed tables. A key here carries 256 bit
 no rainbow table is feasible regardless of salt, and the deterministic digest is what makes
 validation an O(1) hit on a unique index rather than a scan over every stored key. The property
 that matters — a database leak yields no usable credential — holds either way.
+
+That reasoning is also why `ImportAsync` enforces the format instead of taking any string: entropy
+cannot be measured, but shape can. A value that is structurally incapable of carrying 256 bits would
+turn the unsalted digest into a guessable one — in the same table where every other key is strong,
+and without any visible symptom. Generating the value with `ApiKeyFormat.CreateRawKey()` costs one
+line and keeps the guarantee intact for imported keys too.
 
 `AllowQueryStringKey` is off for good reason: query strings land in access logs, proxy logs,
 referrer headers, and browser history. Enable it only for transports that cannot set headers

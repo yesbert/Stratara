@@ -149,6 +149,142 @@ public class EfApiKeyStoreTests
     }
 
     [Fact]
+    public async Task Imported_key_validates_and_materializes_its_membership()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+
+        var descriptor = await fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", ["Admin"]));
+
+        var validated = await fixture.Store.ValidateAsync(rawKey);
+        Assert.NotNull(validated);
+        Assert.Equal(descriptor.Id, validated.Id);
+        Assert.Null(validated.UserId);
+
+        var membership = await fixture.Memberships.GetMembershipAsync(descriptor.Id, tenantId);
+        Assert.NotNull(membership);
+        Assert.Equal(MembershipStatus.Active, membership.Status);
+        Assert.Equal(["Admin"], membership.Roles);
+    }
+
+    [Fact]
+    public async Task Repeated_import_is_a_no_op_that_never_mutates_the_stored_key()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+        var first = await fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", ["Viewer"]));
+
+        var second = await fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, tenantId, "renamed", ["Admin"]));
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal("bootstrap", second.Name);
+        Assert.Equal(["Viewer"], second.Roles);
+        Assert.Single(await fixture.Store.GetForTenantAsync(tenantId));
+
+        var membership = await fixture.Memberships.GetMembershipAsync(first.Id, tenantId);
+        Assert.NotNull(membership);
+        Assert.Equal(["Viewer"], membership.Roles);
+    }
+
+    [Fact]
+    public async Task Import_rejects_values_outside_the_canonical_format()
+    {
+        using var fixture = new ApiKeyFixture();
+        var wellFormed = ApiKeyFormat.CreateRawKey();
+        string[] rejected =
+        [
+            "hunter2",
+            "stk_short",
+            wellFormed[..^1],               // one character too short
+            wellFormed + "a",               // one character too long
+            "pat_" + wellFormed[4..],       // wrong prefix
+            wellFormed[..^1] + "!",         // outside the Base64Url alphabet
+        ];
+
+        foreach (var rawKey in rejected)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(() => fixture.Store.ImportAsync(
+                new ApiKeyImportRequest(rawKey, Guid.CreateVersion7(), "bootstrap", [])));
+        }
+    }
+
+    [Fact]
+    public async Task Import_refuses_to_rebind_a_known_key_to_another_tenant()
+    {
+        using var fixture = new ApiKeyFixture();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+        await fixture.Store.ImportAsync(new ApiKeyImportRequest(rawKey, Guid.CreateVersion7(), "bootstrap", []));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, Guid.CreateVersion7(), "bootstrap", [])));
+    }
+
+    [Fact]
+    public async Task Import_never_reinstates_a_revoked_key()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+        var descriptor = await fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", []));
+        await fixture.Store.RevokeAsync(descriptor.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", [])));
+        Assert.Null(await fixture.Store.ValidateAsync(rawKey));
+    }
+
+    [Fact]
+    public async Task Import_never_extends_an_expired_key()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+        await fixture.Store.ImportAsync(new ApiKeyImportRequest(
+            rawKey, tenantId, "bootstrap", [], fixture.Clock.GetUtcNow().AddHours(1)));
+
+        fixture.Clock.Advance(TimeSpan.FromHours(2));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", [], fixture.Clock.GetUtcNow().AddHours(1))));
+    }
+
+    [Fact]
+    public async Task Import_refuses_a_value_already_stored_as_a_personal_access_token()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(pat.RawKey, tenantId, "bootstrap", [])));
+    }
+
+    [Fact]
+    public async Task Repeated_import_restores_a_machine_membership_that_went_missing()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+        var descriptor = await fixture.Store.ImportAsync(
+            new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", ["Admin"]));
+        await fixture.Memberships.RemoveMembershipAsync(descriptor.Id, tenantId);
+
+        await fixture.Store.ImportAsync(new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", ["Admin"]));
+
+        var membership = await fixture.Memberships.GetMembershipAsync(descriptor.Id, tenantId);
+        Assert.NotNull(membership);
+        Assert.Equal(["Admin"], membership.Roles);
+    }
+
+    [Fact]
     public async Task Tenant_sweep_removes_keys_and_machine_memberships()
     {
         using var fixture = new ApiKeyFixture();

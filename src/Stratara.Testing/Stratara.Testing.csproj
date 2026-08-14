@@ -7,7 +7,7 @@
 
         <IsPackable>true</IsPackable>
         <PackageId>Stratara.Testing</PackageId>
-        <Description>Test doubles and assertion helpers for applications built on the Stratara framework — an in-memory IKeyStore, an in-memory IMessageBus, a preset ISessionContextProvider, deterministic tenant ids, and a given/when/then aggregate rehydration harness. Drop the Postgres/RabbitMQ testcontainers for unit tests.</Description>
+        <Description>Test doubles and assertion helpers for applications built on the Stratara framework — an in-memory IKeyStore, an in-memory IMessageBus, in-memory membership/setting/API-key stores, a preset ISessionContextProvider, deterministic tenant ids, and a given/when/then aggregate rehydration harness. Drop the Postgres/RabbitMQ testcontainers for unit tests.</Description>
         <PackageTags>testing;test-doubles;in-memory;cqrs;event-sourcing;aggregate;mediator;dotnet;stratara</PackageTags>
     </PropertyGroup>
 
