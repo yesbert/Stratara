@@ -16,6 +16,16 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_no changes yet since `3.2.2`._
+
+## [3.2.2] — 2026-08-14
+
+API keys can now be bootstrapped. Issuance always generated the key itself, which does not fit the
+setups where server and caller have to share a key *before* either starts — container orchestration,
+CI provisioning, self-hosted bundles, end-to-end test hosts. This release adds an import path for a
+key the caller already holds, plus the canonical key format as public API so callers generate values
+instead of inventing them.
+
 ### Added
 
 - **`IApiKeyStore.ImportAsync` — store a machine key whose raw value the caller already holds.**
@@ -2321,7 +2331,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.1...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.2...main
+[3.2.2]: https://github.com/yesbert/Stratara/releases/tag/v3.2.2
 [3.2.1]: https://github.com/yesbert/Stratara/releases/tag/v3.2.1
 [3.2.0]: https://github.com/yesbert/Stratara/releases/tag/v3.2.0
 [3.1.7]: https://github.com/yesbert/Stratara/releases/tag/v3.1.7
