@@ -1,5 +1,9 @@
 # Bus-Envelope Integrity (HMAC)
 
+> **Derived page.** The behaviour described here is specified by the `bus-envelope-integrity` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Stratara supports an **opt-in HMAC signature** on every `CommandEnvelope` + `EventBundle` that travels on the bus. When enabled, consumers verify the signature before deserializing the body; tampered envelopes are rejected.
 
 ## When to turn this on

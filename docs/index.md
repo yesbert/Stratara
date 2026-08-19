@@ -4,6 +4,9 @@ _layout: landing
 
 # Stratara
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 **CQRS and Event Sourcing for .NET — with tamper-evident streams and tenant-aware encryption built in.**
 
 Stratara is the integrated CQRS, Event Sourcing, and audit stack you'd otherwise compose yourself from three or four libraries. Mediator, outbox, event store, sagas, projections, and identity — all wired together, lockstep-versioned across 25 NuGet packages for .NET 10. Opt in à la carte.

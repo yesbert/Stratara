@@ -1,5 +1,8 @@
 # Stratara.Testing.EntityFrameworkCore
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Spin up the **real** Stratara event-sourcing write stack — `IEventSource`, `IAggregationService`,
 snapshots, and the EF Core write store — against a shared **in-memory SQLite** database, in one
 call. You exercise production code paths (real serialization, real version tracking, real unique

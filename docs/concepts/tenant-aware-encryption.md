@@ -1,5 +1,9 @@
 # Tenant-Aware Encryption
 
+> **Derived page.** The behaviour described here is specified by the `data-encryption` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 ## The problem
 
 Multi-tenant applications usually defend tenant separation with **query filtering**: every read attaches `WHERE TenantId = @currentTenant`. It works for normal paths. It is also a *soft* fence:

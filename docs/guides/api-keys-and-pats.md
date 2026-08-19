@@ -1,5 +1,9 @@
 # API Keys and Personal Access Tokens
 
+> **Derived page.** The behaviour described here is specified by the `api-keys` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 `Stratara.Abstractions.ApiKeys` declares the machine-to-machine authentication plane,
 `Stratara.Identity.EntityFrameworkCore` implements it against your DbContext, and
 `Stratara.Identity.AspNetCore` exposes it as an ordinary ASP.NET Core authentication scheme. It is

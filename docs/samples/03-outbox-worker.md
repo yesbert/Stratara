@@ -1,5 +1,9 @@
 # Sample 3 — Outbox + Worker
 
+> **Derived page.** The behaviour described here is specified by the `outbox-and-messaging` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: Outbox + message bus + two background workers (async dispatch). What changes when commands stop running in the caller's thread.
 
 - **Code**: [`samples/Stratara.Sample.OutboxWorker`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.OutboxWorker)

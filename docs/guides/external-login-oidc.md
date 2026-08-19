@@ -1,5 +1,9 @@
 # External Login (OpenID Connect) + JIT Provisioning
 
+> **Derived page.** The behaviour described here is specified by the `external-identity` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 `Stratara.Identity.AspNetCore` adds external identity providers — the "log in with Microsoft /
 Keycloak / Google" flow — as ordinary ASP.NET Core authentication schemes, and provisions a local
 account on a user's first sign-in. It is the third sign-in path alongside local passwords and API

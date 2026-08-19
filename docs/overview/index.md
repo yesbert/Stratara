@@ -1,5 +1,8 @@
 # Overview
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 The conceptual map for Stratara. Read these before writing your first Stratara-backed feature.
 
 - **[What is Stratara](what-is-stratara.md)** — the framing and the problems it solves.

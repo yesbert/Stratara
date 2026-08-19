@@ -1,5 +1,8 @@
 # Stratara.Sample.Encryption
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 **One of two Why-Stratara hero samples.** Shows how `[EncryptData]` fields stay confidential across tenants even when the database leaks — distilled to ~120 lines of in-memory code.
 
 ## The pitch

@@ -1,5 +1,8 @@
 # Stratara.EventSourcing.WorkerDefaults
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 One-stop `IHostApplicationBuilder` composites that wire together the Stratara event-sourced stack for each host shape (API, command worker, event-projection worker, saga worker, event-stream-hash worker, outbox worker). Reference this package from each host instead of repeating the per-concern DI call chain.

@@ -1,5 +1,9 @@
 # Glossary
 
+> **Derived page.** The behaviour described here is specified by the `session-context` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 How Stratara uses common CQRS / Event-Sourcing terms. These definitions are operative — they shape how the framework behaves, not just how we talk.
 
 ## Mediator

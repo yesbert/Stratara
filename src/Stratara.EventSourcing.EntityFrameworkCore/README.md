@@ -1,5 +1,8 @@
 # Stratara.EventSourcing.EntityFrameworkCore
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 EF Core persistence for the Stratara event-sourced stack — PostgreSQL flavoured via Npgsql + pgvector. Bundles four previously-separate Stratara projects into one NuGet because they always ship together:

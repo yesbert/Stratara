@@ -1,5 +1,9 @@
 # What is Stratara
 
+> **Derived page.** The behaviour described here is specified by the `package-distribution` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Stratara takes the boring decisions for you so you can spend your time on aggregates and use-cases — not on wiring an outbox to a mediator to an event store.**
 
 It's a family of 25 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.

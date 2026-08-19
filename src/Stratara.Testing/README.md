@@ -1,5 +1,8 @@
 # Stratara.Testing
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Test doubles and assertion helpers for applications built on the Stratara framework. Unit-test your
 event-sourced aggregates, encryption, messaging, and session-aware code without spinning up Postgres
 or RabbitMQ testcontainers.

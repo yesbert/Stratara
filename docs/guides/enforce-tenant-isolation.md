@@ -1,5 +1,9 @@
 # Enforce Tenant Isolation
 
+> **Derived page.** The behaviour described here is specified by the `tenant-isolation` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 `Stratara.Mediator` runs request-level tenant enforcement as a **mediator pipeline behavior**: a
 request that opts in is checked *before* the handler, so a command or query naming a tenant other
 than the caller's data-owner tenant never reaches your domain logic. It is the command-/query-entrance

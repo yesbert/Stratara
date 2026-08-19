@@ -1,5 +1,9 @@
 # Architecture at a glance
 
+> **Derived page.** The behaviour described here is specified by the `package-distribution` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Stratara ships **25 packages**: 23 runtime packages organized into three tiers (below), plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
 
 ## Tier layout

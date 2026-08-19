@@ -1,5 +1,9 @@
 # Outbox + Azure Service Bus Setup
 
+> **Derived page.** The behaviour described here is specified by the `outbox-and-messaging` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 `Stratara.Outbox.AzureServiceBus` provides the `IMessageBus` implementation backed by Azure Service Bus. Choose this over the RabbitMQ flavour when running on Azure with managed identity — no connection strings on disk.
 
 ## Add the package

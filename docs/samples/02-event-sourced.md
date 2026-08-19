@@ -1,5 +1,9 @@
 # Sample 2 — Event Sourced
 
+> **Derived page.** The behaviour described here is specified by the `event-sourcing-store` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: Event-sourced aggregate + projection (read/write separation) — what changes when you replace the in-memory repository with an event store.
 
 - **Code**: [`samples/Stratara.Sample.EventSourced`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.EventSourced)

@@ -1,5 +1,9 @@
 # Prerequisites
 
+> **Derived page.** The behaviour described here is specified by the `host-composition` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 ## Required
 
 - **.NET SDK 10.0** or newer. Check via `dotnet --version`. Stratara targets `net10.0` exclusively.

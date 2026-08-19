@@ -1,5 +1,8 @@
 # Guides
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Task-oriented how-tos for the most common Stratara operations. Each guide assumes you've worked through **[Getting Started](../getting-started/index.md)** and at least the first sample.
 
 ## Domain wiring

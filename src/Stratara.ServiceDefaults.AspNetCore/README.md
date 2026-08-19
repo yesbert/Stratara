@@ -1,5 +1,8 @@
 # Stratara.ServiceDefaults.AspNetCore
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 ASP.NET Core extensions on top of `Stratara.ServiceDefaults`. Reference from every API host.

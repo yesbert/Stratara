@@ -1,5 +1,9 @@
 # Sample 6 — Validation
 
+> **Derived page.** The behaviour described here is specified by the `request-validation` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: `Stratara.Validation` — request validation as a mediator pipeline behavior. Invalid
 commands are rejected at the edge; the handler stays free of guard clauses.
 

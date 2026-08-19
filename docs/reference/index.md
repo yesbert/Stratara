@@ -1,5 +1,8 @@
 # Reference
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Hand-written reference material (cheatsheets, conventions, schemas) plus the auto-generated API reference.
 
 ## Cheatsheets

@@ -1,5 +1,8 @@
 # Stratara.Sample.MoneyTransferSaga
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Sample #4 of the learning path. Adds a **saga** on top of the outbox + worker chain from sample #3 — one `RequestMoneyTransferCommand` fans out into two follow-up commands (`Withdraw` + `Deposit`) that execute asynchronously on the worker side.
 
 ## What's new versus `OutboxWorker`

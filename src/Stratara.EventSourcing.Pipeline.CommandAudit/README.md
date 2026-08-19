@@ -1,5 +1,8 @@
 # Stratara.EventSourcing.Pipeline.CommandAudit
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Mediator pipeline behavior that records an audit row for every dispatched command in the Stratara event-sourced stack. Both arities are provided so consumers can register a single behavior pair and have it apply to all command shapes.

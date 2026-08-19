@@ -1,5 +1,9 @@
 # Why Event Sourcing
 
+> **Derived page.** The behaviour described here is specified by the `event-sourcing-store` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 ## The default everyone knows
 
 CRUD storage keeps the **current state** of an entity. Updates overwrite the previous value. History, if anyone wants it, gets stitched together from audit-log triggers and hopes nobody dropped them. It's the default for a reason — fast to build, easy to reason about for the in-the-moment query "what does this row look like right now?"

@@ -1,5 +1,9 @@
 # Sample 5 — ASP.NET Core API
 
+> **Derived page.** The behaviour described here is specified by the `host-composition` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: HTTP minimal-API endpoints wired straight to the mediator. Parallel to Sample 1 — pick this one if you want an HTTP front instead of a console.
 
 - **Code**: [`samples/Stratara.Sample.AspNetCoreApi`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.AspNetCoreApi)

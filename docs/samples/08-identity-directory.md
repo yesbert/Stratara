@@ -1,5 +1,9 @@
 # Sample 8 — Identity Directory (membership, permissions, settings)
 
+> **Derived page.** The behaviour described here is specified by the `tenant-directory` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: `Stratara.Identity.EntityFrameworkCore` — who belongs to which tenant, what they may do
 there, and what they have configured. Three planes over the same EF tables and the same session
 Subject.

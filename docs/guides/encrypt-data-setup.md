@@ -1,5 +1,9 @@
 # Encrypt Sensitive Data
 
+> **Derived page.** The behaviour described here is specified by the `data-encryption` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Stratara provides AES-GCM encryption at serialization time via the `[EncryptData]` attribute. Tenant-aware **Additional Authenticated Data (AAD)** binds each ciphertext to the tenant — so a leaked key in tenant A's ciphertext can't be replayed against tenant B's record.
 
 ## Mark a property

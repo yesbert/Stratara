@@ -1,5 +1,8 @@
 # Stratara.ServiceDefaults
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Cross-host observability defaults for the Stratara stack. Reference from every host (API, worker) to get OpenTelemetry + Serilog wired up with sensible defaults.

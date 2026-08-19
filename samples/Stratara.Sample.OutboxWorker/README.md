@@ -1,5 +1,8 @@
 # Stratara.Sample.OutboxWorker
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Sample #3 of the learning path. Pushes commands through an **outbox** + **message bus** + **worker** chain — the asynchronous, decoupled dispatch path. Same bank-account domain, same mediator surface, but now the call site `Enqueue`s and returns immediately; a hosted service in the same process picks up the command later and runs the handler.
 
 ## What's new versus `CqrsBasics`

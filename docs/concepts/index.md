@@ -1,5 +1,8 @@
 # Concepts
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 The load-bearing ideas behind Stratara. Read these to understand *why* the framework exists, not just *what* it ships.
 
 - **[Tamper-Evident Streams](tamper-evident-streams.md)** — every event chained into the next via SHA-256, so a direct-DB mutation shows up the moment you recompute the chain. Periodic anchors can be committed to an external source of truth (a public chain, a notary, a timestamp authority) when you need to defend against an insider who controls the whole database — no blockchain consensus tax for the common case, an escalation path for the hard one.

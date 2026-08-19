@@ -1,5 +1,8 @@
 # Stratara.Outbox.AzureServiceBus
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Azure Service Bus implementation of `Stratara.Abstractions.Messaging.IMessageBus`. Publishes JSON-serialized messages to topics and exposes a subscription helper that wires up a Service Bus processor with per-message exception classification:

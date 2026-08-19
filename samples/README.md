@@ -1,5 +1,8 @@
 # Stratara Samples
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Two **Hero Samples** show what makes Stratara different — tamper-evident event streams and tenant-aware encryption — in ~100 lines each. Five **Learning Path** samples walk the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order. A **Pipeline Behaviors** sample shows request validation. Every sample is self-contained (no shared common project) and runs in under a second.
 
 The seven hero + learning-path samples share the same **bank-account / money-transfer** domain so you don't have to re-learn the problem space for each one.

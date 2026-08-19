@@ -1,5 +1,9 @@
 # Testing Patterns
 
+> **Derived page.** The behaviour described here is specified by the `test-support` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Stratara tests use **xUnit v3** on **Microsoft Testing Platform (MTP)**. The framework + consumer apps share the same conventions.
 
 ## Project layout

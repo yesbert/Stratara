@@ -1,5 +1,8 @@
 # Stratara.Sample.EventSourced
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Sample #2 of the learning path. Replaces the in-memory aggregate from [`Stratara.Sample.CqrsBasics`](../Stratara.Sample.CqrsBasics) with **event sourcing** + a **separate read-side projection**. Same bank-account domain, same mediator surface, but the state lives in an append-only event stream.
 
 ## What's new versus `CqrsBasics`

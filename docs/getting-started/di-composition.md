@@ -1,5 +1,9 @@
 # DI Composition
 
+> **Derived page.** The behaviour described here is specified by the `host-composition` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Stratara composes via à-la-carte `Add*Services()` extension methods on `IServiceCollection` and `IHostApplicationBuilder`. A typical host picks two or three, never all of them. Pick by **what shape of work** the host does, not by what packages it references.
 
 ## The decision tree

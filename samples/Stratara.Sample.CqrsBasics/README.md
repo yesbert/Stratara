@@ -1,5 +1,8 @@
 # Stratara.Sample.CqrsBasics
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 The first sample in the Stratara learning path. Shows the **Mediator** wire-up — `ICommand`, `ICommand<TResult>`, `IQuery<TResult>`, and their handlers — against a tiny in-memory bank-account domain. No event sourcing, no outbox, no saga; those are later samples.
 
 ## What to look at, in order

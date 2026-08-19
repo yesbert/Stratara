@@ -1,5 +1,8 @@
 # Stratara.Sessions
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Concrete session-context provider + ASP.NET Core middleware for Stratara's Actor/Subject session model. Reads tenant + user identity from JWT claims (with optional `X-Tenant-Id` / `X-Client-Id` header fallbacks), populates the ambient `ISessionContextProvider`, and exposes the Actor/Subject pair to every request.

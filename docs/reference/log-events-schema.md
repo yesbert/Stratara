@@ -1,5 +1,9 @@
 # LogEvents Schema
 
+> **Derived page.** The behaviour described here is specified by the `observability` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Stratara mandates source-generated `[LoggerMessage]` for all new logging — no `logger.LogInformation(...)` direct calls. Every log event has a stable `EventId` from a known range.
 
 ## ID range allocation

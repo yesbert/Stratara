@@ -1,5 +1,9 @@
 # Configure Snapshots
 
+> **Derived page.** The behaviour described here is specified by the `aggregate-rehydration` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 An event-sourced aggregate is rebuilt by replaying its event stream from the start. A **snapshot**
 is a cached materialisation of the aggregate at a given version: when one exists, Stratara loads the
 snapshot and replays only the events appended *after* it, instead of the whole history. The longer a

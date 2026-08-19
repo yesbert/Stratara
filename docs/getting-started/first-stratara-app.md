@@ -1,5 +1,9 @@
 # First Stratara App
 
+> **Derived page.** The behaviour described here is specified by the `host-composition` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 A 30-line console app that wires the mediator, dispatches a command, and queries the result. No event store, no broker — just `Stratara.Mediator` running in-process. The full code is in `samples/Stratara.Sample.CqrsBasics`; this walkthrough explains it block by block.
 
 ## 1. Project setup

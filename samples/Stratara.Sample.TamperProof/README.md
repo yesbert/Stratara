@@ -1,5 +1,8 @@
 # Stratara.Sample.TamperProof
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 **One of two Why-Stratara hero samples.** Shows the hash-chain audit trick that Stratara's `EventStreamHashing` worker performs against PostgreSQL — distilled to ~100 lines of in-memory code so the *idea* is visible without a database.
 
 ## The pitch

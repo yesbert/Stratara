@@ -1,5 +1,9 @@
 # Performance and Scaling
 
+> **Derived page.** The behaviour described here is specified by the `event-sourcing-store` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Event sourcing has a reputation for being slow — endless replay, polling read models,
 reflection-heavy dispatch. Stratara is built the other way around: the hot paths avoid
 reflection, projections are pushed rather than polled, and event streams partition

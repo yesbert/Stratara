@@ -1,5 +1,8 @@
 # Stratara.Contracts
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Wire-level POCO contracts shared by every Stratara package. Pure data records — no runtime, no DI, no infrastructure deps. Safe to reference from any layer.

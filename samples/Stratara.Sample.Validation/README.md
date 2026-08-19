@@ -1,5 +1,8 @@
 # Stratara.Sample.Validation
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Shows **`Stratara.Validation`** — the vendor-neutral request-validation pipeline behavior. An
 `IValidator<T>` runs *before* the handler, so invalid commands are rejected at the edge and the
 handler stays free of defensive guard clauses. No FluentValidation dependency; the contract is

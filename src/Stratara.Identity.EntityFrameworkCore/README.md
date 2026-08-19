@@ -1,5 +1,8 @@
 # Stratara.Identity.EntityFrameworkCore
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 EF Core identity-directory plane for the Stratara stack: user↔tenant membership (many-to-many
 with tenant-scoped roles), active-tenant selection, and membership-backed authorization.
 

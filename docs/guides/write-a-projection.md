@@ -1,5 +1,9 @@
 # Write a Projection
 
+> **Derived page.** The behaviour described here is specified by the `projections` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 A projection turns an event stream into a read model. `Stratara.Projections` discovers your
 projections at startup, matches each incoming event bundle against the events a projection cares
 about, and invokes only the matching methods.

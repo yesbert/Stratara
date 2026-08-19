@@ -1,5 +1,8 @@
 # Stratara.Sample.IdentityDirectory
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Shows the **identity-directory plane** — `Stratara.Identity.EntityFrameworkCore` — end to end:
 who belongs to which tenant (**membership**), what they may do there (**permissions**), and what
 they have configured (**scoped settings**). All three read from the same EF tables and the same

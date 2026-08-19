@@ -1,5 +1,8 @@
 # Stratara.Identity.AspNetCore
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Channel-agnostic ASP.NET Core identity wiring for the Stratara stack. Provides the `AddAspNetIdentity` / `AddAspNetIdentityWithSignInManager` extension methods and an `IStrataraSignInManager` wrapper around the ASP.NET Core `SignInManager`. Channel-specific glue (Blazor Server's `AuthenticationStateProvider`, MAUI session-state forwarders, etc.) is the consumer's responsibility — Stratara intentionally stops at the ASP.NET-Core-generic surface to stay application-agnostic.

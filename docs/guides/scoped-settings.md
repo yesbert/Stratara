@@ -1,5 +1,9 @@
 # Scoped Settings
 
+> **Derived page.** The behaviour described here is specified by the `scoped-settings` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 `Stratara.Abstractions.Settings` declares the settings plane — a vocabulary of named values that
 resolve differently per tenant, per user, or per user-in-tenant. `Stratara.Identity.EntityFrameworkCore`
 ships the EF Core storage and the read facade. It answers "what did *this* person, in *this* tenant,

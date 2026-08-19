@@ -1,5 +1,8 @@
 # Stratara.Shared
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Umbrella of shared utilities for the Stratara framework. Re-exports the Tier-A/B stack (Abstractions, Contracts, Diagnostics, Domain, Resilience, SessionContext) so consumers can pull one package and reach every common type.

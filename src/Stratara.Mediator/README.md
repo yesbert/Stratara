@@ -1,5 +1,8 @@
 # Stratara.Mediator
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 In-process mediator with DI-resolved handlers and pipeline behaviors. Drop-in replacement for MediatR-style routing without the runtime cost of `MethodInfo.Invoke` — uses a typed wrapper cache and direct DI dispatch.

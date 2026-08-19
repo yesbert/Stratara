@@ -1,5 +1,9 @@
 # Tamper-Evident Streams
 
+> **Derived page.** The behaviour described here is specified by the `tamper-evident-streams` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 ## The problem
 
 Append-only event stores have an obvious blind spot. The events themselves are immutable *by convention* — domain code never overwrites a row. But the rows are still rows in a database. A malicious admin, a buggy migration, an ad-hoc `UPDATE` through the wrong session, a restored backup that swaps in different bytes — and the immutability promise is gone.

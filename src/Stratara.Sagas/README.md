@@ -1,5 +1,8 @@
 # Stratara.Sagas
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Saga runtime for the Stratara event-sourced stack. Discovers `ISaga` implementations in the consumer's application assemblies, dispatches event bundles to them, and runs them under the `SagaWorker` hosted service.

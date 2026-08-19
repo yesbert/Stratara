@@ -1,5 +1,8 @@
 # Stratara.Validation
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Vendor-neutral request validation for Stratara's CQRS pipeline. A mediator pipeline behavior

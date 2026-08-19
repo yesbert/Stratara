@@ -1,5 +1,8 @@
 # Stratara.Domain
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 The Stratara framework's concrete multitenancy domain — the `Tenant` aggregate and its event vocabulary. Use this when your application wants Stratara's opinionated tenant model (one tenant per customer, lifecycle events for activate / deactivate / rename / locale-change / assignment) and the corresponding aggregate.

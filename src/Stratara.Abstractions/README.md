@@ -1,5 +1,8 @@
 # Stratara.Abstractions
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Contract interfaces and wire-level POCO records for the Stratara framework. Library-safe — depends only on `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Logging.Abstractions`, and `Stratara.Contracts`. No EF Core or message-bus runtime.

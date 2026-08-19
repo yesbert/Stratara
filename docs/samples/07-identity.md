@@ -1,5 +1,9 @@
 # Sample 7 — Identity (external login + API keys)
 
+> **Derived page.** The behaviour described here is specified by the `external-identity` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: how callers get **into** a Stratara app. External OpenID Connect sign-in with hardened
 JIT provisioning for humans, API keys / PATs for machines, JWT-bearer for API tokens — all three
 routed by the auth-scheme selector.

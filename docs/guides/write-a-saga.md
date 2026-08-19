@@ -1,5 +1,9 @@
 # Write a Saga
 
+> **Derived page.** The behaviour described here is specified by the `sagas` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 A saga (a.k.a. process manager) reacts to events by issuing more commands. Stratara registers sagas via `AddSagasFromAssemblyContaining<T>()` + the `SagaOrchestrationWorker`.
 
 ## The contract

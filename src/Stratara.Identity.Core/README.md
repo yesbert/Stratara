@@ -1,5 +1,8 @@
 # Stratara.Identity.Core
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Channel-agnostic identity primitives for the Stratara stack. Ships the shared model records, interfaces, and the typed `HttpClient` wrapper consumed by host-specific packages (e.g. `Stratara.Identity.AspNetCore` for server-side Blazor, with consumer-supplied implementations for non-web hosts such as mobile or desktop).

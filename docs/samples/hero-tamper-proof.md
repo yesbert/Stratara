@@ -1,5 +1,9 @@
 # Hero Sample — TamperProof
 
+> **Derived page.** The behaviour described here is specified by the `tamper-evident-streams` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: Hash-chained event streams catch direct-DB tampering at the next verification pass. The full *why* lives in the [Tamper-Evident Streams](../concepts/tamper-evident-streams.md) concept page; this is the runnable proof.
 
 - **Code**: [`samples/Stratara.Sample.TamperProof`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.TamperProof)

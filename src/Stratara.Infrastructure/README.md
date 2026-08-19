@@ -1,5 +1,8 @@
 # Stratara.Infrastructure
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Cross-cutting infrastructure plumbing for the Stratara framework — the Tier-C glue that lets downstream apps wire authorization, DI composition, and worker-stack configuration with a single reference.

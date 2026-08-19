@@ -1,5 +1,8 @@
 # Stratara.Sample.AspNetCoreApi
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 Sample #5 of the learning path — and the only web-shaped one. Wires HTTP endpoints to the same `IMediator` surface from sample #1 using ASP.NET Core minimal APIs. Same bank-account domain, just a different driver.
 
 Conceptually parallel to `CqrsBasics` (you can read it without going through #2–#4) — it just answers the question "what does the HTTP layer look like in a Stratara host?".

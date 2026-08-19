@@ -1,5 +1,8 @@
 # Stratara.Diagnostics
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 > **License:** [MIT](../../LICENSE).
 
 Generic observability primitives shared by all Stratara packages. Use this to emit `Activity` / `Meter` instruments under a uniform source name and stable event-ID schema.

@@ -1,5 +1,9 @@
 # Hero Sample — Encryption
 
+> **Derived page.** The behaviour described here is specified by the `data-encryption` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: `[EncryptData]` fields stay confidential across tenants by binding the AES-GCM authentication tag to the tenant id as AAD. Cross-tenant decryption fails by cryptography, not by query filtering. The full *why* lives in the [Tenant-Aware Encryption](../concepts/tenant-aware-encryption.md) concept page; this is the runnable proof.
 
 - **Code**: [`samples/Stratara.Sample.Encryption`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.Encryption)

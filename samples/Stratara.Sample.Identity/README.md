@@ -1,5 +1,8 @@
 # Stratara.Sample.Identity
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 How callers get **into** a Stratara app: **OpenID Connect** login with hardened **just-in-time (JIT)
 provisioning** for humans, **API keys / PATs** for machines, and **JWT-bearer** validation for API
 tokens — all three routed by the auth-scheme selector, all three ending in the same session shape.

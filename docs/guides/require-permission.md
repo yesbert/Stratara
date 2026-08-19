@@ -1,5 +1,9 @@
 # Permission-Based Authorization
 
+> **Derived page.** The behaviour described here is specified by the `authorization` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 `Stratara.Identity.EntityFrameworkCore` layers fine-grained permissions over the coarse roles of
 [`[RequireRole]`](auth-decorators.md). A role answers "who is this person"; a permission answers
 "what may they do" — `sims.read`, `billing.write`. The contracts live in

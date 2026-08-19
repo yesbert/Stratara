@@ -1,5 +1,9 @@
 # Sample 4 — Money-Transfer Saga
 
+> **Derived page.** The behaviour described here is specified by the `sagas` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: Process manager. One `RequestMoneyTransferCommand` fans out into a `WithdrawCommand` + `DepositCommand` via the outbox.
 
 - **Code**: [`samples/Stratara.Sample.MoneyTransferSaga`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.MoneyTransferSaga)

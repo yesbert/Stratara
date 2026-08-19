@@ -1,5 +1,9 @@
 # Sample 1 — CQRS Basics
 
+> **Derived page.** The behaviour described here is specified by the `mediator-dispatch` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 **Concept**: `IMediator` + `ICommand` / `IQuery` + handler discovery — the minimum viable Stratara app.
 
 - **Code**: [`samples/Stratara.Sample.CqrsBasics`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.CqrsBasics)

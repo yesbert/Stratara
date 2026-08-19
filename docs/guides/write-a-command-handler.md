@@ -1,5 +1,9 @@
 # Write a Command Handler
 
+> **Derived page.** The behaviour described here is specified by the `mediator-dispatch` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 A command handler implements `ICommandHandler<TCommand>` (no result) or `IQueryHandler<TCommand, TResult>` (the unified interface that also handles `ICommand<T>`). Stratara discovers them via `AddCommandHandlersFromAssemblyContaining<T>()`.
 
 ## Choose the command shape

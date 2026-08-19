@@ -1,5 +1,9 @@
 # Authorization Decorators
 
+> **Derived page.** The behaviour described here is specified by the `authorization` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 Stratara enforces role-based authorization at the mediator boundary via `[RequireRole]` and the
 authorizing mediator — so every command and query crosses a single mandatory check, regardless of
 which channel delivered it (HTTP, MAUI, console, worker). The attribute lives in

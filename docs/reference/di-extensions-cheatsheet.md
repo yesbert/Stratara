@@ -1,5 +1,9 @@
 # DI Extensions Cheatsheet
 
+> **Derived page.** The behaviour described here is specified by the `host-composition` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 The full menu of `Add*Services()` extensions Stratara exposes, by package.
 
 ## Umbrella extensions (`IHostApplicationBuilder`)

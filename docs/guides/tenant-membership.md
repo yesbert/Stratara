@@ -1,5 +1,9 @@
 # Tenant Membership and the Sign-In Tenant Claim
 
+> **Derived page.** The behaviour described here is specified by the `tenant-directory` capability
+> under `openspec/specs/`. That specification is the source; this page explains and
+> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+
 `Stratara.Identity.EntityFrameworkCore` owns the identity-directory plane: which tenants a user
 belongs to, and which tenant-scoped roles the user holds in each. `Stratara.Identity.AspNetCore`
 bridges that plane into the sign-in path, emitting the `stratara:tenant_id` claim that the

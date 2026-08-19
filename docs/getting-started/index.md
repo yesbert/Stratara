@@ -1,5 +1,8 @@
 # Getting Started
 
+> **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
+> specifications are the source; this page explains and illustrates them.
+
 A 10-minute path from "I've never touched Stratara" to "my host wires Stratara and runs a command".
 
 1. **[Prerequisites](prerequisites.md)** — .NET SDK, optional Postgres/RabbitMQ for advanced samples.
