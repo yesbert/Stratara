@@ -16,6 +16,17 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_no changes yet since `3.2.3`._
+
+## [3.2.3] — 2026-08-22
+
+Three correctness fixes, all of the same kind: behaviour that failed by succeeding. A pipeline
+behaviour registered twice ran twice and nothing said so; a closed generic type name normalized to a
+malformed key that two different types could share, and the loser of that collision was discarded
+silently; and a heavy command republished from the outbox left its lane whenever its type could not
+be resolved. None produced an error, and no test covered any of them. They were found by reading the
+code against the specification rather than by a failure report.
+
 ### Fixed
 
 - **A pipeline behaviour registered twice now installs once.** Every behaviour registrar used a
@@ -2379,7 +2390,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.2...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.3...main
+[3.2.3]: https://github.com/yesbert/Stratara/releases/tag/v3.2.3
 [3.2.2]: https://github.com/yesbert/Stratara/releases/tag/v3.2.2
 [3.2.1]: https://github.com/yesbert/Stratara/releases/tag/v3.2.1
 [3.2.0]: https://github.com/yesbert/Stratara/releases/tag/v3.2.0
