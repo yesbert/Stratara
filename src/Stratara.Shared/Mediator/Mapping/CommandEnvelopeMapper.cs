@@ -2,6 +2,7 @@ using System.Text.Json;
 using Stratara.Contracts.Messages;
 using Stratara.Contracts.Session;
 using Stratara.Abstractions.Mediator;
+using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Security;
 using Stratara.Shared.Reflections;
 
@@ -39,6 +40,13 @@ public static class CommandEnvelopeMapper
         var commandJson = await serializer.SerializeAsync(command, sessionContext.TenantId, sessionContext.ActorUserId, cancellationToken);
         var sessionContextJson = JsonSerializer.Serialize(sessionContext);
 
-        return new CommandEnvelope(id, commandJson, command.GetType().GetQualifiedTypeName(), sessionContextJson);
+        var commandType = command.GetType();
+
+        return new CommandEnvelope(
+            id,
+            commandJson,
+            commandType.GetQualifiedTypeName(),
+            sessionContextJson,
+            Heavy: IMessagingIdentifier.IsHeavy(commandType));
     }
 }

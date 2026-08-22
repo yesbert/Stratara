@@ -89,4 +89,49 @@ public class EventUpcasterPipelineTests
 
         Assert.Throws<InvalidOperationException>(() => pipeline.Upcast("T.A, Asm", "{\"v\":0}"));
     }
+
+    private static string ClosedGeneric(string outerAssembly, string outerVersion, string payloadVersion) =>
+        $"Contoso.Event`1[[Contoso.Payload, Contoso.Payloads, Version={payloadVersion}, Culture=neutral, " +
+        $"PublicKeyToken=null]], {outerAssembly}, Version={outerVersion}, Culture=neutral, PublicKeyToken=null";
+
+    [Fact]
+    public void Closed_Generics_Differing_Only_In_Outer_Assembly_Are_Distinct_Sources()
+    {
+        var fromA = ClosedGeneric("Contoso.EventsA", "1.0.0.0", "1.0.0.0");
+        var fromB = ClosedGeneric("Contoso.EventsB", "1.0.0.0", "1.0.0.0");
+
+        var pipeline = new EventUpcasterPipeline(
+        [
+            Bump(fromA, "Contoso.Event.V2, Contoso.EventsA"),
+            Bump(fromB, "Contoso.Event.V2, Contoso.EventsB")
+        ]);
+
+        Assert.Equal("Contoso.Event.V2, Contoso.EventsA", pipeline.Upcast(fromA, "{\"v\":1}").EventTypeName);
+        Assert.Equal("Contoso.Event.V2, Contoso.EventsB", pipeline.Upcast(fromB, "{\"v\":1}").EventTypeName);
+    }
+
+    [Fact]
+    public void Closed_Generic_Source_Matches_Independently_Of_Assembly_Version()
+    {
+        var registered = ClosedGeneric("Contoso.Events", "1.0.0.0", "1.0.0.0");
+        var persisted = ClosedGeneric("Contoso.Events", "2.5.0.0", "3.1.0.0");
+
+        var pipeline = new EventUpcasterPipeline([Bump(registered, "Contoso.Event.V2, Contoso.Events")]);
+
+        Assert.Equal("Contoso.Event.V2, Contoso.Events", pipeline.Upcast(persisted, "{\"v\":1}").EventTypeName);
+    }
+
+    [Fact]
+    public void Closed_Generic_From_Another_Assembly_Does_Not_Match_The_Registered_Source()
+    {
+        var registered = ClosedGeneric("Contoso.Events", "1.0.0.0", "1.0.0.0");
+        var foreign = ClosedGeneric("Fabrikam.Events", "1.0.0.0", "1.0.0.0");
+
+        var pipeline = new EventUpcasterPipeline([Bump(registered, "Contoso.Event.V2, Contoso.Events")]);
+
+        var result = pipeline.Upcast(foreign, "{\"v\":1}");
+
+        Assert.Equal(foreign, result.EventTypeName);
+        Assert.Equal("{\"v\":1}", result.DataJson);
+    }
 }

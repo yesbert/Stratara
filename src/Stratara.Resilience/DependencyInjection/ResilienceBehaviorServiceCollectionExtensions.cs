@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Resilience;
 using Stratara.Resilience.Mediator;
@@ -21,14 +22,15 @@ public static class ResilienceBehaviorServiceCollectionExtensions
     /// or a consumer's own <c>AddResiliencePipeline(name, ...)</c>) and the mediator to be added.
     /// Call this <b>after</b> <c>AddStrataraValidation()</c> / <c>AddStrataraTenantIsolation()</c> so
     /// the retry wraps the handler and not the validation / authorization guards (which should not be
-    /// re-run on retry). Behaviors are open generics resolved per request.
+    /// re-run on retry). Behaviors are open generics resolved per request. Calling this more than
+    /// once installs the behavior once, so a request is not retried twice over.
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     public static IServiceCollection AddStrataraResilienceBehavior(this IServiceCollection services)
     {
-        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ResiliencePipelineBehavior<,>));
-        services.AddScoped(typeof(IPipelineBehavior<>), typeof(ResiliencePipelineBehavior<>));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(ResiliencePipelineBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<>), typeof(ResiliencePipelineBehavior<>)));
         return services;
     }
 }

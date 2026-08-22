@@ -58,7 +58,9 @@ public static class MediatorServiceCollectionExtensions
     /// <remarks>
     /// The provided type must be a two-parameter open generic
     /// (e.g. <c>typeof(LoggingBehavior&lt;,&gt;)</c>). Behaviors are resolved per-request in DI
-    /// registration order — first registered runs outermost.
+    /// registration order — first registered runs outermost. Registering the same behavior type
+    /// more than once installs it once, so a host that composes overlapping service bundles does
+    /// not run the behavior twice.
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="openGenericBehaviorType">An open generic type definition with two type parameters.</param>
@@ -75,7 +77,7 @@ public static class MediatorServiceCollectionExtensions
                 nameof(openGenericBehaviorType));
         }
 
-        services.AddScoped(typeof(IPipelineBehavior<,>), openGenericBehaviorType);
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), openGenericBehaviorType));
         return services;
     }
 
@@ -86,7 +88,9 @@ public static class MediatorServiceCollectionExtensions
     /// <remarks>
     /// The provided type must be a one-parameter open generic
     /// (e.g. <c>typeof(LoggingBehavior&lt;&gt;)</c>). Behaviors are resolved per-request in DI
-    /// registration order — first registered runs outermost.
+    /// registration order — first registered runs outermost. Registering the same behavior type
+    /// more than once installs it once, so a host that composes overlapping service bundles does
+    /// not run the behavior twice.
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="openGenericBehaviorType">An open generic type definition with one type parameter.</param>
@@ -103,7 +107,7 @@ public static class MediatorServiceCollectionExtensions
                 nameof(openGenericBehaviorType));
         }
 
-        services.AddScoped(typeof(IPipelineBehavior<>), openGenericBehaviorType);
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<>), openGenericBehaviorType));
         return services;
     }
 

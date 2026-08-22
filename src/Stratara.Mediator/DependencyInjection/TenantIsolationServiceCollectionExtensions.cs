@@ -31,6 +31,12 @@ public static class TenantIsolationServiceCollectionExtensions
     /// deny-all authorizer via <c>TryAdd</c>, so register your own <see cref="ICrossTenantAuthorizer"/>
     /// to grant the cross-tenant case (e.g. for a platform administrator).
     /// </para>
+    /// <para>
+    /// <see cref="TenantIsolationOptions"/> follows the options pattern, so it can equally be bound
+    /// from configuration with <c>Configure&lt;TenantIsolationOptions&gt;(section)</c>. Calling this
+    /// method more than once installs the behaviors once and applies every configuration callback in
+    /// order, rather than leaving a second, conflicting options instance behind.
+    /// </para>
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configure">Optional callback to configure the enforcement mode.</param>
@@ -49,9 +55,11 @@ public static class TenantIsolationServiceCollectionExtensions
         this IServiceCollection services,
         Action<TenantIsolationOptions>? configure = null)
     {
-        var options = new TenantIsolationOptions();
-        configure?.Invoke(options);
-        services.AddSingleton(options);
+        services.AddOptions<TenantIsolationOptions>();
+        if (configure is not null)
+        {
+            services.Configure(configure);
+        }
 
         services.TryAddSingleton<ICrossTenantAuthorizer, DenyAllCrossTenantAuthorizer>();
 

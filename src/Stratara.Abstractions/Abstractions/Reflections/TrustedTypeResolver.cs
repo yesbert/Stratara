@@ -47,7 +47,14 @@ public sealed class TrustedTypeResolver : ITrustedTypeResolver
         var assemblyQualifiedName = type.AssemblyQualifiedName
             ?? throw new InvalidOperationException($"Cannot register type '{type.FullName}' — no AssemblyQualifiedName.");
         var key = TypeNameNormalization.ToVersionIndependent(assemblyQualifiedName);
-        _types.TryAdd(key, type);
+        var registered = _types.GetOrAdd(key, type);
+        if (registered != type)
+        {
+            throw new InvalidOperationException(
+                $"Trusted-type name '{key}' is already registered to '{registered.AssemblyQualifiedName}' and cannot " +
+                $"also resolve to '{type.AssemblyQualifiedName}'. Two distinct types reduce to the same " +
+                "version-independent name; rename one of them or register only the type the persisted rows refer to.");
+        }
     }
 
     /// <inheritdoc/>

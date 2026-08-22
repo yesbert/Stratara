@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.Mediator;
 using Stratara.EventSourcing.Pipeline.CommandAudit;
 
@@ -27,7 +28,8 @@ public static class CommandAuditServiceCollectionExtensions
     /// </code>
     /// Both behaviors are registered as scoped so they share the request's
     /// <see cref="Stratara.Abstractions.Persistence.IWriteUnitOfWork"/> instance with the rest of
-    /// the mediator pipeline.
+    /// the mediator pipeline. Calling this more than once installs each behavior once, so a
+    /// dispatched command is audited exactly once.
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
@@ -36,8 +38,8 @@ public static class CommandAuditServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(CommandAuditBehavior<,>));
-        services.AddScoped(typeof(IPipelineBehavior<>), typeof(CommandAuditBehavior<>));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(CommandAuditBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<>), typeof(CommandAuditBehavior<>)));
         return services;
     }
 }

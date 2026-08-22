@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using OpenTelemetry.Trace;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Multitenancy;
@@ -25,7 +26,7 @@ public class TenantIsolationBehaviorTests
         new(
             new FakeSessionContextProvider(session),
             authorizer,
-            new TenantIsolationOptions { Mode = mode },
+            Options.Create(new TenantIsolationOptions { Mode = mode }),
             NullLogger<TenantIsolationBehavior<ScopedQuery, string>>.Instance);
 
     [Fact]
@@ -34,7 +35,7 @@ public class TenantIsolationBehaviorTests
         var behavior = new TenantIsolationBehavior<PlainQuery, string>(
             new FakeSessionContextProvider(Session(TenantA, TenantA)),
             new DenyAuthorizer(),
-            new TenantIsolationOptions { Mode = TenantIsolationMode.Strict },
+            Options.Create(new TenantIsolationOptions { Mode = TenantIsolationMode.Strict }),
             NullLogger<TenantIsolationBehavior<PlainQuery, string>>.Instance);
 
         var result = await behavior.HandleAsync(new PlainQuery(), () => Task.FromResult("handled"), CancellationToken.None);
@@ -127,7 +128,7 @@ public class TenantIsolationBehaviorTests
         var behavior = new TenantIsolationBehavior<ScopedCommand>(
             new FakeSessionContextProvider(Session(TenantA, TenantA)),
             new DenyAuthorizer(),
-            new TenantIsolationOptions { Mode = TenantIsolationMode.Default },
+            Options.Create(new TenantIsolationOptions { Mode = TenantIsolationMode.Default }),
             NullLogger<TenantIsolationBehavior<ScopedCommand>>.Instance);
         var handlerInvoked = false;
 

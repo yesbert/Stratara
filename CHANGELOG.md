@@ -16,7 +16,55 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `3.2.2`._
+### Fixed
+
+- **A pipeline behaviour registered twice now installs once.** Every behaviour registrar used a
+  plain scoped registration, so a host that called one twice — the ordinary result of composing two
+  service bundles that each set up their own slice of the framework — installed the stage twice and
+  ran it twice per request. None of the three consequences was benign: every validator ran twice
+  against every request, so a validator with a side effect (a uniqueness check against the database)
+  performed it twice; the tenant guard ran twice, the second time against a second options instance
+  that could disagree with the first; and two nested resilience pipelines multiplied rather than
+  added, turning a configured budget of four attempts into sixteen. `AddStrataraValidation`,
+  `AddStrataraTenantIsolation`, `AddStrataraResilienceBehavior`, `AddCommandAuditing` and the
+  `AddPipelineBehavior` / `AddPipelineBehaviorWithResult` primitives are now idempotent per behaviour
+  type. Registering two *different* behaviours is unaffected.
+- **A closed generic type name now normalizes correctly.** Resolving a recorded type name is meant to
+  ignore the assembly version and match on the type name and assembly name alone. For a closed
+  generic it did neither: the name was truncated at its second comma, which for a generic falls
+  *inside* the type-argument brackets, so the outer assembly name was dropped and the key became a
+  malformed fragment. Two closed generics that differed only in the assembly that declared them
+  collapsed onto one key, and the second registration was then silently discarded — an event
+  upcaster could match the wrong source type, and a type a host believed it had registered was
+  unresolvable. Names are now parsed rather than counted, and each type argument is reduced the same
+  way as the outer name, so upgrading the *payload's* assembly no longer strands rows either.
+- **A heavy command republished from the outbox stays in the heavy lane.** When a stored command's
+  recorded type could not be resolved in the process draining the outbox, republication fell back to
+  the shared command topic regardless of the lane the command belonged to. Depending on how the lanes
+  are deployed, the command was then either dead-lettered by the interactive worker or executed on
+  the interactive lane — the starvation the separate lane exists to prevent. The lane is now recorded
+  on the envelope when the command is enqueued, so republication no longer depends on resolving the
+  type.
+
+### Changed
+
+- **Registering two different types under one recorded name now fails.** The trusted-type resolver
+  previously kept the first and discarded the second without a word, which is indistinguishable from
+  a registration that never happened: the type simply fails to resolve later, when a stored row is
+  read. `ITrustedTypeResolver.Register` now throws, naming both types. Registering the same type
+  again remains a no-op. Reaching this requires two distinct types sharing a full type name *and* a
+  simple assembly name in one process.
+- **`TenantIsolationOptions` follows the options pattern.** The mode can now be bound from
+  configuration with `Configure<TenantIsolationOptions>(section)` in addition to the
+  `AddStrataraTenantIsolation(o => ...)` callback, and a second call to the registrar no longer
+  leaves a conflicting second options instance behind. `Stratara.Mediator` therefore takes a
+  dependency on `Microsoft.Extensions.Options`.
+
+### Added
+
+- **`CommandEnvelope.Heavy`** records whether a command declared itself long-running when it was
+  enqueued. Optional and defaulting to `false`, which is how an envelope written by an earlier
+  version deserializes; the signed canonical form is unchanged, so existing signatures still verify.
 
 ## [3.2.2] — 2026-08-14
 

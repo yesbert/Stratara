@@ -86,7 +86,7 @@ internal sealed class CommandOutboxDispatcher(
         foreach (var outboxEntry in outboxEntries)
         {
             var commandEnvelope = outboxEntry.MapTo<CommandEnvelope>();
-            var topic = ResolveTopic(commandEnvelope.CommandTypeName);
+            var topic = ResolveTopic(commandEnvelope);
             if (await TrySendCommandEnvelopeAsync(commandEnvelope, topic, cancellationToken))
             {
                 await repository.DeleteAsync(outboxEntry.Id, cancellationToken);
@@ -116,14 +116,20 @@ internal sealed class CommandOutboxDispatcher(
     }
 
     /// <summary>
-    /// Resolves the command topic for an outbox entry from its persisted command type name. Heavy
-    /// commands route to the dedicated heavy topic; when the type is not registered in the trusted-type
-    /// resolver (or no resolver is available) the entry falls back to the default command topic so the
-    /// outbox still drains rather than stalling.
+    /// Resolves the command topic for a stored envelope. The lane the command declared at enqueue time
+    /// travels with the envelope, so a heavy command republished from durable storage reaches the heavy
+    /// topic even when its type cannot be resolved in this process. An envelope written before the lane
+    /// was recorded carries no flag; for those the command type is resolved as before, and only when that
+    /// also fails does the entry fall back to the default topic so the outbox drains rather than stalling.
     /// </summary>
-    private string ResolveTopic(string commandTypeName)
+    private string ResolveTopic(CommandEnvelope commandEnvelope)
     {
-        if (typeResolver is not null && typeResolver.TryResolve(commandTypeName, out var type) && type is not null)
+        if (commandEnvelope.Heavy)
+        {
+            return messagingIdentifier.HeavyCommandTopic;
+        }
+
+        if (typeResolver is not null && typeResolver.TryResolve(commandEnvelope.CommandTypeName, out var type) && type is not null)
         {
             return messagingIdentifier.GetCommandTopic(type);
         }

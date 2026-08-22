@@ -43,6 +43,15 @@ public class ResiliencePipelineBehaviorTests
         }
     }
 
+    private sealed class AlwaysThrowsRetryHandler(AttemptCounter counter) : IQueryHandler<RetryQuery, string>
+    {
+        public Task<string> HandleAsync(RetryQuery request, CancellationToken cancellationToken)
+        {
+            counter.Count++;
+            throw new InvalidOperationException("always transient");
+        }
+    }
+
     private sealed class AlwaysThrowsPlainHandler(AttemptCounter counter) : IQueryHandler<PlainQuery, string>
     {
         public Task<string> HandleAsync(PlainQuery request, CancellationToken cancellationToken)
@@ -146,5 +155,44 @@ public class ResiliencePipelineBehaviorTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => mediator.HandleAsync(new ConcurrencyQuery()));
         Assert.Equal(1, counter.Count);
+    }
+
+    [Fact]
+    public void AddStrataraResilienceBehavior_CalledTwice_InstallsEachBehaviorOnce()
+    {
+        var services = new ServiceCollection();
+        services.AddStrataraResilienceBehavior();
+        services.AddStrataraResilienceBehavior();
+
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<,>));
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<>));
+    }
+
+    [Fact]
+    public async Task RegisteredTwice_DoesNotMultiplyRetryAttempts()
+    {
+        var once = await CountAttemptsUntilExhausted(registerBehaviorTwice: false);
+        var twice = await CountAttemptsUntilExhausted(registerBehaviorTwice: true);
+
+        Assert.Equal(once, twice);
+    }
+
+    private static async Task<int> CountAttemptsUntilExhausted(bool registerBehaviorTwice)
+    {
+        var counter = new AttemptCounter();
+        await using var sp = BuildProvider(counter, s =>
+        {
+            s.AddScoped<IQueryHandler<RetryQuery, string>, AlwaysThrowsRetryHandler>();
+            if (registerBehaviorTwice)
+            {
+                s.AddStrataraResilienceBehavior();
+            }
+        });
+        using var scope = sp.CreateScope();
+        var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => mediator.HandleAsync(new RetryQuery()));
+
+        return counter.Count;
     }
 }

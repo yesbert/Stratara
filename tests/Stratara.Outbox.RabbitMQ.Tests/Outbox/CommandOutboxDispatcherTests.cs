@@ -146,6 +146,58 @@ public class CommandOutboxDispatcherTests
         harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task EnqueueCommandAsync_HeavyCommand_FallingBackToStorage_RecordsTheHeavyLane()
+    {
+        var harness = new Harness();
+        harness.SessionContext.Setup(s => s.Current).Returns(SessionContext.Empty());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(HeavyCommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+        CommandEnvelope? stored = null;
+        harness.OutboxRepository
+            .Setup(r => r.AddAsync(It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()))
+            .Callback<CommandEnvelope, CancellationToken>((envelope, _) => stored = envelope)
+            .Returns(Task.CompletedTask);
+
+        await harness.Sut.EnqueueCommandAsync(new HeavyTestCommand(Guid.NewGuid()));
+
+        Assert.NotNull(stored);
+        Assert.True(stored.Heavy);
+    }
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_StoredHeavyCommand_WithUnresolvableType_RepublishesToTheHeavyTopic()
+    {
+        var harness = new Harness();
+        var envelope = new CommandEnvelope(Guid.NewGuid(), "{}", "Contoso.Unregistered, Contoso", "{}", Heavy: true);
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(envelope)]);
+
+        harness.MessageBus.Verify(
+            b => b.PublishAsync(HeavyCommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        harness.MessageBus.Verify(
+            b => b.PublishAsync(CommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_StoredOrdinaryCommand_WithUnresolvableType_RepublishesToTheSharedTopic()
+    {
+        var harness = new Harness();
+        var envelope = new CommandEnvelope(Guid.NewGuid(), "{}", "Contoso.Unregistered, Contoso", "{}");
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(envelope)]);
+
+        harness.MessageBus.Verify(
+            b => b.PublishAsync(CommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        harness.MessageBus.Verify(
+            b => b.PublishAsync(HeavyCommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static OutboxEntry BuildOutboxEntry(CommandEnvelope envelope) => new()
     {
         Id = Guid.NewGuid(),

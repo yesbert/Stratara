@@ -23,6 +23,18 @@ public class CommandAuditServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddCommandAuditing_CalledTwice_InstallsEachBehaviorOnce()
+    {
+        var services = new ServiceCollection();
+
+        services.AddCommandAuditing();
+        services.AddCommandAuditing();
+
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<,>));
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<>));
+    }
+
+    [Fact]
     public void AddCommandAuditing_ReturnsSameServiceCollectionForChaining()
     {
         var services = new ServiceCollection();

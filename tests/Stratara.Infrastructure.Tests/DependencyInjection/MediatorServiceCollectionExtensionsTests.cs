@@ -144,6 +144,56 @@ public class MediatorServiceCollectionExtensionsTests
         Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
     }
 
+    [Fact]
+    public void AddPipelineBehaviorWithResult_CalledTwice_InstallsOnce()
+    {
+        var services = new ServiceCollection();
+        services.AddPipelineBehaviorWithResult(typeof(TwoParamBehavior<,>));
+        services.AddPipelineBehaviorWithResult(typeof(TwoParamBehavior<,>));
+
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<,>));
+    }
+
+    [Fact]
+    public void AddPipelineBehavior_CalledTwice_InstallsOnce()
+    {
+        var services = new ServiceCollection();
+        services.AddPipelineBehavior(typeof(OneParamBehavior<>));
+        services.AddPipelineBehavior(typeof(OneParamBehavior<>));
+
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<>));
+    }
+
+    [Fact]
+    public void AddPipelineBehaviorWithResult_DistinctBehaviorTypes_AreBothInstalled()
+    {
+        var services = new ServiceCollection();
+        services.AddPipelineBehaviorWithResult(typeof(TwoParamBehavior<,>));
+        services.AddPipelineBehaviorWithResult(typeof(CountingBehavior<,>));
+
+        Assert.Equal(2, services.Count(d => d.ServiceType == typeof(IPipelineBehavior<,>)));
+    }
+
+    [Fact]
+    public async Task TwiceRegisteredStage_RunsOncePerDispatchedRequest()
+    {
+        var log = new List<string>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(log);
+        services.AddSingleton(TracerProvider.Default.GetTracer("test"));
+        services.AddMediator();
+        services.AddPipelineBehaviorWithResult(typeof(CountingBehavior<,>));
+        services.AddPipelineBehaviorWithResult(typeof(CountingBehavior<,>));
+        services.AddScoped<IQueryHandler<TestQuery, string>, TestQueryHandler>();
+        var sp = services.BuildServiceProvider();
+
+        using var scope = sp.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new TestQuery());
+
+        Assert.Single(log);
+    }
+
     public sealed record TestCommand : ICommand;
 
     public sealed record TestQuery : IRequest<string>;
@@ -171,6 +221,16 @@ public class MediatorServiceCollectionExtensionsTests
     {
         public Task HandleAsync(TRequest request, Func<Task> next, CancellationToken cancellationToken) =>
             next();
+    }
+
+    public sealed class CountingBehavior<TRequest, TResult>(List<string> log) : IPipelineBehavior<TRequest, TResult>
+        where TRequest : IRequest<TResult>
+    {
+        public Task<TResult> HandleAsync(TRequest request, Func<Task<TResult>> next, CancellationToken cancellationToken)
+        {
+            log.Add(typeof(TRequest).Name);
+            return next();
+        }
     }
 
     public sealed class NotGeneric { }

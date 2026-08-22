@@ -1,5 +1,6 @@
 using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Multitenancy;
 using Stratara.Abstractions.Session;
@@ -19,7 +20,7 @@ namespace Stratara.Mediator.Multitenancy;
 internal sealed class TenantIsolationBehavior<TRequest, TResult>(
     ISessionContextProvider sessionContextProvider,
     ICrossTenantAuthorizer crossTenantAuthorizer,
-    TenantIsolationOptions options,
+    IOptions<TenantIsolationOptions> options,
     ILogger<TenantIsolationBehavior<TRequest, TResult>> logger)
     : IPipelineBehavior<TRequest, TResult>
     where TRequest : IRequest<TResult>
@@ -37,7 +38,7 @@ internal sealed class TenantIsolationBehavior<TRequest, TResult>(
         if (request is ITenantScopedRequest tenantScoped)
         {
             await TenantIsolationGuard.EnsureAuthorizedAsync(
-                tenantScoped, sessionContextProvider, crossTenantAuthorizer, options, logger, cancellationToken);
+                tenantScoped, sessionContextProvider, crossTenantAuthorizer, options.Value, logger, cancellationToken);
         }
 
         return await next();
@@ -56,7 +57,7 @@ internal sealed class TenantIsolationBehavior<TRequest, TResult>(
 internal sealed class TenantIsolationBehavior<TRequest>(
     ISessionContextProvider sessionContextProvider,
     ICrossTenantAuthorizer crossTenantAuthorizer,
-    TenantIsolationOptions options,
+    IOptions<TenantIsolationOptions> options,
     ILogger<TenantIsolationBehavior<TRequest>> logger)
     : IPipelineBehavior<TRequest>
     where TRequest : IRequest
@@ -73,7 +74,7 @@ internal sealed class TenantIsolationBehavior<TRequest>(
         if (request is ITenantScopedRequest tenantScoped)
         {
             await TenantIsolationGuard.EnsureAuthorizedAsync(
-                tenantScoped, sessionContextProvider, crossTenantAuthorizer, options, logger, cancellationToken);
+                tenantScoped, sessionContextProvider, crossTenantAuthorizer, options.Value, logger, cancellationToken);
         }
 
         await next();

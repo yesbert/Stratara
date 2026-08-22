@@ -39,9 +39,17 @@ public interface ITrustedTypeResolver
     /// <returns><c>true</c> if a registered type matched; <c>false</c> otherwise.</returns>
     bool TryResolve(string typeName, out Type? type);
 
-    /// <summary>Registers <paramref name="type"/> in the resolver. Idempotent.</summary>
+    /// <summary>
+    /// Registers <paramref name="type"/> in the resolver. Registering the same type again is a no-op;
+    /// registering a different type under a name already taken is rejected rather than discarded, so a
+    /// name clash surfaces at registration instead of silently resolving to whichever type won.
+    /// </summary>
     /// <param name="type">The type to register.</param>
     /// <exception cref="ArgumentNullException"><paramref name="type"/> is <c>null</c>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="type"/> has no assembly-qualified name, or a different type is already registered
+    /// under the same version-independent name.
+    /// </exception>
     void Register(Type type);
 
     /// <summary>Snapshot of every type currently registered with the resolver.</summary>

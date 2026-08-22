@@ -153,6 +153,38 @@ public class ValidationPipelineBehaviorTests
             d.ImplementationType == typeof(DiscoverableEchoValidator));
     }
 
+    [Fact]
+    public void AddStrataraValidation_CalledTwice_InstallsEachBehaviorOnce()
+    {
+        var services = new ServiceCollection();
+        services.AddStrataraValidation();
+        services.AddStrataraValidation();
+
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<,>));
+        Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<>));
+    }
+
+    [Fact]
+    public async Task ThroughMediator_RegisteredTwice_RunsEachValidatorOncePerRequest()
+    {
+        var validator = new CountingValidator();
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton(new List<string>());
+        services.AddSingleton(TracerProvider.Default.GetTracer("test"));
+        services.AddMediator();
+        services.AddStrataraValidation();
+        services.AddStrataraValidation();
+        services.AddSingleton<IValidator<EchoQuery>>(validator);
+        services.AddScoped<IQueryHandler<EchoQuery, string>, RecordingHandler>();
+        var sp = services.BuildServiceProvider();
+
+        using var scope = sp.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new EchoQuery("ok"));
+
+        Assert.Equal(1, validator.Invocations);
+    }
+
     public sealed record EchoQuery(string Message) : IRequest<string>;
 
     public sealed record EchoCommand : ICommand;
@@ -177,6 +209,17 @@ public class ValidationPipelineBehaviorTests
     {
         public ValueTask<ValidationResult> ValidateAsync(EchoQuery instance, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(ValidationResult.Success);
+    }
+
+    private sealed class CountingValidator : IValidator<EchoQuery>
+    {
+        public int Invocations { get; private set; }
+
+        public ValueTask<ValidationResult> ValidateAsync(EchoQuery instance, CancellationToken cancellationToken = default)
+        {
+            Invocations++;
+            return ValueTask.FromResult(ValidationResult.Success);
+        }
     }
 
     private sealed class FailValidator(string property, string message) : IValidator<EchoQuery>

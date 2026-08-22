@@ -16,10 +16,17 @@ namespace Stratara.Contracts.Messages;
 /// <param name="CommandTypeName">Version-independent type name used by the worker-side dispatcher to resolve the concrete command type.</param>
 /// <param name="SessionContextJson">JSON serialization of the originating <see cref="Session.SessionContext"/> for handler-side replay.</param>
 /// <param name="Signature">Optional opaque signature produced by <c>IBusEnvelopeSigner</c> when bus integrity is enabled. Defaults to <c>null</c> for backwards compatibility with hosts that have not opted in.</param>
+/// <param name="Heavy">
+/// Whether the command declared itself long-running when it was enqueued. Recorded at enqueue time so
+/// republication from durable storage can route the envelope to the heavy lane without re-resolving the
+/// command's CLR type. Defaults to <c>false</c>, which is how an envelope written before this field
+/// existed deserializes.
+/// </param>
 [ExcludeFromCodeCoverage]
 public sealed record CommandEnvelope(
     [property: JsonPropertyName("Id")] Guid Id,
     [property: JsonPropertyName("CommandJson")] string CommandJson,
     [property: JsonPropertyName("CommandTypeName")] string CommandTypeName,
     [property: JsonPropertyName("SessionContextJson")] string SessionContextJson,
-    [property: JsonPropertyName("Signature")] string? Signature = null);
+    [property: JsonPropertyName("Signature")] string? Signature = null,
+    [property: JsonPropertyName("Heavy")] bool Heavy = false);
