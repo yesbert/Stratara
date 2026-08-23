@@ -25,6 +25,11 @@ namespace Stratara.Mediator.Authorization;
 /// </para>
 /// <para>
 /// Scans <see cref="AppDomain.CurrentDomain"/> loaded assemblies once per <see cref="StartAsync"/> call.
+/// <strong>That is the limit of the guarantee:</strong> a guarded type in an assembly the runtime has
+/// not loaded yet is not seen, so the fail-fast is best-effort rather than exhaustive. It catches the
+/// ordinary case — the host's own assemblies are loaded by this point in the lifecycle — and misses a
+/// plugin loaded on first use. Dispatch-time enforcement is unaffected: a guarded type always goes
+/// through the authorizing mediator when it is actually dispatched, whether or not this scan saw it.
 /// Throws <see cref="InvalidOperationException"/> with remediation hints when role-protected types exist
 /// but the mediator is not authorizing. Reflection-load failures on individual assemblies (third-party
 /// libs with unresolved references) are swallowed silently — the validator does best-effort scanning

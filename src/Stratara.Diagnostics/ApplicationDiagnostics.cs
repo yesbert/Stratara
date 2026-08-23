@@ -75,14 +75,21 @@ public static class ApplicationDiagnostics
             description: "Number of outbox entries successfully published, by entry kind (command or event).");
 
         /// <summary>
-        /// Histogram of end-to-end command-handling latency in milliseconds, measured around the
-        /// mediator dispatch in the command worker. Tagged with <see cref="MetricTags.RequestType"/> and
+        /// Histogram of command-handling latency in milliseconds for commands dispatched **through the
+        /// outbox worker**. Tagged with <see cref="MetricTags.RequestType"/> and
         /// <see cref="MetricTags.Outcome"/> (<c>success</c> or <c>failure</c>).
         /// </summary>
+        /// <remarks>
+        /// It is not end-to-end command latency, despite the name. The in-process mediator dispatch
+        /// path records nothing here, so a host that dispatches commands directly sees an empty
+        /// histogram and a host that does both sees only half its traffic. Read it as "outbox command
+        /// latency". Covering the in-process path would change what the instrument means and is a
+        /// separate decision.
+        /// </remarks>
         public static readonly Histogram<double> CommandDuration = Meter.CreateHistogram<double>(
             "command.duration",
             unit: "ms",
-            description: "End-to-end command-handling latency in milliseconds, by request type and outcome.");
+            description: "Latency in milliseconds of commands dispatched through the outbox worker, by request type and outcome.");
 
         /// <summary>
         /// Counter of events dispatched to projection handlers. Tagged with

@@ -37,7 +37,7 @@ public sealed class SessionContextMiddleware(RequestDelegate next, IOptions<Sess
             ? httpContext.TraceIdentifier
             : Guid.CreateVersion7().ToString("N");
 
-        if (httpContext.User.Identity?.IsAuthenticated == false)
+        if (httpContext.User.Identity?.IsAuthenticated != true)
         {
             await next(httpContext);
             return;

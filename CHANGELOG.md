@@ -23,6 +23,14 @@ applies to the entire NuGet family.
   supersedes it with a full problem response that also covers validation. It keeps working for now —
   the compiler warning is the migration notice. Do not register both: the middleware answers first
   and the handler never sees the exception.
+- **`command.duration` is documented as what it measures.** It was described as end-to-end command
+  latency and is recorded only in the outbox worker, so a host dispatching in-process saw an empty
+  histogram and a host doing both saw half its traffic. The instrument and its tags are unchanged —
+  only the description.
+- **Settings resolve in one read per scope instead of one per setting and scope.** Twenty inherited
+  settings over a four-scope fallback chain were up to eighty store round trips; each scope is now
+  loaded once. Same fallback order and same results.
+- **Snapshot evaluation no longer opens an extra transaction per stream** on the write hot path.
 
 - **BREAKING — a host refuses to start when an aggregate cannot be restored from its snapshot.**
   An aggregate property that holds state and cannot be set from outside the type is not restored by a

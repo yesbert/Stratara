@@ -27,6 +27,14 @@ internal sealed class ScopeFallbackSettingProvider(
 
     private readonly Dictionary<string, string?> _cache = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// One read per scope, not one per (setting, scope) pair. A setting resolves by walking its
+    /// fallback chain, so twenty inherited settings over a four-scope chain used to be eighty store
+    /// round trips; loading each scope once makes it four. The scope's contents are read in full,
+    /// which is the trade: more rows per read, far fewer reads.
+    /// </summary>
+    private readonly Dictionary<SettingScope, IReadOnlyDictionary<string, string>> _scopeCache = [];
+
     public async Task<string?> GetOrNullAsync(string name, CancellationToken cancellationToken = default)
     {
         if (_cache.TryGetValue(name, out var cached))
@@ -59,14 +67,27 @@ internal sealed class ScopeFallbackSettingProvider(
     {
         foreach (var scope in CandidateScopes(definition))
         {
-            var value = await store.GetOrNullAsync(definition.Name, scope, cancellationToken);
-            if (value is not null)
+            var values = await ScopeValuesAsync(scope, cancellationToken);
+            if (values.TryGetValue(definition.Name, out var value))
             {
                 return value;
             }
         }
 
         return configuration?[$"{ConfigurationSection}:{definition.Name}"] ?? definition.DefaultValue;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> ScopeValuesAsync(
+        SettingScope scope, CancellationToken cancellationToken)
+    {
+        if (_scopeCache.TryGetValue(scope, out var cached))
+        {
+            return cached;
+        }
+
+        var values = await store.GetAllAsync(scope, cancellationToken);
+        _scopeCache[scope] = values;
+        return values;
     }
 
     private IEnumerable<SettingScope> CandidateScopes(SettingDefinition definition)
@@ -76,16 +97,16 @@ internal sealed class ScopeFallbackSettingProvider(
 
         if (session is not null)
         {
-            var tenantId = session.TenantId.ToString("D");
-            var userId = session.UserId?.ToString("D");
-
-            if (userId is not null)
+            // Through SettingScope's factories rather than formatting the identifiers here. They are
+            // the single conversion point from a session's Guids to a scope's string form; a second
+            // place doing it by hand is how a scope silently stops matching the rows it wrote.
+            if (session.UserId is { } userId)
             {
-                chain.Add(new SettingScope(tenantId, userId));
-                chain.Add(new SettingScope(null, userId));
+                chain.Add(SettingScope.ForUserInTenant(session.TenantId, userId));
+                chain.Add(SettingScope.ForUser(userId));
             }
 
-            chain.Add(new SettingScope(tenantId));
+            chain.Add(SettingScope.ForTenant(session.TenantId));
         }
 
         chain.Add(SettingScope.Global);

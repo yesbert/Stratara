@@ -198,7 +198,10 @@ public class ValidationPipelineBehaviorTests
         }
     }
 
-    // Discovered by AddValidatorsFromAssemblyContaining — must be public + non-abstract.
+    // Discovered by AddValidatorsFromAssemblyContaining, which filters on non-abstract and
+    // non-interface only. Assembly.GetTypes() returns non-public types too, so a nested or internal
+    // validator is discovered as well — this one is public because the test reads better that way,
+    // not because discovery requires it.
     public sealed class DiscoverableEchoValidator : IValidator<EchoQuery>
     {
         public ValueTask<ValidationResult> ValidateAsync(EchoQuery instance, CancellationToken cancellationToken = default)

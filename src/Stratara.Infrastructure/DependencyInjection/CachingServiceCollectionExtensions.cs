@@ -16,6 +16,15 @@ public static class CachingServiceCollectionExtensions
     /// <c>ConnectionStrings:redis</c> configuration entry.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <strong>Two framework components depend on this being called.</strong> Neither is registered
+    /// by a composite, so the coupling is invisible until one of them fails to resolve:
+    /// <c>AddRedisOutboxLock()</c> in <c>Stratara.Outbox.RabbitMQ</c>, which is what makes a
+    /// multi-instance outbox worker safe, and the projection replay state, which is how a replay is
+    /// coordinated across hosts. Both take <see cref="IConnectionMultiplexer"/> directly. If you use
+    /// either, call this first.
+    /// </para>
+    /// <para>
     /// Before Stratara 1.x cleanup this method delegated to
     /// <c>builder.AddRedisClient("redis")</c> from <c>Aspire.StackExchange.Redis</c>, which also
     /// registered a Redis health check and OpenTelemetry instrumentation. This vendor-direct
@@ -23,6 +32,7 @@ public static class CachingServiceCollectionExtensions
     /// them explicitly (e.g. <c>AddHealthChecks().AddRedis(...)</c> from
     /// <c>AspNetCore.HealthChecks.Redis</c>, and <c>AddRedisInstrumentation()</c> from
     /// <c>OpenTelemetry.Instrumentation.StackExchangeRedis</c>).
+    /// </para>
     /// </remarks>
     /// <param name="builder">The host application builder.</param>
     /// <returns>The same builder for chaining.</returns>

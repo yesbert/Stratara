@@ -37,7 +37,7 @@ internal sealed class SnapshotService(
         {
             var streamId = streamGroup.Key.StreamId;
             var streamEntries = streamGroup.ToList();
-            if (!await ShouldCreateSnapshot(streamId, streamEntries, cancellationToken))
+            if (!await ShouldCreateSnapshot(snapshotRepository, streamId, streamEntries, cancellationToken))
             {
                 continue;
             }
@@ -49,7 +49,16 @@ internal sealed class SnapshotService(
         await transaction.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<bool> ShouldCreateSnapshot(Guid streamId, List<EventStreamEntry> streamEntries, CancellationToken cancellationToken)
+    /// <remarks>
+    /// Takes the caller's repository rather than opening its own transaction. It used to open one per
+    /// stream, on the write hot path, to answer a single version lookup the caller's transaction could
+    /// already serve.
+    /// </remarks>
+    private async Task<bool> ShouldCreateSnapshot(
+        ISnapshotRepository snapshotRepository,
+        Guid streamId,
+        List<EventStreamEntry> streamEntries,
+        CancellationToken cancellationToken)
     {
         if (streamEntries.Count == 0)
         {
@@ -58,8 +67,6 @@ internal sealed class SnapshotService(
 
         var currentVersion = streamEntries.Max(x => x.Version);
         var aggregateTypeName = streamEntries[0].AggregateTypeName;
-        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
-        var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
         var snapshotVersion = await snapshotRepository.GetLatestVersionOrDefaultAsync(streamId, aggregateTypeName, cancellationToken);
         var aggregateType = typeResolver.Resolve(aggregateTypeName);
 
