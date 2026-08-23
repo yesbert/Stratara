@@ -17,6 +17,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="../../src/Stratara.Infrastructure/Stratara.Infrastructure.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Testing/Stratara.Testing.csproj"/>
         <ProjectReference Include="../../src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj"/>
     </ItemGroup>
     <ItemGroup>

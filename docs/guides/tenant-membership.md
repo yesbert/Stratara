@@ -124,6 +124,40 @@ builder.Services
 Every one of these is fail-closed: no ambient session, no membership, a `Pending` membership, or an
 unknown role all evaluate to `false`.
 
+## Erasing a subject
+
+Removing memberships is one plane of an erasure, not the whole of it. `ISubjectEraser` composes the
+four sweeps the framework owns and runs them in an order that leaves nothing unreachable before it
+has been removed:
+
+```csharp
+services.AddStrataraErasure();   // the four stores it sweeps are registered separately
+
+var report = await eraser.EraseUserAsync(alice);
+// report.Planes: ApiKeys -> Settings -> Memberships -> KeyMaterial
+```
+
+**Why that order.** API keys go first, so nothing can act on the subject's behalf while the erasure
+runs. Key material goes last, because shredding it makes every other plane unreadable — sweep it
+first and a later failure leaves rows nobody can identify. The memberships are *read* before they
+are removed, because they are what tells the eraser which tenants the subject has settings and keys
+in.
+
+**If a plane fails, the erasure stops there** and raises `ErasureIncompleteException`, naming the
+plane and listing what was already swept. It does not continue, precisely so that a failed settings
+sweep never leads to the key being shredded anyway. Resume from the named plane.
+
+**What it does not cover, and this matters as much as what it does:**
+
+- **Read models your own projections built.** The framework does not know they exist. They are
+  yours to sweep.
+- **Event-stream data not protected by a scoped key.** Removing a key shreds what that key
+  encrypted; anything written in the clear is still there.
+- **The command audit log and the outbox.** Both carry a session context naming the subject, and
+  both are deliberately left alone — the audit log is the evidence that the erasure happened, and
+  whether to retain it is a decision only you can take for your jurisdiction.
+- **System-wide (`Confidential`) key material**, which is not subject-scoped and is never erased.
+
 ## See also
 
 - The runnable `Stratara.Sample.IdentityDirectory` sample wires membership, permissions, and scoped

@@ -33,6 +33,17 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **`ISubjectEraser` — an erasure is now one call.** Crypto-shredding was the framework's headline
+  capability with no way to perform an erasure: four separate sweeps existed, nothing composed them,
+  and a consumer had to know all four and get the order right themselves. `AddStrataraErasure()`
+  registers a composed operation that sweeps API keys, scoped settings, directory memberships and
+  key material — in that order, because a credential that still works can act mid-erasure and
+  shredding the key first makes every other plane unreadable. It reports what each plane covered,
+  and stops at the first failing plane rather than continuing, so a failed settings sweep is never
+  followed by the key shred. What it deliberately does **not** cover is documented: read models your
+  own projections built, unprotected event-stream data, the command audit log and outbox, and
+  system-wide key material.
+
 - **`AddStrataraTestingEventStore` refuses to register into a running host.** It wires an in-memory
   SQLite database and in-memory doubles, which would start successfully in production and lose every
   write. It now throws `InvalidOperationException` when a registered `IHostEnvironment`, or
