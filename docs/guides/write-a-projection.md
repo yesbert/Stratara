@@ -88,6 +88,34 @@ The `AddAsync` lines above are the honest trade-off this example makes for brevi
 either derive the absolute value, or record the last applied `Version` per stream and skip anything
 already seen.
 
+### The two races, and the one that needs help
+
+Two things happen routinely and are not faults. A row can vanish between your read and your write,
+because a cascading delete got there first. And a delete can conflict with a concurrent delete of
+the same row — the end state you wanted has simply been reached by someone else.
+
+The first needs no helper. Load the row and return when it is not there:
+
+```csharp
+var tenant = await repository.GetAsync(@event.StreamId, cancellationToken);
+if (tenant is null) { return; }
+```
+
+The second is the one that is easy to get wrong, so the framework ships it:
+
+```csharp
+await repository.DeleteAsync(@event.StreamId, cancellationToken);
+
+await transaction.SaveChangesIdempotentAsync(
+    ct => repository.ExistsAsync(@event.StreamId, ct), cancellationToken);
+```
+
+**The probe is the point.** On a conflict the helper asks whether the target is still there. Gone
+means a concurrent bundle reached the same end state, and the commit is treated as satisfied. Still
+there means a second writer changed a live row — a real conflict, rethrown, and the bundle fails as
+it must. Catching `ConcurrencyConflictException` broadly instead would turn "a failing projection
+stops the bundle" into a guarantee that holds only where nobody used the helper.
+
 ## What the framework does not do
 
 There is **no checkpoint store**. Projections are driven push-wise off the event bus; Stratara does

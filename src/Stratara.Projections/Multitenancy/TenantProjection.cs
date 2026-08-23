@@ -3,6 +3,7 @@ using Stratara.Abstractions.Persistence;
 using Stratara.Domain;
 using Stratara.Projections.Abstractions;
 using Stratara.Projections.Multitenancy.Models;
+using Stratara.Projections.Multitenancy.Repositories;
 using Stratara.Abstractions.EventSourcing;
 
 namespace Stratara.Projections.Multitenancy;
@@ -61,17 +62,8 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
 
         await repository.DeleteAsync(@event.StreamId, cancellationToken);
 
-        try
-        {
-            await transaction.SaveChangesAsync(cancellationToken);
-        }
-        catch (ConcurrencyConflictException)
-        {
-            // A parallel projection bundle (typically a consumer's cascade saga that emits
-            // both CustomerTenantsDeleted and a follow-up TenantDeleted for the same tenants)
-            // has already deleted the row. The desired end-state is reached — swallow the
-            // exception silently so the surrounding event bundle commits its remaining work.
-        }
+        await transaction.SaveChangesIdempotentAsync(
+            ct => repository.ExistsAsync(@event.StreamId, ct), cancellationToken);
     }
 
     [UsedImplicitly]
@@ -91,14 +83,8 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
             await repository.DeleteAsync(tenantId, cancellationToken);
         }
 
-        try
-        {
-            await transaction.SaveChangesAsync(cancellationToken);
-        }
-        catch (ConcurrencyConflictException)
-        {
-            // See HandleAsync(TenantDeleted) — same idempotent-delete rationale.
-        }
+        await transaction.SaveChangesIdempotentAsync(
+            ct => AnyStillExistsAsync(repository, tenantIds, ct), cancellationToken);
     }
 
     [UsedImplicitly]
@@ -200,5 +186,19 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
 
         repository.Update(tenant);
         await transaction.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task<bool> AnyStillExistsAsync(
+        ITenantRepository repository, IReadOnlyCollection<Guid> tenantIds, CancellationToken cancellationToken)
+    {
+        foreach (var tenantId in tenantIds)
+        {
+            if (await repository.ExistsAsync(tenantId, cancellationToken))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

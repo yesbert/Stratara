@@ -44,6 +44,14 @@ applies to the entire NuGet family.
   own projections built, unprotected event-stream data, the command audit log and outbox, and
   system-wide key material.
 
+- **`ITransaction.SaveChangesIdempotentAsync` — the idempotent-projection write the framework was
+  writing by hand.** A projection sees the same event twice under at-least-once delivery, and a row
+  can vanish between the read and the write; neither is a fault. The helper commits, and on a
+  concurrency conflict asks whether the write's target still exists: gone means a concurrent bundle
+  reached the same end state and the commit is satisfied, still there means a real conflict and the
+  exception is rethrown so the bundle fails as it must. `TenantProjection` now uses it — and gains
+  the distinction, having previously swallowed every conflict.
+
 - **`AddStrataraTestingEventStore` refuses to register into a running host.** It wires an in-memory
   SQLite database and in-memory doubles, which would start successfully in production and lose every
   write. It now throws `InvalidOperationException` when a registered `IHostEnvironment`, or
