@@ -25,6 +25,12 @@ public static class AuthorizationExceptionApplicationBuilderExtensions
     /// <param name="app">The application builder.</param>
     /// <returns>The same application builder, to enable chaining.</returns>
     /// <exception cref="System.ArgumentNullException"><paramref name="app"/> is null.</exception>
+    [System.Obsolete(
+        "Superseded by AddStrataraProblemDetails() in Stratara.ServiceDefaults.AspNetCore, which maps " +
+        "these refusals and validation failures to one RFC 7807 problem shape instead of a bare status " +
+        "code with no body. Register that and call app.UseExceptionHandler(); do not register both, or " +
+        "this middleware answers first and the handler never sees the exception. This method is removed " +
+        "in the next major version.")]
     public static IApplicationBuilder UseAuthorizationExceptionTo403(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

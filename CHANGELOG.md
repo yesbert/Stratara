@@ -18,6 +18,12 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **`UseAuthorizationExceptionTo403()` is obsolete and is removed in the next major version.** It
+  maps the same two refusals to a bare status code with no body; `AddStrataraProblemDetails()`
+  supersedes it with a full problem response that also covers validation. It keeps working for now —
+  the compiler warning is the migration notice. Do not register both: the middleware answers first
+  and the handler never sees the exception.
+
 - **BREAKING — a host refuses to start when an aggregate cannot be restored from its snapshot.**
   An aggregate property that holds state and cannot be set from outside the type is not restored by a
   snapshot: the aggregate rebuilds, the events after the snapshot apply, and only what the snapshot
@@ -41,6 +47,14 @@ applies to the entire NuGet family.
   project reference inside a single solution.
 
 ### Added
+
+- **`AddStrataraProblemDetails()` — one error shape for every framework rejection.** The framework
+  raises three failure types a web host has to answer for and shipped a mapper for one of them, so
+  both consumers wrote the missing half themselves. The new handler maps a validation rejection to
+  `400` with the failures grouped by the field each concerns, and an authorization refusal or
+  tenant-access denial to `403`, all as RFC 7807 problem responses. It is opt-in and converts nothing
+  else: any failure the framework did not raise propagates untouched, so a host keeping its own error
+  model simply does not register it.
 
 - **`ISubjectEraser` — an erasure is now one call.** Crypto-shredding was the framework's headline
   capability with no way to perform an erasure: four separate sweeps existed, nothing composed them,

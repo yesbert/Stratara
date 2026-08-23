@@ -102,9 +102,26 @@ builder.Services
 
 ## Map the failure to an HTTP response
 
+Register the built-in mapping and you are done:
+
+```csharp
+builder.Services.AddStrataraProblemDetails();   // Stratara.ServiceDefaults.AspNetCore
+app.UseExceptionHandler();
+```
+
+A validation rejection becomes `400` with the failures grouped by the field each concerns; an
+authorization refusal and a tenant-access denial each become `403`, in the same RFC 7807 shape.
+Anything the framework did not raise is left alone and reaches your own diagnostics unchanged.
+
+**It supersedes `UseAuthorizationExceptionTo403()`**, which maps the same two refusals to a bare
+status code with no body. That method is marked obsolete and is removed in the next major version.
+Do not register both: the middleware answers first and the handler never sees the exception.
+
+### If you want your own error model
+
 `StrataraValidationException` is declared in `Stratara.Abstractions.Validation`, so a global exception
-handler can catch it and map `Failures` to your own error model — e.g. an RFC-7807 `ProblemDetails` —
-**without** referencing the `Stratara.Validation` behavior package:
+handler can catch it and map `Failures` yourself — **without** referencing the `Stratara.Validation`
+behavior package. Simply do not call `AddStrataraProblemDetails()`, and nothing is converted:
 
 ```csharp
 catch (StrataraValidationException ex)

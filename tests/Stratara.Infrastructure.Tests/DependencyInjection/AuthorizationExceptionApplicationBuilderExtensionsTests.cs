@@ -4,6 +4,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Authorization;
 
+// UseAuthorizationExceptionTo403 is [Obsolete] — superseded by AddStrataraProblemDetails(). It still
+// ships and still works until the next major version, so it still needs coverage; the suppression is
+// scoped to this file and goes away with the method.
+#pragma warning disable CS0618 // Type or member is obsolete
+
 namespace Stratara.Infrastructure.Tests.DependencyInjection;
 
 public class AuthorizationExceptionApplicationBuilderExtensionsTests
@@ -64,3 +69,5 @@ public class AuthorizationExceptionApplicationBuilderExtensionsTests
         return app.Build();
     }
 }
+
+#pragma warning restore CS0618
