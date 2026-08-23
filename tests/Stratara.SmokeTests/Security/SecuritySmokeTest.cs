@@ -8,7 +8,7 @@ using Stratara.Abstractions.Security;
 
 namespace Stratara.SmokeTests.Security;
 
-// Dummy KeyStore for testing (returns a fixed key until revoked)
+// The development key store returns one fixed key and cannot revoke it — see Test 3.
 
 // Example record with property-level encryption
 public record Person(
@@ -58,10 +58,20 @@ public static class SecuritySmokeTest
         Console.WriteLine($"Person equal? {JsonSerializer.Serialize(p) == JsonSerializer.Serialize(p2)}");
         Console.WriteLine($"Note equal? {JsonSerializer.Serialize(note) == JsonSerializer.Serialize(note2)}");
 
-        // ---- Test 3: Key revoked ----
-        await keyStore.RevokeAsync("dummy-key-id");
+        // ---- Test 3: The development store refuses to fake an erasure ----
+        try
+        {
+            await keyStore.RevokeAsync("dummy-key-id");
+            throw new InvalidOperationException(
+                "DummyKeyStore.RevokeAsync returned successfully. It holds no key material, so a success here " +
+                "reports an erasure that never happened.");
+        }
+        catch (NotSupportedException ex)
+        {
+            Console.WriteLine($"Revocation refused, as it must be: {ex.Message}");
+        }
 
-        var revokedNote = await serializer.DeserializeAsync<SecretNote>(noteEncrypted, tenantId, userId);
-        Console.WriteLine($"After revocation: {revokedNote?.Title ?? "null"} / {revokedNote?.Content ?? "null"}");
+        var stillReadable = await serializer.DeserializeAsync<SecretNote>(noteEncrypted, tenantId, userId);
+        Console.WriteLine($"Still readable, because nothing was shredded: {stillReadable?.Title}");
     }
 }

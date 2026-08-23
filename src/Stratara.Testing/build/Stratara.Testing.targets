@@ -1,0 +1,9 @@
+<Project>
+
+  <Target Name="StrataraTestSupportReferenceCheck_StrataraTesting" BeforeTargets="CoreCompile">
+    <Error Condition="'$(IsTestProject)' != 'true' AND '$(IsTestingPlatformApplication)' != 'true' AND '$(StrataraAllowTestSupportOutsideTests)' != 'true'"
+           Code="STRATARA1001"
+           Text="$(MSBuildProjectName) references Stratara.Testing but is not a test project. Test-support packages wire in-memory and development-grade implementations that start successfully in a running system and lose every write. Reference it only from a test project, or set StrataraAllowTestSupportOutsideTests=true if this project is a deliberate exception (a sample or a benchmark)." />
+  </Target>
+
+</Project>

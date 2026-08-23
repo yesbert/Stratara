@@ -76,6 +76,39 @@ assert on your mocked repository / unit-of-work.
 Postgres), add `Stratara.Testing.EntityFrameworkCore` and use `EventStoreTestHost` — it runs the
 real stack on in-memory SQLite. See its package README.
 
+## The test-support packages stay out of running systems
+
+Both test-support packages wire in-memory and development-grade implementations. A host that starts
+with them starts successfully and loses every write, which is why the boundary is enforced rather
+than merely documented.
+
+**At build time.** Referencing either package from a project that is not a test project fails the
+build with `STRATARA1001`. A project counts as a test project when MSBuild reports either
+`IsTestProject` or `IsTestingPlatformApplication` as true, so both the Microsoft Testing Platform
+and `Microsoft.NET.Test.Sdk` are recognised. For a deliberate exception — a sample, a benchmark —
+opt out explicitly:
+
+```xml
+<PropertyGroup>
+  <StrataraAllowTestSupportOutsideTests>true</StrataraAllowTestSupportOutsideTests>
+</PropertyGroup>
+```
+
+The check ships inside the package, so it fires on a `PackageReference`. It cannot see a project
+reference within a single solution.
+
+**At registration.** `AddStrataraTestingEventStore` throws when a registered `IHostEnvironment`, or
+`DOTNET_ENVIRONMENT` / `ASPNETCORE_ENVIRONMENT`, names anything other than `Development`. Where no
+environment is stated at all — an ordinary unit test, which has no host — the call is allowed. This
+is deliberately not a whitelist: refusing the unstated case would refuse the only legitimate use.
+
+Constructing a double directly (`new InMemoryKeyStore()`) is covered by neither guard.
+
+**Erasure is not simulated.** The development key store (`DummyKeyStore`) derives one key from a
+fixed pass-phrase and holds no key material, so `RevokeAsync` and `EraseScopeAsync` throw
+`NotSupportedException` rather than returning successfully. Use `InMemoryKeyStore` to exercise
+crypto-shredding in a test, or a real key store outside one.
+
 ## Test conventions
 
 - **`[Fact]` over `[Theory]`** unless there's genuine data-table variation. A `[Theory]` with 2 rows is usually 2 `[Fact]`s in disguise.

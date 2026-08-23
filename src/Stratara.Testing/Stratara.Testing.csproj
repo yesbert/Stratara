@@ -27,6 +27,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <None Include="build\Stratara.Testing.targets" Pack="true" PackagePath="build\"/>
         <None Include="README.md" Pack="true" PackagePath="\"/>
         <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
         <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>

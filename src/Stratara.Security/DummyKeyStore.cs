@@ -66,11 +66,29 @@ public sealed class DummyKeyStore : IKeyStore
     public ValueTask<string> RotateAsync(KeyScope scope, CancellationToken cancellationToken = default)
         => ValueTask.FromResult(FixedKeyId);
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Not supported. The development store derives its key from a fixed pass-phrase and holds no
+    /// key material it could destroy, so a revocation here would shred nothing.
+    /// </summary>
+    /// <param name="keyId">The key to revoke.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="NotSupportedException">Always.</exception>
     public ValueTask RevokeAsync(string keyId, CancellationToken cancellationToken = default)
-        => ValueTask.CompletedTask;
+        => throw new NotSupportedException(EraseNotSupported("RevokeAsync"));
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Not supported. The development store derives its key from a fixed pass-phrase and holds no
+    /// key material it could destroy, so an erasure here would shred nothing.
+    /// </summary>
+    /// <param name="scope">The scope to erase.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="NotSupportedException">Always.</exception>
     public ValueTask EraseScopeAsync(KeyScope scope, CancellationToken cancellationToken = default)
-        => ValueTask.CompletedTask;
+        => throw new NotSupportedException(EraseNotSupported("EraseScopeAsync"));
+
+    private static string EraseNotSupported(string operation) =>
+        $"DummyKeyStore.{operation} is not supported. The development key store derives a single key from a fixed " +
+        "pass-phrase and stores no key material, so it cannot destroy any: completing successfully would report an " +
+        "erasure that never happened. Register a real IKeyStore (AddStrataraFileKeyStore, HSM, Azure Key Vault, " +
+        "AWS KMS, etc.) to exercise crypto-shredding.";
 }

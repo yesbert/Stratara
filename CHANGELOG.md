@@ -16,7 +16,29 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `3.2.3`._
+### Changed
+
+- **BREAKING — the development key store no longer pretends to erase.** `DummyKeyStore.RevokeAsync`
+  and `EraseScopeAsync` completed successfully and shredded nothing, so a consumer exercising an
+  erasure path in development got a green result and no shredding. Both now throw
+  `NotSupportedException`. The store derives a single key from a fixed pass-phrase and holds no key
+  material it could destroy; reporting success was the defect. Register a real `IKeyStore` — the
+  file-backed envelope store, an HSM, Key Vault, KMS — to exercise crypto-shredding.
+- **BREAKING — test-support packages are now kept out of projects that are not test projects.** Both
+  `Stratara.Testing` and `Stratara.Testing.EntityFrameworkCore` ship an MSBuild check that fails the
+  build with `STRATARA1001` when a referencing project is neither a test project nor opted out. Set
+  `StrataraAllowTestSupportOutsideTests=true` for a deliberate exception such as a sample or a
+  benchmark. The check travels with the package, so it fires on a `PackageReference` and not on a
+  project reference inside a single solution.
+
+### Added
+
+- **`AddStrataraTestingEventStore` refuses to register into a running host.** It wires an in-memory
+  SQLite database and in-memory doubles, which would start successfully in production and lose every
+  write. It now throws `InvalidOperationException` when a registered `IHostEnvironment`, or
+  `DOTNET_ENVIRONMENT` / `ASPNETCORE_ENVIRONMENT`, names anything other than `Development`. Where no
+  environment is stated at all — the ordinary unit test, which has no host — the call is allowed, so
+  existing test suites are unaffected.
 
 ## [3.2.3] — 2026-08-22
 

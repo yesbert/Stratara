@@ -65,15 +65,25 @@ public class DummyKeyStoreTests
     }
 
     [Fact]
-    public async Task RevokeAndErase_AreNoOps()
+    public async Task Revoke_Throws_RatherThanSimulatingAnErasure()
     {
         var sut = new DummyKeyStore(DevEnvironment());
 
-        var revoke = await Record.ExceptionAsync(async () => await sut.RevokeAsync("any"));
-        var erase = await Record.ExceptionAsync(async () => await sut.EraseScopeAsync(Scope));
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(async () => await sut.RevokeAsync("any"));
 
-        Assert.Null(revoke);
-        Assert.Null(erase);
+        Assert.Contains("RevokeAsync", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("stores no key material", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EraseScope_Throws_RatherThanSimulatingAnErasure()
+    {
+        var sut = new DummyKeyStore(DevEnvironment());
+
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(async () => await sut.EraseScopeAsync(Scope));
+
+        Assert.Contains("EraseScopeAsync", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("stores no key material", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

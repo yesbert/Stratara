@@ -33,6 +33,11 @@ public static class TestEventStoreServiceCollectionExtensions
     /// </param>
     /// <param name="defaultTenantId">The tenant the preset session context is scoped to.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the service collection carries a host environment, or the environment variables
+    /// state one, naming anything other than <c>Development</c>. Where no environment is stated at
+    /// all — an ordinary unit test — the call is allowed.
+    /// </exception>
     public static IServiceCollection AddStrataraTestingEventStore<TWriteDbContext>(
         this IServiceCollection services,
         SqliteConnection sharedConnection,
@@ -41,6 +46,8 @@ public static class TestEventStoreServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(sharedConnection);
+
+        TestSupportEnvironmentGuard.EnsureDevelopmentOrUnstated(services, nameof(AddStrataraTestingEventStore));
 
         // Register the doubles first so the production TryAdd fallbacks (DummyKeyStore, etc.) never win.
         services.TryAddSingleton<IKeyStore>(_ => new InMemoryKeyStore());
