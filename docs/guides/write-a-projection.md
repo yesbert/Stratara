@@ -125,6 +125,28 @@ resume-from-sequence. The observability you get is throughput and latency
 checkpoint. Replay of the historical stream is coordinated separately, via the
 `IProjectionReplayState` in `Stratara.Outbox.RabbitMQ`.
 
+## Replay is destructive, and it is all-or-nothing
+
+A replay is not a repair tool you reach for casually. Three properties, in the order they will
+surprise you:
+
+**It empties before it rebuilds.** A replay marks itself active, truncates *every registered read
+model*, then replays the whole stream from the beginning in batches. The truncation is what makes it
+a rebuild rather than a second application of events on top of state that already reflects them —
+but it means the read side is empty from the instant the replay starts, and stays that way until the
+rebuild passes each row again.
+
+**There is no per-projection scope.** You cannot replay one projection. Every read model registered
+in the host is emptied, including the ones that were fine.
+
+**It runs on request, with no confirmation step.** The worker does not start one at host start-up —
+it subscribes and waits. But when a request arrives it begins immediately. There is no dry run, no
+"are you sure", and no built-in guard on who may ask.
+
+And when it ends, it marks itself inactive **whether it succeeded or not**. A replay that dies
+half-way leaves you with partially rebuilt read models and no flag saying so. Treat a failed replay
+as "run it again", not as "it stopped safely".
+
 ## See also
 
 - **[Sample 2 — Event Sourced](../samples/02-event-sourced.md)** — an aggregate and its projection end to end.

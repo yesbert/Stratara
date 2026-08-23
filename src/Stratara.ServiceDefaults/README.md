@@ -22,6 +22,22 @@ builder.ConfigureOpenTelemetry();
 builder.ConfigureSerilog();
 ```
 
+## It deletes your development log file on start-up
+
+In the Development environment only, configuring Serilog **deletes** the current log file before
+opening it: `%TEMP%/stratara-logs/{OTEL_SERVICE_NAME}.log`, where the service name falls back to
+`Unknown` when `OTEL_SERVICE_NAME` is unset. The intent is a clean file per debugging session rather
+than one that grows across dozens of restarts.
+
+Two consequences worth knowing before they cost you an hour:
+
+- **A crash you wanted to read is gone the moment you restart to reproduce it.** Copy the file
+  before restarting, or point the sink elsewhere for that session.
+- **Two development services with no `OTEL_SERVICE_NAME` share `Unknown.log` and delete each
+  other's.** Set the variable per service.
+
+Outside Development nothing is deleted.
+
 ## Sibling packages
 
 - **`Stratara.EventSourcing.WorkerDefaults`** — one-stop `AddBackendServices` / `AddXxxWorkerServices` composites that wire the framework's mediator + outbox + projections + sagas stack.

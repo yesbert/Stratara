@@ -108,6 +108,19 @@ Pair the provisioning with the membership sign-in bridge (`AddMembershipTenantCl
 provisioned user also carries the `stratara:tenant_id` claim and flows through tenant-scoped roles and
 permissions — no change to the session-context middleware.
 
+**A just-in-time user has no membership yet, and that is the whole point of this paragraph.**
+Provisioning creates the *account* and links the external login to it. It does not create a
+membership in any tenant, because the framework has no way to know which tenant a stranger belongs
+to. So the first sign-in of a new user succeeds and produces a session with no
+`stratara:tenant_id` claim — every tenant-scoped role check, permission check and tenant guard then
+fails closed, which is correct and will look like a broken login if you are not expecting it.
+
+Decide what that first request should do before you enable provisioning. The usual answers are an
+onboarding route that is deliberately reachable without a tenant claim, an invitation flow that
+creates the membership before the first login rather than after it, or a domain-matching rule in
+your own code that grants a membership at provisioning time. The framework deliberately picks none
+of them for you.
+
 ## See also
 
 - The runnable `Stratara.Sample.Identity` sample wires all of the above end to end.

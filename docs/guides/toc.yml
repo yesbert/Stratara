@@ -2,6 +2,12 @@
   href: write-a-command-handler.md
 - name: Write a Projection
   href: write-a-projection.md
+- name: Evolve an Event Schema
+  href: evolve-an-event-schema.md
+- name: Use Resilience Policies
+  href: use-resilience-policies.md
+- name: Write an Update Handler
+  href: write-an-update-handler.md
 - name: Write a Saga
   href: write-a-saga.md
 - name: Write a Validator

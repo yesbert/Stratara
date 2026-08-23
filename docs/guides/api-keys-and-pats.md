@@ -164,6 +164,23 @@ line and keeps the guarantee intact for imported keys too.
 referrer headers, and browser history. Enable it only for transports that cannot set headers
 (WebSocket negotiation, for example), and treat those keys as short-lived.
 
+## Two things the framework does not track for you
+
+**There is no last-used timestamp.** A key descriptor carries when it was created, when it expires
+and when it was revoked — and nothing else. There is no "last seen" field and no counter, so the
+framework cannot answer "which of these fifty keys is still in use?" or "has this key been used
+since we suspected it was leaked?". If you need to retire dormant keys, or to prove a leaked key was
+never exercised, record usage yourself at the authentication boundary. Adding it later against
+existing keys is not possible retroactively: there is no history to mine.
+
+**A machine key's membership row is not marked as one.** Issuing a machine key materialises a
+membership whose member identity is the key, which is what puts it on the ordinary authorization
+path — the point of the design. The consequence is that the membership carries no flag saying it
+belongs to a key rather than a person. Anything that lists a tenant's members shows the key's id
+alongside real users, and cannot tell them apart without cross-referencing the key store. If your
+admin UI shows members, or you export membership for an audit, do that cross-reference — otherwise
+a machine key reads as a user account nobody can name.
+
 ## See also
 
 - The runnable `Stratara.Sample.Identity` sample issues a key and authenticates with it end to end.

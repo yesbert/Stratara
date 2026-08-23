@@ -85,6 +85,25 @@ every hash in your database — but cannot change the hash already published bey
 Verification escalates from *"is the local chain internally consistent?"* to *"does the local
 chain still match what we committed externally?"*.
 
+### How wide the un-anchored window is
+
+The interval is **five events**: once the chain head's sequence number has advanced by five since
+the last anchor, the hashing worker records a new one. That number is what bounds the attack, and
+it is worth being precise about what it bounds and what it does not.
+
+An externally committed anchor freezes everything at or before its sequence number — a re-chain
+cannot forge past it. Everything *after* the newest committed anchor is still rewritable. So the
+exposed window is not five events; it is:
+
+- the events since the last anchor (fewer than five), **plus**
+- everything the hashing worker has not chained yet — it runs on its own cadence and deliberately
+  ignores anything committed in the last five seconds, so a still-open writer can flush, **plus**
+- everything since your last *external* commitment of an anchor, which is the part you own. An
+  anchor row that only exists in the same database the attacker controls bounds nothing.
+
+The last point is the one that matters operationally. Shortening the interval narrows the first
+term and does nothing for the third.
+
 **What ships today vs. what you wire.** The anchor table, the periodic anchor worker, and the
 `BlockchainTxHash` seam are in the box. The actual submission to an external chain — and
 re-verification against it — is the integration point you own: Stratara stays
