@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Infrastructure.EventSourcing;
@@ -30,6 +31,7 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IEventTypeResolver, EventTypeResolver>();
         services.AddScoped<ISnapshotService, SnapshotService>();
         services.TryAddSingleton<ISnapshotStrategy, VersionThresholdSnapshotStrategy>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AggregateSnapshotShapeGuard>());
         return services;
     }
 

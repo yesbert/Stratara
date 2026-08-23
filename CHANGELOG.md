@@ -18,6 +18,15 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **BREAKING — a host refuses to start when an aggregate cannot be restored from its snapshot.**
+  An aggregate property that holds state and cannot be set from outside the type is not restored by a
+  snapshot: the aggregate rebuilds, the events after the snapshot apply, and only what the snapshot
+  held for that property is gone — silently, and worse the better snapshotting works. `AddEventSourcing()`
+  now scans the registered aggregates at start-up and fails, naming the aggregate and the property.
+  Give it a public setter; aggregates use `public set` rather than `private set` precisely because
+  snapshot deserialization needs it. Computed properties are unaffected — they hold no state and are
+  recomputed after a restore.
+
 - **BREAKING — the development key store no longer pretends to erase.** `DummyKeyStore.RevokeAsync`
   and `EraseScopeAsync` completed successfully and shredded nothing, so a consumer exercising an
   erasure path in development got a green result and no shredding. Both now throw

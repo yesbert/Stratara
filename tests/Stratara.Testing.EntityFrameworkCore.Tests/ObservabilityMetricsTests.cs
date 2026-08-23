@@ -19,6 +19,7 @@ public class ObservabilityMetricsTests
     {
         // Touch the static class so its instruments are constructed before the listener starts.
         _ = ApplicationDiagnostics.Metrics.EventsAppended;
+        _ = ApplicationDiagnostics.Metrics.EventSourceAppendConflicts;
 
         var published = new HashSet<string>(StringComparer.Ordinal);
         using var listener = new MeterListener
@@ -33,14 +34,22 @@ public class ObservabilityMetricsTests
         };
         listener.Start();
 
-        Assert.Contains("event_source.events.appended", published);
-        Assert.Contains("outbox.published", published);
-        Assert.Contains("command.duration", published);
-        Assert.Contains("projection.events.processed", published);
-        Assert.Contains("projection.bundle.duration", published);
-        Assert.Contains("saga.events.processed", published);
-        Assert.Contains("saga.bundle.duration", published);
-        Assert.Contains("saga.inflight", published);
+        // Exhaustive, not a Contains-list: instrument names are a public observability contract, so
+        // an instrument added without being pinned here must fail too, not just a renamed one.
+        string[] expected =
+        [
+            "command.duration",
+            "event_source.append.conflicts",
+            "event_source.events.appended",
+            "outbox.published",
+            "projection.bundle.duration",
+            "projection.events.processed",
+            "saga.bundle.duration",
+            "saga.events.processed",
+            "saga.inflight"
+        ];
+
+        Assert.Equal(expected, published.Order(StringComparer.Ordinal));
     }
 
     [Fact]

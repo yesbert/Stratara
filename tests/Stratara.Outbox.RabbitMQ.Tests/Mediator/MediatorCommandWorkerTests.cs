@@ -15,6 +15,8 @@ using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Shared.Reflections;
 
+using Stratara.Outbox.RabbitMQ.Tests.Diagnostics;
+
 namespace Stratara.Outbox.RabbitMQ.Tests.Mediator;
 
 public class MediatorCommandWorkerTests
@@ -39,6 +41,52 @@ public class MediatorCommandWorkerTests
         harness.Mediator.Verify(
             m => m.HandleAsync(It.Is<PlainCommand>(c => c.Payload == "hello"), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_RecordsCommandDuration_TaggedWithTypeAndOutcome()
+    {
+        var harness = new Harness();
+        var envelope = NewEnvelope(new PlainCommand("hello"), SessionContext.Empty());
+        var (listener, measurements) = MeterCapture.Start();
+
+        using (listener)
+        {
+            await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
+        }
+
+        var recorded = measurements
+            .Where(m => m.Instrument == "command.duration")
+            .Where(m => Equals(m.Tags.GetValueOrDefault("request.type"), nameof(PlainCommand)))
+            .ToList();
+
+        Assert.Single(recorded);
+        Assert.Equal("success", recorded[0].Tags.GetValueOrDefault("outcome"));
+    }
+
+    [Fact]
+    public async Task DispatchAsync_RecordsCommandDuration_AsFailureWhenTheHandlerThrows()
+    {
+        var harness = new Harness();
+        harness.Mediator
+            .Setup(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("handler blew up"));
+
+        var envelope = NewEnvelope(new PlainCommand("hello"), SessionContext.Empty());
+        var (listener, measurements) = MeterCapture.Start();
+
+        using (listener)
+        {
+            await Assert.ThrowsAnyAsync<Exception>(() => harness.Sut.DispatchAsync(envelope, CancellationToken.None));
+        }
+
+        var recorded = measurements
+            .Where(m => m.Instrument == "command.duration")
+            .Where(m => Equals(m.Tags.GetValueOrDefault("request.type"), nameof(PlainCommand)))
+            .ToList();
+
+        Assert.Single(recorded);
+        Assert.Equal("failure", recorded[0].Tags.GetValueOrDefault("outcome"));
     }
 
     [Fact]

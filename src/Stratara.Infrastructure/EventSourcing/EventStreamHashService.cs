@@ -56,7 +56,14 @@ internal sealed class EventStreamHashService(IWriteUnitOfWork unitOfWork) : IEve
         }
     }
 
-    private static byte[] ComputeHash(EventStreamEntry entry)
+    /// <summary>
+    /// The chain-hash input, in order: hex of the previous hash, sequence number, version,
+    /// Unix-millisecond timestamp, event type name, payload JSON — pipe-separated, UTF-8, SHA-256.
+    /// Internal rather than private so a known-input test can pin the format: a change to the field
+    /// order, the separator or the encoding would leave every previously chained event unverifiable
+    /// while the rest of the suite still passed.
+    /// </summary>
+    internal static byte[] ComputeHash(EventStreamEntry entry)
     {
         // Build incrementally so we never materialise the full hash-input string or byte[] —
         // at BatchSize=10_000 events the savings are ~10-20 MB Gen0 garbage per batch.

@@ -9,6 +9,8 @@ using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Shared.EventSourcing;
 
+using Stratara.Infrastructure.Tests.Diagnostics;
+
 namespace Stratara.Infrastructure.Tests.EventSourcing;
 
 public class EventSourceTests
@@ -255,6 +257,32 @@ public class EventSourceTests
 
         Assert.Equal(streamId, ex.StreamId);
         Assert.Contains(nameof(TestAggregate), ex.AggregateTypeName);
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_OnConflict_RecordsTheAppendConflictCounter()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _transactionMock.Setup(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(CreateUniqueViolationDbUpdateException());
+
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await Assert.ThrowsAsync<ConcurrencyException>(() => _eventSource.SaveChangesAsync());
+        }
+
+        var conflicts = measurements
+            .Where(m => m.Instrument == "event_source.append.conflicts")
+            .Where(m => (m.Tags.GetValueOrDefault("aggregate.type") as string)?.Contains(nameof(TestAggregate), StringComparison.Ordinal) == true)
+            .ToList();
+
+        Assert.Single(conflicts);
+        Assert.Equal(1, conflicts[0].Value);
+        Assert.True(conflicts[0].Tags.ContainsKey("bucket.id"));
     }
 
     [Fact]

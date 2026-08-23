@@ -7,6 +7,8 @@ using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 
+using Stratara.Outbox.RabbitMQ.Tests.Diagnostics;
+
 namespace Stratara.Outbox.RabbitMQ.Tests.Outbox;
 
 public class OutboxWorkerTests
@@ -81,6 +83,33 @@ public class OutboxWorkerTests
                 It.Is<IEnumerable<OutboxEntry>>(entries => entries.Single().Id == eventEntry.Id),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RecordsPublishedEntries_TaggedByOutboxKind()
+    {
+        var harness = new Harness(grantLock: true);
+
+        var commandSeq = new Queue<IReadOnlyList<OutboxEntry>>([[NewOutboxEntry(), NewOutboxEntry()], []]);
+        var eventSeq = new Queue<IReadOnlyList<OutboxEntry>>([[NewOutboxEntry()], []]);
+
+        harness.OutboxRepository
+            .Setup(r => r.GetManyAsync<CommandEnvelope>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(commandSeq.Dequeue);
+        harness.OutboxRepository
+            .Setup(r => r.GetManyAsync<EventBundle>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(eventSeq.Dequeue);
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await harness.RunOneCycleAsync();
+        }
+
+        var published = measurements.Where(m => m.Instrument == "outbox.published").ToList();
+
+        Assert.Contains(published, m => Equals(m.Tags.GetValueOrDefault("outbox.kind"), "command") && m.Value == 2);
+        Assert.Contains(published, m => Equals(m.Tags.GetValueOrDefault("outbox.kind"), "event") && m.Value == 1);
     }
 
     [Fact]

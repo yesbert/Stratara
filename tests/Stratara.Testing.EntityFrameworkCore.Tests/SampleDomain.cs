@@ -1,3 +1,4 @@
+using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Domain;
 using Stratara.Abstractions.EventSourcing;
 
@@ -10,6 +11,9 @@ internal sealed record AmountDeposited(decimal Amount);
 
 internal sealed record AmountWithdrawn(decimal Amount);
 
+/// <summary>Carries an encrypted field, so an append exercises the resolved subject's key scope.</summary>
+internal sealed record AccountNoteAdded([property: EncryptData] string Note);
+
 internal sealed class Account : ITenantAggregate
 {
     public Guid Id { get; set; }
@@ -19,6 +23,8 @@ internal sealed class Account : ITenantAggregate
     public string Owner { get; set; } = string.Empty;
 
     public decimal Balance { get; set; }
+
+    public string Note { get; set; } = string.Empty;
 
     public void Apply(AccountOpened @event)
     {
@@ -31,6 +37,8 @@ internal sealed class Account : ITenantAggregate
     public void Apply(AmountDeposited @event) => Balance += @event.Amount;
 
     public void Apply(AmountWithdrawn @event) => Balance -= @event.Amount;
+
+    public void Apply(AccountNoteAdded @event) => Note = @event.Note;
 }
 
 internal sealed record MetricsProbeCreated(Guid ProbeId, Guid TenantId) : IAggregateCreationEvent;
