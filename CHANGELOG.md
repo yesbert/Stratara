@@ -16,53 +16,17 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-### Changed
+_no changes yet since `3.3.0`._
 
-- **`UseAuthorizationExceptionTo403()` is obsolete and is removed in the next major version.** It
-  maps the same two refusals to a bare status code with no body; `AddStrataraProblemDetails()`
-  supersedes it with a full problem response that also covers validation. It keeps working for now —
-  the compiler warning is the migration notice. Do not register both: the middleware answers first
-  and the handler never sees the exception.
-- **`command.duration` is documented as what it measures.** It was described as end-to-end command
-  latency and is recorded only in the outbox worker, so a host dispatching in-process saw an empty
-  histogram and a host doing both saw half its traffic. The instrument and its tags are unchanged —
-  only the description.
-- **Settings resolve in one read per scope instead of one per setting and scope.** Twenty inherited
-  settings over a four-scope fallback chain were up to eighty store round trips; each scope is now
-  loaded once. Same fallback order and same results.
-- **Snapshot evaluation no longer opens an extra transaction per stream** on the write hot path.
+## [3.3.0] — 2026-08-25
 
-- **BREAKING — a host refuses to start when an aggregate cannot be restored from its snapshot.**
-  An aggregate property that holds state and cannot be set from outside the type is not restored by a
-  snapshot: the aggregate rebuilds, the events after the snapshot apply, and only what the snapshot
-  held for that property is gone — silently, and worse the better snapshotting works. `AddEventSourcing()`
-  now scans the registered aggregates at start-up and fails, naming the aggregate and the property.
-  Give it a public setter; aggregates use `public set` rather than `private set` precisely because
-  snapshot deserialization needs it. Computed properties are unaffected — they hold no state and are
-  recomputed after a restore.
-
-- **BREAKING — the development key store no longer pretends to erase.** `DummyKeyStore.RevokeAsync`
-  and `EraseScopeAsync` completed successfully and shredded nothing, so a consumer exercising an
-  erasure path in development got a green result and no shredding. Both now throw
-  `NotSupportedException`. The store derives a single key from a fixed pass-phrase and holds no key
-  material it could destroy; reporting success was the defect. Register a real `IKeyStore` — the
-  file-backed envelope store, an HSM, Key Vault, KMS — to exercise crypto-shredding.
-- **BREAKING — test-support packages are now kept out of projects that are not test projects.** Both
-  `Stratara.Testing` and `Stratara.Testing.EntityFrameworkCore` ship an MSBuild check that fails the
-  build with `STRATARA1001` when a referencing project is neither a test project nor opted out. Set
-  `StrataraAllowTestSupportOutsideTests=true` for a deliberate exception such as a sample or a
-  benchmark. The check travels with the package, so it fires on a `PackageReference` and not on a
-  project reference inside a single solution.
+Two capabilities the framework advertised but did not provide, and a set of guards for behaviour
+that failed by succeeding. Crypto-shredding was the headline feature with no way to perform an
+erasure; a web host had one mapper for the four failure types it has to answer for. Alongside those,
+three things that reported success while doing nothing now report the truth instead — which is why
+this release carries breaking entries despite adding no signature you have to change.
 
 ### Added
-
-- **`AddStrataraProblemDetails()` — one error shape for every framework rejection.** The framework
-  raises three failure types a web host has to answer for and shipped a mapper for one of them, so
-  both consumers wrote the missing half themselves. The new handler maps a validation rejection to
-  `400` with the failures grouped by the field each concerns, and an authorization refusal or
-  tenant-access denial to `403`, all as RFC 7807 problem responses. It is opt-in and converts nothing
-  else: any failure the framework did not raise propagates untouched, so a host keeping its own error
-  model simply does not register it.
 
 - **`ISubjectEraser` — an erasure is now one call.** Crypto-shredding was the framework's headline
   capability with no way to perform an erasure: four separate sweeps existed, nothing composed them,
@@ -74,7 +38,13 @@ applies to the entire NuGet family.
   followed by the key shred. What it deliberately does **not** cover is documented: read models your
   own projections built, unprotected event-stream data, the command audit log and outbox, and
   system-wide key material.
-
+- **`AddStrataraProblemDetails()` — one error shape for every framework rejection.** The framework
+  raises three failure types a web host has to answer for and shipped a mapper for one of them, so
+  both consumers wrote the missing half themselves. The new handler maps a validation rejection to
+  `400` with the failures grouped by the field each concerns, and an authorization refusal or
+  tenant-access denial to `403`, all as RFC 7807 problem responses. It is opt-in and converts nothing
+  else: any failure the framework did not raise propagates untouched, so a host keeping its own error
+  model simply does not register it.
 - **`ITransaction.SaveChangesIdempotentAsync` — the idempotent-projection write the framework was
   writing by hand.** A projection sees the same event twice under at-least-once delivery, and a row
   can vanish between the read and the write; neither is a fault. The helper commits, and on a
@@ -82,13 +52,55 @@ applies to the entire NuGet family.
   reached the same end state and the commit is satisfied, still there means a real conflict and the
   exception is rethrown so the bundle fails as it must. `TenantProjection` now uses it — and gains
   the distinction, having previously swallowed every conflict.
+- **Three guides that did not exist**: evolving an event schema, using the resilience policies, and
+  writing an update handler. Each leads with the constraint that costs most to discover late — an
+  upcaster sees ciphertext and snapshots are never upcasted; a retry re-runs your handler; a property
+  missing on either side of an update is ignored in silence.
 
+### Changed
+
+- **BREAKING — the development key store no longer pretends to erase.** `DummyKeyStore.RevokeAsync`
+  and `EraseScopeAsync` completed successfully and shredded nothing, so a consumer exercising an
+  erasure path in development got a green result and no shredding. Both now throw
+  `NotSupportedException`. The store derives a single key from a fixed pass-phrase and holds no key
+  material it could destroy; reporting success was the defect. Register a real `IKeyStore` — the
+  file-backed envelope store, an HSM, Key Vault, KMS — to exercise crypto-shredding.
+- **BREAKING — a host refuses to start when an aggregate cannot be restored from its snapshot.** An
+  aggregate property that holds state and cannot be set from outside the type is not restored by a
+  snapshot: the aggregate rebuilds, the events after the snapshot apply, and only what the snapshot
+  held for that property is gone — silently, and worse the better snapshotting works.
+  `AddEventSourcing()` now scans the registered aggregates at start-up and fails, naming the
+  aggregate and the property. Give it a public setter; aggregates use `public set` rather than
+  `private set` precisely because snapshot deserialization needs it. Computed properties are
+  unaffected — they hold no state and are recomputed after a restore.
+- **BREAKING — test-support packages are now kept out of projects that are not test projects.** Both
+  `Stratara.Testing` and `Stratara.Testing.EntityFrameworkCore` ship an MSBuild check that fails the
+  build with `STRATARA1001` when a referencing project is neither a test project nor opted out. Set
+  `StrataraAllowTestSupportOutsideTests=true` for a deliberate exception such as a sample or a
+  benchmark. The check travels with the package, so it fires on a `PackageReference` and not on a
+  project reference inside a single solution.
 - **`AddStrataraTestingEventStore` refuses to register into a running host.** It wires an in-memory
   SQLite database and in-memory doubles, which would start successfully in production and lose every
   write. It now throws `InvalidOperationException` when a registered `IHostEnvironment`, or
   `DOTNET_ENVIRONMENT` / `ASPNETCORE_ENVIRONMENT`, names anything other than `Development`. Where no
   environment is stated at all — the ordinary unit test, which has no host — the call is allowed, so
   existing test suites are unaffected.
+- **`command.duration` is documented as what it measures.** It was described as end-to-end command
+  latency and is recorded only in the outbox worker, so a host dispatching in-process saw an empty
+  histogram and a host doing both saw half its traffic. The instrument and its tags are unchanged —
+  only the description.
+- **Settings resolve in one read per scope instead of one per setting and scope.** Twenty inherited
+  settings over a four-scope fallback chain were up to eighty store round trips; each scope is now
+  loaded once. Same fallback order and same results.
+- **Snapshot evaluation no longer opens an extra transaction per stream** on the write hot path.
+
+### Deprecated
+
+- **`UseAuthorizationExceptionTo403()`, removed in the next major version.** It maps two refusals to
+  a bare status code with no body; `AddStrataraProblemDetails()` supersedes it with a full problem
+  response that also covers validation. It keeps working for now — the compiler warning is the
+  migration notice. Do not register both: the middleware answers first and the handler never sees the
+  exception.
 
 ## [3.2.3] — 2026-08-22
 
