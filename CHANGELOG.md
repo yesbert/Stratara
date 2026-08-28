@@ -16,6 +16,20 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_no changes yet since `3.4.0`._
+
+## [3.4.0] — 2026-08-28
+
+Four findings a consumer team reported from production use, three defects found in the framework's
+own queue, and one found while fixing another. The thread running through them is the same: a
+mechanism that reported success while doing nothing. A signature that covered everything except the
+payload. A circuit breaker whose thresholds its own retry could never reach. A replay marking that
+outlived the replay. Two environment guards that admitted every environment name nobody had thought
+of. Each was documented as working, and each was believed.
+
+**Read the two rollout notes before upgrading a fleet**: bus-envelope signatures change, and a
+projection replay marking already stuck from an earlier version does not clear itself on upgrade.
+
 ### Added
 
 - **`ProjectionReplayOptions`** — configures how long a projection replay's active marking and
@@ -2629,7 +2643,9 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.2.3...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v3.4.0...main
+[3.4.0]: https://github.com/yesbert/Stratara/releases/tag/v3.4.0
+[3.3.0]: https://github.com/yesbert/Stratara/releases/tag/v3.3.0
 [3.2.3]: https://github.com/yesbert/Stratara/releases/tag/v3.2.3
 [3.2.2]: https://github.com/yesbert/Stratara/releases/tag/v3.2.2
 [3.2.1]: https://github.com/yesbert/Stratara/releases/tag/v3.2.1
