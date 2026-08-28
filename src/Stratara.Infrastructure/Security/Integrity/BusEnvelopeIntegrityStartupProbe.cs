@@ -25,7 +25,7 @@ internal sealed partial class BusEnvelopeIntegrityStartupProbe(
     {
         var mode = options.Value.Mode;
 
-        if (mode == BusEnvelopeIntegrityMode.Off && environment.IsProduction())
+        if (mode == BusEnvelopeIntegrityMode.Off && !environment.IsDevelopment())
         {
             LogIntegrityOffInProduction(logger);
         }
@@ -43,7 +43,7 @@ internal sealed partial class BusEnvelopeIntegrityStartupProbe(
     [LoggerMessage(
         EventId = LogEvents.BusEnvelopeIntegrity.IntegrityOffInProduction,
         Level = LogLevel.Warning,
-        Message = "BusEnvelopeIntegrityOptions.Mode is Off on a Production host — outbound CommandEnvelope / EventBundle payloads carry no signature, consumers do not verify. Anyone with bus-publish rights can inject forged envelopes with arbitrary SessionContextJson (tenant / actor spoofing). Set Mode to Permissive (rolling) or Strict (enforced) via AddBusEnvelopeIntegrity(...).")]
+        Message = "BusEnvelopeIntegrityOptions.Mode is Off on a non-Development host — outbound CommandEnvelope / EventBundle payloads carry no signature, consumers do not verify. Anyone with bus-publish rights can inject forged envelopes with arbitrary SessionContextJson (tenant / actor spoofing). Set Mode to Permissive (rolling) or Strict (enforced) via AddBusEnvelopeIntegrity(...).")]
     private static partial void LogIntegrityOffInProduction(ILogger logger);
 
     [LoggerMessage(

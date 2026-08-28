@@ -16,6 +16,32 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **`ProjectionReplayOptions`** — configures how long a projection replay's active marking and
+  progress counters survive without renewal. Registered with its defaults by
+  `AddProjectionReplayState()`, so an existing host is leased without configuring anything.
+
+- **`AddTenantMembershipStoreFromContextFactory<TContext>()`,
+  `AddApiKeyStoreFromContextFactory<TContext>()` and `AddSettingStoreFromContextFactory<TContext>()`**
+  — register the identity-directory stores so that each operation takes a fresh database context from
+  `IDbContextFactory<TContext>` instead of sharing the request's.
+
+  The existing registrations share one context across every directory store in a request. A database
+  context serves one operation at a time, so directory work issued concurrently within a scope — two
+  role checks together, a lookup racing a page load — fails on whichever arrives second, and the
+  failure surfaces at the call site that lost the race rather than the one that introduced the
+  concurrency. Sharing also means a store's own commit commits whatever else the consumer has left
+  unsaved on that context.
+
+  Both registrations now state what they cost, because the choice runs both ways: with a context per
+  operation neither of those applies, and in exchange a store write no longer takes part in a
+  transaction opened on the consumer's own scoped context. Calling both registrations for the same
+  store leaves whichever ran first in place; they do not compose.
+
+  Nothing changes for a consumer who does not adopt them — the existing registrations behave exactly
+  as before, and remain the default.
+
 ### Fixed
 
 - **Appending on behalf of a subject that names no tenant now fails.** Of the five sources the store
@@ -71,6 +97,8 @@ applies to the entire NuGet family.
   pass — with the defaults, twenty thousand entries a minute, and both the batch size and the
   interval are configurable.
 
+
+
 - **Two environment guards now admit Development only, instead of refusing Production only.**
   `IsProduction()` recognises exactly one name. Everything else fell through — Staging, QA, UAT,
   Preview, and, because the check is by name, `Production-EU` and `prod` as well.
@@ -108,31 +136,42 @@ applies to the entire NuGet family.
   built an alert on breaker state got an alert that could never fire, and the code comment describing
   the behaviour described something that never happened.
 
-### Added
+### Security
 
-- **`ProjectionReplayOptions`** — configures how long a projection replay's active marking and
-  progress counters survive without renewal. Registered with its defaults by
-  `AddProjectionReplayState()`, so an existing host is leased without configuring anything.
+- **A bus-envelope signature now covers the payload, not only the identity claims.** The canonical
+  form a signature was computed over was, for an event bundle, everything except the events — the
+  record has three fields and one of them is the signature. That is correct for the threat it was
+  built for, which is *minting* a session context. It does not answer *transplanting* an observed
+  signature onto different events, which was never raised.
 
-- **`AddTenantMembershipStoreFromContextFactory<TContext>()`,
-  `AddApiKeyStoreFromContextFactory<TContext>()` and `AddSettingStoreFromContextFactory<TContext>()`**
-  — register the identity-directory stores so that each operation takes a fresh database context from
-  `IDbContextFactory<TContext>` instead of sharing the request's.
+  The attack is not "replay the same message" — duplicates are ordinary, delivery is at-least-once
+  and handlers are already idempotent. It is: observe one signed message, publish a new one carrying
+  that exact session context and arbitrary events, and the canonical form is unchanged, so the
+  signature verifies and strict mode accepts it. The attacker cannot reach a tenant they have never
+  observed, which is a real limit. They can inject arbitrary events into any tenant they *have*
+  observed one message from — the projection worker writes them into that tenant's read models, and
+  the saga worker reacts to them and can issue commands as that actor. Two of the three actors this
+  mechanism was designed to stop plausibly hold read access as well as publish access.
 
-  The existing registrations share one context across every directory store in a request. A database
-  context serves one operation at a time, so directory work issued concurrently within a scope — two
-  role checks together, a lookup racing a page load — fails on whichever arrives second, and the
-  failure surfaces at the call site that lost the race rather than the one that introduced the
-  concurrency. Sharing also means a store's own commit commits whatever else the consumer has left
-  unsaved on that context.
+  The canonical form now covers a digest of the payload — the events for a bundle; the command body
+  and the envelope id for a command, both of which were transmitted and unsigned. It is built from
+  field values, never by re-serializing, so a message that has been on the wire projects to exactly
+  what its publisher signed.
 
-  Both registrations now state what they cost, because the choice runs both ways: with a context per
-  operation neither of those applies, and in exchange a store write no longer takes part in a
-  transaction opened on the consumer's own scoped context. Calling both registrations for the same
-  store leaves whichever ran first in place; they do not compose.
+  **Fields are now length-prefixed.** They were joined with a separator that two attacker-controlled
+  fields are allowed to contain, so content could be shifted across a field boundary without
+  changing the canonical form — altering which command type is dispatched while the signature still
+  verified, defeating the guard the type name is signed for.
 
-  Nothing changes for a consumer who does not adopt them — the existing registrations behave exactly
-  as before, and remain the default.
+  **Rollout — this is the migration the three modes exist for, and the first time it is needed.**
+  Signatures produced by an older publisher stop verifying. Move the fleet through **permissive**
+  mode: publishers upgrade first, consumers follow, then strict is safe again. Upgrading both sides
+  straight into strict will reject in-flight messages.
+
+- **The integrity start-up warning now fires outside development, not only in production.** It was
+  governed by whether the host was *named* `Production`, so a host called `Production-EU` or `prod`
+  ran with unsigned envelopes and no warning. It is now governed by whether the host is in
+  development, which also surfaces the deviation on staging and QA.
 
 ## [3.3.0] — 2026-08-25
 

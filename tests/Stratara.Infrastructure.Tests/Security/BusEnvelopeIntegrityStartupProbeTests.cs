@@ -9,12 +9,18 @@ namespace Stratara.Infrastructure.Tests.Security;
 
 public class BusEnvelopeIntegrityStartupProbeTests
 {
-    [Fact]
-    public async Task StartAsync_OffMode_InProduction_LogsWarning()
+    // An operator running without integrity must see the deviation in their log pipeline at host
+    // start. "Production" is a name, not a property: a host called Production-EU or prod is a
+    // production host, and a production-only check does not recognise either. The warning is
+    // therefore governed by "not development" rather than by "named production".
+    [InlineData("Production")]
+    [InlineData("Production-EU")]
+    [InlineData("prod")]
+    [InlineData("Staging")]
+    [Theory]
+    public async Task StartAsync_OffMode_OutsideDevelopment_LogsWarning(string environmentName)
     {
-        // Round-3-Audit Finding R3-Sec-009: operator running production without integrity must
-        // see the security-relevant deviation in their log pipeline at host start.
-        var env = ProductionEnvironment();
+        var env = NamedEnvironment(environmentName);
         var options = Options.Create(new BusEnvelopeIntegrityOptions { Mode = BusEnvelopeIntegrityMode.Off });
         var logger = new RecordingLogger();
         var sut = new BusEnvelopeIntegrityStartupProbe(logger, env, options);
@@ -108,10 +114,12 @@ public class BusEnvelopeIntegrityStartupProbeTests
 
     private static IBusEnvelopeSigner SignerStub() => new Mock<IBusEnvelopeSigner>().Object;
 
-    private static IHostEnvironment ProductionEnvironment()
+    private static IHostEnvironment ProductionEnvironment() => NamedEnvironment(Environments.Production);
+
+    private static IHostEnvironment NamedEnvironment(string environmentName)
     {
         var env = new Mock<IHostEnvironment>();
-        env.SetupGet(e => e.EnvironmentName).Returns(Environments.Production);
+        env.SetupGet(e => e.EnvironmentName).Returns(environmentName);
         return env.Object;
     }
 
