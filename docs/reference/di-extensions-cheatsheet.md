@@ -202,7 +202,6 @@ through unchecked.
 | `services.AddStrataraExternalLoginProvisioning<TUser>(opts?)` | JIT create/link of the local account on first external sign-in (fail-closed) |
 | `services.AddStrataraProblemDetails()` | Turns a validation rejection into a 400 with the failures grouped by field, and an authorization or tenant-access refusal into a 403 — one shape for all three |
 | `app.MapDefaultEndpoints()` | `/health` + `/alive` endpoints (`Stratara.ServiceDefaults.AspNetCore`) |
-| `app.UseAuthorizationExceptionTo403()` | Translates an authorization exception thrown downstream — by the authorizing mediator or the authorizing outbox dispatcher — into an HTTP 403. Other exceptions continue to propagate |
 
 ### Authentication schemes (`AuthenticationBuilder`)
 

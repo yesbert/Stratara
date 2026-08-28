@@ -25,6 +25,12 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// <typeparam name="TDbContext">The concrete write-store DbContext type.</typeparam>
     /// <param name="services">The service collection to add registrations to.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+    /// <example>
+    /// Reads the connection string named <c>stratara</c>:
+    /// <code>
+    /// services.AddNpgsqlWriteDbContextFactory&lt;WriteDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddNpgsqlWriteDbContextFactory<TDbContext>(this IServiceCollection services) where TDbContext : DbContext, IWriteDbContext
     {
         services.AddDbContextFactory<TDbContext>((sp, options) => ConfigureDbOptions(options, sp), ServiceLifetime.Scoped);
@@ -51,6 +57,11 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// <typeparam name="TDbContext">The concrete read-store DbContext type.</typeparam>
     /// <param name="services">The service collection to add registrations to.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddNpgsqlReadDbContextFactory&lt;ReadDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddNpgsqlReadDbContextFactory<TDbContext>(this IServiceCollection services)
         where TDbContext : DbContext, IReadDbContext
     {
@@ -67,6 +78,12 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// <typeparam name="TDbContext">The concrete identity-store DbContext type.</typeparam>
     /// <param name="services">The service collection to add registrations to.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+    /// <example>
+    /// Also resolves the context itself as scoped, so ASP.NET Core Identity can inject it directly:
+    /// <code>
+    /// services.AddNpgsqlIdentityDbContextFactory&lt;IdentityDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddNpgsqlIdentityDbContextFactory<TDbContext>(this IServiceCollection services)
         where TDbContext : DbContext, IIdentityDbContext
     {

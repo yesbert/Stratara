@@ -21,6 +21,14 @@ public static class AuthorizingCommandOutboxDispatcherServiceCollectionExtension
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// Register it after the dispatcher it decorates, so the outbox path enforces the same guards the
+    /// mediator does:
+    /// <code>
+    /// services.AddOutboxDispatcher();
+    /// services.AddAuthorizingCommandOutboxDispatcher();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddAuthorizingCommandOutboxDispatcher(this IServiceCollection services)
     {
         services.AddScoped<CommandOutboxDispatcher>();

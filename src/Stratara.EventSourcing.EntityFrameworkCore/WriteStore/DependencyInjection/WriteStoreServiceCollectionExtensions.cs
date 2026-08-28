@@ -18,6 +18,14 @@ public static class WriteStoreServiceCollectionExtensions
     /// <param name="services">The service collection to register options on.</param>
     /// <param name="configuration">The host configuration providing the options section.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+    /// <example>
+    /// Binds <c>EventSourcingOptions</c> from the <c>EventSourcing</c> section — the snapshot cadence
+    /// and the write-side batch sizes:
+    /// <code>
+    /// // appsettings.json: { "EventSourcing": { "SnapshotThreshold": 100 } }
+    /// services.AddWriteStore(configuration);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddWriteStore(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<EventSourcingOptions>()

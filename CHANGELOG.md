@@ -29,6 +29,21 @@ applies to the entire NuGet family.
   does cover — decryption fails after tampering — rather than as a substitute for an unsigned
   payload. No behaviour changes; the projection itself has been correct since 3.4.0.
 
+- **Registrations state their contract in the XML documentation that ships with the package.** The
+  `.nupkg` carries the doc XML next to the dll, so what a registration says there is what a consumer
+  sees at the call site. Every registration in `Stratara.Infrastructure`, `Stratara.Outbox.RabbitMQ`
+  and `Stratara.EventSourcing.EntityFrameworkCore` now names the configuration key path it binds, its
+  prerequisites and ordering constraints, and carries a worked example — among them
+  `AddRedisOutboxLock` (needs an `IConnectionMultiplexer`; required before a second worker replica),
+  `AddSecurity` (register a key store first, the fallback uses `TryAdd`), and both
+  `AddBusEnvelopeIntegrity` overloads (the key is a `byte[]`, and the configuration overload binds
+  only `Mode`).
+
+- **`UseAuthorizationExceptionTo403` is no longer listed as a registration to reach for.** It is
+  `[Obsolete]` and superseded by `AddStrataraProblemDetails()`; registering both makes the middleware
+  answer first, so the problem-details handler never sees the exception. A cheatsheet that lists it
+  invites exactly that.
+
 - **Three bindable configuration sections are documented for the first time.** `BusEnvelopeJson`
   (`MaxDepth`, `MaxBodyBytes` — the size and depth guards on every inbound envelope), `ProjectionReplay`
   (`LeaseSeconds`), and `Stratara:BlobEncryption` (`LegacyBlobsCarryPurpose`). All three shipped

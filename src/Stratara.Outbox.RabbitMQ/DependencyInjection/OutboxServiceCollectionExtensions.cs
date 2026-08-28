@@ -22,6 +22,12 @@ public static class OutboxServiceCollectionExtensions
     /// underlying registration uses <c>TryAddSingleton</c>, so it is safe to call this method together with
     /// <see cref="AddProjectionReplayState"/> or <c>AddEventProjectionWorkerServices()</c> — duplicates collapse.
     /// </remarks>
+    /// <example>
+    /// <code>
+    /// services.AddMessaging();
+    /// services.AddOutboxDispatcher();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddOutboxDispatcher(this IServiceCollection services)
     {
         services.AddProjectionReplayState();
@@ -36,6 +42,14 @@ public static class OutboxServiceCollectionExtensions
     /// leased even when the consumer configures nothing. Bind the section with
     /// <c>services.Configure&lt;ProjectionReplayOptions&gt;(...)</c> to override the lease.
     /// </remarks>
+    /// <example>
+    /// Registers <c>ProjectionReplayOptions</c> with its defaults, so the replay marking is leased even
+    /// when nothing is configured. Bind the <c>ProjectionReplay</c> section to change the lease:
+    /// <code>
+    /// services.AddProjectionReplayState();
+    /// services.Configure&lt;ProjectionReplayOptions&gt;(o =&gt; o.LeaseSeconds = 600);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddProjectionReplayState(this IServiceCollection services)
     {
         services.AddOptions<ProjectionReplayOptions>();
@@ -51,6 +65,14 @@ public static class OutboxServiceCollectionExtensions
     /// afterwards, which overrides the no-op with a Redis-leased lock that lets only one replica
     /// drain at a time.
     /// </remarks>
+    /// <example>
+    /// Binds <c>OutboxOptions</c> from the <c>Outbox</c> section. A cycle takes one batch of each kind,
+    /// so <c>BatchSize</c> and <c>PollingIntervalSeconds</c> together set the drain rate:
+    /// <code>
+    /// // appsettings.json: { "Outbox": { "BatchSize": 10000, "PollingIntervalSeconds": 30 } }
+    /// services.AddOutboxWorker(configuration);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddOutboxWorker(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<OutboxOptions>()
@@ -70,6 +92,15 @@ public static class OutboxServiceCollectionExtensions
     /// with <see cref="OutboxOptions.LockLeaseSeconds"/>; tune the lease to comfortably exceed the
     /// worst-case drain duration.
     /// </remarks>
+    /// <example>
+    /// Required before running more than one outbox-worker replica; the default lock is a no-op that
+    /// assumes a single instance. Needs an <c>IConnectionMultiplexer</c>, which <c>AddCaching()</c>
+    /// registers:
+    /// <code>
+    /// builder.AddCaching();
+    /// builder.Services.AddRedisOutboxLock();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddRedisOutboxLock(this IServiceCollection services)
     {
         services.RemoveAll<IOutboxLock>();

@@ -38,6 +38,17 @@ public static class IntegrityServiceCollectionExtensions
     /// <param name="configure">Callback that populates <see cref="BusEnvelopeIntegrityOptions"/>.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <c>null</c>.</exception>
+    /// <example>
+    /// The key is a <c>byte[]</c> of at least 32 bytes and must be identical on every host that shares
+    /// the bus. Read it from a secret store rather than from <c>appsettings.json</c>:
+    /// <code>
+    /// services.AddBusEnvelopeIntegrity(options =&gt;
+    /// {
+    ///     options.Mode = BusEnvelopeIntegrityMode.Strict;
+    ///     options.SharedKey = Convert.FromBase64String(configuration["BusEnvelopeIntegrity:SharedKey"]!);
+    /// });
+    /// </code>
+    /// </example>
     public static IServiceCollection AddBusEnvelopeIntegrity(this IServiceCollection services, Action<BusEnvelopeIntegrityOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
@@ -55,6 +66,16 @@ public static class IntegrityServiceCollectionExtensions
     /// <param name="configuration">The configuration root to bind from.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <c>null</c>.</exception>
+    /// <example>
+    /// Binds <c>Mode</c> from the <c>BusEnvelopeIntegrity</c> section and leaves the key to the caller,
+    /// so a host using this overload still has to assign <see cref="BusEnvelopeIntegrityOptions.SharedKey"/>:
+    /// <code>
+    /// // appsettings.json: { "BusEnvelopeIntegrity": { "Mode": "Permissive" } }
+    /// services.AddBusEnvelopeIntegrity(configuration);
+    /// services.Configure&lt;BusEnvelopeIntegrityOptions&gt;(
+    ///     o =&gt; o.SharedKey = Convert.FromBase64String(configuration["BusEnvelopeIntegrity:SharedKey"]!));
+    /// </code>
+    /// </example>
     public static IServiceCollection AddBusEnvelopeIntegrity(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

@@ -17,6 +17,15 @@ public static class ErasureServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// The four stores it sweeps must already be registered — this call adds none of them:
+    /// <code>
+    /// services.AddTenantMembershipStore&lt;DirectoryDbContext&gt;();
+    /// services.AddApiKeyStore&lt;DirectoryDbContext&gt;();
+    /// services.AddSettingStore&lt;DirectoryDbContext&gt;();
+    /// services.AddStrataraErasure();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraErasure(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

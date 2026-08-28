@@ -17,6 +17,14 @@ public static class IdentityServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// The services it registers read the ambient session context, so a host that never sets one
+    /// resolves them successfully and gets empty values:
+    /// <code>
+    /// services.AddSessionContext();
+    /// services.AddIdentity();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddIdentity(this IServiceCollection services)
     {
         services.AddScoped<ITenantService, TenantService>();

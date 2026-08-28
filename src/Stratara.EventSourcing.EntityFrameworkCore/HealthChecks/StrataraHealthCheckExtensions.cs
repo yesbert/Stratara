@@ -47,6 +47,12 @@ public static class StrataraHealthCheckExtensions
     /// Tags applied to the registration, or <see langword="null"/> to apply <see cref="ReadyTag"/>.
     /// </param>
     /// <returns>The same <see cref="IHealthChecksBuilder"/> for chaining.</returns>
+    /// <example>
+    /// Requires the write store, which is where the check reads the backlog from:
+    /// <code>
+    /// services.AddHealthChecks().AddOutboxHealthCheck(unhealthyThreshold: 10_000);
+    /// </code>
+    /// </example>
     public static IHealthChecksBuilder AddOutboxHealthCheck(
         this IHealthChecksBuilder builder,
         int? degradedThreshold = null,
@@ -82,6 +88,11 @@ public static class StrataraHealthCheckExtensions
     /// Tags applied to the registration, or <see langword="null"/> to apply <see cref="ReadyTag"/>.
     /// </param>
     /// <returns>The same <see cref="IHealthChecksBuilder"/> for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddHealthChecks().AddEventStoreHealthCheck();
+    /// </code>
+    /// </example>
     public static IHealthChecksBuilder AddEventStoreHealthCheck(
         this IHealthChecksBuilder builder,
         string name = EventStoreCheckName,

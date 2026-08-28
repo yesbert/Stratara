@@ -14,6 +14,11 @@ public static class BackgroundTaskExtensions
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddBackgroundTasks();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddBackgroundTasks(this IServiceCollection services)
     {
         services.AddHostedService<QueuedHostedService>();

@@ -17,6 +17,14 @@ public static class MediatorWorkerServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The DI container.</param>
     /// <returns>The same service collection, for chaining.</returns>
+    /// <example>
+    /// The worker consumes the topic named <c>Command</c> in the <c>Messaging:Topics</c> section,
+    /// defaulting to <c>command</c> / <c>command-subscription</c>:
+    /// <code>
+    /// services.AddMessaging();
+    /// services.AddMediatorWorker();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMediatorWorker(this IServiceCollection services)
     {
         services.AddHostedService<MediatorCommandWorker>();
@@ -37,6 +45,15 @@ public static class MediatorWorkerServiceCollectionExtensions
     /// long-running commands can consume.
     /// </param>
     /// <returns>The same service collection, for chaining.</returns>
+    /// <example>
+    /// Drains the <c>HeavyCommand</c> topic — <c>heavy-command</c> / <c>heavy-command-subscription</c>
+    /// unless <c>Messaging:Topics</c> renames it. Run it alongside the interactive worker, or in a host
+    /// of its own that scales separately:
+    /// <code>
+    /// services.AddMediatorWorker();
+    /// services.AddHeavyCommandWorker(degreeOfParallelism: 2);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddHeavyCommandWorker(this IServiceCollection services, int? degreeOfParallelism = null)
     {
         var lane = new CommandWorkerLane(Heavy: true, degreeOfParallelism);

@@ -37,6 +37,13 @@ public static class CachingServiceCollectionExtensions
     /// <param name="builder">The host application builder.</param>
     /// <returns>The same builder for chaining.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the <c>redis</c> connection string is missing.</exception>
+    /// <example>
+    /// Requires a connection string named <c>redis</c> — the call throws at start-up without one:
+    /// <code>
+    /// // appsettings.json: { "ConnectionStrings": { "redis": "localhost:6379" } }
+    /// builder.AddCaching();
+    /// </code>
+    /// </example>
     public static IHostApplicationBuilder AddCaching(this IHostApplicationBuilder builder)
     {
         var connectionString = builder.Configuration.GetConnectionString("redis")

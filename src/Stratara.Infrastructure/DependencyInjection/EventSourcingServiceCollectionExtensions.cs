@@ -23,6 +23,13 @@ public static class EventSourcingServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// Pair it with a write store; on its own it registers the services but nothing to persist through:
+    /// <code>
+    /// services.AddEventSourcing();
+    /// services.AddNpgsqlWriteDbContextFactory&lt;WriteDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddEventSourcing(this IServiceCollection services)
     {
         services.AddScoped<IEventSource, EventSource>();
@@ -46,6 +53,11 @@ public static class EventSourcingServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddEventStreamHashWorker();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddEventStreamHashWorker(this IServiceCollection services)
     {
         services.AddHostedService<EventStreamHashWorker>();

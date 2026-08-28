@@ -31,6 +31,14 @@ public static class InfrastructureSecurityServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// Register a production key store first — the fallback this call adds uses <c>TryAdd</c>, so
+    /// whichever key store is registered before it wins:
+    /// <code>
+    /// services.AddStrataraFileKeyStore(configuration);
+    /// services.AddSecurity();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSecurity(this IServiceCollection services)
     {
         services.AddSingleton<ISecureJsonSerializer, SecureJsonSerializer>();
