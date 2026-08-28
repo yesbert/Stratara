@@ -23,12 +23,14 @@ dotnet add package Stratara.Outbox.RabbitMQ
     "VirtualHost": "/"
     // Username + Password come from env vars in production:
     //   RABBITMQ_USERNAME, RABBITMQ_PASSWORD
-    // In Development the broker's default `guest/guest` is used.
+    // In Development only, the broker's default `guest/guest` is used.
   }
 }
 ```
 
-**Production fail-fast** (v3.0.14+): if `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` are missing when `IHostEnvironment.IsProduction()`, the host throws `InvalidOperationException` at startup. The `guest/guest` fallback is restricted to Development/Staging — same pattern as the `DummyKeyStore` guard.
+**Fail-fast outside Development** (v3.4.0; v3.0.14+ for Production only): if `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` are missing on any host that is not in Development, publishing throws `InvalidOperationException` naming the environment. The `guest/guest` fallback is Development-only — same pattern as the key-store guard.
+
+> **Changed in 3.4.0.** The check used to be `IsProduction()`, which recognises exactly one name: Staging, QA, UAT, Preview, anything self-named, and even `Production-EU` and `prod` all fell through to `guest`. RabbitMQ restricts `guest` to localhost by default, so a remote broker refused the connection anyway — but a broker in the same container or network running a default configuration accepted it. If you deliberately want the default account outside Development, set `RABBITMQ_USERNAME=guest` and `RABBITMQ_PASSWORD=guest` explicitly; the configuration is the opt-in.
 
 ## Wire the worker
 

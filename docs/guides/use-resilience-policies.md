@@ -57,9 +57,20 @@ anything that is not a concurrency conflict propagates on the first attempt. A r
 swallowed every exception class would turn a permanent failure into a slow one.
 
 `MessageBus` never gives up on purpose — a transient broker outage must not drop messages, and the
-outbox has already persisted the work. The circuit breaker exists to bound the duty cycle so a
-permanently misconfigured broker surfaces in metrics roughly once per breaker cycle instead of as an
-unbounded retry storm.
+outbox has already persisted the work. The duty cycle is bounded by the sixty-second delay cap, not
+by the breaker.
+
+The circuit breaker's job is to make a sustained outage **visible**: five consecutive failures inside
+a ten-minute window open the circuit, which shows up in metrics and logs as a state you can alert on
+rather than only as a slow retry loop. The window is derived from the retry's own delay cap, because
+at steady state the retry produces one attempt per cap — a window narrower than
+`MaxDelay × MinimumThroughput` can never admit the throughput the breaker needs.
+
+> **Changed in 3.4.0.** Before that the window was 60 seconds while the retry backed off to a
+> 60-second cap, so at most one failure landed per window and the breaker could not open at all. An
+> alert on breaker state could never fire. Nothing you rely on changed — the retry sits in front of
+> the breaker and retries the broken-circuit signal too, so traffic still succeeds on recovery — but
+> if your broker goes down for minutes you will now see breaker-state events you did not see before.
 
 ## Register the behaviour after the guards
 

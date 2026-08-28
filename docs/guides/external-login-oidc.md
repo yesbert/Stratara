@@ -99,6 +99,14 @@ service defends against this with defaults you must deliberately relax:
 | Reject a sign-in via a custom policy (pending invitation, allow-list) | optional `InvitationGate` |
 | Fail closed on any unsatisfied check | always |
 
+> **If auto-linking never fires on a non-production host, check that mail is actually being sent.**
+> Auto-linking needs the local account confirmed, and an account is confirmed by clicking a link in a
+> mail. A host that registered a no-op email sender drops that mail without an exception or a log
+> entry, so `EmailConfirmed` stays false and every external sign-in returns
+> `RequiresInteractiveLinking`. What gets reported is "OIDC linking doesn't work on staging"; the
+> cause is three steps earlier. Since 3.4.0 `AddDevelopmentNoOpEmailSender<TUser>()` refuses to
+> register outside Development for exactly this reason.
+
 Relaxing `RequireVerifiedEmailForLinking` re-opens the takeover vector — do it only for a provider
 you fully trust.
 

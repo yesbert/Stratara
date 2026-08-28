@@ -119,7 +119,7 @@ through unchecked.
 |---|---|
 | `builder.AddAspNetIdentity<TUser, TIdentityDbContext>()` | Channel-agnostic ASP.NET Core identity wiring (password/schema-v3/passkey defaults — **no lockout**) |
 | `builder.AddAspNetIdentityWithSignInManager<TUser, TIdentityDbContext>()` | Above + **lockout defaults** + `IStrataraSignInManager` wrapper + localization |
-| `builder.AddDevelopmentNoOpEmailSender<TUser>()` | Stub `IEmailSender` for development (throws in Production) |
+| `builder.AddDevelopmentNoOpEmailSender<TUser>()` | Stub `IEmailSender` for Development — throws on every other environment name, including Staging (3.4.0; Production-only before) |
 | `services.AddMembershipTenantClaim<TUser>()` | Stamps `stratara:tenant_id` into every issued principal (claims-factory decorator) |
 | `services.AddMembershipTenantClaimsTransformation()` | Resolves `stratara:tenant_id` live per request — a tenant switch applies without re-issuing the sign-in |
 | `services.AddStrataraPermissionPolicies()` | Turns every catalog permission into an on-demand policy → `[Authorize("sims.read")]` |
