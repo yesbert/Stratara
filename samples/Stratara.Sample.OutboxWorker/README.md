@@ -3,6 +3,12 @@
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
 > specifications are the source; this page explains and illustrates them.
 
+> **This outbox is written out by hand.** The sample declares its own outbox table, dispatcher and
+> bus so it runs in one process with no infrastructure. The framework ships the real thing —
+> `Stratara.Outbox.RabbitMQ` with `AddOutboxDispatcher()` and `AddOutboxWorker(configuration)`
+> against a broker. Read this for the shape of the problem, not for the wiring.
+
+
 Sample #3 of the learning path. Pushes commands through an **outbox** + **message bus** + **worker** chain — the asynchronous, decoupled dispatch path. Same bank-account domain, same mediator surface, but now the call site `Enqueue`s and returns immediately; a hosted service in the same process picks up the command later and runs the handler.
 
 ## What's new versus `CqrsBasics`

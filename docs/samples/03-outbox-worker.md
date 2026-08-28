@@ -4,6 +4,12 @@
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
+> **This outbox is written out by hand.** The sample declares its own outbox table, dispatcher and
+> bus so it runs in one process with no infrastructure. The framework ships the real thing in
+> `Stratara.Outbox.RabbitMQ`. See
+> [Outbox + RabbitMQ Setup](../guides/outbox-setup-rabbitmq.md) for the wiring a host actually uses.
+
+
 **Concept**: Outbox + message bus + two background workers (async dispatch). What changes when commands stop running in the caller's thread.
 
 - **Code**: [`samples/Stratara.Sample.OutboxWorker`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.OutboxWorker)

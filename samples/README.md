@@ -56,7 +56,11 @@ dotnet run --project samples/Stratara.Sample.TamperProof
 
 ## Building all samples
 
-Samples are excluded from `Stratara.Publish.slnf` but smoke-tested in CI via [`tests/Stratara.Samples.SmokeTests/`](../tests/Stratara.Samples.SmokeTests) — an API change that breaks a sample fails CI rather than rotting silently. To build all samples locally:
+Samples are excluded from `Stratara.Publish.slnf` but smoke-tested in CI via [`tests/Stratara.Samples.SmokeTests/`](../tests/Stratara.Samples.SmokeTests) — every sample is run and its output asserted, so one that stops working fails CI rather than rotting silently.
+
+**What that does and does not cover.** The samples are deliberately self-contained, which means they reference four framework packages between them — `Stratara.Mediator`, `Stratara.Validation`, `Stratara.Identity.AspNetCore` and `Stratara.Identity.EntityFrameworkCore`. A breaking change in one of those fails a sample. A breaking change in the other twenty-one does not, because no sample calls into them: the event store, the outbox, the sagas, the projections and the encryption stack are written out by hand here rather than consumed. Those surfaces are covered by their own test projects and by the documentation checks, not by these samples.
+
+To build all samples locally:
 
 ```bash
 for csproj in samples/Stratara.Sample.*/*.csproj; do

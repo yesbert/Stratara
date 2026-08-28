@@ -3,6 +3,12 @@
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
 > specifications are the source; this page explains and illustrates them.
 
+> **This saga is written out by hand.** The sample declares its own saga type, outbox and bus so it
+> reads top to bottom without a database or a broker. The framework ships the real thing — implement
+> `ISaga` from `Stratara.Sagas` and register it with `AddSagasFromAssemblyContaining<T>()`, which is
+> what a host does. Read this for the shape of the problem, not for the wiring.
+
+
 Sample #4 of the learning path. Adds a **saga** on top of the outbox + worker chain from sample #3 — one `RequestMoneyTransferCommand` fans out into two follow-up commands (`Withdraw` + `Deposit`) that execute asynchronously on the worker side.
 
 ## What's new versus `OutboxWorker`

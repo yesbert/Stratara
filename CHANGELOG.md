@@ -29,6 +29,14 @@ applies to the entire NuGet family.
   does cover — decryption fails after tampering — rather than as a substitute for an unsigned
   payload. No behaviour changes; the projection itself has been correct since 3.4.0.
 
+- **The samples say what their CI coverage actually is.** `samples/README.md` promised that a
+  breaking API change fails CI. That holds for the four packages the samples reference; the other
+  twenty-one are written out by hand in the samples rather than consumed, so nothing there would
+  break. `Stratara.Sample.MoneyTransferSaga` and `Stratara.Sample.OutboxWorker` now say at the top
+  that their saga and outbox are hand-written illustrations, and point at the guides for the wiring a
+  host actually uses — reading them as a template produces a re-implementation of what the framework
+  already ships.
+
 - **New `llms-full.txt` at the repository root** — a generated reference for tooling that has the
   packages but not this source tree. Four tables, all derived from the assemblies and their
   documentation: every bindable configuration key with its type and default, every registration with

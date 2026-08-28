@@ -4,6 +4,12 @@
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
+> **This saga is written out by hand.** The sample declares its own saga type, outbox and bus so it
+> reads top to bottom without a database or a broker. The framework ships the real thing — implement
+> `ISaga` from `Stratara.Sagas` and register it with `AddSagasFromAssemblyContaining<T>()`. See
+> [Write a Saga](../guides/write-a-saga.md) for the wiring a host actually uses.
+
+
 **Concept**: Process manager. One `RequestMoneyTransferCommand` fans out into a `WithdrawCommand` + `DepositCommand` via the outbox.
 
 - **Code**: [`samples/Stratara.Sample.MoneyTransferSaga`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.MoneyTransferSaga)
