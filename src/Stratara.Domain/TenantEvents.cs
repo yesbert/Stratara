@@ -1,8 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
+using Stratara.Abstractions.EventSourcing;
 
 namespace Stratara.Domain;
 
-/// <summary>Tenant-aggregate creation event — opens a new tenant stream.</summary>
+/// <summary>
+/// Tenant-aggregate creation event — opens a new tenant stream. The created tenant is the event's
+/// own data owner, so a tenant belongs to itself no matter which session performed the creation.
+/// </summary>
 /// <param name="Id">Tenant identifier (also the event-stream id).</param>
 /// <param name="CustomerId">Customer that owns the new tenant.</param>
 /// <param name="Name">Human-readable tenant name.</param>
@@ -10,7 +14,11 @@ namespace Stratara.Domain;
 /// <param name="IsActive">Whether the tenant is active immediately on creation.</param>
 /// <param name="CreatedAt">Creation timestamp.</param>
 [ExcludeFromCodeCoverage]
-public sealed record TenantCreated(Guid Id, Guid CustomerId, string Name, string DefaultLocale, bool IsActive, DateTimeOffset CreatedAt);
+public sealed record TenantCreated(Guid Id, Guid CustomerId, string Name, string DefaultLocale, bool IsActive, DateTimeOffset CreatedAt)
+    : IAggregateCreationEvent
+{
+    Guid IAggregateCreationEvent.TenantId => Id;
+}
 
 /// <summary>Soft-delete event for a tenant — sets the aggregate's <c>DeletedAt</c> stamp.</summary>
 /// <param name="DeletedAt">When the tenant was soft-deleted.</param>

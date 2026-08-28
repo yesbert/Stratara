@@ -72,6 +72,16 @@ public interface IEventSource
     /// and EventStoreMigration regeneration. The Actor stays the calling
     /// SessionContext's ActorTenantId/ActorUserId.
     /// </summary>
+    /// <typeparam name="TAggregate">The aggregate type.</typeparam>
+    /// <param name="streamId">The stream id.</param>
+    /// <param name="event">The event payload.</param>
+    /// <param name="subject">
+    /// The data owner to record. Its tenant id must be non-empty: stating the Subject also states
+    /// that the stream, the event and the session are not to be consulted, so an empty one fails the
+    /// append rather than falling back to them.
+    /// </param>
+    /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="ArgumentException"><paramref name="subject"/> names no tenant.</exception>
     Task AppendOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
 

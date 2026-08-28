@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Stratara.Contracts.Session;
+using Stratara.Domain;
+using Stratara.Domain.Multitenancy;
 using Stratara.Infrastructure.EventSourcing;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Outbox;
@@ -336,6 +338,78 @@ public class EventSourceTests
         var thrown = await Assert.ThrowsAsync<DbUpdateException>(() => _eventSource.SaveChangesAsync());
 
         Assert.Same(unrelated, thrown);
+    }
+
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_SubjectNamingATenant_OverridesTheSessionTenant()
+    {
+        var streamId = Guid.NewGuid();
+        var explicitTenantId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+
+        await _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+            streamId, new TestRenamed("New"), new EventSubject(explicitTenantId));
+        await _eventSource.SaveChangesAsync();
+
+        var entry = Assert.Single(_capturedAddRangeCalls[0]);
+        Assert.Equal(explicitTenantId, entry.TenantId);
+        Assert.NotEqual(_tenantId, entry.TenantId);
+        _serializerMock.Verify(
+            s => s.SerializeAsync(It.IsAny<object>(), explicitTenantId, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_SubjectNamingNoTenant_ThrowsNamingTheEventAndStream()
+    {
+        var streamId = Guid.NewGuid();
+        _sessionContextProviderMock.Setup(s => s.Current)
+            .Returns(new SessionContext("corr-1", "caus-1", null, Guid.Empty, Guid.Empty, Guid.Empty, null));
+
+        var thrown = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+                streamId, new TestRenamed("New"), new EventSubject(Guid.Empty)));
+
+        Assert.Equal("subject", thrown.ParamName);
+        Assert.Contains(nameof(TestRenamed), thrown.Message, StringComparison.Ordinal);
+        Assert.Contains(streamId.ToString(), thrown.Message, StringComparison.Ordinal);
+
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Empty(Assert.Single(_capturedAddRangeCalls));
+    }
+
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_SubjectNamingNoTenant_DoesNotFallBackToTheSession()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+                streamId, new TestRenamed("New"), new EventSubject(Guid.Empty)));
+
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Empty(Assert.Single(_capturedAddRangeCalls));
+        _serializerMock.Verify(
+            s => s.SerializeAsync(It.IsAny<object>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAsync_TenantCreated_RecordsTheCreatedTenantAsSubject()
+    {
+        var newTenantId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(newTenantId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await _eventSource.CreateAsync<Tenant>(newTenantId,
+            new TenantCreated(newTenantId, Guid.NewGuid(), "Acme", "de-DE", true, DateTimeOffset.UtcNow));
+        await _eventSource.SaveChangesAsync();
+
+        var entry = Assert.Single(_capturedAddRangeCalls[0]);
+        Assert.Equal(newTenantId, entry.TenantId);
+        Assert.NotEqual(_tenantId, entry.TenantId);
     }
 
     private static DbUpdateException CreateUniqueViolationDbUpdateException() =>

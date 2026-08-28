@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Domain;
 using Stratara.Domain.Multitenancy;
 
@@ -172,5 +174,32 @@ public class TenantAggregateTests
 
         Assert.True(tenant.IsDeleted);
         Assert.Equal("Lifecycle Updated", tenant.Name);
+    }
+
+    [Fact]
+    public void TenantCreated_DeclaresTheCreatedTenantAsItsOwner()
+    {
+        var tenantId = Guid.NewGuid();
+
+        var creationEvent = Assert.IsAssignableFrom<IAggregateCreationEvent>(
+            new TenantCreated(tenantId, Guid.NewGuid(), "Acme", "de-DE", true, DateTimeOffset.UtcNow));
+
+        Assert.Equal(tenantId, creationEvent.TenantId);
+    }
+
+    [Fact]
+    public void TenantCreated_SerializesWithoutAnOwningTenantField()
+    {
+        var json = JsonSerializer.Serialize(new TenantCreated(
+            new Guid("11111111-1111-1111-1111-111111111111"),
+            new Guid("22222222-2222-2222-2222-222222222222"),
+            "Acme",
+            "de-DE",
+            true,
+            new DateTimeOffset(2026, 8, 27, 10, 0, 0, TimeSpan.Zero)));
+
+        Assert.Equal(
+            """{"Id":"11111111-1111-1111-1111-111111111111","CustomerId":"22222222-2222-2222-2222-222222222222","Name":"Acme","DefaultLocale":"de-DE","IsActive":true,"CreatedAt":"2026-08-27T10:00:00+00:00"}""",
+            json);
     }
 }

@@ -117,9 +117,21 @@ internal sealed class EventSource(
     }
 
     /// <inheritdoc/>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="subject"/> names no tenant. A caller that states the Subject has
+    /// also stated that no other candidate applies, so the append fails instead of falling back.
+    /// </exception>
     public Task AppendOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
+        if (subject.TenantId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant. " +
+                "Supply a Subject with a tenant id, or use AppendAsync to let the Subject be resolved.",
+                nameof(subject));
+        }
+
         _explicitSubjectOverrides[@event] = subject;
         return AppendAsync<TAggregate>(streamId, @event, cancellationToken);
     }
@@ -259,7 +271,8 @@ internal sealed class EventSource(
 
     /// <summary>
     /// Resolve Subject (data owner) for an event in this priority order:
-    /// 1. Explicit override (set by AppendOnBehalfOfAsync)
+    /// 1. Explicit override (set by AppendOnBehalfOfAsync, which has already rejected an empty
+    ///    tenant id — that is why this stage needs no emptiness check of its own)
     /// 2. Per-batch cache (previous event in the same SaveChanges resolved Subject for this stream)
     /// 3. Existing aggregate's TenantId (for ITenantAggregate streams that already exist)
     /// 4. Event payload's IAggregateCreationEvent.TenantId

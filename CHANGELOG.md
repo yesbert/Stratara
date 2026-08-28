@@ -16,7 +16,26 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `3.3.0`._
+### Fixed
+
+- **Appending on behalf of a subject that names no tenant now fails.** Of the five sources the store
+  consults to decide which tenant an event belongs to, four rejected an absent tenant and the append
+  failed rather than guessing. The fifth — the subject you supply yourself through
+  `AppendOnBehalfOfAsync` — was taken as given, so passing one with an empty tenant id recorded an
+  event owned by nobody and encrypted against nobody. An erasure never reaches such an event. The
+  call now throws `ArgumentException` naming the stream and the event, and records nothing.
+  **Breaking** where a consumer passes a subject sourced from aggregate state that a stream written
+  before the field existed left empty — that call site is the defect, and the exception message
+  identifies it.
+
+- **A newly created tenant now owns itself.** The framework's tenant-creation event did not declare
+  the tenant it creates as the event's data owner, so ownership fell through to the acting session:
+  a tenant created by an operator was owned by the *operator's* tenant, while a caller who happened
+  to point the session at the new id first got a tenant that owned itself. The same operation
+  produced two different owners depending on whether the caller knew to take an undiscoverable
+  detour. **Breaking** in recorded data: tenants created after adopting this version are owned by
+  themselves. Streams already written are untouched, no payload changed, and no migration is
+  required — the event's serialized JSON is byte-identical.
 
 ## [3.3.0] — 2026-08-25
 
