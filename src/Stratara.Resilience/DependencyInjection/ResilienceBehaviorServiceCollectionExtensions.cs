@@ -27,6 +27,13 @@ public static class ResilienceBehaviorServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Acts only on requests implementing <c>IResilientRequest</c>; everything else passes through:
+    /// <code>
+    /// services.AddResiliencePipelines();
+    /// services.AddStrataraResilienceBehavior();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraResilienceBehavior(this IServiceCollection services)
     {
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IPipelineBehavior<,>), typeof(ResiliencePipelineBehavior<,>)));

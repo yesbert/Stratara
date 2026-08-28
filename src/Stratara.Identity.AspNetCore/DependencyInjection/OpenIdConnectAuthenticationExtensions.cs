@@ -58,6 +58,12 @@ public static class OpenIdConnectAuthenticationExtensions
     /// <param name="sectionName">The configuration section to bind. Defaults to <c>Identity:JwtBearer</c>.</param>
     /// <param name="scheme">The scheme name to register. Defaults to the JWT-bearer default scheme.</param>
     /// <returns>The same builder, to enable chaining.</returns>
+    /// <example>
+    /// Binds from <c>Identity:JwtBearer</c> by default and resolves the signing configuration per issuer:
+    /// <code>
+    /// services.AddAuthentication().AddStrataraJwtBearer(configuration);
+    /// </code>
+    /// </example>
     public static AuthenticationBuilder AddStrataraJwtBearer(
         this AuthenticationBuilder builder,
         IConfiguration configuration,

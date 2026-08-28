@@ -27,6 +27,13 @@ public static class AzureServiceBusServiceCollectionExtensions
     /// <param name="connectionString">Azure Service Bus connection string (SAS).</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <c>null</c> or empty.</exception>
+    /// <example>
+    /// Replaces the RabbitMQ <c>IMessageBus</c> a worker composite may already have wired — one
+    /// transport per host, and the explicit call wins:
+    /// <code>
+    /// services.AddAzureServiceBus(configuration.GetConnectionString("servicebus")!);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddAzureServiceBus(this IServiceCollection services, string connectionString)
     {
         ArgumentException.ThrowIfNullOrEmpty(connectionString);
@@ -52,6 +59,13 @@ public static class AzureServiceBusServiceCollectionExtensions
     /// <param name="credential">Optional <see cref="TokenCredential"/>; defaults to <see cref="DefaultAzureCredential"/> (Managed Identity → environment → CLI chain).</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="fullyQualifiedNamespace"/> is <c>null</c> or empty.</exception>
+    /// <example>
+    /// Uses <c>DefaultAzureCredential</c> unless a credential is passed, so a host running with a
+    /// managed identity needs no connection string:
+    /// <code>
+    /// services.AddAzureServiceBusWithManagedIdentity("my-namespace.servicebus.windows.net");
+    /// </code>
+    /// </example>
     public static IServiceCollection AddAzureServiceBusWithManagedIdentity(
         this IServiceCollection services,
         string fullyQualifiedNamespace,

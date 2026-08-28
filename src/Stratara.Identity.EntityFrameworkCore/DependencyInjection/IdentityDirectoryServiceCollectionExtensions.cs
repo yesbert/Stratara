@@ -42,6 +42,14 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// <c>TContext</c> is any context whose model includes the directory tables — derive from
+    /// <c>IdentityDirectoryDbContext&lt;TContext&gt;</c> or call <c>ApplyIdentityDirectoryModel()</c> in
+    /// <c>OnModelCreating</c>. Every directory store in a request shares this one context:
+    /// <code>
+    /// services.AddTenantMembershipStore&lt;DirectoryDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddTenantMembershipStore<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
@@ -76,6 +84,15 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Needs <c>AddDbContextFactory&lt;TContext&gt;()</c>. Each operation takes a fresh context, so
+    /// directory work issued concurrently in one scope no longer collides — in exchange, a store write
+    /// does not join a transaction opened on your own scoped context:
+    /// <code>
+    /// services.AddDbContextFactory&lt;DirectoryDbContext&gt;();
+    /// services.AddTenantMembershipStoreFromContextFactory&lt;DirectoryDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddTenantMembershipStoreFromContextFactory<TContext>(
         this IServiceCollection services)
         where TContext : DbContext
@@ -107,6 +124,11 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddApiKeyStore&lt;DirectoryDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddApiKeyStore<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
@@ -141,6 +163,13 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Needs <c>AddDbContextFactory&lt;TContext&gt;()</c>; one context per operation:
+    /// <code>
+    /// services.AddDbContextFactory&lt;DirectoryDbContext&gt;();
+    /// services.AddApiKeyStoreFromContextFactory&lt;DirectoryDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddApiKeyStoreFromContextFactory<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
@@ -163,6 +192,14 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Resolves roles from tenant-scoped membership. Pair it with the authorizing mediator, which is
+    /// what enforces the attributes:
+    /// <code>
+    /// services.AddMembershipAuthorization();
+    /// services.AddAuthorizingMediator&lt;MembershipAuthorizationProvider&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMembershipAuthorization(this IServiceCollection services)
     {
         services.TryAddScoped<IAuthorizationProvider, MembershipAuthorizationProvider>();
@@ -178,6 +215,12 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// The generic overload adds the user's global ASP.NET Core Identity roles to the membership roles:
+    /// <code>
+    /// services.AddMembershipAuthorization&lt;ApplicationUser&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMembershipAuthorization<TUser>(this IServiceCollection services)
         where TUser : class
     {
@@ -222,6 +265,17 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configure">Callback that declares permissions and role grants.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// The catalog is the vocabulary: granting a permission it does not declare throws at start-up
+    /// rather than silently granting nothing:
+    /// <code>
+    /// services.AddPermissionCatalog(c =&gt;
+    /// {
+    ///     c.Add("sims.read", "sims.write");
+    ///     c.GrantToRole("TenantAdmin", "sims.read", "sims.write");
+    /// });
+    /// </code>
+    /// </example>
     public static IServiceCollection AddPermissionCatalog(
         this IServiceCollection services,
         Action<PermissionCatalog> configure)
@@ -240,6 +294,13 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Resolves a principal's permissions by running its membership roles through the catalog:
+    /// <code>
+    /// services.AddPermissionCatalog(c =&gt; c.Add("sims.read"));
+    /// services.AddCatalogPermissionResolver();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddCatalogPermissionResolver(this IServiceCollection services)
     {
         services.TryAddScoped<IPermissionResolver, CatalogPermissionResolver>();
@@ -255,6 +316,12 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// The generic overload also considers the user's global ASP.NET Core Identity roles:
+    /// <code>
+    /// services.AddCatalogPermissionResolver&lt;ApplicationUser&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddCatalogPermissionResolver<TUser>(this IServiceCollection services)
         where TUser : class
     {
@@ -270,6 +337,15 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configure">Callback that declares the settings.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Declares each setting with its default, whether it inherits down the scope chain, and whether it
+    /// is stored encrypted:
+    /// <code>
+    /// services.AddSettingCatalog(c =&gt; c.Add(
+    ///     new SettingDefinition("ui.theme", DefaultValue: "light"),
+    ///     new SettingDefinition("billing.vatId", IsInherited: false)));
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSettingCatalog(
         this IServiceCollection services,
         Action<SettingCatalog> configure)
@@ -305,6 +381,14 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Registers the store and the provider facade that walks the fallback chain. Declare the
+    /// vocabulary first — a setting the catalog does not know has no default to fall back to:
+    /// <code>
+    /// services.AddSettingCatalog(c =&gt; c.Add(new SettingDefinition("ui.theme", DefaultValue: "light")));
+    /// services.AddSettingStore&lt;DirectoryDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSettingStore<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
@@ -340,6 +424,13 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Needs <c>AddDbContextFactory&lt;TContext&gt;()</c>; one context per operation:
+    /// <code>
+    /// services.AddDbContextFactory&lt;DirectoryDbContext&gt;();
+    /// services.AddSettingStoreFromContextFactory&lt;DirectoryDbContext&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSettingStoreFromContextFactory<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {

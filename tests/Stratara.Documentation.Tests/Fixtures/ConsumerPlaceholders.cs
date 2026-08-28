@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Stratara.Abstractions.Mediator;
 
@@ -107,4 +108,73 @@ public sealed class PlatformAdminCrossTenantAuthorizer : Stratara.Abstractions.M
     public ValueTask<bool> IsCrossTenantAllowedAsync(
         Stratara.Contracts.Session.SessionContext session,
         CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
+}
+
+public interface IAppMarker;
+
+public class AppWriteDbContext(DbContextOptions<AppWriteDbContext> options)
+    : Stratara.EventSourcing.EntityFrameworkCore.WriteStore.WriteDbContext<AppWriteDbContext>(options);
+
+public class AppReadDbContext(DbContextOptions<AppReadDbContext> options)
+    : Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ReadDbContext<AppReadDbContext>(options);
+
+public class AppIdentityDbContext(DbContextOptions<AppIdentityDbContext> options)
+    : DbContext(options), Stratara.EventSourcing.EntityFrameworkCore.Abstractions.IIdentityDbContext
+{
+    Task<int> Stratara.EventSourcing.EntityFrameworkCore.Abstractions.IDbContext.SaveChangesAsync(
+        CancellationToken token) => SaveChangesAsync(token);
+}
+
+public sealed record AccountSnapshot(Guid AccountId, decimal Balance);
+
+public sealed record PlaceOrder(Guid OrderId) : ICommand;
+
+public sealed record SimCardDto(Guid SimId, string Msisdn);
+
+public sealed class OrderPlacedV1ToV2 : Stratara.Abstractions.EventSourcing.IEventUpcaster
+{
+    public string SourceEventTypeName => "OrderPlacedV1";
+
+    public string TargetEventTypeName => "OrderPlacedV2";
+
+    public System.Text.Json.Nodes.JsonNode Upcast(System.Text.Json.Nodes.JsonNode payload) => payload;
+}
+
+public sealed class OrderPlacedV2ToV3 : Stratara.Abstractions.EventSourcing.IEventUpcaster
+{
+    public string SourceEventTypeName => "OrderPlacedV2";
+
+    public string TargetEventTypeName => "OrderPlacedV3";
+
+    public System.Text.Json.Nodes.JsonNode Upcast(System.Text.Json.Nodes.JsonNode payload) => payload;
+}
+
+public sealed class LoggingBehavior<TRequest> : Stratara.Abstractions.Mediator.IPipelineBehavior<TRequest>
+    where TRequest : Stratara.Abstractions.Mediator.IRequest
+{
+    public Task HandleAsync(TRequest request, Func<Task> next, CancellationToken cancellationToken) => next();
+}
+
+public sealed class AccountBalanceProjection : Stratara.Projections.Abstractions.IProjection;
+
+public sealed class TransferSaga : Stratara.Sagas.Abstractions.ISaga;
+
+public sealed class OpenAccountValidator : Stratara.Abstractions.Validation.IValidator<OpenAccountCommand>
+{
+    public ValueTask<Stratara.Abstractions.Validation.ValidationResult> ValidateAsync(
+        OpenAccountCommand instance,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(Stratara.Abstractions.Validation.ValidationResult.Success);
+}
+
+public sealed class LoggingBehavior<TRequest, TResult> : Stratara.Abstractions.Mediator.IPipelineBehavior<TRequest, TResult>
+    where TRequest : Stratara.Abstractions.Mediator.IRequest<TResult>
+{
+    public Task<TResult> HandleAsync(TRequest request, Func<Task<TResult>> next, CancellationToken cancellationToken) => next();
+}
+
+public sealed class MyAuthorizationProvider : Stratara.Abstractions.Authorization.IAuthorizationProvider
+{
+    public Task<bool> IsInRoleAsync(string role, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
 }

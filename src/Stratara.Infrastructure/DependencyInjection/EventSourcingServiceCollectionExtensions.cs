@@ -27,7 +27,7 @@ public static class EventSourcingServiceCollectionExtensions
     /// Pair it with a write store; on its own it registers the services but nothing to persist through:
     /// <code>
     /// services.AddEventSourcing();
-    /// services.AddNpgsqlWriteDbContextFactory&lt;WriteDbContext&gt;();
+    /// services.AddNpgsqlWriteDbContextFactory&lt;AppWriteDbContext&gt;();
     /// </code>
     /// </example>
     public static IServiceCollection AddEventSourcing(this IServiceCollection services)

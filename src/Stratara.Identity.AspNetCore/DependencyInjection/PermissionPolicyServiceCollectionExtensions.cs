@@ -28,6 +28,14 @@ public static class PermissionPolicyServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Turns every declared catalog permission into an on-demand authorization policy:
+    /// <code>
+    /// services.AddPermissionCatalog(c =&gt; c.Add("sims.read"));
+    /// services.AddStrataraPermissionPolicies();
+    /// // then: [Authorize("sims.read")]
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraPermissionPolicies(this IServiceCollection services)
     {
         services.TryAddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();

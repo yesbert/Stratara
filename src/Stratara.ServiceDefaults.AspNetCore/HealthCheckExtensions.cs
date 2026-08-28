@@ -22,6 +22,13 @@ public static class HealthCheckExtensions
     /// <typeparam name="TBuilder">The host-builder type.</typeparam>
     /// <param name="builder">The host application builder.</param>
     /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// Adds the baseline <c>self</c> check, tagged <c>live</c>, which shows up on both endpoints once
+    /// they are mapped:
+    /// <code>
+    /// builder.AddDefaultHealthChecks();
+    /// </code>
+    /// </example>
     public static TBuilder AddDefaultHealthChecks<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
@@ -53,6 +60,13 @@ public static class HealthCheckExtensions
     /// an internal port via <c>UseUrls</c> / network policy, or replace it with a custom mapping that
     /// returns only an aggregated status.
     /// </remarks>
+    /// <example>
+    /// Maps <c>/health</c> and <c>/alive</c>. Pass <c>true</c> to require authorization on the readiness
+    /// endpoint when it is reachable from outside the cluster:
+    /// <code>
+    /// app.MapDefaultEndpoints();
+    /// </code>
+    /// </example>
     public static WebApplication MapDefaultEndpoints(this WebApplication app, bool requireAuthorizationOnHealth = false)
     {
         var healthCheckPath = Endpoints.HealthEndpointPath;

@@ -21,8 +21,8 @@ public static class MediatorWorkerServiceCollectionExtensions
     /// The worker consumes the topic named <c>Command</c> in the <c>Messaging:Topics</c> section,
     /// defaulting to <c>command</c> / <c>command-subscription</c>:
     /// <code>
-    /// services.AddMessaging();
-    /// services.AddMediatorWorker();
+    /// builder.AddMessaging();
+    /// builder.Services.AddMediatorWorker();
     /// </code>
     /// </example>
     public static IServiceCollection AddMediatorWorker(this IServiceCollection services)

@@ -18,6 +18,14 @@ public static class SagaServiceCollectionExtensions
     /// the <c>Sagas</c> configuration section.
     /// </summary>
     /// <remarks>Use together with <see cref="AddSagasFromAssemblyContaining{T}"/> to discover concrete saga implementations.</remarks>
+    /// <example>
+    /// Binds <c>SagaOptions</c> from the <c>Sagas</c> section and consumes the event-bundle saga
+    /// subscription. Register the sagas separately:
+    /// <code>
+    /// services.AddSagasFromAssemblyContaining&lt;TransferSaga&gt;();
+    /// services.AddSagaWorker(configuration);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSagaWorker(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<ISagaManager, SagaManager>();

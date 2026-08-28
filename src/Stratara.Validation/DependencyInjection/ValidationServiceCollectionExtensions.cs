@@ -45,6 +45,13 @@ public static class ValidationServiceCollectionExtensions
     /// <typeparam name="T">A marker type from the assembly to scan. Typically a domain marker interface.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Discovery alone does not enforce anything — the behaviour is what runs them:
+    /// <code>
+    /// services.AddStrataraValidation();
+    /// services.AddValidatorsFromAssemblyContaining&lt;OpenAccountValidator&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddValidatorsFromAssemblyContaining<T>(this IServiceCollection services)
     {
         var assembly = typeof(T).Assembly;

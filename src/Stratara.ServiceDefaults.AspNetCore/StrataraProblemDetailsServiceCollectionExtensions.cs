@@ -29,6 +29,15 @@ public static class StrataraProblemDetailsServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// One RFC 7807 shape for a validation rejection (400 with the failures grouped by field) and for an
+    /// authorization or tenant-access refusal (403). Pair it with the exception handler, and do not also
+    /// register the obsolete <c>UseAuthorizationExceptionTo403</c> middleware — it answers first:
+    /// <code>
+    /// services.AddStrataraProblemDetails();
+    /// app.UseExceptionHandler();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraProblemDetails(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

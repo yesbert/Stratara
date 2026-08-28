@@ -37,6 +37,13 @@ public static class MembershipClaimsServiceCollectionExtensions
     /// <exception cref="InvalidOperationException">
     /// No <see cref="IUserClaimsPrincipalFactory{TUser}"/> is registered yet.
     /// </exception>
+    /// <example>
+    /// Stamps the tenant into every principal as it is issued. A tenant switch after sign-in is not
+    /// reflected until the principal is re-issued — use the transformation for that:
+    /// <code>
+    /// services.AddMembershipTenantClaim&lt;ApplicationUser&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMembershipTenantClaim<TUser>(this IServiceCollection services)
         where TUser : class
     {
@@ -65,6 +72,12 @@ public static class MembershipClaimsServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Resolves the tenant claim per request, so a tenant switch applies without re-issuing the sign-in:
+    /// <code>
+    /// services.AddMembershipTenantClaimsTransformation();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMembershipTenantClaimsTransformation(this IServiceCollection services)
     {
         services.TryAddScoped<IClaimsTransformation, MembershipClaimsTransformation>();

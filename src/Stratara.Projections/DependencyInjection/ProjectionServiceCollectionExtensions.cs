@@ -24,6 +24,14 @@ public static class ProjectionServiceCollectionExtensions
     /// <param name="services">The service collection to register against.</param>
     /// <param name="configuration">The configuration root used to bind <see cref="ProjectionOptions"/>.</param>
     /// <returns>The service collection for chaining.</returns>
+    /// <example>
+    /// Binds <c>ProjectionOptions</c> from the <c>Projections</c> section. Register the projections
+    /// themselves separately — this call wires the runtime, not your read models:
+    /// <code>
+    /// services.AddProjectionsFromAssemblyContaining&lt;AccountBalanceProjection&gt;();
+    /// services.AddProjectionWorker(configuration);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddProjectionWorker(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<IProjectionManager, ProjectionManager>();

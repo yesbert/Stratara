@@ -20,6 +20,12 @@ public static class ApiKeyAuthenticationExtensions
     /// <param name="builder">The authentication builder.</param>
     /// <param name="configure">Optional callback to configure header/query behavior.</param>
     /// <returns>The same builder, to enable chaining.</returns>
+    /// <example>
+    /// Reads the <c>X-Api-Key</c> header; the query-parameter fallback is opt-in:
+    /// <code>
+    /// services.AddAuthentication().AddStrataraApiKey();
+    /// </code>
+    /// </example>
     public static AuthenticationBuilder AddStrataraApiKey(
         this AuthenticationBuilder builder,
         Action<ApiKeyAuthenticationOptions>? configure = null)

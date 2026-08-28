@@ -67,6 +67,13 @@ public static class MediatorServiceCollectionExtensions
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="System.ArgumentNullException"><paramref name="openGenericBehaviorType"/> is null.</exception>
     /// <exception cref="System.ArgumentException"><paramref name="openGenericBehaviorType"/> is not an open generic with two type parameters.</exception>
+    /// <example>
+    /// The result-returning request shape needs its own registration — a behaviour registered only
+    /// through <c>AddPipelineBehavior</c> never sees a query:
+    /// <code>
+    /// services.AddPipelineBehaviorWithResult(typeof(LoggingBehavior&lt;,&gt;));
+    /// </code>
+    /// </example>
     public static IServiceCollection AddPipelineBehaviorWithResult(this IServiceCollection services, Type openGenericBehaviorType)
     {
         ArgumentNullException.ThrowIfNull(openGenericBehaviorType);
@@ -97,6 +104,12 @@ public static class MediatorServiceCollectionExtensions
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="System.ArgumentNullException"><paramref name="openGenericBehaviorType"/> is null.</exception>
     /// <exception cref="System.ArgumentException"><paramref name="openGenericBehaviorType"/> is not an open generic with one type parameter.</exception>
+    /// <example>
+    /// Behaviours run in registration order, outermost first:
+    /// <code>
+    /// services.AddPipelineBehavior(typeof(LoggingBehavior&lt;&gt;));
+    /// </code>
+    /// </example>
     public static IServiceCollection AddPipelineBehavior(this IServiceCollection services, Type openGenericBehaviorType)
     {
         ArgumentNullException.ThrowIfNull(openGenericBehaviorType);

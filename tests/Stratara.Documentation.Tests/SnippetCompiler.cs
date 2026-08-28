@@ -25,6 +25,7 @@ public static class SnippetCompiler
         "System.Text.Json",
         "System.Text.Json.Nodes",
         "Microsoft.AspNetCore.Identity",
+        "Microsoft.Data.Sqlite",
         "Microsoft.EntityFrameworkCore",
         "Microsoft.AspNetCore.Builder",
         "Microsoft.AspNetCore.Http",

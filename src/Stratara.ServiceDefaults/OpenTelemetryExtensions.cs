@@ -67,6 +67,12 @@ public static class OpenTelemetryExtensions
     /// <param name="configureMetrics">Optional callback to extend the metrics pipeline with host-specific meters/exporters.</param>
     /// <param name="configureTracing">Optional callback to extend the tracing pipeline with host-specific sources/exporters.</param>
     /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// Exports over OTLP when <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set, and stays local when it is not:
+    /// <code>
+    /// builder.ConfigureOpenTelemetry();
+    /// </code>
+    /// </example>
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(
         this TBuilder builder,
         Action<MeterProviderBuilder>? configureMetrics = null,

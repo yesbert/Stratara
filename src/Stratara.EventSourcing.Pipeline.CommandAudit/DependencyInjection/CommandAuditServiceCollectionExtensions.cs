@@ -34,6 +34,14 @@ public static class CommandAuditServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="System.ArgumentNullException"><paramref name="services"/> is null.</exception>
+    /// <example>
+    /// Writes one audit row per dispatched command; queries pass through untouched. Needs the write
+    /// store, which is where the rows go:
+    /// <code>
+    /// services.AddWriteStore(configuration);
+    /// services.AddCommandAuditing();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddCommandAuditing(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -24,6 +24,13 @@ public static class ExternalLoginProvisioningExtensions
     /// <param name="configure">Optional callback to configure the provisioning options.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> is <c>null</c>.</exception>
+    /// <example>
+    /// Creates or links the local account on a first external sign-in, fail-closed — an unverified
+    /// external email does not link to an existing account:
+    /// <code>
+    /// services.AddStrataraExternalLoginProvisioning&lt;ApplicationUser&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraExternalLoginProvisioning<TUser>(
         this IServiceCollection services,
         Action<ExternalLoginProvisioningOptions>? configure = null)

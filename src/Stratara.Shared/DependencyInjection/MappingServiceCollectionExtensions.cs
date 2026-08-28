@@ -18,6 +18,11 @@ public static class MappingServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The DI container to extend.</param>
     /// <returns>The same <paramref name="services"/> instance to allow fluent chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddMapping();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMapping(this IServiceCollection services)
     {
         services.AddEventUpcasterPipeline();

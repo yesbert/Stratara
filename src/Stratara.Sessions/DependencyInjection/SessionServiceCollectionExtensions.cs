@@ -18,6 +18,14 @@ public static class SessionServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Registers the scoped context and its accessor. In an ASP.NET host, add the middleware too —
+    /// without it the context stays empty for every request:
+    /// <code>
+    /// services.AddSessionContext();
+    /// app.UseMiddleware&lt;SessionContextMiddleware&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSessionContext(this IServiceCollection services)
     {
         services.AddOptions<SessionContextOptions>();

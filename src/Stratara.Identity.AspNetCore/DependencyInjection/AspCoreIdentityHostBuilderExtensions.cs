@@ -31,6 +31,12 @@ public static class AspCoreIdentityHostBuilderExtensions
         /// </summary>
         /// <typeparam name="TUser">The Identity user type.</typeparam>
         /// <typeparam name="TIdentityDbContext">The Identity <see cref="DbContext"/> type backing the stores.</typeparam>
+        /// <example>
+        /// No lockout is configured — use the sign-in-manager overload if you want the lockout defaults:
+        /// <code>
+        /// builder.AddAspNetIdentity&lt;ApplicationUser, AppIdentityDbContext&gt;();
+        /// </code>
+        /// </example>
         public IHostApplicationBuilder AddAspNetIdentity<TUser, TIdentityDbContext>()
             where TUser : class, new() where TIdentityDbContext : DbContext
         {
@@ -59,6 +65,11 @@ public static class AspCoreIdentityHostBuilderExtensions
         /// </remarks>
         /// <typeparam name="TUser">The Identity user type.</typeparam>
         /// <typeparam name="TIdentityDbContext">The Identity <see cref="DbContext"/> type backing the stores.</typeparam>
+        /// <example>
+        /// <code>
+        /// builder.AddAspNetIdentityWithSignInManager&lt;ApplicationUser, AppIdentityDbContext&gt;();
+        /// </code>
+        /// </example>
         public IHostApplicationBuilder AddAspNetIdentityWithSignInManager<TUser, TIdentityDbContext>()
             where TUser : class, new() where TIdentityDbContext : DbContext
         {
@@ -94,6 +105,16 @@ public static class AspCoreIdentityHostBuilderExtensions
         /// </summary>
         /// <typeparam name="TUser">The Identity user type.</typeparam>
         /// <exception cref="InvalidOperationException">Thrown when the host environment is not Development.</exception>
+        /// <example>
+        /// Throws on every environment that is not Development, Staging included, so it cannot reach a
+        /// deployed host by accident:
+        /// <code>
+        /// if (builder.Environment.IsDevelopment())
+        /// {
+        ///     builder.AddDevelopmentNoOpEmailSender&lt;ApplicationUser&gt;();
+        /// }
+        /// </code>
+        /// </example>
         public IHostApplicationBuilder AddDevelopmentNoOpEmailSender<TUser>()
             where TUser : class, new()
         {

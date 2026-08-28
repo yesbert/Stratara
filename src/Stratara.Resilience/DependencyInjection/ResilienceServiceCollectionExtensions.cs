@@ -22,6 +22,13 @@ public static class ResilienceServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Registers the named pipelines. Reference them through <c>ResilienceNames</c> rather than by
+    /// string literal:
+    /// <code>
+    /// services.AddResiliencePipelines();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddResiliencePipelines(this IServiceCollection services)
     {
         services.AddMessageBusResilience();

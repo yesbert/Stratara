@@ -25,6 +25,12 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <example>
+    /// Idempotent. The assembly-scanning registrations call it, so a host that uses them does not:
+    /// <code>
+    /// services.AddTrustedTypeResolver();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddTrustedTypeResolver(this IServiceCollection services)
     {
         GetOrAddResolver(services);
@@ -39,6 +45,13 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <typeparam name="T">The type to add to the allowlist.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <example>
+    /// For a type that is produced but never handled — a snapshot type whose aggregate has no
+    /// projection or saga to anchor the automatic scan:
+    /// <code>
+    /// services.AddTrustedType&lt;AccountSnapshot&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddTrustedType<T>(this IServiceCollection services)
     {
         var resolver = GetOrAddResolver(services);
@@ -62,6 +75,13 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// event-sourcing convention used throughout the framework (see
     /// <see cref="Stratara.Abstractions.Domain.IAggregate"/>).
     /// </remarks>
+    /// <example>
+    /// Registers each aggregate and every event its <c>Apply</c> methods take, so persisted payloads
+    /// deserialize:
+    /// <code>
+    /// services.AddAggregatesFromAssemblyContaining&lt;Account&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddAggregatesFromAssemblyContaining<T>(this IServiceCollection services)
     {
         var resolver = GetOrAddResolver(services);
@@ -97,6 +117,13 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <see cref="IAggregate"/> contributes its parameter type to the allowlist.
     /// </para>
     /// </remarks>
+    /// <example>
+    /// For an event-only host — a projection or saga worker that must deserialize payloads without
+    /// wiring the aggregates' handler dependencies:
+    /// <code>
+    /// services.AddDomainEventTypesFromAssemblyContaining&lt;Account&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddDomainEventTypesFromAssemblyContaining<T>(this IServiceCollection services)
     {
         var resolver = GetOrAddResolver(services);

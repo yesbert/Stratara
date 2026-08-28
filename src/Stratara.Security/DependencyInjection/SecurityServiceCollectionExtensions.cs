@@ -24,6 +24,13 @@ public static class SecurityServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// The blob encryptor on its own, without the rest of <c>AddSecurity()</c>. Reads
+    /// <c>Stratara:BlobEncryption</c> for the legacy-stream compatibility switch:
+    /// <code>
+    /// services.AddStrataraBlobEncryption();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraBlobEncryption(this IServiceCollection services)
     {
         services.AddOptions<StrataraBlobEncryptionOptions>();
@@ -47,6 +54,14 @@ public static class SecurityServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configuration">Configuration root or section used to bind the options.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Binds <c>Stratara:KeyStore</c>. Call it before <c>AddSecurity()</c>, whose development fallback
+    /// uses <c>TryAdd</c> and would otherwise be the key store a misordered host gets:
+    /// <code>
+    /// services.AddStrataraFileKeyStore(configuration);
+    /// services.AddSecurity();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraFileKeyStore(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

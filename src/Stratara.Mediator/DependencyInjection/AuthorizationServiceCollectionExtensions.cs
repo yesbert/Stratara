@@ -40,6 +40,14 @@ public static class AuthorizationServiceCollectionExtensions
     /// <typeparam name="TAuthorizationProvider">The concrete provider, e.g. a service that reads roles from <c>HttpContext.User</c>.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Without this, a host that declares <c>[RequirePermission]</c> fails at start-up rather than
+    /// letting a guarded request through unchecked:
+    /// <code>
+    /// services.AddMediator();
+    /// services.AddAuthorizingMediator&lt;MembershipAuthorizationProvider&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddAuthorizingMediator<TAuthorizationProvider>(this IServiceCollection services)
         where TAuthorizationProvider : class, IAuthorizationProvider
     {

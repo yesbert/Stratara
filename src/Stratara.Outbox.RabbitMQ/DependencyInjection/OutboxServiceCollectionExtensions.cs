@@ -24,8 +24,8 @@ public static class OutboxServiceCollectionExtensions
     /// </remarks>
     /// <example>
     /// <code>
-    /// services.AddMessaging();
-    /// services.AddOutboxDispatcher();
+    /// builder.AddMessaging();
+    /// builder.Services.AddOutboxDispatcher();
     /// </code>
     /// </example>
     public static IServiceCollection AddOutboxDispatcher(this IServiceCollection services)

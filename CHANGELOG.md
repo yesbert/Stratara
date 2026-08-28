@@ -29,11 +29,11 @@ applies to the entire NuGet family.
   does cover — decryption fails after tampering — rather than as a substitute for an unsigned
   payload. No behaviour changes; the projection itself has been correct since 3.4.0.
 
-- **Registrations state their contract in the XML documentation that ships with the package.** The
+- **Every registration states its contract in the XML documentation that ships with the package.** The
   `.nupkg` carries the doc XML next to the dll, so what a registration says there is what a consumer
-  sees at the call site. Every registration in `Stratara.Infrastructure`, `Stratara.Outbox.RabbitMQ`
-  and `Stratara.EventSourcing.EntityFrameworkCore` now names the configuration key path it binds, its
-  prerequisites and ordering constraints, and carries a worked example — among them
+  sees at the call site. All 96 registrations across the family now name the configuration key path
+  they bind, their prerequisites and ordering constraints, and carry a worked example that is
+  compiled in CI — among them
   `AddRedisOutboxLock` (needs an `IConnectionMultiplexer`; required before a second worker replica),
   `AddSecurity` (register a key store first, the fallback uses `TryAdd`), and both
   `AddBusEnvelopeIntegrity` overloads (the key is a `byte[]`, and the configuration overload binds

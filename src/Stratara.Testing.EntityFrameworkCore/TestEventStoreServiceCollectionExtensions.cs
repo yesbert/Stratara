@@ -38,6 +38,16 @@ public static class TestEventStoreServiceCollectionExtensions
     /// state one, naming anything other than <c>Development</c>. Where no environment is stated at
     /// all — an ordinary unit test — the call is allowed.
     /// </exception>
+    /// <example>
+    /// The connection is shared so the in-memory database outlives a single context. Register the
+    /// aggregates too, or persisted event payloads will not resolve:
+    /// <code>
+    /// var connection = new SqliteConnection("DataSource=:memory:");
+    /// connection.Open();
+    /// services.AddStrataraTestingEventStore&lt;AppWriteDbContext&gt;(connection, Guid.NewGuid());
+    /// services.AddAggregatesFromAssemblyContaining&lt;Account&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddStrataraTestingEventStore<TWriteDbContext>(
         this IServiceCollection services,
         SqliteConnection sharedConnection,

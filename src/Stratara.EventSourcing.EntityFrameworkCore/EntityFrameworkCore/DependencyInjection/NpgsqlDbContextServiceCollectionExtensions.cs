@@ -28,7 +28,7 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// <example>
     /// Reads the connection string named <c>stratara</c>:
     /// <code>
-    /// services.AddNpgsqlWriteDbContextFactory&lt;WriteDbContext&gt;();
+    /// services.AddNpgsqlWriteDbContextFactory&lt;AppWriteDbContext&gt;();
     /// </code>
     /// </example>
     public static IServiceCollection AddNpgsqlWriteDbContextFactory<TDbContext>(this IServiceCollection services) where TDbContext : DbContext, IWriteDbContext
@@ -59,7 +59,7 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     /// <example>
     /// <code>
-    /// services.AddNpgsqlReadDbContextFactory&lt;ReadDbContext&gt;();
+    /// services.AddNpgsqlReadDbContextFactory&lt;AppReadDbContext&gt;();
     /// </code>
     /// </example>
     public static IServiceCollection AddNpgsqlReadDbContextFactory<TDbContext>(this IServiceCollection services)
@@ -81,7 +81,7 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// <example>
     /// Also resolves the context itself as scoped, so ASP.NET Core Identity can inject it directly:
     /// <code>
-    /// services.AddNpgsqlIdentityDbContextFactory&lt;IdentityDbContext&gt;();
+    /// services.AddNpgsqlIdentityDbContextFactory&lt;AppIdentityDbContext&gt;();
     /// </code>
     /// </example>
     public static IServiceCollection AddNpgsqlIdentityDbContextFactory<TDbContext>(this IServiceCollection services)

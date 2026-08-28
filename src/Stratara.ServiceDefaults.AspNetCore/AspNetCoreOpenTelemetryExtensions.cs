@@ -53,6 +53,14 @@ public static class AspNetCoreOpenTelemetryExtensions
     /// <typeparam name="TBuilder">The host-builder type.</typeparam>
     /// <param name="builder">The host application builder.</param>
     /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// Layers ASP.NET Core request instrumentation on top of the base pipeline, filtering the health and
+    /// aliveness endpoints out of tracing:
+    /// <code>
+    /// builder.ConfigureOpenTelemetry();
+    /// builder.ConfigureAspNetOpenTelemetry();
+    /// </code>
+    /// </example>
     public static TBuilder ConfigureAspNetOpenTelemetry<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {

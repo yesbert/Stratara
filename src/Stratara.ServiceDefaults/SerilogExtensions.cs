@@ -22,6 +22,12 @@ public static class SerilogExtensions
     /// </summary>
     /// <param name="builder">The host application builder.</param>
     /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// Reads the <c>Serilog</c> configuration section on top of Stratara's defaults:
+    /// <code>
+    /// builder.ConfigureSerilog();
+    /// </code>
+    /// </example>
     public static IHostApplicationBuilder ConfigureSerilog(this IHostApplicationBuilder builder)
     {
         var otlpExporter = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
