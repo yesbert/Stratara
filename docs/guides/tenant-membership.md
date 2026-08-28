@@ -43,6 +43,40 @@ public sealed class DirectoryDbContext(DbContextOptions<DirectoryDbContext> opti
 builder.Services.AddTenantMembershipStore<DirectoryDbContext>();   // ITenantMembershipStore, scoped
 ```
 
+### One context for the request, or one per operation
+
+That registration — and its siblings `AddApiKeyStore<TContext>()` and `AddSettingStore<TContext>()` —
+gives every directory store in a request **the same** context instance. Two things follow, and both
+are easier to meet head-on than to meet as a bug:
+
+- A database context serves one operation at a time. Directory work issued concurrently inside one
+  request — two role checks started together, a lookup racing a page load — fails on whichever
+  arrives second, and it fails at the call site that lost the race rather than the one that
+  introduced the concurrency.
+- The stores commit their own writes. On a shared context, that commit also commits whatever *you*
+  have left unsaved on it.
+
+If either matters to you, register the stores against a context factory instead:
+
+```csharp
+// configure the factory with the same provider options as your AddDbContext call
+builder.Services.AddDbContextFactory<DirectoryDbContext>(options => { /* … */ });
+
+builder.Services
+    .AddTenantMembershipStoreFromContextFactory<DirectoryDbContext>()
+    .AddApiKeyStoreFromContextFactory<DirectoryDbContext>()
+    .AddSettingStoreFromContextFactory<DirectoryDbContext>();
+```
+
+Each operation then takes a fresh context and disposes it, so operations do not contend and a store's
+commit reaches only its own rows. **In exchange, a store write no longer takes part in a transaction
+you opened on your own scoped context** — that is the whole of the trade, and it is why the shared
+registration remains the default rather than being quietly replaced.
+
+Keep the factory's options aligned with your scoped registration: interceptors, query filters and
+conventions are configured per registration, not per context type. Calling both registrations for the
+same store leaves whichever ran first in place; they do not compose.
+
 ## Working with the store
 
 `ITenantMembershipStore` is deliberately relational-shaped — sign-in needs read-your-write

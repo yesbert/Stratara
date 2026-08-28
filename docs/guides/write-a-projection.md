@@ -147,6 +147,30 @@ And when it ends, it marks itself inactive **whether it succeeded or not**. A re
 half-way leaves you with partially rebuilt read models and no flag saying so. Treat a failed replay
 as "run it again", not as "it stopped safely".
 
+**A host that is killed does not get to mark anything.** Failing is an ending; being killed is not.
+A `SIGKILL`, a container stop, an out-of-memory kill or a reboot leaves the replay with no chance to
+clear its own marking — and while the marking stands, publication stays suppressed for the whole
+host: commands are recorded instead of sent, the caller gets an identifier and a success response for
+a command that will never run, and the outbox does not drain.
+
+So the marking is held on a lease that the replay renews each time it reports progress. Nobody
+renewing it means nobody is replaying, and it lapses on its own. Set the lease longer than your
+slowest stretch between two progress reports — the slowest batch, and the read-model truncation that
+precedes the first report:
+
+```csharp
+builder.Services.Configure<ProjectionReplayOptions>(
+    o => o.LeaseSeconds = 600);   // default 300
+```
+
+Err long. Too long only delays the clearing of a marking whose replay already died; too short lets
+the marking lapse while the replay is still running, which resumes suppressed publication against
+half-rebuilt read models and tells nobody.
+
+One thing a version bump does not do for you: a marking that is *already* stuck from before you
+adopted the lease was written without an expiry and does not gain one. Clear it once — an explicit
+deactivation, or let the next replay's own completion clear it.
+
 ## See also
 
 - **[Sample 2 — Event Sourced](../samples/02-event-sourced.md)** — an aggregate and its projection end to end.

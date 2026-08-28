@@ -77,6 +77,26 @@ applies to the entire NuGet family.
   progress counters survive without renewal. Registered with its defaults by
   `AddProjectionReplayState()`, so an existing host is leased without configuring anything.
 
+- **`AddTenantMembershipStoreFromContextFactory<TContext>()`,
+  `AddApiKeyStoreFromContextFactory<TContext>()` and `AddSettingStoreFromContextFactory<TContext>()`**
+  — register the identity-directory stores so that each operation takes a fresh database context from
+  `IDbContextFactory<TContext>` instead of sharing the request's.
+
+  The existing registrations share one context across every directory store in a request. A database
+  context serves one operation at a time, so directory work issued concurrently within a scope — two
+  role checks together, a lookup racing a page load — fails on whichever arrives second, and the
+  failure surfaces at the call site that lost the race rather than the one that introduced the
+  concurrency. Sharing also means a store's own commit commits whatever else the consumer has left
+  unsaved on that context.
+
+  Both registrations now state what they cost, because the choice runs both ways: with a context per
+  operation neither of those applies, and in exchange a store write no longer takes part in a
+  transaction opened on the consumer's own scoped context. Calling both registrations for the same
+  store leaves whichever ran first in place; they do not compose.
+
+  Nothing changes for a consumer who does not adopt them — the existing registrations behave exactly
+  as before, and remain the default.
+
 ## [3.3.0] — 2026-08-25
 
 Two capabilities the framework advertised but did not provide, and a set of guards for behaviour

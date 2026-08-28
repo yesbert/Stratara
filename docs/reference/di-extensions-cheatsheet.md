@@ -87,7 +87,8 @@ own `OnModelCreating`.
 
 | Extension | What it does |
 |---|---|
-| `services.AddTenantMembershipStore<TContext>()` | EF `ITenantMembershipStore` (`tenant_membership`, `active_tenant`) |
+| `services.AddTenantMembershipStore<TContext>()` | EF `ITenantMembershipStore` (`tenant_membership`, `active_tenant`) — shares the request's context |
+| `services.AddTenantMembershipStoreFromContextFactory<TContext>()` | Same store, a fresh context per operation (needs `AddDbContextFactory<TContext>()`) |
 | `services.AddMembershipAuthorization()` | `IAuthorizationProvider` over tenant-scoped membership roles |
 | `services.AddMembershipAuthorization<TUser>()` | Above ∪ global ASP.NET Identity roles |
 | `services.AddMembershipCrossTenantAuthorizer(opts?)` | `ICrossTenantAuthorizer` for strict tenant isolation (membership OR a configured platform role) |
@@ -96,7 +97,16 @@ own `OnModelCreating`.
 | `services.AddCatalogPermissionResolver<TUser>()` | Above ∪ global ASP.NET Identity roles |
 | `services.AddSettingCatalog(c => …)` | Declares the setting vocabulary (defaults, `IsInherited`, `IsEncrypted`) |
 | `services.AddSettingStore<TContext>()` | EF `ISettingStore` (`setting_entry`) **+** the `ISettingProvider` fallback facade |
+| `services.AddSettingStoreFromContextFactory<TContext>()` | Same pair, a fresh context per operation |
 | `services.AddApiKeyStore<TContext>()` | EF `IApiKeyStore` (`api_key`) — issue / import / validate / revoke / sweep |
+| `services.AddApiKeyStoreFromContextFactory<TContext>()` | Same store, a fresh context per operation |
+
+The `…FromContextFactory` variants exist because the plain registrations share one context across
+every directory store in a request: a database context serves one operation at a time, and a store's
+commit also commits whatever you have left unsaved on that context. A context per operation removes
+both, and in exchange a store write no longer joins a transaction you opened on your own scoped
+context. Calling both variants for the same store leaves whichever ran first in place. See
+[Tenant Membership](../guides/tenant-membership.md).
 
 `[RequirePermission]` is only enforced when the host also registers an authorizing mediator
 (`services.AddAuthorizingMediator<MembershipAuthorizationProvider>()`). Without it — or without an

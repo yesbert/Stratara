@@ -27,12 +27,60 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// context's <c>OnModelCreating</c>. The context itself must already be registered
     /// (for example via <c>AddDbContext</c> or a pooled factory).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The store shares the context registered for the request, so directory operations issued
+    /// concurrently within one scope fail on whichever arrives second — a database context serves one
+    /// operation at a time — and the store's own commit also commits whatever else the consumer has
+    /// left unsaved on that context. Register the store with
+    /// <see cref="AddTenantMembershipStoreFromContextFactory{TContext}"/> instead to give each operation its own context.
+    /// </para>
+    /// <para>
+    /// Calling both registrations leaves whichever ran first in place; they do not compose.
+    /// </para>
+    /// </remarks>
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     public static IServiceCollection AddTenantMembershipStore<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
+        services.TryAddScoped<IDirectoryContextSource<TContext>, SharedDirectoryContextSource<TContext>>();
+        services.TryAddScoped<ITenantMembershipStore, EfTenantMembershipStore<TContext>>();
+        return services;
+    }
+
+    /// <summary>
+    /// Register the EF Core <see cref="ITenantMembershipStore"/> against <typeparamref name="TContext"/>,
+    /// taking a fresh context for each operation from the registered context factory.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each operation creates its own context from the registered
+    /// <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/> and disposes it
+    /// afterwards, so directory operations issued concurrently within one scope do not contend and a
+    /// store's commit reaches only its own rows. In exchange, a store write does not take part in a
+    /// transaction the consumer opened on their own scoped context.
+    /// </para>
+    /// <para>
+    /// Requires <c>AddDbContextFactory&lt;TContext&gt;()</c>; a missing registration fails at first
+    /// resolution rather than silently. Keep the factory's options aligned with the scoped
+    /// registration — interceptors, query filters and conventions are configured per registration,
+    /// not per context type.
+    /// </para>
+    /// <para>
+    /// Calling this together with <see cref="AddTenantMembershipStore{TContext}"/> leaves whichever ran first in place; they do
+    /// not compose.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    public static IServiceCollection AddTenantMembershipStoreFromContextFactory<TContext>(
+        this IServiceCollection services)
+        where TContext : DbContext
+    {
+        services.TryAddScoped<IDirectoryContextSource<TContext>, PerOperationDirectoryContextSource<TContext>>();
         services.TryAddScoped<ITenantMembershipStore, EfTenantMembershipStore<TContext>>();
         return services;
     }
@@ -44,12 +92,59 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// and per-tenant/per-user erasure sweeps. Machine keys are materialized as memberships of
     /// their tenant, so they flow through the same role/permission plane as human actors.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The store shares the context registered for the request, so directory operations issued
+    /// concurrently within one scope fail on whichever arrives second — a database context serves one
+    /// operation at a time — and the store's own commit also commits whatever else the consumer has
+    /// left unsaved on that context. Register the store with
+    /// <see cref="AddApiKeyStoreFromContextFactory{TContext}"/> instead to give each operation its own context.
+    /// </para>
+    /// <para>
+    /// Calling both registrations leaves whichever ran first in place; they do not compose.
+    /// </para>
+    /// </remarks>
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     public static IServiceCollection AddApiKeyStore<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
+        services.TryAddScoped<IDirectoryContextSource<TContext>, SharedDirectoryContextSource<TContext>>();
+        services.TryAddScoped<IApiKeyStore, EfApiKeyStore<TContext>>();
+        return services;
+    }
+
+    /// <summary>
+    /// Register the EF Core <see cref="IApiKeyStore"/> against <typeparamref name="TContext"/>, taking
+    /// a fresh context for each operation from the registered context factory.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each operation creates its own context from the registered
+    /// <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/> and disposes it
+    /// afterwards, so directory operations issued concurrently within one scope do not contend and a
+    /// store's commit reaches only its own rows. In exchange, a store write does not take part in a
+    /// transaction the consumer opened on their own scoped context.
+    /// </para>
+    /// <para>
+    /// Requires <c>AddDbContextFactory&lt;TContext&gt;()</c>; a missing registration fails at first
+    /// resolution rather than silently. Keep the factory's options aligned with the scoped
+    /// registration — interceptors, query filters and conventions are configured per registration,
+    /// not per context type.
+    /// </para>
+    /// <para>
+    /// Calling this together with <see cref="AddApiKeyStore{TContext}"/> leaves whichever ran first in place; they do
+    /// not compose.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    public static IServiceCollection AddApiKeyStoreFromContextFactory<TContext>(this IServiceCollection services)
+        where TContext : DbContext
+    {
+        services.TryAddScoped<IDirectoryContextSource<TContext>, PerOperationDirectoryContextSource<TContext>>();
         services.TryAddScoped<IApiKeyStore, EfApiKeyStore<TContext>>();
         return services;
     }
@@ -194,15 +289,71 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// plane's <see cref="ISecureBlobEncryptor"/> registration —
     /// missing it fails at first resolution, not silently).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The store shares the context registered for the request, so directory operations issued
+    /// concurrently within one scope fail on whichever arrives second — a database context serves one
+    /// operation at a time — and the store's own commit also commits whatever else the consumer has
+    /// left unsaved on that context. Register the store with
+    /// <see cref="AddSettingStoreFromContextFactory{TContext}"/> instead to give each operation its own
+    /// context.
+    /// </para>
+    /// <para>
+    /// Calling both registrations leaves whichever ran first in place; they do not compose.
+    /// </para>
+    /// </remarks>
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     public static IServiceCollection AddSettingStore<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
+        services.TryAddScoped<IDirectoryContextSource<TContext>, SharedDirectoryContextSource<TContext>>();
+        return services.AddSettingStoreCore<TContext>();
+    }
+
+    /// <summary>
+    /// Register the EF Core <see cref="ISettingStore"/> against <typeparamref name="TContext"/> and the
+    /// scope-fallback <see cref="ISettingProvider"/> read facade, taking a fresh context for each
+    /// operation from the registered context factory. The encrypting decorator is applied exactly as
+    /// it is for the shared registration.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each operation creates its own context from the registered
+    /// <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/> and disposes it
+    /// afterwards, so directory operations issued concurrently within one scope do not contend and a
+    /// store's commit reaches only its own rows. In exchange, a store write does not take part in a
+    /// transaction the consumer opened on their own scoped context.
+    /// </para>
+    /// <para>
+    /// Requires <c>AddDbContextFactory&lt;TContext&gt;()</c>; a missing registration fails at first
+    /// resolution rather than silently. Keep the factory's options aligned with the scoped
+    /// registration — interceptors, query filters and conventions are configured per registration,
+    /// not per context type.
+    /// </para>
+    /// <para>
+    /// Calling this together with <see cref="AddSettingStore{TContext}"/> leaves whichever ran first in
+    /// place; they do not compose.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    public static IServiceCollection AddSettingStoreFromContextFactory<TContext>(this IServiceCollection services)
+        where TContext : DbContext
+    {
+        services.TryAddScoped<IDirectoryContextSource<TContext>, PerOperationDirectoryContextSource<TContext>>();
+        return services.AddSettingStoreCore<TContext>();
+    }
+
+    private static IServiceCollection AddSettingStoreCore<TContext>(this IServiceCollection services)
+        where TContext : DbContext
+    {
         services.TryAddScoped<ISettingStore>(provider =>
         {
-            var efStore = new EfSettingStore<TContext>(provider.GetRequiredService<TContext>());
+            var efStore = new EfSettingStore<TContext>(
+                provider.GetRequiredService<IDirectoryContextSource<TContext>>());
             var catalog = provider.GetRequiredService<SettingCatalog>();
 
             if (!catalog.All.Any(definition => definition.IsEncrypted))

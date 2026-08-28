@@ -30,7 +30,7 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// </para>
 /// </remarks>
 internal sealed class EfApiKeyStore<TContext>(
-    TContext context,
+    IDirectoryContextSource<TContext> contextSource,
     TimeProvider? clock = null,
     ILogger<EfApiKeyStore<TContext>>? logger = null) : IApiKeyStore
     where TContext : DbContext
@@ -42,7 +42,11 @@ internal sealed class EfApiKeyStore<TContext>(
         ApiKeyIssueRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
-        await EnsureIssuableAsync(request, cancellationToken);
+
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
+        await EnsureIssuableAsync(context, request, cancellationToken);
 
         var rawKey = ApiKeyFormat.CreateRawKey();
         var entry = new ApiKeyEntry
@@ -82,10 +86,13 @@ internal sealed class EfApiKeyStore<TContext>(
                 nameof(request));
         }
 
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         var hashedKey = Hash(request.RawKey);
-        if (await FindByHashAsync(hashedKey, cancellationToken) is { } known)
+        if (await FindByHashAsync(context, hashedKey, cancellationToken) is { } known)
         {
-            return await AdoptExistingAsync(known, request, cancellationToken);
+            return await AdoptExistingAsync(context, known, request, cancellationToken);
         }
 
         var entry = new ApiKeyEntry
@@ -115,12 +122,12 @@ internal sealed class EfApiKeyStore<TContext>(
             context.Entry(entry).State = EntityState.Detached;
             context.Entry(membership).State = EntityState.Detached;
 
-            if (await FindByHashAsync(hashedKey, cancellationToken) is not { } raced)
+            if (await FindByHashAsync(context, hashedKey, cancellationToken) is not { } raced)
             {
                 throw;
             }
 
-            return await AdoptExistingAsync(raced, request, cancellationToken);
+            return await AdoptExistingAsync(context, raced, request, cancellationToken);
         }
 
         ApiKeyStoreLog.KeyImported(_logger, entry.Id, entry.TenantId);
@@ -135,7 +142,9 @@ internal sealed class EfApiKeyStore<TContext>(
             return null;
         }
 
-        var entry = await FindByHashAsync(Hash(rawKey), cancellationToken);
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        var entry = await FindByHashAsync(lease.Context, Hash(rawKey), cancellationToken);
 
         if (entry is null
             || entry.RevokedAt is not null
@@ -149,6 +158,9 @@ internal sealed class EfApiKeyStore<TContext>(
 
     public async Task RevokeAsync(Guid apiKeyId, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         var entry = await context.Set<ApiKeyEntry>()
             .SingleOrDefaultAsync(e => e.Id == apiKeyId, cancellationToken);
 
@@ -162,14 +174,16 @@ internal sealed class EfApiKeyStore<TContext>(
 
         if (entry.UserId is null)
         {
-            await RemoveMachineMembershipsAsync([entry.Id], cancellationToken);
+            await RemoveMachineMembershipsAsync(context, [entry.Id], cancellationToken);
         }
     }
 
     public async Task<IReadOnlyList<ApiKeyDescriptor>> GetForTenantAsync(
         Guid tenantId, CancellationToken cancellationToken = default)
     {
-        var entries = await context.Set<ApiKeyEntry>()
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        var entries = await lease.Context.Set<ApiKeyEntry>()
             .AsNoTracking()
             .Where(e => e.TenantId == tenantId)
             .ToListAsync(cancellationToken);
@@ -179,6 +193,9 @@ internal sealed class EfApiKeyStore<TContext>(
 
     public async Task RemoveAllForTenantAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         var machineKeyIds = await context.Set<ApiKeyEntry>()
             .Where(e => e.TenantId == tenantId && e.UserId == null)
             .Select(e => e.Id)
@@ -188,23 +205,26 @@ internal sealed class EfApiKeyStore<TContext>(
             .Where(e => e.TenantId == tenantId)
             .ExecuteDeleteAsync(cancellationToken);
 
-        await RemoveMachineMembershipsAsync(machineKeyIds, cancellationToken);
+        await RemoveMachineMembershipsAsync(context, machineKeyIds, cancellationToken);
     }
 
     public async Task RemoveAllForUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        await context.Set<ApiKeyEntry>()
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        await lease.Context.Set<ApiKeyEntry>()
             .Where(e => e.UserId == userId)
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    private Task<ApiKeyEntry?> FindByHashAsync(string hashedKey, CancellationToken cancellationToken) =>
+    private static Task<ApiKeyEntry?> FindByHashAsync(
+        TContext context, string hashedKey, CancellationToken cancellationToken) =>
         context.Set<ApiKeyEntry>()
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.HashedKey == hashedKey, cancellationToken);
 
     private async Task<ApiKeyDescriptor> AdoptExistingAsync(
-        ApiKeyEntry existing, ApiKeyImportRequest request, CancellationToken cancellationToken)
+        TContext context, ApiKeyEntry existing, ApiKeyImportRequest request, CancellationToken cancellationToken)
     {
         if (existing.UserId is not null)
         {
@@ -243,11 +263,12 @@ internal sealed class EfApiKeyStore<TContext>(
             ApiKeyStoreLog.KeyImportNoOp(_logger, existing.Id, existing.TenantId);
         }
 
-        await EnsureMachineMembershipAsync(existing, cancellationToken);
+        await EnsureMachineMembershipAsync(context, existing, cancellationToken);
         return ToDescriptor(existing);
     }
 
-    private async Task EnsureMachineMembershipAsync(ApiKeyEntry entry, CancellationToken cancellationToken)
+    private static async Task EnsureMachineMembershipAsync(
+        TContext context, ApiKeyEntry entry, CancellationToken cancellationToken)
     {
         var exists = await context.Set<TenantMembershipEntry>()
             .AnyAsync(e => e.UserId == entry.Id && e.TenantId == entry.TenantId, cancellationToken);
@@ -296,7 +317,8 @@ internal sealed class EfApiKeyStore<TContext>(
         return existing.ExpiresAt == request.ExpiresAt ? null : "expiry";
     }
 
-    private async Task EnsureIssuableAsync(ApiKeyIssueRequest request, CancellationToken cancellationToken)
+    private static async Task EnsureIssuableAsync(
+        TContext context, ApiKeyIssueRequest request, CancellationToken cancellationToken)
     {
         if (request.UserId is not { } userId)
         {
@@ -322,8 +344,8 @@ internal sealed class EfApiKeyStore<TContext>(
         }
     }
 
-    private async Task RemoveMachineMembershipsAsync(
-        IReadOnlyCollection<Guid> machineKeyIds, CancellationToken cancellationToken)
+    private static async Task RemoveMachineMembershipsAsync(
+        TContext context, IReadOnlyCollection<Guid> machineKeyIds, CancellationToken cancellationToken)
     {
         if (machineKeyIds.Count == 0)
         {

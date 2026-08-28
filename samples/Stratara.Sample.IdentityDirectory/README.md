@@ -74,6 +74,12 @@ services
 services.AddAuthorizingMediator<MembershipAuthorizationProvider>();  // enforces [RequirePermission]
 ```
 
+This sample uses the plain registrations, which share one `DbContext` across every directory store in
+a scope — right for a console program that does one thing at a time. A web host that issues directory
+work concurrently within a request wants the `…FromContextFactory` variants instead, because a
+`DbContext` serves one operation at a time. The trade, and why the shared form is still the default,
+is in [Tenant Membership](../../docs/guides/tenant-membership.md).
+
 `AddAuthorizingMediator<T>()` is what makes the attributes bite. Without it — or without an
 `IPermissionResolver` — the mediator's startup validator throws rather than let a
 permission-guarded request through unchecked.

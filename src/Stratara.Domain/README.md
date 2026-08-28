@@ -13,6 +13,11 @@ The Stratara framework's concrete multitenancy domain — the `Tenant` aggregate
 - `Stratara.Domain.TenantCreated` / `TenantRenamed` / `TenantActivated` / `TenantDeactivated` / `TenantDefaultLocaleChanged` / `TenantAssignedToCustomer` / `TenantDeleted` — the event records consumed by the aggregate's `Apply()` methods + persisted to the event stream.
 - `Stratara.Domain.CustomerTenantsDeleted` — a **read-side** event: it carries a customer's deleted tenant ids for `TenantProjection` and has no `Apply()` overload on the aggregate. Rehydration skips unmapped events silently, so don't expect it to move aggregate state.
 
+`TenantCreated` implements `IAggregateCreationEvent`, declaring the tenant it creates as the event's
+own data owner. A tenant therefore belongs to itself no matter which session performed the creation —
+an operator creating a tenant does not end up owning it. The interface is a compile-time contract read
+when the event is appended; it is not serialized, so the record's JSON is unchanged.
+
 ## When to skip this package
 
 If you're building a Stratara-on-Mediator application without the framework's tenant model (e.g. you have your own tenancy concept), reference `Stratara.Abstractions` alone for the marker interfaces. Most Stratara features (CQRS, event sourcing, projections, sagas) don't depend on `Stratara.Domain`.

@@ -9,13 +9,16 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// <see cref="IdentityDirectoryDbContext{TContext}"/> or
 /// <see cref="IdentityDirectoryModelBuilderExtensions.ApplyIdentityDirectoryModel"/>).
 /// </summary>
-internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITenantMembershipStore
+internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<TContext> contextSource)
+    : ITenantMembershipStore
     where TContext : DbContext
 {
     public async Task<IReadOnlyList<TenantMembership>> GetMembershipsAsync(
         Guid userId, CancellationToken cancellationToken = default)
     {
-        var entries = await context.Set<TenantMembershipEntry>()
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        var entries = await lease.Context.Set<TenantMembershipEntry>()
             .AsNoTracking()
             .Where(e => e.UserId == userId)
             .ToListAsync(cancellationToken);
@@ -26,7 +29,9 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
     public async Task<TenantMembership?> GetMembershipAsync(
         Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
     {
-        var entry = await context.Set<TenantMembershipEntry>()
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        var entry = await lease.Context.Set<TenantMembershipEntry>()
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.UserId == userId && e.TenantId == tenantId, cancellationToken);
 
@@ -36,7 +41,9 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
     public async Task<IReadOnlyList<TenantMembership>> GetMembersAsync(
         Guid tenantId, CancellationToken cancellationToken = default)
     {
-        var entries = await context.Set<TenantMembershipEntry>()
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        var entries = await lease.Context.Set<TenantMembershipEntry>()
             .AsNoTracking()
             .Where(e => e.TenantId == tenantId)
             .ToListAsync(cancellationToken);
@@ -47,6 +54,9 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
     public async Task SetMembershipAsync(
         TenantMembership membership, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         var existing = await context.Set<TenantMembershipEntry>()
             .SingleOrDefaultAsync(
                 e => e.UserId == membership.UserId && e.TenantId == membership.TenantId,
@@ -74,15 +84,23 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
     public async Task RemoveMembershipAsync(
         Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         await context.Set<TenantMembershipEntry>()
             .Where(e => e.UserId == userId && e.TenantId == tenantId)
             .ExecuteDeleteAsync(cancellationToken);
 
-        await ClearActiveTenantSelectionAsync(userId, tenantId, cancellationToken);
+        await context.Set<ActiveTenantEntry>()
+            .Where(e => e.UserId == userId && e.TenantId == tenantId)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 
     public async Task RemoveAllMembershipsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         await context.Set<TenantMembershipEntry>()
             .Where(e => e.UserId == userId)
             .ExecuteDeleteAsync(cancellationToken);
@@ -94,6 +112,9 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
 
     public async Task RemoveAllMembersAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         await context.Set<TenantMembershipEntry>()
             .Where(e => e.TenantId == tenantId)
             .ExecuteDeleteAsync(cancellationToken);
@@ -105,7 +126,9 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
 
     public async Task<Guid?> GetActiveTenantAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var selection = await context.Set<ActiveTenantEntry>()
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        var selection = await lease.Context.Set<ActiveTenantEntry>()
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.UserId == userId, cancellationToken);
 
@@ -115,6 +138,9 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
     public async Task SetActiveTenantAsync(
         Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         var hasActiveMembership = await context.Set<TenantMembershipEntry>()
             .AnyAsync(
                 e => e.UserId == userId && e.TenantId == tenantId && e.Status == MembershipStatus.Active,
@@ -139,14 +165,6 @@ internal sealed class EfTenantMembershipStore<TContext>(TContext context) : ITen
         }
 
         await context.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task ClearActiveTenantSelectionAsync(
-        Guid userId, Guid tenantId, CancellationToken cancellationToken)
-    {
-        await context.Set<ActiveTenantEntry>()
-            .Where(e => e.UserId == userId && e.TenantId == tenantId)
-            .ExecuteDeleteAsync(cancellationToken);
     }
 
     private static TenantMembership ToContract(TenantMembershipEntry entry) =>

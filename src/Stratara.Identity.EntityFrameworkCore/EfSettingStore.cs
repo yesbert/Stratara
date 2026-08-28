@@ -8,14 +8,16 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// includes the identity-directory tables. Scope dimensions are stored as empty strings when
 /// unset (see <see cref="SettingEntry"/>).
 /// </summary>
-internal sealed class EfSettingStore<TContext>(TContext context) : ISettingStore
+internal sealed class EfSettingStore<TContext>(IDirectoryContextSource<TContext> contextSource) : ISettingStore
     where TContext : DbContext
 {
     public async Task<string?> GetOrNullAsync(
         string name, SettingScope scope, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
         var (tenantId, userId) = (scope.NormalizedTenantId, scope.NormalizedUserId);
-        var entry = await context.Set<SettingEntry>()
+        var entry = await lease.Context.Set<SettingEntry>()
             .AsNoTracking()
             .SingleOrDefaultAsync(
                 e => e.Name == name && e.TenantId == tenantId && e.UserId == userId,
@@ -27,8 +29,10 @@ internal sealed class EfSettingStore<TContext>(TContext context) : ISettingStore
     public async Task<IReadOnlyDictionary<string, string>> GetAllAsync(
         SettingScope scope, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
         var (tenantId, userId) = (scope.NormalizedTenantId, scope.NormalizedUserId);
-        var entries = await context.Set<SettingEntry>()
+        var entries = await lease.Context.Set<SettingEntry>()
             .AsNoTracking()
             .Where(e => e.TenantId == tenantId && e.UserId == userId)
             .ToListAsync(cancellationToken);
@@ -39,6 +43,9 @@ internal sealed class EfSettingStore<TContext>(TContext context) : ISettingStore
     public async Task SetAsync(
         string name, string? value, SettingScope scope, CancellationToken cancellationToken = default)
     {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
         var (tenantId, userId) = (scope.NormalizedTenantId, scope.NormalizedUserId);
 
         if (value is null)
@@ -74,7 +81,9 @@ internal sealed class EfSettingStore<TContext>(TContext context) : ISettingStore
 
     public async Task DeleteScopeAsync(SettingScope scope, CancellationToken cancellationToken = default)
     {
-        var query = context.Set<SettingEntry>().AsQueryable();
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+
+        var query = lease.Context.Set<SettingEntry>().AsQueryable();
 
         if (scope.UserId is { } userId)
         {

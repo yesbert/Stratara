@@ -14,7 +14,7 @@ Outbox-pattern command + event dispatch for the Stratara event-sourced stack wit
 | `Outbox/` | `OutboxOptions`, `CommandOutboxDispatcher` (write-side `ICommand` fan-out via `IMessageBus`, falls back to outbox table on bus failure), `EventBundleOutboxDispatcher` (same for `EventBundle`), `OutboxWorker` (hosted service that retries unpublished outbox rows on a polling interval), `NullOutboxLock` + `RedisOutboxLock` (`IOutboxLock` implementations — default no-op for single-instance deployments, Redis-leased distributed lock for multi-replica setups) |
 | `Messaging/` | `RabbitMqBus` — `IMessageBus` over RabbitMQ. Azure Service Bus ships as the sibling `Stratara.Outbox.AzureServiceBus` package. |
 | `Mediator/` | `MediatorCommandWorker` (hosted service that subscribes to the command topic and dispatches into the in-process `IMediator`) |
-| `Projections/` | `ProjectionReplayState` (Redis-backed concrete `IProjectionReplayState`; dispatchers skip publishing while replay is active) |
+| `Projections/` | `ProjectionReplayState` (Redis-backed concrete `IProjectionReplayState`; dispatchers skip publishing while replay is active), `ProjectionReplayOptions` (how long the replay marking survives without renewal) |
 | `DependencyInjection/` | `AddOutboxDispatcher()`, `AddOutboxWorker(IConfiguration)`, `AddRedisOutboxLock()` (opt-in distributed lock), `AddProjectionReplayState()`, `AddMediatorWorker()`, `AddMessaging()` |
 | `Diagnostics/Extensions/` | `LoggerOutboxExtensions`, `LoggerMessagingExtensions` (source-generated logger surfaces) |
 
@@ -32,7 +32,11 @@ builder.Services
     .AddMediatorWorker();                        // MediatorCommandWorker hosted service
 ```
 
-The dispatchers consult `IProjectionReplayState.IsReplayActive` before each publish and skip dispatch (writing to the outbox table only) while a replay is in progress.
+The dispatchers consult `IProjectionReplayState.IsReplayActive` before each publish and skip dispatch (writing to the outbox table only) while a replay is in progress. They also record the `outbox.published` counter for what the broker accepted — the worker counts nothing, because only the dispatcher knows what went out.
+
+The replay marking and its progress counters are held on the lease configured by `ProjectionReplayOptions.LeaseSeconds` (default 300), which the replay renews every time it reports progress. A replay whose host is killed stops renewing it and the marking lapses on its own, instead of suppressing publication indefinitely. `AddProjectionReplayState()` registers the options with their defaults; override with `services.Configure<ProjectionReplayOptions>(...)`. Set it longer than the slowest stretch between two progress reports — too short lets the marking lapse while the replay is still running.
+
+A drain cycle takes one batch of each kind and ends. Rows the broker would not accept stay in the table for the next interval; a cycle never re-reads what it just failed to publish, so an unreachable broker or a suppressed drain cannot turn a cycle into a loop over the same rows.
 
 ## Multi-instance outbox workers
 
