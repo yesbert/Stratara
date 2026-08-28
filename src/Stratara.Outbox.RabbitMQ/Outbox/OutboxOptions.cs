@@ -19,9 +19,12 @@ public sealed class OutboxOptions
     public int PollingIntervalSeconds { get; set; } = 30;
 
     /// <summary>
-    /// Maximum number of outbox entries fetched per drain iteration. Defaults to 10 000.
-    /// The worker keeps fetching batches of this size until the table is drained, so this value
-    /// caps per-query memory pressure rather than total throughput.
+    /// Maximum number of outbox entries fetched per drain cycle and entry kind. Defaults to 10 000.
+    /// A cycle takes one batch of commands and one batch of event bundles and ends; entries the bus
+    /// did not accept stay in the table and are retried on the next interval. Together with
+    /// <see cref="PollingIntervalSeconds"/> this value therefore sets the drain rate — 20 000 entries
+    /// a minute with the defaults. Raise it, or shorten the polling interval, to work off a large
+    /// backlog faster.
     /// </summary>
     public int BatchSize { get; set; } = 10_000;
 

@@ -16,7 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `3.4.0`._
+### Documentation
+
+- **The signature scope documented for bus-envelope integrity now matches what 3.4.0 signs.**
+  `BusEnvelopeIntegrityOptions`, `IBusEnvelopeSigner` and `SECURITY.md` still described the
+  pre-3.4.0 projection — identity only, `CommandTypeName + "|" + SessionContextJson` for a command
+  and `SessionContextJson` for an event bundle — and told adopters the payload body was not bound,
+  down to advising an extra integrity check at the application layer. Since 3.4.0 the canonical
+  projection covers every field of the message except the signature itself, with the command body
+  and the carried events covered as SHA-256 digests and every field length-prefixed. All three now
+  state that, the application-layer advice is gone, and the `[EncryptData]` note is kept for what it
+  does cover — decryption fails after tampering — rather than as a substitute for an unsigned
+  payload. No behaviour changes; the projection itself has been correct since 3.4.0.
+
+- **`OutboxOptions.BatchSize` no longer describes the drain loop 3.4.0 removed.** The XML doc still
+  claimed the worker keeps fetching batches until the table is drained and that the value caps
+  per-query memory pressure rather than throughput. A cycle takes one batch of each kind and ends,
+  and entries the bus did not accept are retried on the next interval — so `BatchSize` together with
+  `PollingIntervalSeconds` is exactly what sets the drain rate (20 000 entries a minute with the
+  defaults). The doc now says so, and says which knob to raise for a large backlog.
 
 ## [3.4.0] — 2026-08-28
 

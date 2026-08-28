@@ -1,14 +1,16 @@
 namespace Stratara.Abstractions.Messaging;
 
 /// <summary>
-/// Computes and verifies opaque signatures over the trust-relevant slice of a bus envelope.
+/// Computes and verifies opaque signatures over the canonical projection of a bus envelope.
 /// Implementations are registered via <c>services.AddBusEnvelopeIntegrity(...)</c>; the default
 /// is HMAC-SHA256 backed by <see cref="BusEnvelopeIntegrityOptions.SharedKey"/>.
 /// </summary>
 /// <remarks>
-/// The payload supplied to <see cref="Sign"/> and <see cref="Verify"/> is a framework-defined
-/// canonical projection of the envelope (for example <c>CommandTypeName + "|" + SessionContextJson</c>
-/// for <c>CommandEnvelope</c>) — implementations must not interpret it.
+/// The payload supplied to <see cref="Sign"/> and <see cref="Verify"/> is the framework-defined
+/// canonical projection of the envelope produced by <c>BusEnvelopeCanonical</c> — a
+/// length-prefixed projection of every field of the message except the signature itself, with the
+/// command body and the carried events covered as SHA-256 digests. Implementations must not
+/// interpret it.
 /// </remarks>
 public interface IBusEnvelopeSigner
 {

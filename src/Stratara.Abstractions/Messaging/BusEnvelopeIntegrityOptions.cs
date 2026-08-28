@@ -4,8 +4,8 @@ namespace Stratara.Abstractions.Messaging;
 
 /// <summary>
 /// Configuration for opt-in HMAC integrity protection on bus envelopes. Mitigates tenant /
-/// actor spoofing on a compromised message bus by signing the trust-relevant slice of every
-/// outbound <c>CommandEnvelope</c> and <c>EventBundle</c>, and verifying it on the consumer side.
+/// actor spoofing and payload tampering on a compromised message bus by signing every outbound
+/// <c>CommandEnvelope</c> and <c>EventBundle</c>, and verifying it on the consumer side.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,17 +17,24 @@ namespace Stratara.Abstractions.Messaging;
 /// </para>
 /// <para>
 /// <b>Signature scope (threat model).</b> The HMAC covers the canonical projection produced by
-/// <c>BusEnvelopeCanonical</c>, which is intentionally <i>identity-only</i>: for
-/// <c>CommandEnvelope</c> it covers <c>CommandTypeName + "|" + SessionContextJson</c>; for
-/// <c>EventBundle</c> it covers <c>SessionContextJson</c>. The signature therefore prevents
-/// tenant / actor spoofing and command-type substitution but does <b>NOT</b> bind the payload
-/// body (the <c>CommandJson</c> string on <c>CommandEnvelope</c>, the <c>Events[]</c> list on
-/// <c>EventBundle</c>). Payload tamper resistance comes from a separate layer: fields marked
-/// <c>[EncryptData]</c> are AES-GCM-encrypted with a tenant-bound AAD and refuse to decrypt
-/// after any tamper, while unencrypted fields are not authenticated. Adopters that need
-/// payload-tamper protection on non-encrypted fields should add an additional integrity check
-/// at the application layer (e.g., command-handler-side schema validation + signed external
-/// references) or mark sensitive fields with <c>[EncryptData]</c>.
+/// <c>BusEnvelopeCanonical</c>, which covers every field of the message except the signature
+/// itself: for <c>CommandEnvelope</c> the envelope id, the command type name, the session
+/// context, the heavy-lane flag and a SHA-256 digest of <c>CommandJson</c>; for
+/// <c>EventBundle</c> the session context and a SHA-256 digest over every field of every event
+/// in <c>Events[]</c>. Every field is length-prefixed, so content cannot be shifted across a
+/// field boundary without changing the projection. The signature therefore prevents tenant /
+/// actor spoofing, command-type substitution and payload tampering alike: a signature captured
+/// from one message does not verify when presented with a different body.
+/// </para>
+/// <para>
+/// Fields marked <c>[EncryptData]</c> are additionally AES-GCM-encrypted with a tenant-bound AAD
+/// and refuse to decrypt after any tamper. That protection is independent of this option and
+/// still applies when <see cref="Mode"/> is <see cref="BusEnvelopeIntegrityMode.Off"/>.
+/// </para>
+/// <para>
+/// The projection changed in 3.4.0 — before that release it covered identity only. Signatures
+/// produced by a pre-3.4.0 publisher do not verify against a 3.4.0 consumer; move a fleet across
+/// through <see cref="BusEnvelopeIntegrityMode.Permissive"/>.
 /// </para>
 /// </remarks>
 [ExcludeFromCodeCoverage]
