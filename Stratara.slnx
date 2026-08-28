@@ -49,6 +49,9 @@
     <Project Path="samples/Stratara.Sample.TamperProof/Stratara.Sample.TamperProof.csproj" />
     <Project Path="samples/Stratara.Sample.Validation/Stratara.Sample.Validation.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Stratara.ReferenceCatalogue/Stratara.ReferenceCatalogue.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Stratara.Benchmarks/Stratara.Benchmarks.csproj" />
     <Project Path="tests/Stratara.EntityFrameworkCore.Tests/Stratara.EntityFrameworkCore.Tests.csproj" />

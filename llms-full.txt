@@ -1,0 +1,217 @@
+# Stratara — generated reference
+
+Generated from the published assemblies and their XML documentation. Do not edit by hand;
+a build regenerates it and fails on a difference. The guides live in `docs/`, the guarantees
+in the capability specifications — this file is the lookup table underneath both.
+
+## Configuration
+
+Every bindable options type, the section it binds from, and the default each key carries.
+
+### `BusEnvelopeIntegrity` — Stratara.Abstractions.Messaging.BusEnvelopeIntegrityOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `BusEnvelopeIntegrity:Mode` | `BusEnvelopeIntegrityMode` | `Off` |
+| `BusEnvelopeIntegrity:SharedKey` | `Byte[]` | — |
+
+### `BusEnvelopeJson` — Stratara.Abstractions.Messaging.BusEnvelopeJsonOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `BusEnvelopeJson:MaxBodyBytes` | `Int32` | `1048576` |
+| `BusEnvelopeJson:MaxDepth` | `Int32` | `32` |
+
+### `SessionContext` — Stratara.Abstractions.Session.SessionContextOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `SessionContext:AllowTenantHeader` | `Boolean` | `false` |
+
+### `Outbox` — Stratara.Outbox.RabbitMQ.Outbox.OutboxOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `Outbox:BatchSize` | `Int32` | `10000` |
+| `Outbox:LockLeaseSeconds` | `Int32` | `60` |
+| `Outbox:PollingIntervalSeconds` | `Int32` | `30` |
+
+### `ProjectionReplay` — Stratara.Outbox.RabbitMQ.Projections.ProjectionReplayOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `ProjectionReplay:LeaseSeconds` | `Int32` | `300` |
+
+### `Projections` — Stratara.Projections.Services.ProjectionOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `Projections:BatchSize` | `Int32` | `5000` |
+| `Projections:IdleDelaySeconds` | `Int32` | `5` |
+
+### `Sagas` — Stratara.Sagas.Services.SagaOptions
+
+| Key | Type | Default |
+|---|---|---|
+
+### `Stratara:BlobEncryption` — Stratara.Security.StrataraBlobEncryptionOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `Stratara:BlobEncryption:LegacyBlobsCarryPurpose` | `Boolean` | `false` |
+
+### `Stratara:KeyStore` — Stratara.Security.StrataraFileKeyStoreOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `Stratara:KeyStore:MasterKeyBase64` | `String` | — |
+| `Stratara:KeyStore:StorePath` | `String` | `keystore.json` |
+
+### `EventSourcing` — Stratara.Shared.EventSourcing.EventSourcingOptions
+
+| Key | Type | Default |
+|---|---|---|
+
+### `Messaging` — Stratara.Shared.Messaging.MessagingOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `Messaging:Topics` | `TopicOptions[]` | *(empty)* |
+
+## Registrations
+
+Public extension methods a host calls to wire Stratara, with what each one does and needs.
+
+| Registration | Package | What it does |
+|---|---|---|
+| `AddAggregatesFromAssemblyContaining<T>()` | Stratara.Abstractions | Scans the assembly containing T for concrete IAggregate implementations and registers each in the trusted-type resolver — together with every event type consumed by the aggregate's Apply(...) methods — so both SnapshotService can materialize the aggregate and IAggregationService can replay its event stream without further AddTrustedType<TEvent>() calls |
+| `AddApiKeyStore<TContext>()` | Stratara.Identity.EntityFrameworkCore | Register the EF Core IApiKeyStore against TContext — issuance (raw key shown once, hash stored), idempotent import of a caller-supplied key for bootstrap scenarios, fail-closed validation, revocation, and per-tenant/per-user erasure sweeps |
+| `AddApiKeyStoreFromContextFactory<TContext>()` | Stratara.Identity.EntityFrameworkCore | Register the EF Core IApiKeyStore against TContext, taking a fresh context for each operation from the registered context factory |
+| `AddAspNetIdentity<TUser, TIdentityDbContext>()` | Stratara.Identity.AspNetCore | — |
+| `AddAspNetIdentityWithSignInManager<TUser, TIdentityDbContext>()` | Stratara.Identity.AspNetCore | — |
+| `AddAuthorizingCommandOutboxDispatcher()` | Stratara.Infrastructure | Registers AuthorizingCommandOutboxDispatcher as the ICommandOutboxDispatcher (scoped), keeping the inner CommandOutboxDispatcher available for direct resolution |
+| `AddAuthorizingMediator<TAuthorizationProvider>()` | Stratara.Mediator | Register TAuthorizationProvider as the IAuthorizationProvider implementation and wire IMediator to dispatch through an authorizing decorator that enforces RequireRoleAttribute annotations on the request type before delegating to the inner mediator |
+| `AddAzureServiceBus(String connectionString)` | Stratara.Outbox.AzureServiceBus | Registers the Stratara Azure Service Bus message bus using a SAS-token connection string |
+| `AddAzureServiceBusWithManagedIdentity(String fullyQualifiedNamespace, TokenCredential credential)` | Stratara.Outbox.AzureServiceBus | Registers the Stratara Azure Service Bus message bus using Azure-AD authentication (Managed Identity by default, or a caller-supplied TokenCredential) |
+| `AddBackendServices()` | Stratara.EventSourcing.WorkerDefaults | Registers the API-host stack: common framework services (messaging, identity, session, security, mapping, resilience) + mediator + write store + outbox dispatcher |
+| `AddBackgroundTasks()` | Stratara.Infrastructure | Registers QueuedHostedService and a singleton IBackgroundTaskQueue with a default capacity of 100 pending items |
+| `AddBusEnvelopeIntegrity(Action<BusEnvelopeIntegrityOptions> configure)` | Stratara.Infrastructure | Opt in to HMAC integrity protection on every bus envelope |
+| `AddBusEnvelopeIntegrity(IConfiguration configuration)` | Stratara.Infrastructure | Opt in to HMAC integrity protection on every bus envelope |
+| `AddCaching()` | Stratara.Infrastructure | Registers a singleton IConnectionMultiplexer built from the ConnectionStrings:redis configuration entry |
+| `AddCatalogPermissionResolver()` | Stratara.Identity.EntityFrameworkCore | Register CatalogPermissionResolver as the IPermissionResolver — permissions derive from tenant-scoped membership roles mapped through the catalog's role grants |
+| `AddCatalogPermissionResolver<TUser>()` | Stratara.Identity.EntityFrameworkCore | Register CatalogPermissionResolver as the IPermissionResolver — permissions derive from tenant-scoped membership roles mapped through the catalog's role grants |
+| `AddCommandAuditing()` | Stratara.EventSourcing.Pipeline.CommandAudit | Registers the CommandAuditBehavior pipeline behaviors for both IRequest (void commands) and IRequest`1 (commands with a result) |
+| `AddCommandHandlersFromAssemblyContaining<T>()` | Stratara.Mediator | Scan the assembly containing T and register every concrete ICommandHandler`1 implementation as a scoped service |
+| `AddCommandWorkerServices()` | Stratara.EventSourcing.WorkerDefaults | Registers the command-worker stack: common framework services + mediator + mediator-worker (hosted service that consumes the command topic into the in-process mediator) + write store + event sourcing + outbox dispatcher |
+| `AddCommonFrameworkServices()` | Stratara.EventSourcing.WorkerDefaults | Wires the cross-cutting Stratara framework services that every worker host depends on — messaging, identity, session context, security, event-mapping, and resilience pipelines |
+| `AddDefaultHealthChecks<TBuilder>()` | Stratara.ServiceDefaults.AspNetCore | Registers a baseline health check (`self`) that always returns Healthy and is tagged live, so it shows up on both the /health and /alive endpoints once mapped via MapDefaultEndpoints |
+| `AddDevelopmentNoOpEmailSender<TUser>()` | Stratara.Identity.AspNetCore | — |
+| `AddDomainEventTypesFromAssemblyContaining<T>()` | Stratara.Abstractions | Scans the assembly containing T and registers only the event types consumed by the aggregates' Apply(TEvent) methods — without registering the aggregate types themselves and without registering any projection / saga / command-handler classes into DI |
+| `AddEventProjectionWorkerServices()` | Stratara.EventSourcing.WorkerDefaults | Registers the event-projection-worker stack: common framework services + write store + projection replay state + projection worker (hosted service) |
+| `AddEventSourcing()` | Stratara.Infrastructure | Registers the core event-sourcing services as scoped: IEventSource, IAggregationService, IChangeSetHandler, IEventTypeResolver, and ISnapshotService |
+| `AddEventStoreHealthCheck(String name, HealthStatus? failureStatus, IEnumerable<String> tags)` | Stratara.EventSourcing.EntityFrameworkCore | Registers the EventStoreHealthCheck, verifying that the event-store (write-side) database is reachable |
+| `AddEventStreamHashWorker()` | Stratara.Infrastructure | Registers EventStreamHashWorker as a hosted service and the supporting IEventStreamHashService / IEventChainService implementations |
+| `AddEventStreamHashWorkerServices()` | Stratara.EventSourcing.WorkerDefaults | Registers the event-stream-hash-worker stack: common framework services + write store + event-stream-hashing worker |
+| `AddEventUpcaster<TUpcaster>()` | Stratara.Abstractions | Registers TUpcaster as an IEventUpcaster and ensures the default IEventUpcasterPipeline is present |
+| `AddEventUpcaster(IEventUpcaster upcaster)` | Stratara.Abstractions | Registers TUpcaster as an IEventUpcaster and ensures the default IEventUpcasterPipeline is present |
+| `AddEventUpcasterPipeline()` | Stratara.Abstractions | Registers the default IEventUpcasterPipeline if no implementation has been registered yet |
+| `AddHeavyCommandWorker(Int32? degreeOfParallelism)` | Stratara.Outbox.RabbitMQ | Registers a dedicated heavy-command MediatorCommandWorker lane as a hosted service |
+| `AddHeavyCommandWorkerServices(Int32? degreeOfParallelism)` | Stratara.EventSourcing.WorkerDefaults | Registers the heavy-command-worker stack: the same full command-handling stack as AddCommandWorkerServices but with a dedicated heavy-command lane instead of the interactive one |
+| `AddIdentity()` | Stratara.Infrastructure | Registers the scoped ITenantService and ICurrentUserService implementations that resolve their values from the ambient ISessionContextProvider |
+| `AddMapping()` | Stratara.Shared | Registers the singleton IEventMapperFactory implementation used by the event-sourcing stack to materialize typed IEvent instances from persisted EventStreamEntry / EventMessage rows |
+| `AddMediator()` | Stratara.Mediator | Register IMediator as a scoped service |
+| `AddMediatorWorker()` | Stratara.Outbox.RabbitMQ | Registers the interactive MediatorCommandWorker as a hosted service |
+| `AddMembershipAuthorization()` | Stratara.Identity.EntityFrameworkCore | Register MembershipAuthorizationProvider as the IAuthorizationProvider — role checks pass on tenant-scoped membership roles only |
+| `AddMembershipAuthorization<TUser>()` | Stratara.Identity.EntityFrameworkCore | Register MembershipAuthorizationProvider as the IAuthorizationProvider — role checks pass on tenant-scoped membership roles only |
+| `AddMembershipCrossTenantAuthorizer(Action<MembershipCrossTenantAuthorizerOptions> configure)` | Stratara.Identity.EntityFrameworkCore | Register MembershipCrossTenantAuthorizer as the ICrossTenantAuthorizer consulted by strict tenant isolation: cross-tenant operations are allowed for actors with an active membership in the data-owner tenant or with one of the configured cross-tenant roles |
+| `AddMembershipTenantClaim<TUser>()` | Stratara.Identity.AspNetCore | Decorate the registered IUserClaimsPrincipalFactory`1 with MembershipClaimsPrincipalFactory`1, stamping the tenant claim into every issued principal (cookies and ASP.NET Identity bearer tokens) |
+| `AddMembershipTenantClaimsTransformation()` | Stratara.Identity.AspNetCore | Register MembershipClaimsTransformation as an IClaimsTransformation, resolving the tenant claim from the membership store on every request |
+| `AddMessaging()` | Stratara.Outbox.RabbitMQ | Registers the messaging infrastructure: IMessageBus backed by RabbitMqBus, the IMessagingIdentifier service, and binds MessagingOptions from the Messaging configuration section |
+| `AddNpgsqlIdentityDbContextFactory<TDbContext>()` | Stratara.EventSourcing.EntityFrameworkCore | Registers an Npgsql-backed IDbContextFactory`1 for an identity-store DbContext together with a scoped resolution of the context itself (so ASP.NET Identity can inject it directly) and the default IDbResolver |
+| `AddNpgsqlReadDbContextFactory<TDbContext>()` | Stratara.EventSourcing.EntityFrameworkCore | Registers an Npgsql-backed IDbContextFactory`1 for a read-store DbContext along with the default IDbResolver if none has been registered yet |
+| `AddNpgsqlWriteDbContextFactory<TDbContext>()` | Stratara.EventSourcing.EntityFrameworkCore | Registers an Npgsql-backed IDbContextFactory`1 for a write-store DbContext along with the default IDbResolver if none has been registered yet |
+| `AddOutboxDispatcher()` | Stratara.Outbox.RabbitMQ | Registers ICommandOutboxDispatcher and IEventBundleOutboxDispatcher (scoped) and, transitively, IProjectionReplayState (singleton via AddProjectionReplayState) |
+| `AddOutboxHealthCheck(Int32? degradedThreshold, Int32? unhealthyThreshold, String name, HealthStatus? failureStatus, IEnumerable<String> tags)` | Stratara.EventSourcing.EntityFrameworkCore | Registers the OutboxBacklogHealthCheck, reporting the depth and age of the Stratara outbox backlog |
+| `AddOutboxWorker(IConfiguration configuration)` | Stratara.Outbox.RabbitMQ | Registers the OutboxWorker hosted service and binds OutboxOptions from configuration |
+| `AddOutboxWorkerServices()` | Stratara.EventSourcing.WorkerDefaults | Registers the outbox-worker stack: common framework services + write store + outbox dispatcher + outbox-retry worker |
+| `AddPermissionCatalog(Action<PermissionCatalog> configure)` | Stratara.Identity.EntityFrameworkCore | Build and register the application's PermissionCatalog (singleton) — the declared permission vocabulary plus its role→permission grants, consumed by the catalog permission resolvers and the HTTP permission policies |
+| `AddPipelineBehavior(Type openGenericBehaviorType)` | Stratara.Mediator | Register an open-generic IPipelineBehavior`1 implementation for void commands |
+| `AddPipelineBehaviorWithResult(Type openGenericBehaviorType)` | Stratara.Mediator | Register an open-generic IPipelineBehavior`2 implementation |
+| `AddProjectionReplayState()` | Stratara.Outbox.RabbitMQ | Registers the singleton Redis-backed IProjectionReplayState |
+| `AddProjectionWorker(IConfiguration configuration)` | Stratara.Projections | Registers the projection runtime — ProjectionManager, ProjectionHandler, ProjectionMethodInvoker, ProjectionWorker, and ProjectionReplayWorker — and binds ProjectionOptions from configuration |
+| `AddProjectionsFromAssemblyContaining<T>()` | Stratara.Projections | Scans the assembly containing T and registers every concrete IProjection implementation it finds as a scoped service |
+| `AddQueryHandlersFromAssemblyContaining<T>()` | Stratara.Mediator | Scan the assembly containing T and register every concrete IQueryHandler`2 implementation as a scoped service |
+| `AddRedisOutboxLock()` | Stratara.Outbox.RabbitMQ | Replaces the default NullOutboxLock with the Redis-backed RedisOutboxLock, enabling safe multi-instance outbox-worker deployments |
+| `AddResiliencePipelines()` | Stratara.Resilience | Register every Stratara named resilience pipeline (MessageBus, CommandDispatcher, EventBundleDispatcher, ConcurrencyConflict) with the application's Polly registry |
+| `AddSagaWorker(IConfiguration configuration)` | Stratara.Sagas | Registers the saga runtime services (ISagaManager, ISagaHandler, ISagaMethodInvoker) and the hosted SagaWorker; binds SagaOptions from the Sagas configuration section |
+| `AddSagaWorkerServices()` | Stratara.EventSourcing.WorkerDefaults | Registers the saga-worker stack: common framework services + write store + event sourcing + outbox dispatcher + saga worker (hosted service that reacts to event bundles) |
+| `AddSagasFromAssemblyContaining<T>()` | Stratara.Sagas | Scans the assembly that contains T for concrete ISaga implementations and registers each as a scoped ISaga |
+| `AddSecurity()` | Stratara.Infrastructure | Registers Stratara's security stack: ISecureJsonSerializer, the AES-GCM blob encryptor and IEncryptionFactory (delegated to Stratara.Security), and a development-onlyIKeyStore fallback (DummyKeyStore) |
+| `AddSessionContext()` | Stratara.Sessions | Register the concrete ISessionContextProvider implementation as a scoped service plus the SessionContextOptions binding |
+| `AddSettingCatalog(Action<SettingCatalog> configure)` | Stratara.Identity.EntityFrameworkCore | Build and register the application's SettingCatalog (singleton) — the declared setting vocabulary with defaults and flags, consumed by the setting provider and the encrypting store decorator |
+| `AddSettingStore<TContext>()` | Stratara.Identity.EntityFrameworkCore | Register the EF Core ISettingStore against TContext, plus the scope-fallback ISettingProvider read facade |
+| `AddSettingStoreFromContextFactory<TContext>()` | Stratara.Identity.EntityFrameworkCore | Register the EF Core ISettingStore against TContext and the scope-fallback ISettingProvider read facade, taking a fresh context for each operation from the registered context factory |
+| `AddStrataraApiKey(Action<ApiKeyAuthenticationOptions> configure)` | Stratara.Identity.AspNetCore | Register the Stratara API-key authentication scheme (SchemeName) |
+| `AddStrataraAuthSchemeSelector(Action<StrataraAuthSchemeSelectorOptions> configure)` | Stratara.Identity.AspNetCore | Register the Stratara auth-scheme selector (SchemeName): a policy scheme that routes each request by shape — API-key header → API-key scheme, Authorization: Bearer → bearer scheme, everything else → the fallback (cookie) scheme |
+| `AddStrataraBlobEncryption()` | Stratara.Security | Register the AES-GCM blob encryptor and encryption factory |
+| `AddStrataraErasure()` | Stratara.Infrastructure | Registers ISubjectEraser, which composes the membership, API-key, setting and key-material sweeps into one operation |
+| `AddStrataraExternalLoginProvisioning<TUser>(Action<ExternalLoginProvisioningOptions> configure)` | Stratara.Identity.AspNetCore | Register ExternalLoginProvisioningService`1 and its options |
+| `AddStrataraFileKeyStore(IConfiguration configuration)` | Stratara.Security | Register the production file-backed key store: a FileMasterKeyProvider (KEK custody), the EnvelopeFileKeyStore as IKeyStore, the AES-GCM blob encryptor, and a startup probe that validates the KEK eagerly |
+| `AddStrataraJwtBearer(IConfiguration configuration, String sectionName, String scheme)` | Stratara.Identity.AspNetCore | Register the API JWT-bearer validation scheme from configuration (default section Identity:JwtBearer) |
+| `AddStrataraOpenIdConnect(IConfiguration configuration, String sectionName, String scheme)` | Stratara.Identity.AspNetCore | Register the interactive OpenID Connect sign-in scheme from configuration (default section Identity:OpenIdConnect) |
+| `AddStrataraPermissionPolicies()` | Stratara.Identity.AspNetCore | Register the permission policy provider and handler: every permission declared in the registered PermissionCatalog becomes an on-demand authorization policy — [Authorize("sims.read")] / .RequireAuthorization("sims.read") — evaluated through the registered IPermissionResolver |
+| `AddStrataraProblemDetails()` | Stratara.ServiceDefaults.AspNetCore | Registers StrataraProblemDetailsExceptionHandler and the ASP.NET problem-details service, so a validation rejection becomes 400 with the failures grouped by field, and an authorization refusal or tenant-access denial becomes 403 — all in one shape |
+| `AddStrataraResilienceBehavior()` | Stratara.Resilience | Register the resilience pipeline behavior so any mediator request implementing IResilientRequest is dispatched inside the named Polly pipeline it selects |
+| `AddStrataraTenantIsolation(Action<TenantIsolationOptions> configure)` | Stratara.Mediator | Register the tenant-isolation pipeline behaviors for both request shapes (IRequest and IRequest`1) |
+| `AddStrataraTestingEventStore<TWriteDbContext>(SqliteConnection sharedConnection, Guid defaultTenantId)` | Stratara.Testing.EntityFrameworkCore | Register the event-sourcing write stack (IEventSource, IAggregationService, snapshots, the EF Core write store) over sharedConnection, plus an InMemoryKeyStore, a TestSessionContextProvider, and a RecordingEventBundleOutboxDispatcher |
+| `AddStrataraValidation()` | Stratara.Validation | Register the validation pipeline behaviors for both request shapes (IRequest and IRequest`1) |
+| `AddTenantMembershipStore<TContext>()` | Stratara.Identity.EntityFrameworkCore | Register the EF Core ITenantMembershipStore against TContext |
+| `AddTenantMembershipStoreFromContextFactory<TContext>()` | Stratara.Identity.EntityFrameworkCore | Register the EF Core ITenantMembershipStore against TContext, taking a fresh context for each operation from the registered context factory |
+| `AddTrustedType<T>()` | Stratara.Abstractions | Registers T in the trusted-type allowlist |
+| `AddTrustedTypeResolver()` | Stratara.Abstractions | Registers the ITrustedTypeResolver as a singleton if no implementation has been registered yet |
+| `AddValidatorsFromAssemblyContaining<T>()` | Stratara.Validation | Scan the assembly containing T and register every concrete IValidator`1 implementation as a scoped service against each closed IValidator`1 interface it implements |
+| `AddWriteStore(IConfiguration configuration)` | Stratara.EventSourcing.EntityFrameworkCore | Binds EventSourcingOptions from the EventSourcing configuration section so write-side components (event-stream/snapshot/outbox repositories) can resolve host-tuned settings such as snapshot cadence and batch sizes |
+| `ConfigureAspNetOpenTelemetry<TBuilder>()` | Stratara.ServiceDefaults.AspNetCore | Wires ASP.NET Core request instrumentation on metrics + tracing on top of the base pipeline configured by ConfigureOpenTelemetry |
+| `ConfigureOpenTelemetry<TBuilder>(Action<MeterProviderBuilder> configureMetrics, Action<TracerProviderBuilder> configureTracing)` | Stratara.ServiceDefaults | Configures OpenTelemetry logging + metrics + tracing on the given host builder |
+| `ConfigureSerilog()` | Stratara.ServiceDefaults | Registers Serilog as the host's logging provider with Stratara defaults (destructuring attributes, async console sink, OTLP sink when configured) |
+| `MapDefaultEndpoints(Boolean requireAuthorizationOnHealth)` | Stratara.ServiceDefaults.AspNetCore | Maps the standard health endpoints: /health (full report) and /alive (only checks tagged live) |
+
+## Exceptions
+
+What the framework throws. Catching one of these is a contract; catching `Exception` is not.
+
+| Exception | Package | Thrown when |
+|---|---|---|
+| `Stratara.Abstractions.Authorization.AuthorizationException` | Stratara.Abstractions | Thrown by the authorizing mediator/dispatcher decorators when the caller does not hold a role required by RequireRoleAttribute on the dispatched request type |
+| `Stratara.Abstractions.Authorization.PermissionAuthorizationException` | Stratara.Abstractions | Thrown by the authorizing mediator/dispatcher decorators when the caller does not hold a permission required by RequirePermissionAttribute on the dispatched request type |
+| `Stratara.Abstractions.Erasure.ErasureIncompleteException` | Stratara.Abstractions | Raised when one plane's sweep fails during a composed erasure |
+| `Stratara.Abstractions.EventSourcing.ConcurrencyException` | Stratara.Abstractions | Thrown by SaveChangesAsync when another writer committed to the same stream first and the optimistic version check fails |
+| `Stratara.Abstractions.Multitenancy.TenantAccessDeniedException` | Stratara.Abstractions | Thrown by the tenant-isolation pipeline behavior when an ITenantScopedRequest is rejected: either its TenantId does not match the current session's data-owner tenant, or strict mode observed an unauthorized cross-tenant operation |
+| `Stratara.Abstractions.Persistence.ConcurrencyConflictException` | Stratara.Abstractions | Thrown by an ITransaction implementation when an optimistic-concurrency conflict is detected during commit (i.e |
+| `Stratara.Abstractions.Validation.StrataraValidationException` | Stratara.Abstractions | Thrown by the validation pipeline behavior when a request fails validation with one or more Error-severity failures |
+
+## Names on the wire
+
+Identifiers Stratara uses outside its own process — what an operator provisions and what a
+cache holds. Topic and subscription names are the fallbacks used when `Messaging:Topics`
+configures nothing.
+
+| Name | Kind | Declared by |
+|---|---|---|
+| `command` | topic | MessagingIdentifier |
+| `command-subscription` | subscription | MessagingIdentifier |
+| `event-bundle` | topic | MessagingIdentifier |
+| `event-bundle-saga-subscription` | subscription | MessagingIdentifier |
+| `event-bundle-subscription` | subscription | MessagingIdentifier |
+| `heavy-command` | topic | MessagingIdentifier |
+| `heavy-command-subscription` | subscription | MessagingIdentifier |
+| `notifications` | topic | MessagingIdentifier |
+| `stratara:outbox:lock` | cache key | RedisOutboxLock |
+| `stratara:projection:replay:active` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:error` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:processed` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:request` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:total` | cache key | ProjectionReplayState |
+| `stratara:setting:` | cache key | EncryptingSettingStore |
+| `stratara:tenant_id` | claim type | StrataraClaimTypes |
+

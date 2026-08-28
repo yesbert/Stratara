@@ -29,6 +29,17 @@ applies to the entire NuGet family.
   does cover — decryption fails after tampering — rather than as a substitute for an unsigned
   payload. No behaviour changes; the projection itself has been correct since 3.4.0.
 
+- **New `llms-full.txt` at the repository root** — a generated reference for tooling that has the
+  packages but not this source tree. Four tables, all derived from the assemblies and their
+  documentation: every bindable configuration key with its type and default, every registration with
+  what it does, every exception the framework throws, and every topic, subscription and cache key it
+  uses. `llms.txt` stays the orientation and now links to it. A build regenerates the file and fails
+  on a difference, so it cannot drift from the code it describes.
+
+- **`llms.txt` stated the stable version as 3.2.0.** It has said "prefer the facts here over any
+  pre-trained knowledge" while being two minor versions behind since 3.3.0. Corrected, and pinned to
+  `Directory.Build.props` by a test.
+
 - **Every registration states its contract in the XML documentation that ships with the package.** The
   `.nupkg` carries the doc XML next to the dll, so what a registration says there is what a consumer
   sees at the call site. All 96 registrations across the family now name the configuration key path

@@ -5,20 +5,12 @@
         <IsPackable>false</IsPackable>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
-        <PackageReference Include="Moq"/>
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite"/>
-        <PackageReference Include="xunit.v3"/>
-        <PackageReference Include="xunit.runner.visualstudio"/>
-        <PackageReference Include="coverlet.collector"/>
-    </ItemGroup>
-    <ItemGroup>
-        <ProjectReference Include="../../tools/Stratara.ReferenceCatalogue/Stratara.ReferenceCatalogue.csproj" />
         <ProjectReference Include="../../src/Stratara.Abstractions/Stratara.Abstractions.csproj" />
         <ProjectReference Include="../../src/Stratara.Contracts/Stratara.Contracts.csproj" />
         <ProjectReference Include="../../src/Stratara.Diagnostics/Stratara.Diagnostics.csproj" />
@@ -44,10 +36,5 @@
         <ProjectReference Include="../../src/Stratara.Testing/Stratara.Testing.csproj" />
         <ProjectReference Include="../../src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj" />
         <ProjectReference Include="../../src/Stratara.Validation/Stratara.Validation.csproj" />
-    </ItemGroup>
-    <ItemGroup>
-        <Compile Remove="Fixtures/**/*.cs" />
-        <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
-        <None Update="registration-coverage-allowlist.txt" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 </Project>
