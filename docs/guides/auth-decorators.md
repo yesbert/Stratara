@@ -62,6 +62,7 @@ authorizing one, the host fails at boot rather than serving unguarded requests.
 
 The contract is deliberately narrow — one role, one answer:
 
+<!-- stratara-snippet-ignore: names a policy server the consumer supplies -->
 ```csharp
 public sealed class FineGrainedAuthorizationProvider(ISessionContextProvider sessions)
     : IAuthorizationProvider

@@ -128,6 +128,7 @@ await builder.Build().RunAsync();
 
 ## Example: an HTTP host
 
+<!-- stratara-snippet-ignore: MapAccountEndpoints is the reader's own endpoint group -->
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 

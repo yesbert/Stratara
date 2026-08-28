@@ -18,6 +18,7 @@ Stratara compares **three** states:
 | `CurrentValue` | The aggregate as it stands now |
 | `ChangeValue` | What the update submits |
 
+<!-- stratara-snippet-ignore: narrative fragment - the compared states come from the surrounding text -->
 ```csharp
 var changes = ChangeSetBuilder<CustomerView, UpdateCustomer>
     .CreateChangeSet(source: startedFrom, current: live, changes: submitted);

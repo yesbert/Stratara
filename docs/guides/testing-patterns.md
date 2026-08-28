@@ -46,6 +46,7 @@ projects only:
 same `Apply(...)` dispatch as the production aggregation service. It throws if an event has no
 matching `Apply` overload, so a forgotten overload fails the test:
 
+<!-- stratara-snippet-ignore: narrative fragment - the stream id comes from the surrounding text -->
 ```csharp
 var account = AggregateTestHarness<Account>
     .Given(new AccountOpened(id, "Ada", 100m))
@@ -141,6 +142,7 @@ public sealed class TestUser : IdentityUser   // public, not internal
 
 Stratara's source-gen `[LoggerMessage]` extensions all live under `Stratara.Shared.Diagnostics.Extensions` (cross-package convention, intentional). Test the logger setup, not the format string:
 
+<!-- stratara-snippet-ignore: calls a source-generated logger extension the reader writes -->
 ```csharp
 var logger = new Mock<ILogger>();
 logger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);

@@ -94,6 +94,7 @@ Globex — one account, one catalog. Roles are scoped per membership, not per us
 `AddStrataraPermissionPolicies()` (`Stratara.Identity.AspNetCore`) turns every declared catalog
 permission into an on-demand ASP.NET Core policy, so endpoints gate on the same vocabulary:
 
+<!-- stratara-snippet-ignore: names a permission constant the consumer declares -->
 ```csharp
 builder.Services.AddStrataraPermissionPolicies();
 

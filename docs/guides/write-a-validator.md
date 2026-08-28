@@ -123,6 +123,7 @@ Do not register both: the middleware answers first and the handler never sees th
 handler can catch it and map `Failures` yourself — **without** referencing the `Stratara.Validation`
 behavior package. Simply do not call `AddStrataraProblemDetails()`, and nothing is converted:
 
+<!-- stratara-snippet-ignore: elided fragment - not a complete compilation unit -->
 ```csharp
 catch (StrataraValidationException ex)
 {

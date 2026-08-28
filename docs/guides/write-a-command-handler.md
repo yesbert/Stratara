@@ -55,6 +55,7 @@ That's it — the handler is now resolved per-scope and dispatched whenever `med
 
 **Source-generated only** for new code. Per-package extension class under `Diagnostics/Extensions/Logger*Extensions.cs`:
 
+<!-- stratara-snippet-ignore: shows the consumer's own LoggerMessage partial against its own LogEvents bucket -->
 ```csharp
 public static partial class LoggerAccountExtensions
 {
@@ -68,6 +69,7 @@ public static partial class LoggerAccountExtensions
 
 Then in the handler:
 
+<!-- stratara-snippet-ignore: narrative fragment - the logger and the command come from the surrounding text -->
 ```csharp
 logger.LogDepositApplied(cmd.Amount, cmd.AccountId);
 ```

@@ -44,6 +44,7 @@ No event sourcing here — that's [sample 2](../samples/02-event-sourced.md). Th
 
 ## 4. Write the handlers
 
+<!-- stratara-snippet-ignore: the tutorial builds its own Account and repository from scratch, shadowing the shared example types -->
 ```csharp
 public sealed class OpenAccountHandler(InMemoryAccountRepository repo) : IQueryHandler<OpenAccountCommand, Guid>
 {
@@ -66,6 +67,7 @@ Note: `IQueryHandler<TRequest, TResult>` handles **both** `ICommand<T>` and `IQu
 
 ## 5. Wire DI + dispatch
 
+<!-- stratara-snippet-ignore: the tutorial builds its own Account and repository from scratch, shadowing the shared example types -->
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

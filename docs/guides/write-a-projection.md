@@ -96,6 +96,7 @@ the same row — the end state you wanted has simply been reached by someone els
 
 The first needs no helper. Load the row and return when it is not there:
 
+<!-- stratara-snippet-ignore: narrative fragment - the repository and the event come from the surrounding text -->
 ```csharp
 var tenant = await repository.GetAsync(@event.StreamId, cancellationToken);
 if (tenant is null) { return; }
@@ -103,6 +104,7 @@ if (tenant is null) { return; }
 
 The second is the one that is easy to get wrong, so the framework ships it:
 
+<!-- stratara-snippet-ignore: narrative fragment - the repository and the event come from the surrounding text -->
 ```csharp
 await repository.DeleteAsync(@event.StreamId, cancellationToken);
 

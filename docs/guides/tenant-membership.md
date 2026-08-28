@@ -22,6 +22,7 @@ Identity's role store. The two levels are independent, and authorization compone
 been issued but not accepted** — the row exists so it can be listed and accepted transactionally,
 but it confers no access anywhere in the stack.
 
+<!-- stratara-snippet-ignore: narrative fragment - the store and the example users come from the surrounding text -->
 ```csharp
 // Alice administers Acme and merely reads at Globex — two memberships, two role sets.
 await memberships.SetMembershipAsync(new TenantMembership(alice, acme, ["TenantAdmin"]));
@@ -84,6 +85,7 @@ consistency. Both directions are first-class: `GetMembershipsAsync` answers "whi
 user access", `GetMembersAsync` answers "who belongs to this tenant". `SetMembershipAsync` upserts
 on `(UserId, TenantId)`, replacing the role set and status.
 
+<!-- stratara-snippet-ignore: narrative fragment - the store and the example users come from the surrounding text -->
 ```csharp
 var mine = await memberships.GetMembershipsAsync(alice);       // forward lookup, any status
 var staff = await memberships.GetMembersAsync(acme);           // reverse lookup
@@ -164,6 +166,7 @@ Removing memberships is one plane of an erasure, not the whole of it. `ISubjectE
 four sweeps the framework owns and runs them in an order that leaves nothing unreachable before it
 has been removed:
 
+<!-- stratara-snippet-ignore: narrative fragment - the eraser and the example users come from the surrounding text -->
 ```csharp
 services.AddStrataraErasure();   // the four stores it sweeps are registered separately
 

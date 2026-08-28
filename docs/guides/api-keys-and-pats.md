@@ -20,6 +20,7 @@ the same session context, the same role and permission checks.
 tenant-scoped roles of its own; a **personal access token** (`UserId` set) acts *as* the bound user
 and carries no roles at all — the user's memberships and roles apply:
 
+<!-- stratara-snippet-ignore: narrative fragment - keys and tenantId come from the surrounding text -->
 ```csharp
 // Machine key — its own actor, with its own tenant-scoped roles.
 var machine = await keys.IssueAsync(new ApiKeyIssueRequest(
@@ -44,6 +45,7 @@ container orchestration, CI provisioning, self-hosted bundles, end-to-end test h
 comes into existence at start-up and is only written to a log arrives too late: the calling side
 reads its configuration when *it* starts. `ImportAsync` is that path:
 
+<!-- stratara-snippet-ignore: narrative fragment - keys and tenantId come from the surrounding text -->
 ```csharp
 // Once, out of band — then keep the value in your secret store:
 var rawKey = ApiKeyFormat.CreateRawKey();      // stk_…
@@ -122,6 +124,7 @@ puts it behind an administrator role or permission.
 API-key header present → the API-key scheme; `Authorization: Bearer …` → the bearer scheme;
 everything else → the cookie fallback. Set it as the default and no endpoint needs a scheme list:
 
+<!-- stratara-snippet-ignore: elided fragment showing only the scheme-selector call -->
 ```csharp
 .AddStrataraAuthSchemeSelector(o =>
 {

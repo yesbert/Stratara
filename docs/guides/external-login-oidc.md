@@ -60,6 +60,7 @@ existing account — from your sign-in callback:
 builder.Services.AddStrataraExternalLoginProvisioning<ApplicationUser>();
 ```
 
+<!-- stratara-snippet-ignore: narrative fragment - the sign-in manager and the provisioning service come from the surrounding text -->
 ```csharp
 // e.g. from the OpenID Connect OnTicketReceived event, or an external-login callback endpoint:
 var info = await signInManager.GetExternalLoginInfoAsync();

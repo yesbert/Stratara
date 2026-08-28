@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
+        <PackageReference Include="Moq"/>
+        <PackageReference Include="xunit.v3"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="coverlet.collector"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="../../src/Stratara.Abstractions/Stratara.Abstractions.csproj" />
+        <ProjectReference Include="../../src/Stratara.Contracts/Stratara.Contracts.csproj" />
+        <ProjectReference Include="../../src/Stratara.Diagnostics/Stratara.Diagnostics.csproj" />
+        <ProjectReference Include="../../src/Stratara.Domain/Stratara.Domain.csproj" />
+        <ProjectReference Include="../../src/Stratara.EventSourcing.EntityFrameworkCore/Stratara.EventSourcing.EntityFrameworkCore.csproj" />
+        <ProjectReference Include="../../src/Stratara.EventSourcing.Pipeline.CommandAudit/Stratara.EventSourcing.Pipeline.CommandAudit.csproj" />
+        <ProjectReference Include="../../src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj" />
+        <ProjectReference Include="../../src/Stratara.Identity.AspNetCore/Stratara.Identity.AspNetCore.csproj" />
+        <ProjectReference Include="../../src/Stratara.Identity.EntityFrameworkCore/Stratara.Identity.EntityFrameworkCore.csproj" />
+        <ProjectReference Include="../../src/Stratara.Identity.Core/Stratara.Identity.Core.csproj" />
+        <ProjectReference Include="../../src/Stratara.Infrastructure/Stratara.Infrastructure.csproj" />
+        <ProjectReference Include="../../src/Stratara.Mediator/Stratara.Mediator.csproj" />
+        <ProjectReference Include="../../src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj" />
+        <ProjectReference Include="../../src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj" />
+        <ProjectReference Include="../../src/Stratara.Projections/Stratara.Projections.csproj" />
+        <ProjectReference Include="../../src/Stratara.Resilience/Stratara.Resilience.csproj" />
+        <ProjectReference Include="../../src/Stratara.Sagas/Stratara.Sagas.csproj" />
+        <ProjectReference Include="../../src/Stratara.Security/Stratara.Security.csproj" />
+        <ProjectReference Include="../../src/Stratara.ServiceDefaults.AspNetCore/Stratara.ServiceDefaults.AspNetCore.csproj" />
+        <ProjectReference Include="../../src/Stratara.ServiceDefaults/Stratara.ServiceDefaults.csproj" />
+        <ProjectReference Include="../../src/Stratara.Sessions/Stratara.Sessions.csproj" />
+        <ProjectReference Include="../../src/Stratara.Shared/Stratara.Shared.csproj" />
+        <ProjectReference Include="../../src/Stratara.Testing/Stratara.Testing.csproj" />
+        <ProjectReference Include="../../src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj" />
+        <ProjectReference Include="../../src/Stratara.Validation/Stratara.Validation.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <Compile Remove="Fixtures/**/*.cs" />
+        <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+</Project>

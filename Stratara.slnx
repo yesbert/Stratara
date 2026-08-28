@@ -52,6 +52,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Stratara.Benchmarks/Stratara.Benchmarks.csproj" />
     <Project Path="tests/Stratara.EntityFrameworkCore.Tests/Stratara.EntityFrameworkCore.Tests.csproj" />
+    <Project Path="tests/Stratara.Documentation.Tests/Stratara.Documentation.Tests.csproj" />
     <Project Path="tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests.csproj" />
     <Project Path="tests/Stratara.EventSourcing.WorkerDefaults.Tests/Stratara.EventSourcing.WorkerDefaults.Tests.csproj" />
     <Project Path="tests/Stratara.Identity.AspNetCore.Tests/Stratara.Identity.AspNetCore.Tests.csproj" />

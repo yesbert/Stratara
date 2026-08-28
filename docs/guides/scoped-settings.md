@@ -37,6 +37,7 @@ The two interfaces are deliberately asymmetric. `ISettingStore` addresses **one 
 catalog-unaware and untyped, and it is what an admin UI or a preferences endpoint writes through.
 Passing `null` as the value **deletes** the entry:
 
+<!-- stratara-snippet-ignore: narrative fragment - the store and the tenant ids come from the surrounding text -->
 ```csharp
 await store.SetAsync("Ui.Theme", "dark", SettingScope.ForTenant(acme));
 await store.SetAsync("Ui.Theme", "high-contrast", SettingScope.ForUserInTenant(acme, bob));
@@ -46,6 +47,7 @@ await store.SetAsync("Ui.Theme", null, SettingScope.ForUserInTenant(acme, bob));
 `ISettingProvider` reads for the *current session* — no scope argument, because the Subject supplies
 it. `GetAsync<T>` converts via `TypeDescriptor` under `InvariantCulture`:
 
+<!-- stratara-snippet-ignore: narrative fragment - the settings facade comes from the surrounding text -->
 ```csharp
 var theme = await settings.GetOrNullAsync("Ui.Theme");
 var pageSize = await settings.GetAsync("Ui.PageSize", defaultValue: 25);
@@ -122,6 +124,7 @@ Each of these is a failure the plane refuses to make quiet:
 `DeleteScopeAsync` is the one operation that widens deliberately — every other read and write is
 exact-scope:
 
+<!-- stratara-snippet-ignore: narrative fragment - the store and the user id come from the surrounding text -->
 ```csharp
 await store.DeleteScopeAsync(SettingScope.ForUser(userId));     // the user, across ALL tenants
 await store.DeleteScopeAsync(SettingScope.ForTenant(tenantId)); // the tenant, across ALL users

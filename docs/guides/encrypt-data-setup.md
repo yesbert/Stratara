@@ -46,6 +46,7 @@ A key is identified by a **`KeyScope`** — a `DataSensitivityLevel` (`None` / `
 
 For large payloads (attachments, exports), use `ISecureBlobEncryptor` directly — it binds the stream to a `KeyScope` **and** a `purpose` via the associated data:
 
+<!-- stratara-snippet-ignore: narrative fragment - the encryptor and the stream come from the surrounding text -->
 ```csharp
 await using var cipher = await blobEncryptor.EncryptAsync(
     plainStream,
