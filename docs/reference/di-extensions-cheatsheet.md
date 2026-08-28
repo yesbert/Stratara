@@ -79,6 +79,31 @@ RabbitMQ; the Azure Service Bus extensions *replace* it, so an explicit `AddAzur
 effect even after a worker composite wired the RabbitMQ umbrella. Order no longer decides the
 transport, but registering both in one host is still a smell — pick one.
 
+## Write store + database contexts (`Stratara.EventSourcing.EntityFrameworkCore`)
+
+| Extension | What it does |
+|---|---|
+| `services.AddNpgsqlWriteDbContextFactory<TContext>()` | Npgsql-backed `IDbContextFactory<TContext>` for the write-store context, plus the default `IWriteUnitOfWork` if none is registered |
+| `services.AddNpgsqlReadDbContextFactory<TContext>()` | The same for a read-store context |
+| `services.AddNpgsqlIdentityDbContextFactory<TContext>()` | The same for an identity-store context, **plus** a scoped resolution of the context itself so ASP.NET Identity can inject it directly |
+| `services.AddWriteStore(configuration)` | Binds `EventSourcingOptions` from the `EventSourcing` section — snapshot cadence, batch sizes and the other write-side knobs |
+| `services.AddCommandAuditing()` | `CommandAuditBehavior` for both command shapes — persists an audit row per dispatched command; queries pass through (`Stratara.EventSourcing.Pipeline.CommandAudit`) |
+
+## Outbox coordination + projection replay (`Stratara.Outbox.RabbitMQ`)
+
+| Extension | What it does |
+|---|---|
+| `services.AddRedisOutboxLock()` | Replaces the no-op `NullOutboxLock` with the Redis-backed one, which is what makes **more than one outbox-worker replica** safe. Needs an `IConnectionMultiplexer` — `AddCaching()` from `Stratara.Infrastructure` registers one. Lease it via `OutboxOptions.LockLeaseSeconds` |
+| `services.AddProjectionReplayState()` | Registers the Redis-backed projection-replay state **and** `ProjectionReplayOptions` with its defaults, so the replay marking is leased (`LeaseSeconds`, default 300) rather than outliving a crashed replay. Idempotent |
+
+## Health checks
+
+| Extension | What it does |
+|---|---|
+| `builder.AddDefaultHealthChecks()` | Baseline `self` check, tagged `live` — surfaces on both `/health` and `/alive` once `MapDefaultEndpoints()` is called |
+| `healthChecks.AddEventStoreHealthCheck(...)` | Verifies the write-side database is reachable. Needs the write store registered |
+| `healthChecks.AddOutboxHealthCheck(...)` | Reports depth and age of the outbox backlog, degrading above a pending-entry threshold you pass in |
+
 ## Identity directory (`Stratara.Identity.EntityFrameworkCore`)
 
 `TContext` is any `DbContext` whose model includes the directory tables — derive from

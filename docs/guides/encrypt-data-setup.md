@@ -74,4 +74,4 @@ This catches a class of bugs that's easy to introduce: marking a property `[Encr
 
 - **Rotation keeps old ciphertext readable.** `IKeyStore.RotateAsync(scope)` adds a new current key version; older versions stay resolvable, so existing events decrypt without a backfill. Use `RevokeAsync` / `EraseScopeAsync` when you *want* old ciphertext to become unreadable (crypto-shred).
 - **Persisted ciphertext is opaque to projections.** Projections see the decrypted plaintext via `ISecureJsonSerializer`. Make sure your projection-worker has the key access.
-- **The bus carries ciphertext** when `BusEnvelopeIntegrityOptions.Mode != Off`. Bus consumers without key access can't decrypt — by design.
+- **The bus carries ciphertext.** Command payloads and event bundles are serialized through `ISecureJsonSerializer` on the way out, so `[EncryptData]` fields travel encrypted regardless of any other option — bus consumers without key access can't decrypt, by design. This is independent of `BusEnvelopeIntegrityOptions.Mode`, which decides whether envelopes are *signed*, not whether payloads are encrypted.

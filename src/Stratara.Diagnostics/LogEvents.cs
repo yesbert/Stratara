@@ -3,7 +3,8 @@ namespace Stratara.Diagnostics;
 /// <summary>
 /// Event-ID schema for Stratara's source-generated <c>[LoggerMessage]</c> extensions. Even
 /// hundreds = info/debug, <c>_1xx</c> = error. Consumer apps should pick non-overlapping
-/// ranges; Stratara reserves 100_000–110_999.
+/// ranges; Stratara reserves the whole 100_000–199_999 block and currently allocates
+/// 100_000–116_999. Start consumer event-IDs at 200_000.
 /// </summary>
 public static class LogEvents
 {

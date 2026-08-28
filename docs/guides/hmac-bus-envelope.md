@@ -19,9 +19,14 @@ You **don't** need this for single-app, single-host scenarios — the network + 
 services.AddBusEnvelopeIntegrity(options =>
 {
     options.Mode = BusEnvelopeIntegrityMode.Strict;
-    options.SharedKey = builder.Configuration["BusIntegrity:SharedKey"];
+    options.SharedKey = Convert.FromBase64String(
+        builder.Configuration["BusEnvelopeIntegrity:SharedKey"]!);
 });
 ```
+
+`SharedKey` is a `byte[]` of at least 32 bytes — decode it from wherever your secrets live. The
+overload `AddBusEnvelopeIntegrity(configuration)` binds `Mode` from the `BusEnvelopeIntegrity`
+section (`BusEnvelopeIntegrityOptions.SectionName`) and leaves the key to you.
 
 Three modes:
 
@@ -55,10 +60,13 @@ Two properties of the projection are load-bearing, and both are why it looks the
 ```csharp
 public interface IBusEnvelopeSigner
 {
-    string Sign(BusEnvelopeCanonical canonical);
-    bool Verify(BusEnvelopeCanonical canonical, string signature);
+    string Sign(string payload);
+    bool Verify(string payload, string? signature);
 }
 ```
+
+`payload` is the canonical projection — `BusEnvelopeCanonical.Of(envelope)` produces it, and the
+framework calls it for you. Treat the string as opaque bytes to sign; do not parse it.
 
 Default impl: `HmacBusEnvelopeSigner` — HMAC-SHA-256 over the canonical projection. Constant-time compare via `CryptographicOperations.FixedTimeEquals`. Length-check happens before the compare (v3.0.13+ — protects against `ArgumentException` from missized attacker-supplied signatures).
 
@@ -72,11 +80,14 @@ Default impl: `HmacBusEnvelopeSigner` — HMAC-SHA-256 over the canonical projec
 
 ```jsonc
 {
-  "BusIntegrity": {
-    "Mode": "Strict",
-    "SharedKey": "base64-encoded 32-byte HMAC key"
+  "BusEnvelopeIntegrity": {
+    "Mode": "Strict"
   }
 }
 ```
+
+The section name is `BusEnvelopeIntegrity` — it is what `AddBusEnvelopeIntegrity(configuration)`
+binds. Keep the shared key out of `appsettings.json`; read it from your secret store and assign it
+in the `Action<BusEnvelopeIntegrityOptions>` overload as shown above.
 
 Rotate the key by shipping the new key to all participants first, then redeploying. There's no built-in rolling-key support — the shared key is a single value at any point in time.

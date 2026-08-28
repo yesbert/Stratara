@@ -49,10 +49,33 @@ await builder.Build().RunAsync();
 
 ## Routing model
 
-- **Command topic** — `stratara.commands.{appName}`. Producers (other apps + your own outbox) write here. The `CommandWorker` consumes.
-- **Event-bundle topic** — `stratara.events.{appName}`. Producers: the write-store. Consumers: projections + sagas (`EventProjectionWorker`, `SagaOrchestrationWorker`).
+Topic and subscription names come from the `Messaging` configuration section. Every one has a
+default, so a host that configures nothing still works:
 
-Both topics are **fanout exchanges** + per-app queues. Multiple worker hosts can scale out by sharing a queue — RabbitMQ does the work-stealing.
+| Topic | Default name | Default subscription(s) | Who publishes / consumes |
+|---|---|---|---|
+| `Command` | `command` | `command-subscription` | Your outbox (and other apps) publish; the command worker consumes |
+| `HeavyCommand` | `heavy-command` | `heavy-command-subscription` | `IHeavyCommand` commands; the heavy-command worker consumes |
+| `EventBundle` | `event-bundle` | `event-bundle-subscription`, `event-bundle-saga-subscription` | The write-store publishes; projection and saga workers consume |
+| `Notification` | `notifications` | — | Consumer-defined notification fan-out |
+
+Override any of them by name:
+
+```jsonc
+{
+  "Messaging": {
+    "Topics": [
+      {
+        "Name": "Command",
+        "Value": "myapp.command",
+        "Subscriptions": [ { "Name": "CommandSubscription", "Value": "myapp.command.worker" } ]
+      }
+    ]
+  }
+}
+```
+
+Topics are **fanout exchanges** + per-subscription queues. Multiple worker hosts can scale out by sharing a queue — RabbitMQ does the work-stealing.
 
 ## Backpressure
 

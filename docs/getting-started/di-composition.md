@@ -103,7 +103,7 @@ builder.Services.AddHeavyCommandWorker(degreeOfParallelism: 2);
 builder.AddHeavyCommandWorkerServices(degreeOfParallelism: 2);
 ```
 
-`degreeOfParallelism` bounds how many heavy commands run at once. If no heavy worker is running, heavy commands are held in the outbox (never dropped) until one comes online. Over Azure Service Bus, provision the `heavy-command` topic + subscription up front (as with the default command topic). Topic/subscription names are configurable under `Messaging:HeavyCommand`.
+`degreeOfParallelism` bounds how many heavy commands run at once. If no heavy worker is running, heavy commands are held in the outbox (never dropped) until one comes online. Over Azure Service Bus, provision the `heavy-command` topic + subscription up front (as with the default command topic). Topic and subscription names are configurable — the entry named `HeavyCommand` in the `Messaging:Topics` array, defaulting to `heavy-command` / `heavy-command-subscription`.
 
 ## Example: a worker that runs everything
 

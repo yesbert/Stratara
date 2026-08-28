@@ -29,6 +29,39 @@ applies to the entire NuGet family.
   does cover — decryption fails after tampering — rather than as a substitute for an unsigned
   payload. No behaviour changes; the projection itself has been correct since 3.4.0.
 
+- **Bus-envelope integrity guide: the signer interface and the configuration section were both
+  wrong.** The `IBusEnvelopeSigner` snippet declared `Sign(BusEnvelopeCanonical)` /
+  `Verify(BusEnvelopeCanonical, string)`; the real interface takes the canonical projection as a
+  `string`, and `BusEnvelopeCanonical` is a static helper that produces it, not a type you can pass.
+  The configuration example bound a `BusIntegrity` section — the bound section is
+  `BusEnvelopeIntegrity` — and assigned a configuration string straight to `SharedKey`, which is a
+  `byte[]`. All three are corrected, and the key is now read from a secret store rather than
+  `appsettings.json`.
+
+- **Bus and topic names in the outbox guides are the ones the framework actually uses.** Both guides
+  described a routing model of `stratara.commands.{appName}` / `stratara.events.{appName}`. The
+  defaults are `command`, `heavy-command`, `event-bundle` and `notifications` with their matching
+  subscriptions, all overridable through the `Messaging:Topics` configuration array. An operator who
+  provisioned a broker from those pages created topics nothing publishes to. The RabbitMQ guide now
+  carries the full table and the override shape; the Azure Service Bus guide points at it and notes
+  that Service Bus entities must be provisioned up front.
+
+- **`[EncryptData]` payload encryption is no longer described as conditional on integrity mode.** The
+  encryption guide claimed the bus carries ciphertext "when `BusEnvelopeIntegrityOptions.Mode != Off`".
+  Payloads are serialized through `ISecureJsonSerializer` on the way out regardless; integrity mode
+  decides whether envelopes are *signed*, not whether payloads are *encrypted*.
+
+- **The log-event ID allocation table lists every bucket again.** The reference page and the
+  `LogEvents` XML doc both stopped short of the current allocation — the page at `113_999`, the XML
+  doc at `110_999` — while `TenantIsolation` (114_000s), `ExternalLoginProvisioning` (115_000s) and
+  `ApiKeys` (116_000s) already existed. That table is what a consumer reads to pick a
+  non-colliding range for its own events. `Stratara.Diagnostics`'s README carried the same stale list.
+
+- **The DI cheatsheet covers the registrations it was missing.** New sections for the write-store
+  context factories, `AddWriteStore`, `AddCommandAuditing`, the health checks, and — the two that
+  cost the most when unknown — `AddRedisOutboxLock`, without which a second outbox-worker replica is
+  not safe, and `AddProjectionReplayState`, which is what leases a projection-replay marking.
+
 - **`OutboxOptions.BatchSize` no longer describes the drain loop 3.4.0 removed.** The XML doc still
   claimed the worker keeps fetching batches until the table is drained and that the value caps
   per-query memory pressure rather than throughput. A cycle takes one batch of each kind and ends,

@@ -27,7 +27,7 @@ Generic observability primitives shared by all Stratara packages. Use this to em
 
 Projections and sagas are real-time bus subscribers without a persisted checkpoint, so these report **throughput and latency**, not consumer lag.
 
-- `LogEvents` — `[LoggerMessage]` event-ID ranges per domain (ChangeSet=100_000s, BackgroundTasks=101_000s, EventStore=102_000s, …, Messaging=108_000s, Update=109_000s, Saga=110_000s). Even hundreds = info/debug, `_1xx` = error.
+- `LogEvents` — `[LoggerMessage]` event-ID ranges per domain (ChangeSet=100_000s, BackgroundTasks=101_000s, EventStore=102_000s, …, Saga=110_000s, EventBundleIntegrity=111_000s, KeyManagement=112_000s, BusEnvelopeIntegrity=113_000s, TenantIsolation=114_000s, ExternalLoginProvisioning=115_000s, ApiKeys=116_000s). Even hundreds = info/debug, `_1xx` = error. Consumer applications start at 200_000.
 - `LoggerScopeExtensions.BeginCreateAggregateScope` / `BeginUpdateAggregateScope` — pre-baked logging scopes for the create/update aggregate flows.
 
 ## Quick reference

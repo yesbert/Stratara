@@ -11,7 +11,7 @@ Stratara mandates source-generated `[LoggerMessage]` for all new logging — no 
 | Range | Owner |
 |---|---|
 | `0 – 99_999` | Reserved (Microsoft / framework defaults) |
-| `100_000 – 199_999` | **Stratara framework** (this repo) — currently allocated `100_000 – 113_999` |
+| `100_000 – 199_999` | **Stratara framework** (this repo) — currently allocated `100_000 – 116_999` |
 | `200_000+` | Consumer applications |
 
 Sub-buckets inside the framework's `100_000` range are defined in `src/Stratara.Diagnostics/LogEvents.cs`. The current allocation:
@@ -32,6 +32,9 @@ Sub-buckets inside the framework's `100_000` range are defined in `src/Stratara.
 | `111_000s` | Event-bundle integrity | `LogEvents.EventBundleIntegrity` |
 | `112_000s` | Key management | `LogEvents.KeyManagement` |
 | `113_000s` | Bus-envelope integrity (startup probe) | `LogEvents.BusEnvelopeIntegrity` |
+| `114_000s` | Tenant isolation | `LogEvents.TenantIsolation` |
+| `115_000s` | External-login provisioning | `LogEvents.ExternalLoginProvisioning` |
+| `116_000s` | API keys | `LogEvents.ApiKeys` |
 
 Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `100_101` error). Consult `src/Stratara.Diagnostics/LogEvents.cs` for the authoritative current list — buckets shift as features mature.
 

@@ -47,8 +47,9 @@ builder.AddCommandWorkerServices();
 
 ## Routing model
 
-- **Topics**: `stratara.commands.{appName}`, `stratara.events.{appName}`.
-- **Subscriptions** per worker host. Service Bus subscriptions are durable — a worker that's down accumulates messages in its subscription until it reconnects.
+- **Topics**: named from the `Messaging` configuration section — `command`, `heavy-command`, `event-bundle` and `notifications` by default. See the [RabbitMQ guide](outbox-setup-rabbitmq.md#routing-model) for the full table and the override shape; the names are transport-independent.
+- **Subscriptions** per worker host, defaulting to `command-subscription`, `heavy-command-subscription`, `event-bundle-subscription` and `event-bundle-saga-subscription`. Service Bus subscriptions are durable — a worker that's down accumulates messages in its subscription until it reconnects.
+- **Provision topics and subscriptions up front.** Unlike RabbitMQ, where the bus declares its own exchanges, Service Bus entities must exist before a worker connects.
 
 ## Processor tuning
 
