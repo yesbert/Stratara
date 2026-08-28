@@ -165,6 +165,17 @@ builder.Services.Configure<ProjectionReplayOptions>(
     o => o.LeaseSeconds = 600);   // default 300
 ```
 
+Or bind it from the `ProjectionReplay` configuration section
+(`ProjectionReplayOptions.SectionName`):
+
+```jsonc
+{
+  "ProjectionReplay": {
+    "LeaseSeconds": 600
+  }
+}
+```
+
 Err long. Too long only delays the clearing of a marking whose replay already died; too short lets
 the marking lapse while the replay is still running, which resumes suppressed publication against
 half-rebuilt read models and tells nobody.

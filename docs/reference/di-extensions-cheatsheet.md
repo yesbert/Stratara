@@ -22,6 +22,41 @@ These wire entire worker / host concerns in one call. **Pick one per host.**
 
 `AddCommonFrameworkServices()` is called transitively by every worker / backend extension above — you don't call it yourself.
 
+## À la carte (`IServiceCollection`)
+
+What the umbrellas compose. Reach for these when a host needs one concern and not the rest — a tool
+that dispatches commands but runs no worker, a test host, a migration runner.
+
+| Extension | What it does |
+|---|---|
+| `services.AddMediator()` | `IMediator` as a scoped service |
+| `services.AddEventSourcing()` | The core event-sourcing services (event source, aggregation, snapshots) as scoped, plus the default trusted-type resolver |
+| `services.AddMapping()` | The mapper the event-sourcing stack uses to materialize typed events from persisted rows |
+| `services.AddSessionContext()` | The scoped session context and its accessor. Pair with `app.UseMiddleware<SessionContextMiddleware>()` in an ASP.NET host |
+| `services.AddIdentity()` | The scoped identity accessors that resolve from the ambient session context |
+| `services.AddBackgroundTasks()` | The in-process background-task queue and its hosted service (capacity 100 pending items) |
+| `services.AddOutboxDispatcher()` | `ICommandOutboxDispatcher` + `IEventBundleOutboxDispatcher` (scoped) and the bus they publish through |
+| `services.AddAuthorizingCommandOutboxDispatcher()` | Wraps the dispatcher so `[RequireRole]` / `[RequirePermission]` are enforced on the outbox path too, keeping the inner dispatcher resolvable |
+| `services.AddPipelineBehaviorWithResult<T>()` | Registers an open-generic pipeline behaviour for the result-returning request shape |
+| `services.AddTrustedTypeResolver()` | The default `ITrustedTypeResolver` if none is registered. Idempotent |
+| `services.AddTrustedType<T>()` | Adds one type to the trusted-type allowlist — for types produced but never handled, such as a snapshot type no projection or saga anchors |
+| `services.AddEventUpcaster<T>()` | Registers an `IEventUpcaster` and ensures the pipeline exists |
+| `services.AddEventUpcasterPipeline()` | The default upcaster pipeline if none is registered. Idempotent; every `AddEventUpcaster` overload calls it |
+
+## Workers without the composite
+
+The hosted services the `Add*WorkerServices()` umbrellas wire. Register one directly when the host
+already has the framework services and needs a second lane.
+
+| Extension | What it runs |
+|---|---|
+| `services.AddMediatorWorker()` | The interactive command worker — subscribes to the command topic, restores the session context, dispatches through `IMediator` |
+| `services.AddHeavyCommandWorker(dop?)` | The heavy-command lane, draining the `heavy-command` topic so `IHeavyCommand` work cannot starve the interactive lane |
+| `services.AddOutboxWorker()` | The outbox-drain hosted service; binds `OutboxOptions` from configuration |
+| `services.AddProjectionWorker()` | The projection runtime and its hosted service; binds `ProjectionOptions` |
+| `services.AddSagaWorker()` | The saga runtime and its hosted service; binds `SagaOptions` |
+| `services.AddEventStreamHashWorker()` | The event-stream hashing worker and the anchor services behind it |
+
 ## Domain registration (`IServiceCollection`)
 
 These tell Stratara *what* to dispatch / project / saga. Call once per assembly that contains the relevant types.
@@ -42,6 +77,8 @@ These tell Stratara *what* to dispatch / project / saga. Call once per assembly 
 | `services.AddStrataraFileKeyStore(configuration)` | Registers the production file-backed `EnvelopeFileKeyStore` (KEK-wrapped, versioned per-`KeyScope` DEKs) + `FileMasterKeyProvider` + the AES-GCM `ISecureBlobEncryptor`. Lives in `Stratara.Security` (dependency-light). Call **before** `AddSecurity()` so it wins the `TryAdd` race. |
 | `services.AddSecurity()` | Wires `ISecureJsonSerializer` (`[EncryptData]`), the AES-GCM blob encryptor, and a **Development-only** `DummyKeyStore` fallback (`TryAdd`, so a real `IKeyStore` registered first wins). Adds the `KeyStoreStartupProbe` fail-fast guard. |
 | `services.AddBusEnvelopeIntegrity(opts)` | Opt-in HMAC signing of `CommandEnvelope` + `EventBundle` |
+| `services.AddStrataraBlobEncryption()` | The AES-GCM blob encryptor and its factory on their own, without the rest of `AddSecurity()` |
+| `services.AddStrataraErasure()` | Composes the membership, API-key, setting and key-material sweeps into one erasure operation. Registers no store of its own — the four it sweeps must already be registered |
 
 ## Validation
 
@@ -96,6 +133,20 @@ transport, but registering both in one host is still a smell — pick one.
 | `services.AddRedisOutboxLock()` | Replaces the no-op `NullOutboxLock` with the Redis-backed one, which is what makes **more than one outbox-worker replica** safe. Needs an `IConnectionMultiplexer` — `AddCaching()` from `Stratara.Infrastructure` registers one. Lease it via `OutboxOptions.LockLeaseSeconds` |
 | `services.AddProjectionReplayState()` | Registers the Redis-backed projection-replay state **and** `ProjectionReplayOptions` with its defaults, so the replay marking is leased (`LeaseSeconds`, default 300) rather than outliving a crashed replay. Idempotent |
 
+## Observability (`Stratara.ServiceDefaults`)
+
+| Extension | What it does |
+|---|---|
+| `builder.ConfigureOpenTelemetry()` | OpenTelemetry logging, metrics and tracing with the default instrumentation (HTTP client, EF Core, RabbitMQ, runtime); wires the OTLP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set |
+| `builder.ConfigureAspNetOpenTelemetry()` | Adds ASP.NET Core request instrumentation on top, filtering `/health` and `/alive` out of tracing |
+| `builder.ConfigureSerilog()` | Serilog as the host's logging provider with Stratara's defaults (destructuring attributes, async console sink, OTLP sink when configured), reading the `Serilog` configuration section |
+
+## Test support (`Stratara.Testing.EntityFrameworkCore`)
+
+| Extension | What it does |
+|---|---|
+| `services.AddStrataraTestingEventStore()` | The event-sourcing write stack over an in-memory store, plus a test key store, encryptor and session context. Register your aggregates with `AddAggregatesFromAssemblyContaining<T>()` so event payloads resolve |
+
 ## Health checks
 
 | Extension | What it does |
@@ -149,7 +200,9 @@ through unchecked.
 | `services.AddMembershipTenantClaimsTransformation()` | Resolves `stratara:tenant_id` live per request — a tenant switch applies without re-issuing the sign-in |
 | `services.AddStrataraPermissionPolicies()` | Turns every catalog permission into an on-demand policy → `[Authorize("sims.read")]` |
 | `services.AddStrataraExternalLoginProvisioning<TUser>(opts?)` | JIT create/link of the local account on first external sign-in (fail-closed) |
+| `services.AddStrataraProblemDetails()` | Turns a validation rejection into a 400 with the failures grouped by field, and an authorization or tenant-access refusal into a 403 — one shape for all three |
 | `app.MapDefaultEndpoints()` | `/health` + `/alive` endpoints (`Stratara.ServiceDefaults.AspNetCore`) |
+| `app.UseAuthorizationExceptionTo403()` | Translates an authorization exception thrown downstream — by the authorizing mediator or the authorizing outbox dispatcher — into an HTTP 403. Other exceptions continue to propagate |
 
 ### Authentication schemes (`AuthenticationBuilder`)
 

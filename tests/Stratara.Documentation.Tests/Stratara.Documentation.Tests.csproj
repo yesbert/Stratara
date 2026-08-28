@@ -46,5 +46,6 @@
     <ItemGroup>
         <Compile Remove="Fixtures/**/*.cs" />
         <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="registration-coverage-allowlist.txt" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 </Project>

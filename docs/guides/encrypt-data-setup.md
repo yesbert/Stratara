@@ -65,6 +65,27 @@ ciphertext = AES-GCM-Encrypt(key, plaintext, nonce, AAD = TenantId)
 
 Decryption requires the **same** AAD. If a ciphertext is moved between tenants, decryption fails with `CryptographicException` — defense-in-depth against cross-tenant data leakage.
 
+## Reading blobs written before the v2 format
+
+Blob ciphertext carries a leading version byte since v2. A stream written before that has no version
+byte, and how to read it depends on whether the writer emitted a length-prefixed `purpose` field —
+which the framework cannot tell from the bytes. Say which, through the `Stratara:BlobEncryption`
+section (`StrataraBlobEncryptionOptions.SectionName`):
+
+```jsonc
+{
+  "Stratara": {
+    "BlobEncryption": {
+      "LegacyBlobsCarryPurpose": false
+    }
+  }
+}
+```
+
+The default is `false` — a legacy stream is read as carrying no purpose field, and `"blob"` is
+assumed. New streams are always written in the v2 format regardless of this setting, so this is a
+read-path compatibility switch and nothing else.
+
 ## EncryptionMetadataDriftGuard
 
 At host-start, `EncryptionMetadataDriftGuard` (registered as `IHostedService` by `AddSecurity()`) walks the **Trusted-Type-Allowlist** and checks every type's `EncryptionMetadata.RequiresEncryption` against the actual `[EncryptData]` attributes. If they drift (someone removed `[EncryptData]` but didn't update the metadata), the host fails-fast.

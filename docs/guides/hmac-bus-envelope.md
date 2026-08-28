@@ -91,3 +91,25 @@ binds. Keep the shared key out of `appsettings.json`; read it from your secret s
 in the `Action<BusEnvelopeIntegrityOptions>` overload as shown above.
 
 Rotate the key by shipping the new key to all participants first, then redeploying. There's no built-in rolling-key support — the shared key is a single value at any point in time.
+
+## Size and depth guards
+
+A signature answers *who sent this*. It does not answer *how big is it* — verification happens after
+the bytes are already in memory, and a hostile publisher can exhaust a consumer without ever forging
+anything. Two limits apply to every inbound envelope, independently of `Mode`, and bind from the
+`BusEnvelopeJson` section:
+
+```jsonc
+{
+  "BusEnvelopeJson": {
+    "MaxDepth": 32,
+    "MaxBodyBytes": 1048576
+  }
+}
+```
+
+`MaxBodyBytes` (default 1_048_576 bytes — one mebibyte) is checked against the raw payload length *before* deserialisation,
+so an oversized message is rejected rather than allocated. `MaxDepth` (default 32, against
+`System.Text.Json`'s own 64) bounds nesting, which is what a payload built to exhaust the stack
+relies on. Raise `MaxBodyBytes` if your commands legitimately carry more, and treat the raise as a
+capacity decision — it is the ceiling on what one hostile message can cost you.

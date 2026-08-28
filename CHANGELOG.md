@@ -29,6 +29,17 @@ applies to the entire NuGet family.
   does cover — decryption fails after tampering — rather than as a substitute for an unsigned
   payload. No behaviour changes; the projection itself has been correct since 3.4.0.
 
+- **Three bindable configuration sections are documented for the first time.** `BusEnvelopeJson`
+  (`MaxDepth`, `MaxBodyBytes` — the size and depth guards on every inbound envelope), `ProjectionReplay`
+  (`LeaseSeconds`), and `Stratara:BlobEncryption` (`LegacyBlobsCarryPurpose`). All three shipped
+  bindable and named on no page, so a host could only reach them by reading the source.
+
+- **The DI cheatsheet lists every registration a host can call.** 28 were missing — among them the
+  à-la-carte primitives the umbrella extensions compose, the workers without their composite, the
+  OpenTelemetry and Serilog configuration, `AddStrataraProblemDetails` and
+  `UseAuthorizationExceptionTo403`. A test now enumerates the registration surface by the type each
+  method extends and fails on one that no page lists.
+
 - **Bus-envelope integrity guide: the signer interface and the configuration section were both
   wrong.** The `IBusEnvelopeSigner` snippet declared `Sign(BusEnvelopeCanonical)` /
   `Verify(BusEnvelopeCanonical, string)`; the real interface takes the canonical projection as a

@@ -1,0 +1,4 @@
+# Registrations deliberately absent from docs/reference/di-extensions-cheatsheet.md.
+# One per line: <method name> — <reason>. An entry that no longer resolves to a
+# registration fails DiCheatsheetCoverageTests, so this list cannot outlive its subjects.
+AddNpsqlWriteDbContextFactory — [Obsolete] alias kept for the original misspelling; documenting it would advertise the typo. Removed in the next major version.
