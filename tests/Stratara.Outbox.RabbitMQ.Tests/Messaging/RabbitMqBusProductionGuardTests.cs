@@ -67,18 +67,19 @@ public sealed class RabbitMqBusProductionGuardTests
         Assert.IsNotType<InvalidOperationException>(exception);
     }
 
-    [Fact]
-    public async Task PublishAsync_StagingEnvironment_MissingCredentials_DoesNotThrowInvalidOperation()
+    [InlineData("Staging")]
+    [InlineData("Preview")]
+    [InlineData("prod")]
+    [Theory]
+    public async Task PublishAsync_OutsideDevelopment_MissingCredentials_Throws(string environmentName)
     {
         var config = BuildConfiguration(host: "rabbit.example.com", username: null, password: null);
-        var stagingEnv = MockEnvironment("Staging");
-        await using var bus = CreateBus(config, stagingEnv);
+        await using var bus = CreateBus(config, MockEnvironment(environmentName));
 
-        var exception = await Record.ExceptionAsync(
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => bus.PublishAsync("test-topic", new { Payload = "x" }, CancellationToken.None));
 
-        Assert.NotNull(exception);
-        Assert.IsNotType<InvalidOperationException>(exception);
+        Assert.Contains(environmentName, exception.Message, StringComparison.Ordinal);
     }
 
     private static IConfiguration BuildConfiguration(string? host, string? username, string? password)

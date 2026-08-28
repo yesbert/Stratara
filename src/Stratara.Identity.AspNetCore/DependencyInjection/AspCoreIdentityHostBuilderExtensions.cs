@@ -86,19 +86,26 @@ public static class AspCoreIdentityHostBuilderExtensions
 
         /// <summary>
         /// Registers <see cref="IdentityNoOpEmailSender{TUser}"/> as the host's <c>IEmailSender&lt;TUser&gt;</c>
-        /// for **development environments only**. Throws <see cref="InvalidOperationException"/> when the
-        /// host environment is Production to prevent silently dropping confirmation / reset emails in prod.
+        /// for **Development only**. Throws <see cref="InvalidOperationException"/> on every other
+        /// environment name — Staging, QA, Preview and anything self-named included — because the no-op
+        /// sender drops confirmation and reset mail without an exception or a log entry. A host that wants
+        /// mail dropped outside Development registers its own <c>IEmailSender&lt;TUser&gt;</c>, which makes
+        /// it a decision rather than a fall-through.
         /// </summary>
         /// <typeparam name="TUser">The Identity user type.</typeparam>
-        /// <exception cref="InvalidOperationException">Thrown when the host environment is Production.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the host environment is not Development.</exception>
         public IHostApplicationBuilder AddDevelopmentNoOpEmailSender<TUser>()
             where TUser : class, new()
         {
-            if (builder.Environment.IsProduction())
+            if (!builder.Environment.IsDevelopment())
             {
                 throw new InvalidOperationException(
-                    "IdentityNoOpEmailSender<TUser> must not be used in production environments. " +
-                    "Register a real IEmailSender<TUser> implementation (e.g., SendGrid, Mailgun, AWS SES) instead.");
+                    "IdentityNoOpEmailSender<TUser> must not be used outside Development — host environment is " +
+                    $"'{builder.Environment.EnvironmentName}'. It drops every confirmation and reset mail without " +
+                    "an exception or a log entry, so accounts stay unconfirmed and external-login auto-linking " +
+                    "fails for reasons that surface nowhere near the cause. " +
+                    "Register a real IEmailSender<TUser> implementation (e.g., SendGrid, Mailgun, AWS SES) instead — " +
+                    "registering your own no-op is the explicit way to drop mail outside Development.");
             }
 
             builder.Services.AddScoped<IEmailSender<TUser>, IdentityNoOpEmailSender<TUser>>();

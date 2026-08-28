@@ -38,16 +38,20 @@ public class AddDevelopmentNoOpEmailSenderTests
         Assert.Contains("production", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void AddDevelopmentNoOpEmailSender_InStagingEnvironment_DoesNotThrow()
+    [InlineData("Staging")]
+    [InlineData("Preview")]
+    [InlineData("prod")]
+    [Theory]
+    public void AddDevelopmentNoOpEmailSender_OutsideDevelopment_Throws(string environmentName)
     {
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
         {
-            EnvironmentName = Environments.Staging,
+            EnvironmentName = environmentName,
         });
 
-        builder.AddDevelopmentNoOpEmailSender<TestUser>();
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => builder.AddDevelopmentNoOpEmailSender<TestUser>());
 
-        Assert.Contains(builder.Services, d => d.ServiceType == typeof(IEmailSender<TestUser>));
+        Assert.Contains("IEmailSender", ex.Message, StringComparison.Ordinal);
     }
 }

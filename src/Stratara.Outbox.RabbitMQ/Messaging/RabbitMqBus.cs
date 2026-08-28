@@ -255,13 +255,16 @@ internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration co
 
             if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
             {
-                if (hostEnvironment.IsProduction())
+                if (!hostEnvironment.IsDevelopment())
                 {
                     throw new InvalidOperationException(
-                        $"RabbitMQ credentials are missing on Production host '{hostEnvironment.EnvironmentName}' " +
+                        $"RabbitMQ credentials are missing on host '{hostEnvironment.EnvironmentName}' " +
                         $"(RABBITMQ_HOST='{host}', RABBITMQ_USERNAME or RABBITMQ_PASSWORD unset). " +
-                        "Refusing to fall back to the default 'guest' account in Production — set both " +
-                        "RABBITMQ_USERNAME and RABBITMQ_PASSWORD, or supply a 'rabbitmq' connection string.");
+                        "The default 'guest' account is only fallen back to in Development — every other " +
+                        "environment name, including Production, Staging and any custom one, must set both " +
+                        "RABBITMQ_USERNAME and RABBITMQ_PASSWORD, or supply a 'rabbitmq' connection string. " +
+                        "To use 'guest' deliberately outside Development, set RABBITMQ_USERNAME=guest and " +
+                        "RABBITMQ_PASSWORD=guest explicitly.");
                 }
                 logger.LogRabbitMqGuestFallback(host);
                 username ??= "guest";

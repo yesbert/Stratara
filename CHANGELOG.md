@@ -71,6 +71,26 @@ applies to the entire NuGet family.
   pass — with the defaults, twenty thousand entries a minute, and both the batch size and the
   interval are configurable.
 
+- **Two environment guards now admit Development only, instead of refusing Production only.**
+  `IsProduction()` recognises exactly one name. Everything else fell through — Staging, QA, UAT,
+  Preview, and, because the check is by name, `Production-EU` and `prod` as well.
+
+  **Missing broker credentials** no longer fall back to the `guest` account outside Development.
+  Previously any non-Production host silently connected as `guest`, which matters where the broker
+  runs in the same container or network with a default configuration.
+
+  **The no-op email sender** can no longer be registered outside Development. It returns success for
+  every operation without an exception or a log entry, so on a staging host a registered user never
+  received a confirmation link, the account stayed unconfirmed, and external-login auto-linking then
+  failed for that user. What gets reported is "OIDC linking doesn't work on staging"; the cause is a
+  dropped mail three steps earlier.
+
+  **Breaking for hosts that relied on either fall-through**, which is the point of the change. Both
+  escape hatches already exist and are explicit — set `RABBITMQ_USERNAME=guest` and
+  `RABBITMQ_PASSWORD=guest` to use the default account deliberately, and register your own
+  `IEmailSender<TUser>` to drop mail outside Development. The framework ships no no-op sender for
+  that case, because a shipped no-op is indistinguishable at every call site from a working one.
+
 - **The message-bus circuit breaker can now open.** It could not — not rarely, but never. The breaker
   required ten failures inside a sixty-second window while the retry in front of it backs off to a
   sixty-second cap, so once the backoff had grown at most one failure landed per window and the tenth
