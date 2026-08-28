@@ -31,8 +31,14 @@ public static class OutboxServiceCollectionExtensions
     }
 
     /// <summary>Registers the singleton Redis-backed <see cref="IProjectionReplayState"/>. Idempotent (<c>TryAddSingleton</c>).</summary>
+    /// <remarks>
+    /// Also registers <see cref="ProjectionReplayOptions"/> with its defaults, so the replay marking is
+    /// leased even when the consumer configures nothing. Bind the section with
+    /// <c>services.Configure&lt;ProjectionReplayOptions&gt;(...)</c> to override the lease.
+    /// </remarks>
     public static IServiceCollection AddProjectionReplayState(this IServiceCollection services)
     {
+        services.AddOptions<ProjectionReplayOptions>();
         services.TryAddSingleton<IProjectionReplayState, ProjectionReplayState>();
         return services;
     }

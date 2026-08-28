@@ -37,6 +37,30 @@ applies to the entire NuGet family.
   themselves. Streams already written are untouched, no payload changed, and no migration is
   required — the event's serialized JSON is byte-identical.
 
+- **An abandoned projection replay no longer suppresses publication forever.** While a replay is
+  active the framework suppresses publication, so replayed history does not re-trigger side effects.
+  That marking was only ever cleared by the process that set it, so a kill, a container stop, an
+  out-of-memory kill or a reboot left it standing with nothing to clear it — and while it stands,
+  every command is recorded instead of sent while the caller receives an identifier and a success
+  response, and the outbox never drains. The marking and its progress counters are now held on a
+  lease that the replay renews each time it reports progress: a replay that stops without clearing
+  them stops renewing them, and they lapse on their own.
+
+  The lease defaults to 300 seconds and is configurable through the new `ProjectionReplayOptions`.
+  Set it longer than your slowest stretch between two progress reports — a shorter lease lapses while
+  the replay is still running and resumes publication against half-rebuilt read models. Erring long
+  only delays the clearing of a marking whose replay already died.
+
+  **One action on upgrade:** a marking already stuck from before this version was written without an
+  expiry and does not gain one. Clear it once — an explicit deactivation, or let the next replay's
+  own completion clear it. Upgrading alone does not free a host that is stuck today.
+
+### Added
+
+- **`ProjectionReplayOptions`** — configures how long a projection replay's active marking and
+  progress counters survive without renewal. Registered with its defaults by
+  `AddProjectionReplayState()`, so an existing host is leased without configuring anything.
+
 ## [3.3.0] — 2026-08-25
 
 Two capabilities the framework advertised but did not provide, and a set of guards for behaviour
