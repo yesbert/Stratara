@@ -71,6 +71,23 @@ applies to the entire NuGet family.
   pass — with the defaults, twenty thousand entries a minute, and both the batch size and the
   interval are configurable.
 
+- **The message-bus circuit breaker can now open.** It could not — not rarely, but never. The breaker
+  required ten failures inside a sixty-second window while the retry in front of it backs off to a
+  sixty-second cap, so once the backoff had grown at most one failure landed per window and the tenth
+  was never counted. Measured over a simulated hour of uninterrupted failure: sixty-three attempts,
+  no circuit opening at all. The window is now derived from the retry's own delay cap instead of being
+  chosen independently of it, and five failures inside a ten-minute window open the circuit.
+
+  **Nothing you can observe was broken, and nothing you rely on changes.** Retries remain unbounded,
+  the backoff is unchanged, and traffic still succeeds once the broker recovers without you writing
+  any retry — the retry sits in front of the breaker and retries the broken-circuit signal too. What
+  changes is what a sustained outage *looks like*: an open circuit in logs and metrics, which is a
+  state you can alert on. If your broker goes down for minutes, expect new breaker-state events.
+
+  Worth saying plainly: the framework documented this protection and did not have it. An operator who
+  built an alert on breaker state got an alert that could never fire, and the code comment describing
+  the behaviour described something that never happened.
+
 ### Added
 
 - **`ProjectionReplayOptions`** — configures how long a projection replay's active marking and

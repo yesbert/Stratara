@@ -65,51 +65,75 @@ public class MessageBusResilienceTests
         return until();
     }
 
-    /// <summary>
-    /// **Characterization test — it pins a defect, not a guarantee.**
-    ///
-    /// The message-bus policy's circuit breaker cannot open under the policy's own backoff. The
-    /// breaker needs ten actions inside a sixty-second sampling window; the retry's delay is capped
-    /// at sixty seconds, so once the backoff has grown at most one failure lands per window. Over a
-    /// simulated hour of continuous failure the breaker records no open at all.
-    ///
-    /// Nothing observable is wrong today: the spec's guarantee is that the operation succeeds once
-    /// the broker recovers, and the retry delivers that. What the breaker was documented to deliver
-    /// — bounding the duty cycle of a permanent failure — is delivered by the sixty-second delay
-    /// cap instead. The breaker is inert configuration whose stated purpose is served elsewhere.
-    ///
-    /// When that is fixed, this test fails. That is the point: it is here so the next person to
-    /// touch the policy learns this in one test run rather than by reading the factory.
-    /// </summary>
     [Fact]
-    public async Task TheCircuitBreakerNeverOpens_BecauseTheBackoffOutrunsItsSamplingWindow()
+    public void TheSamplingWindowIsWideEnoughForTheRetryToFillIt()
+    {
+        // The defect this replaces: three settings chosen without reference to one another. At steady
+        // state the retry produces one action per MaxDelay, so a window that does not span
+        // MaxDelay × MinimumThroughput can never see the throughput the breaker demands.
+        var minimumUsableWindow = ResilienceFactory.MessageBusMaxDelay
+                                  * ResilienceFactory.MessageBusMinimumThroughput;
+
+        Assert.True(
+            ResilienceFactory.MessageBusSamplingDuration >= minimumUsableWindow,
+            $"the sampling window ({ResilienceFactory.MessageBusSamplingDuration}) must span at least " +
+            $"MaxDelay × MinimumThroughput ({minimumUsableWindow}), otherwise the breaker cannot open");
+    }
+
+    [Fact]
+    public async Task TheCircuitOpensUnderSustainedFailure()
     {
         var clock = new FakeTimeProvider();
         var telemetry = new RecordingTelemetry();
         var pipeline = MessageBusPipelineOn(clock, telemetry);
-        var attempts = 0;
+
+        using var stop = new CancellationTokenSource();
+
+        var execution = pipeline.ExecuteAsync(
+            _ => throw new InvalidOperationException("the broker is unreachable"),
+            stop.Token).AsTask();
+
+        var opened = await PumpAsync(clock, () => telemetry.Events.Contains("OnCircuitOpened"));
+
+        await stop.CancelAsync();
+        await Assert.ThrowsAnyAsync<Exception>(() => execution);
+
+        Assert.True(opened, "the circuit did not open within a simulated hour of uninterrupted failure");
+    }
+
+    [Fact]
+    public async Task TheCircuitClosesAgainOnceTheOperationSucceeds()
+    {
+        var clock = new FakeTimeProvider();
+        var telemetry = new RecordingTelemetry();
+        var pipeline = MessageBusPipelineOn(clock, telemetry);
+        var brokerIsDown = true;
 
         using var stop = new CancellationTokenSource();
 
         var execution = pipeline.ExecuteAsync(
             _ =>
             {
-                Interlocked.Increment(ref attempts);
-                throw new InvalidOperationException("the broker is unreachable");
+                if (Volatile.Read(ref brokerIsDown))
+                {
+                    throw new InvalidOperationException("the broker is unreachable");
+                }
+
+                return ValueTask.CompletedTask;
             },
             stop.Token).AsTask();
 
-        // One simulated hour of uninterrupted failure.
-        await PumpAsync(clock, () => telemetry.Events.Contains("OnCircuitOpened"));
+        Assert.True(
+            await PumpAsync(clock, () => telemetry.Events.Contains("OnCircuitOpened")),
+            "the circuit did not open, so its recovery cannot be observed");
+
+        Volatile.Write(ref brokerIsDown, false);
+
+        var closed = await PumpAsync(clock, () => telemetry.Events.Contains("OnCircuitClosed"));
 
         await stop.CancelAsync();
-        await Assert.ThrowsAnyAsync<Exception>(() => execution);
 
-        Assert.DoesNotContain("OnCircuitOpened", telemetry.Events);
-
-        // The duty cycle is bounded all the same — by the delay cap, at roughly one attempt a
-        // minute, which is what the breaker was credited with.
-        Assert.InRange(Volatile.Read(ref attempts), 55, 70);
+        Assert.True(closed, "the circuit stayed open after the broker recovered");
     }
 
     [Fact]
