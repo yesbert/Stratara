@@ -4,6 +4,7 @@ using Polly;
 using Polly.Registry;
 using Stratara.Contracts.Messages;
 using Stratara.Outbox.RabbitMQ.Outbox;
+using Stratara.Outbox.RabbitMQ.Tests.Diagnostics;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
@@ -106,6 +107,59 @@ public class EventBundleOutboxDispatcherTests
     }
 
     private static EventBundle NewEventBundle() => new([], "{}");
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_PublishSucceeds_CountsWhatTheBusAccepted()
+    {
+        var harness = new Harness();
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await harness.Sut.EnqueueOutboxEntriesAsync(
+                [BuildOutboxEntry(NewEventBundle()), BuildOutboxEntry(NewEventBundle())]);
+        }
+
+        Assert.Equal(2, PublishedCount(measurements));
+    }
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_PublishFails_CountsNothing()
+    {
+        var harness = new Harness();
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(NewEventBundle())]);
+        }
+
+        Assert.Equal(0, PublishedCount(measurements));
+    }
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_ReplayActive_CountsNothing()
+    {
+        var harness = new Harness();
+        harness.ReplayState.Setup(s => s.IsReplayActive).Returns(true);
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(NewEventBundle())]);
+        }
+
+        Assert.Equal(0, PublishedCount(measurements));
+    }
+
+    private static double PublishedCount(IEnumerable<CapturedMeasurement> measurements) =>
+        measurements
+            .Where(m => m.Instrument == "outbox.published"
+                        && Equals(m.Tags.GetValueOrDefault("outbox.kind"), "event"))
+            .Sum(m => m.Value);
 
     private static OutboxEntry BuildOutboxEntry(EventBundle bundle) => new()
     {

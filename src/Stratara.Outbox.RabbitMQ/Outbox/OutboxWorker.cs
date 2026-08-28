@@ -5,18 +5,23 @@ using Microsoft.Extensions.Options;
 using Stratara.Contracts.Messages;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
-using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 
 namespace Stratara.Outbox.RabbitMQ.Outbox;
 
 /// <summary>
 /// Hosted background service that drains the outbox table on a fixed polling interval.
-/// Pulls unpublished <c>CommandEnvelope</c>s and <c>EventBundle</c>s in batches and asks the
+/// Pulls unpublished <c>CommandEnvelope</c>s and <c>EventBundle</c>s and asks the
 /// corresponding dispatcher (<see cref="CommandOutboxDispatcher"/> /
 /// <see cref="EventBundleOutboxDispatcher"/>) to attempt republishing them.
 /// </summary>
 /// <remarks>
+/// A cycle takes one batch of each kind and ends. Entries the bus would not accept are left in the
+/// table and retried on the next interval, which is what the interval is for — a cycle never re-reads
+/// what it has just failed to publish, so an unreachable broker or a suppressed drain cannot turn it
+/// into a loop over the same rows. Draining a large backlog therefore takes one batch per interval
+/// rather than a single pass. Counting publications is the dispatcher's job, not this worker's: only
+/// the dispatcher knows what the bus accepted.
 /// Concurrency: each polling cycle is guarded by <see cref="IOutboxLock"/>. The default
 /// registration (<see cref="NullOutboxLock"/>) is a no-op that preserves the historical
 /// single-instance assumption; consumers that run multiple worker replicas opt in to a
@@ -94,13 +99,9 @@ internal sealed class OutboxWorker(
 
         var outboxEntries = await repository.GetManyAsync<CommandEnvelope>(_batchSize, stoppingToken);
 
-        while (outboxEntries.Count > 0 && !stoppingToken.IsCancellationRequested)
+        if (outboxEntries.Count > 0 && !stoppingToken.IsCancellationRequested)
         {
             await dispatcher.EnqueueOutboxEntriesAsync(outboxEntries, stoppingToken);
-            ApplicationDiagnostics.Metrics.OutboxEntriesPublished.Add(
-                outboxEntries.Count,
-                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.OutboxKind, ApplicationDiagnostics.OutboxKinds.Command));
-            outboxEntries = await repository.GetManyAsync<CommandEnvelope>(_batchSize, stoppingToken);
         }
     }
 
@@ -115,13 +116,9 @@ internal sealed class OutboxWorker(
 
         var outboxEntries = await repository.GetManyAsync<EventBundle>(_batchSize, stoppingToken);
 
-        while (outboxEntries.Count > 0 && !stoppingToken.IsCancellationRequested)
+        if (outboxEntries.Count > 0 && !stoppingToken.IsCancellationRequested)
         {
             await dispatcher.EnqueueOutboxEntriesAsync(outboxEntries, stoppingToken);
-            ApplicationDiagnostics.Metrics.OutboxEntriesPublished.Add(
-                outboxEntries.Count,
-                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.OutboxKind, ApplicationDiagnostics.OutboxKinds.Event));
-            outboxEntries = await repository.GetManyAsync<EventBundle>(_batchSize, stoppingToken);
         }
     }
 }

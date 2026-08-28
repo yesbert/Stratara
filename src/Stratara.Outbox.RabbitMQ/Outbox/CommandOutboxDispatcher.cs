@@ -11,6 +11,7 @@ using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
+using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 using Stratara.Shared.Mediator.Mapping;
 using Stratara.Shared.Outbox.Mapping;
@@ -83,6 +84,7 @@ internal sealed class CommandOutboxDispatcher(
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var repository = unitOfWork.CreateOutboxRepository(transaction);
 
+        var published = 0;
         foreach (var outboxEntry in outboxEntries)
         {
             var commandEnvelope = outboxEntry.MapTo<CommandEnvelope>();
@@ -90,7 +92,15 @@ internal sealed class CommandOutboxDispatcher(
             if (await TrySendCommandEnvelopeAsync(commandEnvelope, topic, cancellationToken))
             {
                 await repository.DeleteAsync(outboxEntry.Id, cancellationToken);
+                published++;
             }
+        }
+
+        if (published > 0)
+        {
+            ApplicationDiagnostics.Metrics.OutboxEntriesPublished.Add(
+                published,
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.OutboxKind, ApplicationDiagnostics.OutboxKinds.Command));
         }
 
         await transaction.SaveChangesAsync(cancellationToken);

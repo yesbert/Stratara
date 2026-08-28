@@ -7,7 +7,6 @@ using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 
-using Stratara.Outbox.RabbitMQ.Tests.Diagnostics;
 
 namespace Stratara.Outbox.RabbitMQ.Tests.Outbox;
 
@@ -54,22 +53,19 @@ public class OutboxWorkerTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_LockAcquiredWithBatches_DispatchesAndLoopsUntilEmpty()
+    public async Task ExecuteAsync_LockAcquiredWithBatches_DispatchesOneBatchPerPass()
     {
         var harness = new Harness(grantLock: true);
 
         var commandEntry = NewOutboxEntry();
         var eventEntry = NewOutboxEntry();
 
-        var commandSeq = new Queue<IReadOnlyList<OutboxEntry>>([[commandEntry], []]);
-        var eventSeq = new Queue<IReadOnlyList<OutboxEntry>>([[eventEntry], []]);
-
         harness.OutboxRepository
             .Setup(r => r.GetManyAsync<CommandEnvelope>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(commandSeq.Dequeue);
+            .ReturnsAsync([commandEntry]);
         harness.OutboxRepository
             .Setup(r => r.GetManyAsync<EventBundle>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(eventSeq.Dequeue);
+            .ReturnsAsync([eventEntry]);
 
         await harness.RunOneCycleAsync();
 
@@ -86,30 +82,55 @@ public class OutboxWorkerTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_RecordsPublishedEntries_TaggedByOutboxKind()
+    public async Task ExecuteAsync_CommandBatchStaysUndelivered_IsReadOnceAndNotRetriedInTheSamePass()
     {
         var harness = new Harness(grantLock: true);
-
-        var commandSeq = new Queue<IReadOnlyList<OutboxEntry>>([[NewOutboxEntry(), NewOutboxEntry()], []]);
-        var eventSeq = new Queue<IReadOnlyList<OutboxEntry>>([[NewOutboxEntry()], []]);
-
         harness.OutboxRepository
             .Setup(r => r.GetManyAsync<CommandEnvelope>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(commandSeq.Dequeue);
+            .ReturnsAsync([NewOutboxEntry()]);
+
+        await harness.RunOneCycleAsync();
+
+        harness.OutboxRepository.Verify(
+            r => r.GetManyAsync<CommandEnvelope>(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        harness.CommandDispatcher.Verify(
+            d => d.EnqueueOutboxEntriesAsync(It.IsAny<IEnumerable<OutboxEntry>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_EventBatchStaysUndelivered_IsReadOnceAndNotRetriedInTheSamePass()
+    {
+        var harness = new Harness(grantLock: true);
         harness.OutboxRepository
             .Setup(r => r.GetManyAsync<EventBundle>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(eventSeq.Dequeue);
+            .ReturnsAsync([NewOutboxEntry()]);
 
-        var (listener, measurements) = MeterCapture.Start();
-        using (listener)
-        {
-            await harness.RunOneCycleAsync();
-        }
+        await harness.RunOneCycleAsync();
 
-        var published = measurements.Where(m => m.Instrument == "outbox.published").ToList();
+        harness.OutboxRepository.Verify(
+            r => r.GetManyAsync<EventBundle>(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        harness.EventDispatcher.Verify(
+            d => d.EnqueueOutboxEntriesAsync(It.IsAny<IEnumerable<OutboxEntry>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 
-        Assert.Contains(published, m => Equals(m.Tags.GetValueOrDefault("outbox.kind"), "command") && m.Value == 2);
-        Assert.Contains(published, m => Equals(m.Tags.GetValueOrDefault("outbox.kind"), "event") && m.Value == 1);
+    [Fact]
+    public async Task ExecuteAsync_UndeliverableCommandBatch_DoesNotStarveTheEventDrain()
+    {
+        var harness = new Harness(grantLock: true);
+        harness.OutboxRepository
+            .Setup(r => r.GetManyAsync<CommandEnvelope>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([NewOutboxEntry()]);
+        harness.OutboxRepository
+            .Setup(r => r.GetManyAsync<EventBundle>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([NewOutboxEntry()]);
+
+        await harness.RunOneCycleAsync();
+
+        harness.EventDispatcher.Verify(
+            d => d.EnqueueOutboxEntriesAsync(It.IsAny<IEnumerable<OutboxEntry>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using Polly.Registry;
 using Stratara.Contracts.Messages;
 using Stratara.Contracts.Session;
 using Stratara.Outbox.RabbitMQ.Outbox;
+using Stratara.Outbox.RabbitMQ.Tests.Diagnostics;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
@@ -197,6 +198,65 @@ public class CommandOutboxDispatcherTests
             b => b.PublishAsync(HeavyCommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_PublishSucceeds_CountsWhatTheBusAccepted()
+    {
+        var harness = new Harness();
+        var entries = new[]
+        {
+            BuildOutboxEntry(new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}")),
+            BuildOutboxEntry(new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}")),
+        };
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await harness.Sut.EnqueueOutboxEntriesAsync(entries);
+        }
+
+        Assert.Equal(2, PublishedCount(measurements));
+    }
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_SomePublishesFail_CountsOnlyTheAcceptedOnes()
+    {
+        var harness = new Harness();
+        var accepted = new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}");
+        var rejected = new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}");
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(CommandTopic, It.Is<CommandEnvelope>(e => e.Id == rejected.Id), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(accepted), BuildOutboxEntry(rejected)]);
+        }
+
+        Assert.Equal(1, PublishedCount(measurements));
+    }
+
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_ReplayActive_CountsNothing()
+    {
+        var harness = new Harness();
+        harness.ReplayState.Setup(s => s.IsReplayActive).Returns(true);
+
+        var (listener, measurements) = MeterCapture.Start();
+        using (listener)
+        {
+            await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}"))]);
+        }
+
+        Assert.Equal(0, PublishedCount(measurements));
+    }
+
+    private static double PublishedCount(IEnumerable<CapturedMeasurement> measurements) =>
+        measurements
+            .Where(m => m.Instrument == "outbox.published"
+                        && Equals(m.Tags.GetValueOrDefault("outbox.kind"), "command"))
+            .Sum(m => m.Value);
 
     private static OutboxEntry BuildOutboxEntry(CommandEnvelope envelope) => new()
     {

@@ -55,6 +55,22 @@ applies to the entire NuGet family.
   expiry and does not gain one. Clear it once — an explicit deactivation, or let the next replay's
   own completion clear it. Upgrading alone does not free a host that is stuck today.
 
+- **The outbox drain no longer spins on a batch it cannot deliver.** The worker read a batch, handed
+  it to the dispatcher, and read again until a batch came back empty — but an entry is only removed
+  once the bus has accepted it, so a batch nobody could deliver came back identical every time. Two
+  ordinary conditions reached it: an unreachable broker, and a projection replay in progress. Either
+  turned a drain pass into a hot loop against the database, and because the command drain never
+  returned, the event drain that follows it never started. A drain pass now handles one batch and
+  ends; undelivered entries stay stored and are retried on the next interval.
+
+  Two shifts to know about. **`outbox.published` now counts what the bus accepted** rather than what
+  was read from storage — it is emitted by the dispatchers, which know the answer, instead of by the
+  worker, which did not. The instrument name and its `outbox.kind` tag are unchanged, but the values
+  drop to the truth, so an alert threshold calibrated against the inflated numbers needs revisiting.
+  And **a large stored backlog now drains at one batch per polling interval** rather than in a single
+  pass — with the defaults, twenty thousand entries a minute, and both the batch size and the
+  interval are configurable.
+
 ### Added
 
 - **`ProjectionReplayOptions`** — configures how long a projection replay's active marking and

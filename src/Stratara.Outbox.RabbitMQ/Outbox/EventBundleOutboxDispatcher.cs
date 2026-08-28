@@ -6,6 +6,7 @@ using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Projections;
+using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 using Stratara.Shared.Outbox.Mapping;
 using Stratara.Resilience;
@@ -59,13 +60,22 @@ internal sealed class EventBundleOutboxDispatcher(
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var repository = unitOfWork.CreateOutboxRepository(transaction);
 
+        var published = 0;
         foreach (var outboxEntry in outboxEntries)
         {
             var eventBundle = outboxEntry.MapTo<EventBundle>();
             if (await TrySendEventBundleAsync(eventBundle, cancellationToken))
             {
                 await repository.DeleteAsync(outboxEntry.Id, cancellationToken);
+                published++;
             }
+        }
+
+        if (published > 0)
+        {
+            ApplicationDiagnostics.Metrics.OutboxEntriesPublished.Add(
+                published,
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.OutboxKind, ApplicationDiagnostics.OutboxKinds.Event));
         }
 
         await transaction.SaveChangesAsync(cancellationToken);
