@@ -60,8 +60,8 @@ public class MediatorCommandWorkerTests
             .Where(m => Equals(m.Tags.GetValueOrDefault("request.type"), nameof(PlainCommand)))
             .ToList();
 
-        Assert.Single(recorded);
-        Assert.Equal("success", recorded[0].Tags.GetValueOrDefault("outcome"));
+        var measurement = Assert.Single(recorded);
+        Assert.Equal("success", measurement.Tags.GetValueOrDefault("outcome"));
     }
 
     [Fact]
@@ -85,8 +85,8 @@ public class MediatorCommandWorkerTests
             .Where(m => Equals(m.Tags.GetValueOrDefault("request.type"), nameof(PlainCommand)))
             .ToList();
 
-        Assert.Single(recorded);
-        Assert.Equal("failure", recorded[0].Tags.GetValueOrDefault("outcome"));
+        var measurement = Assert.Single(recorded);
+        Assert.Equal("failure", measurement.Tags.GetValueOrDefault("outcome"));
     }
 
     [Fact]

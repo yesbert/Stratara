@@ -96,11 +96,10 @@ public class EventSourceTests
 
         await _eventSource.SaveChangesAsync();
 
-        Assert.Single(_capturedAddRangeCalls);
-        var entries = _capturedAddRangeCalls[0];
-        Assert.Single(entries);
-        Assert.Equal(1, entries[0].Version);
-        Assert.Equal(streamId, entries[0].StreamId);
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        var entry = Assert.Single(entries);
+        Assert.Equal(1, entry.Version);
+        Assert.Equal(streamId, entry.StreamId);
     }
 
     [Fact]
@@ -123,10 +122,9 @@ public class EventSourceTests
 
         await _eventSource.SaveChangesAsync();
 
-        Assert.Single(_capturedAddRangeCalls);
-        var entries = _capturedAddRangeCalls[0];
-        Assert.Single(entries);
-        Assert.Equal(4, entries[0].Version);
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        var entry = Assert.Single(entries);
+        Assert.Equal(4, entry.Version);
     }
 
     [Fact]
@@ -152,8 +150,8 @@ public class EventSourceTests
 
         await _eventSource.SaveChangesAsync();
 
-        Assert.Single(_capturedAddRangeCalls);
-        Assert.Equal(2, _capturedAddRangeCalls[0].Count);
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.Equal(2, entries.Count);
     }
 
     [Fact]
@@ -207,8 +205,8 @@ public class EventSourceTests
         await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
         await _eventSource.SaveChangesAsync();
 
-        Assert.Single(_capturedAddRangeCalls);
-        var entry = _capturedAddRangeCalls[0][0];
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        var entry = entries[0];
         Assert.Equal(_tenantId, entry.TenantId);
         Assert.Equal(_tenantId, entry.ActorTenantId);
         Assert.Equal(_userId, entry.ActorUserId);
@@ -226,8 +224,7 @@ public class EventSourceTests
 
         await _eventSource.SaveChangesAsync();
 
-        Assert.Single(_capturedAddRangeCalls);
-        var entries = _capturedAddRangeCalls[0];
+        var entries = Assert.Single(_capturedAddRangeCalls);
         Assert.Equal(2, entries.Count);
         Assert.Equal(1, entries[0].Version);
         Assert.Equal(2, entries[1].Version);
@@ -282,9 +279,9 @@ public class EventSourceTests
             .Where(m => (m.Tags.GetValueOrDefault("aggregate.type") as string)?.Contains(nameof(TestAggregate), StringComparison.Ordinal) == true)
             .ToList();
 
-        Assert.Single(conflicts);
-        Assert.Equal(1, conflicts[0].Value);
-        Assert.True(conflicts[0].Tags.ContainsKey("bucket.id"));
+        var conflict = Assert.Single(conflicts);
+        Assert.Equal(1, conflict.Value);
+        Assert.True(conflict.Tags.ContainsKey("bucket.id"));
     }
 
     [Fact]

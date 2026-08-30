@@ -57,8 +57,8 @@ public class ChangeSetBuilderTests
 
         var result = ChangeSetBuilder<Entity, Changes>.CreateChangeSet(source, current, changes);
 
-        Assert.Single(result);
-        Assert.Equal("Name", result[0].PropertyName);
+        var change = Assert.Single(result);
+        Assert.Equal("Name", change.PropertyName);
     }
 
     [Fact]
@@ -70,8 +70,8 @@ public class ChangeSetBuilderTests
 
         var result = ChangeSetBuilder<Entity, Changes>.CreateChangeSet(source, current, changes);
 
-        Assert.Single(result);
-        Assert.Equal("Email", result[0].PropertyName);
+        var change = Assert.Single(result);
+        Assert.Equal("Email", change.PropertyName);
     }
 
     [Fact]

@@ -87,8 +87,7 @@ public class EventStreamTests
 
         var result = EventStream.Aggregate(typeof(Tenant), events);
 
-        Assert.IsType<Tenant>(result);
-        var tenant = (Tenant)result;
+        var tenant = Assert.IsType<Tenant>(result);
         Assert.Equal(tenantId, tenant.Id);
         Assert.Equal("Untyped", tenant.Name);
     }

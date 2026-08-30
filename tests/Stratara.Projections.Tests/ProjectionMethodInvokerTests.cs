@@ -52,8 +52,8 @@ public class ProjectionMethodInvokerTests
 
         await del(p, new TestEvent(), CancellationToken.None);
 
-        Assert.Single(p.Calls);
-        Assert.Equal("Direct:TestEvent", p.Calls[0]);
+        var call = Assert.Single(p.Calls);
+        Assert.Equal("Direct:TestEvent", call);
         Assert.False(invoker.IsNoOp(del));
     }
 

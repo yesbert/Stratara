@@ -22,8 +22,8 @@ public class InMemoryMessageBusTests
         var placed = new OrderPlaced(Guid.CreateVersion7());
         await bus.PublishAsync("orders", placed);
 
-        Assert.Single(received);
-        Assert.Equal(placed, received[0]);
+        var message = Assert.Single(received);
+        Assert.Equal(placed, message);
     }
 
     [Fact]

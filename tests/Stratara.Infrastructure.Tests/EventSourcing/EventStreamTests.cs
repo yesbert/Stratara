@@ -76,8 +76,8 @@ public class EventStreamTests
 
         var result = EventStream.Aggregate(typeof(TestAggregate), events);
 
-        Assert.IsType<TestAggregate>(result);
-        Assert.Equal("TypeTest", ((TestAggregate)result).Name);
+        var aggregate = Assert.IsType<TestAggregate>(result);
+        Assert.Equal("TypeTest", aggregate.Name);
     }
 
     [Fact]

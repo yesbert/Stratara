@@ -6,18 +6,22 @@ namespace Stratara.Documentation.Tests;
 /// <c>llms.txt</c> tells an assistant to prefer its facts over anything the model already believes.
 /// A stale fact there is therefore worse than a stale fact elsewhere — it is asserted as current.
 /// </summary>
-public class AiIndexTests
+public partial class AiIndexTests
 {
+    [GeneratedRegex(@"<VersionPrefix>([^<]+)</VersionPrefix>")]
+    private static partial Regex VersionPrefixPattern();
+
+    [GeneratedRegex(@"current stable version is\s*\r?\n?\*\*([0-9.]+)\*\*")]
+    private static partial Regex StatedStableVersionPattern();
+
     [Fact]
     public void TheStatedStableVersion_MatchesTheLockstepVersion()
     {
         var root = RepositoryRoot.Locate();
-        var version = Regex.Match(
-            File.ReadAllText(Path.Combine(root, "Directory.Build.props")),
-            @"<VersionPrefix>([^<]+)</VersionPrefix>").Groups[1].Value;
-        var stated = Regex.Match(
-            File.ReadAllText(Path.Combine(root, "llms.txt")),
-            @"current stable version is\s*\r?\n?\*\*([0-9.]+)\*\*").Groups[1].Value;
+        var version = VersionPrefixPattern()
+            .Match(File.ReadAllText(Path.Combine(root, "Directory.Build.props"))).Groups[1].Value;
+        var stated = StatedStableVersionPattern()
+            .Match(File.ReadAllText(Path.Combine(root, "llms.txt"))).Groups[1].Value;
 
         Assert.Equal(version, stated);
     }

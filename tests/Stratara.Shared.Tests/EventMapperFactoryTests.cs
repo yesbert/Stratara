@@ -89,8 +89,8 @@ public class EventMapperFactoryTests
         Assert.Equal(1, ev.Version);
         Assert.Equal("Agg", ev.AggregateTypeName);
         Assert.Equal(typeof(UserCreated).AssemblyQualifiedName, ev.EventTypeName);
-        Assert.IsType<Event<UserCreated>>(ev);
-        Assert.Equal("A", ((Event<UserCreated>)ev).Data.Name);
+        var typed = Assert.IsType<Event<UserCreated>>(ev);
+        Assert.Equal("A", typed.Data.Name);
     }
 
     [Fact]
@@ -115,8 +115,8 @@ public class EventMapperFactoryTests
 
         // Assert
         Assert.Equal(2, ev.Version);
-        Assert.IsType<Event<UserCreated>>(ev);
-        Assert.Equal("A", ((Event<UserCreated>)ev).Data.Name);
+        var typed = Assert.IsType<Event<UserCreated>>(ev);
+        Assert.Equal("A", typed.Data.Name);
     }
 
     [Fact]
@@ -185,8 +185,8 @@ public class EventMapperFactoryTests
 
         // Assert
         var ev = events.Single();
-        Assert.IsType<Event<UserCreated>>(ev);
-        Assert.Equal("A", ((Event<UserCreated>)ev).Data.Name);
+        var typed = Assert.IsType<Event<UserCreated>>(ev);
+        Assert.Equal("A", typed.Data.Name);
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class EventMapperFactoryTests
 
         // Assert
         var ev = events.Single();
-        Assert.IsType<Event<UserCreated>>(ev);
-        Assert.Equal("A", ((Event<UserCreated>)ev).Data.Name);
+        var typed = Assert.IsType<Event<UserCreated>>(ev);
+        Assert.Equal("A", typed.Data.Name);
     }
 }

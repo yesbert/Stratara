@@ -46,8 +46,7 @@ public class EventBundleMapperTests
 
         // Assert
         Assert.IsType<EventBundle>(bundle);
-        Assert.Single(bundle.Events);
-        var ev = bundle.Events.Single();
+        var ev = Assert.Single(bundle.Events);
         Assert.Equal(streamId, ev.StreamId);
         Assert.Equal(tenantId, ev.TenantId);
         Assert.Equal(tenantId, ev.ActorTenantId);

@@ -40,8 +40,8 @@ public class IdentityStoreTests
         var primaryKey = passkey!.FindPrimaryKey();
 
         Assert.NotNull(primaryKey);
-        Assert.Single(primaryKey.Properties);
-        Assert.Equal(nameof(IdentityUserPasskey<string>.CredentialId), primaryKey.Properties[0].Name);
+        var property = Assert.Single(primaryKey.Properties);
+        Assert.Equal(nameof(IdentityUserPasskey<string>.CredentialId), property.Name);
     }
 
     [Fact]
