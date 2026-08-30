@@ -215,7 +215,7 @@ public class CommandOutboxDispatcherTests
             await harness.Sut.EnqueueOutboxEntriesAsync(entries);
         }
 
-        Assert.Equal(2, PublishedCount(measurements));
+        Assert.Equal(2, PublishedCount(measurements.Snapshot()));
     }
 
     [Fact]
@@ -234,7 +234,7 @@ public class CommandOutboxDispatcherTests
             await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(accepted), BuildOutboxEntry(rejected)]);
         }
 
-        Assert.Equal(1, PublishedCount(measurements));
+        Assert.Equal(1, PublishedCount(measurements.Snapshot()));
     }
 
     [Fact]
@@ -249,7 +249,7 @@ public class CommandOutboxDispatcherTests
             await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}"))]);
         }
 
-        Assert.Equal(0, PublishedCount(measurements));
+        Assert.Equal(0, PublishedCount(measurements.Snapshot()));
     }
 
     private static double PublishedCount(IEnumerable<CapturedMeasurement> measurements) =>

@@ -120,7 +120,7 @@ public class EventBundleOutboxDispatcherTests
                 [BuildOutboxEntry(NewEventBundle()), BuildOutboxEntry(NewEventBundle())]);
         }
 
-        Assert.Equal(2, PublishedCount(measurements));
+        Assert.Equal(2, PublishedCount(measurements.Snapshot()));
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public class EventBundleOutboxDispatcherTests
             await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(NewEventBundle())]);
         }
 
-        Assert.Equal(0, PublishedCount(measurements));
+        Assert.Equal(0, PublishedCount(measurements.Snapshot()));
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public class EventBundleOutboxDispatcherTests
             await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(NewEventBundle())]);
         }
 
-        Assert.Equal(0, PublishedCount(measurements));
+        Assert.Equal(0, PublishedCount(measurements.Snapshot()));
     }
 
     private static double PublishedCount(IEnumerable<CapturedMeasurement> measurements) =>

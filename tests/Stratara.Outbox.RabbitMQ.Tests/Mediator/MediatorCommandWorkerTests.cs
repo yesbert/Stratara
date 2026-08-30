@@ -55,7 +55,7 @@ public class MediatorCommandWorkerTests
             await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
         }
 
-        var recorded = measurements
+        var recorded = measurements.Snapshot()
             .Where(m => m.Instrument == "command.duration")
             .Where(m => Equals(m.Tags.GetValueOrDefault("request.type"), nameof(PlainCommand)))
             .ToList();
@@ -80,7 +80,7 @@ public class MediatorCommandWorkerTests
             await Assert.ThrowsAnyAsync<Exception>(() => harness.Sut.DispatchAsync(envelope, CancellationToken.None));
         }
 
-        var recorded = measurements
+        var recorded = measurements.Snapshot()
             .Where(m => m.Instrument == "command.duration")
             .Where(m => Equals(m.Tags.GetValueOrDefault("request.type"), nameof(PlainCommand)))
             .ToList();

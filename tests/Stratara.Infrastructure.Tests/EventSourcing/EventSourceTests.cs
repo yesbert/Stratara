@@ -277,7 +277,7 @@ public class EventSourceTests
             await Assert.ThrowsAsync<ConcurrencyException>(() => _eventSource.SaveChangesAsync());
         }
 
-        var conflicts = measurements
+        var conflicts = measurements.Snapshot()
             .Where(m => m.Instrument == "event_source.append.conflicts")
             .Where(m => (m.Tags.GetValueOrDefault("aggregate.type") as string)?.Contains(nameof(TestAggregate), StringComparison.Ordinal) == true)
             .ToList();
