@@ -57,7 +57,7 @@ public class AesGcmSecureBlobEncryptorTests
     }
 
     [Fact]
-    public async Task Legacy_NextPaFormat_NoPurpose_IsReadable()
+    public async Task Legacy_FormatWithoutPurpose_IsReadable()
     {
         var encryptor = Encryptor(DummyKeyStore(), legacyCarriesPurpose: false);
         var legacy = PackLegacy(DummyKey(), Tenant, "blob", "Development::dummy:v1", includePurpose: false);
@@ -68,7 +68,7 @@ public class AesGcmSecureBlobEncryptorTests
     }
 
     [Fact]
-    public async Task Legacy_VeloxRagFormat_WithPurpose_IsReadable()
+    public async Task Legacy_FormatWithPurpose_IsReadable()
     {
         var encryptor = Encryptor(DummyKeyStore(), legacyCarriesPurpose: true);
         var legacy = PackLegacy(DummyKey(), Tenant, "document", "acme-corp::v3", includePurpose: true);

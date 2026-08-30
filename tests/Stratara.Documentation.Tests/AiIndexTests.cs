@@ -29,4 +29,8 @@ public class AiIndexTests
 
         Assert.Contains("llms-full.txt", index, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void TheCatalogueExistsAtTheRepositoryRoot() =>
+        Assert.True(File.Exists(Path.Combine(RepositoryRoot.Locate(), "llms-full.txt")));
 }

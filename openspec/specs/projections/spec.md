@@ -1,0 +1,220 @@
+# projections Specification
+
+## Purpose
+Turn the event stream into read models that a query can answer from directly, and be able to rebuild
+those models from scratch when their shape changes — without the write side knowing they exist.
+
+## Requirements
+
+### Requirement: A projection declares the events it cares about by handling them
+
+A projection SHALL be dispatched only the events it declares handlers for, determined from the
+handler signatures themselves rather than from a separate registration.
+
+#### Scenario: A bundle contains a mix of events
+
+- **WHEN** a bundle contains events a projection handles and events it does not
+- **THEN** only the handled ones are passed to it
+
+#### Scenario: A bundle contains nothing a projection handles
+
+- **WHEN** no event in a bundle is relevant to a projection
+- **THEN** that projection is not invoked at all, and the skip is recorded at debug level
+
+#### Scenario: Several projections are registered
+
+- **WHEN** a bundle arrives and several projections are registered
+- **THEN** each is offered the bundle and each receives its own relevant subset
+
+### Requirement: A handler may take the event payload or the enveloped event
+
+A projection handler SHALL be invoked with the event payload where it declares one, and with the
+enveloped event where it declares that instead, so a projection that needs the event's metadata can
+have it.
+
+#### Scenario: The projection declares a payload handler
+
+- **WHEN** a relevant event arrives and the projection declares a handler taking its payload
+- **THEN** that handler is invoked with the payload
+
+#### Scenario: The projection declares only an enveloped handler
+
+- **WHEN** the projection declares no payload handler but declares one taking the enveloped event
+- **THEN** that handler is invoked with the envelope
+
+### Requirement: A failing projection stops the bundle
+
+Where a projection handler fails, the failure SHALL propagate rather than being swallowed, so the
+bundle is not acknowledged and is redelivered.
+
+A projection that silently skipped a failed event would leave a read model permanently missing that
+event, with nothing recording which one — a corruption that only a full replay could repair and
+nothing would reveal.
+
+#### Scenario: A projection handler fails
+
+- **WHEN** a projection handler throws while processing a bundle
+- **THEN** the failure propagates out of bundle processing and is recorded
+- **AND** the bundle is not treated as processed
+
+#### Scenario: A bundle contains no events
+
+- **WHEN** an empty bundle arrives
+- **THEN** processing completes without invoking anything
+
+### Requirement: Projections are discovered by assembly
+
+Every concrete projection in a nominated assembly SHALL be registered, scoped to the unit of work
+that processes a bundle. Abstract types and interfaces SHALL be skipped.
+
+#### Scenario: An assembly is nominated
+
+- **WHEN** a consumer nominates an assembly containing projections
+- **THEN** every concrete projection in it is registered, and abstract types and interfaces are not
+
+### Requirement: A replay is requested, not scheduled
+
+A replay SHALL run only when explicitly requested. A host running the replay worker SHALL NOT begin
+one on start-up.
+
+#### Scenario: A host starts with the replay worker registered
+
+- **WHEN** a host containing the replay worker starts and nothing requests a replay
+- **THEN** the worker subscribes for requests and no replay runs
+
+#### Scenario: A replay is requested
+
+- **WHEN** a replay is requested
+- **THEN** the worker begins one
+
+### Requirement: A replay truncates every read model before rebuilding
+
+A replay SHALL mark itself active, empty every registered read model, then replay the whole event
+stream from the beginning in batches, and mark itself inactive when it finishes — whether it
+succeeded or not.
+
+The active marking SHALL be held for a bounded period that the replaying host renews while it works,
+so that a replay whose host stops without marking itself inactive ceases to be marked active without
+operator intervention. The period SHALL be configurable and SHALL default to a value that outlasts a
+slow batch, because a marking that lapses while its replay is still running would let suppressed
+publication resume mid-rebuild.
+
+Truncation is what makes a replay a rebuild rather than a re-application: without it, events would
+be applied a second time on top of state that already reflects them.
+
+#### Scenario: A replay runs to completion
+
+- **WHEN** a replay runs over a non-empty stream
+- **THEN** it activates, truncates every read model, replays the stream in batches, records how many
+  events it replayed, and deactivates
+
+#### Scenario: The stream is empty
+
+- **WHEN** a replay runs over an empty stream
+- **THEN** it still truncates the read models and still deactivates — a rebuild from nothing produces
+  nothing, not the previous contents
+
+#### Scenario: A replay fails partway
+
+- **WHEN** a replay fails after truncating
+- **THEN** it deactivates regardless, and the read models are left in whatever partial state the
+  replay reached
+
+#### Scenario: A replay's host stops without deactivating
+
+- **WHEN** the host running a replay stops without the replay marking itself inactive
+- **THEN** the active marking lapses once it is no longer renewed, and publication is no longer
+  suppressed
+
+#### Scenario: A replay is still working
+
+- **WHEN** a replay is between batches and has not finished
+- **THEN** the active marking is renewed, so it does not lapse while the replay is still running
+
+### Requirement: A replay reports progress and failure
+
+A replay SHALL publish the total number of events to replay and how many it has processed, and SHALL
+record a failure message when it fails, so an operator can distinguish "still running" from "stopped
+part way".
+
+#### Scenario: A replay is running
+
+- **WHEN** a replay is in progress
+- **THEN** its processed count and total are readable, and a completion percentage is derivable
+- **AND** a total of zero yields a defined percentage rather than a division failure
+
+#### Scenario: A replay fails
+
+- **WHEN** a replay fails
+- **THEN** the failure message is recorded, the active flag is cleared, and a very long message is
+  truncated rather than stored whole
+
+#### Scenario: The host shuts down during a replay
+
+- **WHEN** a replay is interrupted by host shutdown
+- **THEN** it is not recorded as a failure — shutdown is not a replay error
+
+### Requirement: A replayed event is applied under the session that produced it
+
+While replaying, each event SHALL be processed under the session context recorded with it, not under
+the replaying host's own.
+
+Otherwise a rebuilt read model would attribute every row to whichever session happened to be
+ambient, and tenant-scoped writes would land in the wrong tenant.
+
+#### Scenario: Events from several tenants are replayed
+
+- **WHEN** a replay processes events recorded by different sessions
+- **THEN** each is processed under its own recorded session context
+
+### Requirement: Publication is suppressed while a replay is active
+
+While a replay is active, the framework SHALL suppress publication of anything the replayed events
+provoke, so that historical events do not re-trigger side effects.
+
+#### Scenario: A replay provokes a dispatch
+
+- **WHEN** a replayed event causes a command or bundle to be dispatched
+- **THEN** it is not published to the bus while the replay is active
+
+### Requirement: Read models are queried through a scoped unit of work
+
+Read-side access SHALL be through a unit of work distinct from the write side's, so that a query
+never participates in a write transaction and a read model can live in its own store.
+
+#### Scenario: A projection writes to a read model
+
+- **WHEN** a projection processes a bundle
+- **THEN** it does so through the read-side unit of work, in its own transaction
+
+### Requirement: A projection can apply an event idempotently without masking real conflicts
+
+The framework SHALL offer a way for a projection to apply an event whose effect may already be
+present, without failing, and without suppressing a conflict that indicates genuinely concurrent
+modification.
+
+The distinction is the whole point: at-least-once delivery means a projection will see the same
+event twice, and cascading deletes mean a row may vanish between the read and the write. Neither is
+an error. A second writer changing a row that still exists is.
+
+#### Scenario: The event's effect is already present
+
+- **WHEN** a projection applies an event whose effect the read model already reflects
+- **THEN** nothing is written, and the bundle continues
+
+#### Scenario: The target of an update no longer exists
+
+- **WHEN** a projection applies an update for a row that has since been deleted
+- **THEN** the update is skipped rather than failing — the row's absence is the end state, not a
+  fault
+
+#### Scenario: A deletion races another deletion
+
+- **WHEN** a projection deletes a row that a concurrent bundle has already deleted
+- **THEN** the deletion is treated as satisfied, because the intended end state has been reached
+
+#### Scenario: A genuine conflict occurs
+
+- **WHEN** a projection's write conflicts with a concurrent modification to a row that still exists
+- **THEN** the conflict is **not** suppressed and the bundle fails, as an unhandled projection
+  failure does

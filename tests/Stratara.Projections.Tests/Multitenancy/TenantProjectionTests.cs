@@ -168,8 +168,8 @@ public class TenantProjectionTests : ProjectionTestBase
     [Fact]
     public async Task HandleAsync_TenantDeleted_SwallowsConcurrencyFailure_WhenRowAlreadyGone()
     {
-        // Consumer scenario (NextPA customer-delete cascade): a parallel projection bundle for
-        // CustomerTenantsDeleted already deleted the row. SaveChangesAsync reports 0 affected rows
+        // The scenario a consumer hits on a customer-delete cascade: a parallel projection bundle
+        // for the sibling deletion already deleted the row. SaveChangesAsync reports 0 affected rows
         // and throws DbUpdateConcurrencyException. The desired end-state (row gone) is reached, so
         // swallow the exception silently — re-throwing would abort the bundle and trigger a
         // RabbitMQ requeue that does not recover (sibling cascades are already committed).

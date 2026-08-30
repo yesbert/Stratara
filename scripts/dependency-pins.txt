@@ -1,0 +1,19 @@
+# NuGet dependency pins
+#
+# Packages listed here are held at a specific version by `scripts/update-dependencies.sh`,
+# which refuses to move them — both in the bulk update and in the ecosystem-alignment step.
+#
+# A package belongs here ONLY when a newer version exists and is deliberately NOT taken,
+# for a reason that survives the next person reading it. "Not tested yet" is not such a
+# reason; that is a pull request, not a pin.
+#
+# The script re-checks this file on every run and fails when:
+#   - a pinned package's version in Directory.Packages.props no longer matches the pin
+#     (the two have drifted — somebody edited the props file by hand), or
+#   - a pinned package is missing from Directory.Packages.props entirely.
+# It warns when nuget.org has nothing newer than the pin, which means the pin is holding
+# nothing back and should be deleted. That is deliberate: a pin nobody is deciding to keep
+# is a pin that silently blocks the next release under a reason that no longer applies.
+#
+# Format: <PackageId>  <Version>  # <reason — why this version, what unblocks it, date>
+

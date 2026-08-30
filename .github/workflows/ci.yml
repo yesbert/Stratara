@@ -1,25 +1,21 @@
-# Public CI — build + unit tests on the GitHub mirror.
+# The build gate — build + unit tests on every pull request and every push to main.
 #
-# The authoritative CI is Azure DevOps (Pipeline 24 runs on every PR + main);
-# this workflow gives the *public* mirror a visible, independently-runnable
-# "tests passing" signal — the mirror ships src/ and tests/, so anyone can see
-# the suite go green without access to the internal pipelines.
+# Only `pull_request` and `push` are used. A fork's pull-request run gets a read-only token and no
+# secrets, which is what makes it safe to run a stranger's code here at all. `pull_request_target`
+# and `workflow_run` would run in this repository's context with access to secrets, and neither is
+# used anywhere in this repository for that reason.
 #
-# Triggers:
-#   - push to main: the mirror's main is advanced once per release (append-history
-#     sync), so this runs on each release commit and lights up the badge.
-#   - schedule: a weekly run keeps the badge fresh (and catches SDK/dependency
-#     drift) even between releases.
-#   - workflow_dispatch: manual re-run.
+# The weekly schedule catches SDK and dependency drift in a quiet week, when no push would.
 #
-# Build + test operate on Stratara.Publish.slnf — the same solution filter
-# Pipeline 24 uses. Integration suites (*IntegrationTests) need Docker and are
-# excluded here; they run in the dedicated Azure integration pipeline.
+# Build + test operate on Stratara.Publish.slnf, the same solution filter the release workflow packs
+# from. Integration suites (*IntegrationTests) need Docker and run in integration.yml.
 
 name: CI
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   schedule:
     - cron: '0 6 * * 1'  # weekly, Monday 06:00 UTC
@@ -28,9 +24,10 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the run it supersedes. On main every commit is built.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-test:

@@ -1,0 +1,145 @@
+# Publish the 25 packages to nuget.org. Version tags only.
+#
+# The tag is the deliberate "release this" signal. A push to a branch never publishes, and there is
+# no preview channel: what is not tagged is not published anywhere.
+#
+# Two jobs. `pack` builds, tests and packs without any credential in scope. `publish` runs in the
+# `nuget-org` environment, which carries a required reviewer — a push to nuget.org cannot be taken
+# back, packages can be deprecated or unlisted but never deleted, so a human confirms before the
+# packages leave. The API key is an environment secret and is therefore out of reach until that
+# approval is given.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    name: Build + test + pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Deterministic builds and SourceLink need the full history.
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # The tag is the version, and the working tree has to agree with it. A tag that disagrees with
+      # Directory.Build.props means the bump and the tag drifted apart, and publishing either of
+      # them would be a guess.
+      - name: Resolve and verify the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/v}"
+          props="$(sed -n 's|.*<VersionPrefix>\([^<]*\)</VersionPrefix>.*|\1|p' Directory.Build.props)"
+          if [[ "${tag}" != "${props}" ]]; then
+            echo "Tag v${tag} disagrees with Directory.Build.props <VersionPrefix>${props}</VersionPrefix>." >&2
+            echo "Bump with the bump-version skill so the tag and the props agree, then re-tag." >&2
+            exit 1
+          fi
+          echo "value=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Releasing version ${tag}"
+
+      - name: Restore
+        run: dotnet restore Stratara.Publish.slnf --locked-mode || dotnet restore Stratara.Publish.slnf
+
+      - name: Build
+        run: dotnet build Stratara.Publish.slnf -c Release --no-restore --nologo /p:ContinuousIntegrationBuild=true
+
+      # A tag must not publish from a red tree. Integration suites are excluded — they need Docker
+      # and run in integration.yml.
+      - name: Unit tests
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p TestResults
+          failed=0
+          for proj in tests/*/*.Tests.csproj; do
+            [[ -f "${proj}" ]] || continue
+            [[ "${proj}" == *IntegrationTests* ]] && continue
+            name="$(basename "$(dirname "${proj}")")"
+            echo ""
+            echo "=== ${name} ==="
+            dotnet test "${proj}" -c Release --no-build -- \
+              --report-xunit-trx \
+              --report-xunit-trx-filename "${name}.trx" \
+              --results-directory TestResults \
+              || failed=1
+          done
+          exit ${failed}
+
+      # An empty VersionSuffix overrides the `dev` default in Directory.Build.props, so the packages
+      # carry the stable version the tag names.
+      - name: Pack
+        run: |
+          dotnet pack Stratara.Publish.slnf \
+            -c Release \
+            --no-build \
+            --nologo \
+            /p:ContinuousIntegrationBuild=true \
+            /p:VersionSuffix= \
+            -o artifacts/nupkgs
+
+      - name: List what was produced
+        run: ls -la artifacts/nupkgs
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs
+          path: artifacts/nupkgs
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Push to nuget.org
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The approval gate. The API key lives here, not on the repository.
+    environment: nuget-org
+    steps:
+      - name: Download the packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkgs
+          path: artifacts/nupkgs
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Sibling .snupkg files are discovered by `dotnet nuget push` and forwarded to
+      # symbols.nuget.org in the same call, so there is no separate symbol push.
+      # --skip-duplicate keeps the job idempotent across a re-run of the same tag.
+      - name: Push
+        env:
+          NUGET_ORG_API_KEY: ${{ secrets.NUGET_ORG_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts/nupkgs
+          echo "Pushing $(ls ./*.nupkg | wc -l | tr -d ' ') packages"
+          for nupkg in ./*.nupkg; do
+            echo "--- ${nupkg} ---"
+            dotnet nuget push "${nupkg}" \
+              --source https://api.nuget.org/v3/index.json \
+              --api-key "${NUGET_ORG_API_KEY}" \
+              --skip-duplicate
+          done

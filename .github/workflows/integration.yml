@@ -1,0 +1,77 @@
+# The integration suites — the tests that need real infrastructure.
+#
+# They bring up Redis and RabbitMQ through Testcontainers, so they need a Docker daemon. The hosted
+# Ubuntu runner has one, and the runner user is already in the docker group.
+#
+# Deliberately not a required check on pull requests. Container startup is the flakiest thing in
+# this repository's CI, and a flaky required check teaches people to re-run rather than to read.
+# Promote it once the suite has been stable for a stretch of runs.
+name: Integration tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    name: Integration suite (Testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Docker sanity
+        run: |
+          docker --version
+          docker info | head -20
+
+      # There is one integration project today. The loop keeps adding the next one free of friction.
+      - name: Build the integration test projects
+        shell: bash
+        run: |
+          set -euo pipefail
+          for csproj in tests/*IntegrationTests/*.csproj; do
+            [[ -f "${csproj}" ]] || continue
+            echo "=== Building ${csproj} ==="
+            dotnet build "${csproj}" -c Release --nologo
+          done
+
+      - name: Run the integration tests
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p TestResults
+          failed=0
+          for csproj in tests/*IntegrationTests/*.csproj; do
+            [[ -f "${csproj}" ]] || continue
+            name="$(basename "$(dirname "${csproj}")")"
+            echo ""
+            echo "=== ${name} ==="
+            dotnet test "${csproj}" -c Release --no-build -- \
+              --report-xunit-trx \
+              --report-xunit-trx-filename "${name}.trx" \
+              --results-directory TestResults \
+              || failed=1
+          done
+          exit ${failed}
+
+      - name: Publish the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: TestResults/*.trx
+          if-no-files-found: warn

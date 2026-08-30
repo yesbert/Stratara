@@ -6,7 +6,7 @@
     <!-- Suppress CS1591 — test classes/methods are an internal contract, not a public API surface -->
     <!-- Suppress CA1822 — test fakes intentionally use instance methods (e.g. fake projection HandleAsync overloads
          exercised via reflection by the DI scan); also covered by sonar.issue.ignore.multicriteria.staticMethodsInTests
-         in azure-pipelines-sonarqube.yml, but that glob doesn't always fire — local NoWarn keeps the Roslyn report
+         in the analysis workflow, but that glob doesn't always fire — local NoWarn keeps the Roslyn report
          clean too. -->
     <!-- Suppress CA1873 — false positive on Moq Verify expression trees (`l => l.Log(...)` is not an actual logging call) -->
     <!-- Suppress CA1859 — perf-only "return concrete type" recommendation, irrelevant for test helpers -->

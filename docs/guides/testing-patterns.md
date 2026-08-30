@@ -16,7 +16,7 @@ tests/
 └── Stratara.Samples.SmokeTests/          — runs each sample as a subprocess, asserts on stdout
 ```
 
-The `*IntegrationTests` suffix is a CI boundary — `local-gauntlet.sh` + `azure-pipelines-publish.yml` skip them; Pipeline 36 runs them.
+The `*IntegrationTests` suffix is a CI boundary — `local-gauntlet.sh` and the build workflow skip them; the integration workflow runs them.
 
 ## Run a single project
 

@@ -445,10 +445,8 @@ fabric.properties
 
 artifacts/
 
-### Claude Code local state (per-user — never commit)
-.claude/settings.local.json
-.claude/worktrees/
-.claude/scheduled_tasks.lock
+# The Claude Code context lives in its own private repository and is linked in.
+.claude
 
 ### Other per-user tool caches (never commit)
 .ai/

@@ -218,9 +218,10 @@ Stratara is OSI-approved open source. You may use, copy, modify, and distribute 
 Issues, questions, and ideas are genuinely welcome — they shape where Stratara goes next:
 
 - **Bug reports** — [open an issue](https://github.com/yesbert/Stratara/issues/new/choose) with the bug template.
-- **Feature ideas & questions** — open an issue with the question template (check [docs.stratara.tech](https://docs.stratara.tech) first).
+- **Pull requests** — branch, run `./scripts/local-gauntlet.sh`, open the PR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **Questions** — open an issue with the question template (check [docs.stratara.tech](https://docs.stratara.tech) first).
 - **Security issues** — see [`SECURITY.md`](SECURITY.md); please don't file a public issue.
 
-A note on the workflow: this GitHub repository is a one-way mirror of an internal Azure DevOps source-of-truth, force-pushed as a squashed commit per release. We can't merge pull requests here — they'd be overwritten on the next sync — so please open an issue instead. Good ideas make their way in through the internal repo, with credit.
+A note on the history: this repository was mirrored from a private one until 2026-08-30, one squashed commit per release, which is why everything before that date is coarse. Development happens here now.
 
 Full details on the contribution model: [`CONTRIBUTING.md`](CONTRIBUTING.md). Community standards: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Getting help: [`SUPPORT.md`](SUPPORT.md).

@@ -1,10 +1,9 @@
 # DocFX → GitHub Pages auto-deploy.
 #
-# Triggers ONLY on push to main. Tag pushes (v*) are intentionally NOT
-# triggered: our internal mirror sync pushes main and the v*-tag back-to-back
-# at the same commit, which used to fire two workflow runs racing for the same
-# github-pages environment (the second always lost — "deployment in progress").
-# Triggering only on main covers every case where docs/ actually changed.
+# Triggers ONLY on push to main. Tag pushes (v*) are intentionally NOT triggered: a release pushes
+# main and the tag at the same commit, which would fire two runs racing for the same github-pages
+# environment (the second always loses — "deployment in progress"). Triggering only on main covers
+# every case where docs/ actually changed.
 #
 # Source-of-truth for the docs is the docs/ tree in this repo; the published
 # site is at docs.stratara.tech (Custom Domain configured via docs/CNAME).

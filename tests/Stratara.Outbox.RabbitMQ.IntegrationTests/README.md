@@ -19,10 +19,9 @@ dotnet test tests/Stratara.Outbox.RabbitMQ.IntegrationTests
 
 ## CI
 
-Runs on `azure-pipelines-integration-tests.yml` (pipeline id pending registration).
-That pipeline is intentionally non-blocking for PR merges until Docker support on the
-hosted-Ubuntu image is empirically validated; once stable, it can be promoted to a
-required PR policy.
+Runs on `.github/workflows/integration.yml`. That workflow is intentionally non-blocking
+for pull-request merges until Docker support on the hosted-Ubuntu runner is empirically
+validated; once stable, it can be promoted to a required check.
 
 ## Conventions
 
@@ -30,5 +29,5 @@ required PR policy.
   (`RedisFixture` here). The fixture exposes a single connection multiplexer and a
   `FlushAsync()` helper that tests call before each scenario to reset state.
 - Tests are flagged via the project's `*IntegrationTests` suffix, not via `[Trait]` —
-  the directory pattern is the boundary recognised by `local-gauntlet.sh` and
-  `azure-pipelines-publish.yml`.
+  the directory pattern is the boundary recognised by `local-gauntlet.sh` and the
+  build workflow.

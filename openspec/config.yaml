@@ -1,0 +1,172 @@
+schema: spec-driven
+
+context: |
+  Stratara is an application-agnostic CQRS / Event-Sourcing / Mediator framework for .NET 10,
+  shipped as a family of 25 NuGet packages at one lockstep version. It is a library, not an
+  application: the surface a consumer relies on is the published API of those packages.
+
+  Hard prohibitions:
+  - Stratara never references a consumer application, by name or by description.
+    Consumer-specific domain logic belongs in the consumer repository.
+  - Tier order is one-directional and cycle-free. Tier-A (Abstractions, Contracts, Diagnostics,
+    Resilience) -> Tier-B (Mediator, Domain, Shared, Sessions, ServiceDefaults) -> Tier-C
+    (EventSourcing.*, Validation, Projections, Sagas, Security, Outbox.*, Infrastructure,
+    Identity.*, ServiceDefaults.AspNetCore). Tier-N may reference only Tier-<=N.
+  - One <VersionPrefix> in Directory.Build.props governs every packable project. Never a
+    per-project version.
+  - IsPackable=false is the default; a packable csproj opts in explicitly and must then be
+    listed in Stratara.Publish.slnf.
+  - TreatWarningsAsErrors=true repo-wide; CS1591 (missing XML doc) is an error for packable
+    projects, so every public type and member carries documentation.
+
+  Vocabulary that surprises newcomers:
+  - Unprefixed TenantId / UserId always mean the DATA OWNER (subject). Actor* always means who
+    triggered the call (audit, rate-limit keying). ClientId is neither - it is the connection
+    identity.
+  - "Capability" in this repository means an OpenSpec capability, not a NuGet package. A
+    capability usually spans several packages.
+
+  Where the detail lives:
+  - Build conventions: operations.apply.guidance below. That is the full statement of them, not a
+    summary of one held elsewhere.
+  - Architecture and tier layout: docs/overview/architecture-at-a-glance.md, and the capability a
+    given behaviour belongs to in openspec/specs/.
+  - Releases are lockstep, one VersionPrefix in Directory.Build.props for all 25 packages, and a
+    stable v* tag is a deliberate decision rather than a consequence of merging. CHANGELOG.md
+    records what shipped when.
+  - Making a project packable: set IsPackable=true, add it to Stratara.Publish.slnf, and give every
+    public member XML documentation - CS1591 is an error there, so an undocumented member fails the
+    build rather than shipping undocumented.
+
+rules:
+  proposal:
+    - >-
+      State the consumer-visible effect first. A proposal that only describes an internal
+      refactor must say explicitly which published behaviour it does not change.
+    - >-
+      List every dissolved or superseded legacy source under "## Impact" by its exact path or
+      identifier - that list is the only machine-discoverable concordance after archiving.
+    - >-
+      Every proposal opens with a status line "> **Status:** proposed" as its first line under
+      the title. Only the owner flips it to approved, and never retroactively. The exception is a
+      backfill, which records behaviour that already shipped - approving it means "this is an
+      accurate record", not "build this", so it is approved when the record is accepted rather
+      than before the behaviour exists.
+  specs:
+    - >-
+      Specs are written in English. Structural markers (## Purpose, ## Requirements,
+      ### Requirement:, #### Scenario:, **WHEN**/**THEN**, SHALL/MUST) are literal and are
+      never translated.
+    - >-
+      Never name an internal type, namespace, project folder or EF table in a requirement.
+      Published API names (IMediator, ICommand, AddStrataraValidation) are the consumer's
+      vocabulary and are allowed; implementation names are not.
+    - >-
+      Do not specify an algorithm or a backend choice. "Encrypted at rest" is a requirement;
+      "AES-GCM 256 with a per-scope DEK" is a design note.
+    - >-
+      A requirement describes what the framework guarantees to a consumer of a published
+      package - not how Stratara's own code is written. If only a Stratara maintainer could
+      notice the rule being broken, it is a build convention and belongs in this config.
+    - >-
+      Where a guarantee was verified on only one surface or transport, say so in the scenario
+      rather than implying parity.
+  design:
+    - >-
+      Carry the rationale of any dissolved decision record verbatim in substance - context,
+      chosen option, rejected alternatives, consequences, and the original date and identifier.
+    - Record which evidence each decision rests on - a test, the implementation, or a document.
+  tasks:
+    - >-
+      Name the test or the source location that proves each item. A task nobody can check off
+      against something concrete is not a task.
+
+operations:
+  apply:
+    guidance:
+      - >-
+        Logging is source-generated only. Use [LoggerMessage] on a partial method in a partial
+        class; the exception parameter comes first after "this ILogger logger"; message
+        templates use PascalCase placeholders and only simple parameter types (string, Guid,
+        int, DateTimeOffset, enum). Never call logger.LogInformation() and friends directly.
+        Event IDs come from Stratara.Diagnostics/LogEvents.cs in the 100_000 range.
+      - >-
+        Tracing and metrics come from Stratara.Diagnostics.ApplicationDiagnostics - never
+        construct an ActivitySource or Meter ad hoc. Metric, meter, activity and tag names are
+        a public observability contract; renaming one is a breaking change.
+      - >-
+        Forbidden constructs - allocating a Stopwatch (use Activity timing; Stopwatch.GetTimestamp()
+        is fine and is what the framework's own workers use), manual retry loops with
+        Task.Delay (use the named Polly pipelines in Stratara.Resilience), dynamic, reflection
+        where is/as/pattern matching works, and null! or the null-forgiving ! outside generated
+        code and interop boundaries. Fix the nullability annotation instead.
+      - >-
+        No Thread, no new Task(...), no Task.Run in framework code - consumers may use them,
+        Stratara may not. Use SemaphoreSlim for async-friendly mutual exclusion, lock only over
+        a private readonly object, and BucketLockPool for per-key serialisation.
+      - >-
+        Async - suffix async methods with Async, pass CancellationToken through (default only
+        on top-level interface methods), never block on .Result or .Wait(), use await using for
+        IAsyncDisposable. ConfigureAwait(false) is deliberately not used in this repository.
+      - >-
+        Naming - PascalCase types and methods, IPascalCase interfaces, camelCase locals,
+        parameters and private fields with no underscore prefix. Suffixes - Async, Handler,
+        Service, Repository, Options.
+      - >-
+        Prefer sealed record for data carriers (events, commands, queries, DTOs, parameter
+        objects). Use class only where mutation, identity equality or open inheritance is
+        needed. Aggregates are sealed classes whose properties use public set - not private
+        set - because snapshot JSON deserialization needs the setter.
+      - >-
+        Public surfaces expose IReadOnlyList<T> / IReadOnlyDictionary<K,V> and never return
+        null for a collection - return an empty one. Use IEnumerable<T> only when lazy
+        semantics are intended, and document that.
+      - >-
+        Exceptions - throw specific types, document every throw with <exception cref="...">,
+        never throw or catch bare Exception at a framework boundary, and wrap external-system
+        failures rather than letting EF Core or HttpClient exceptions escape through the public
+        surface.
+      - >-
+        Every public type and member of a packable project needs XML documentation. CS1591 is
+        an error, so the build fails without it. Microsoft style - present tense, declarative,
+        no restatement of the signature, no reference to the current task or PR.
+      - >-
+        Clean code - at most 7 parameters including this (use a sealed record parameter
+        object), guard clauses over nested ifs, no magic numbers, DRY only after the third
+        repetition. No code comments in normal source; XML docs on packable public members are
+        the exception.
+      - >-
+        Annotations - [UsedImplicitly] on framework-invoked members (Apply methods, handlers,
+        projection handlers, JSON-deserialised setters) and [ExcludeFromCodeCoverage] on
+        data-only types.
+      - >-
+        Events are immutable sealed records, one atomic business fact each. Never remove a
+        persisted enum value - mark it [Obsolete]. Update handlers compare current aggregate
+        state and emit one event per changed field.
+      - >-
+        A DbContext that shares an assembly with sibling contexts must filter its
+        ApplyConfigurationsFromAssembly call with a namespace predicate. Without it EF picks up
+        the siblings' configurations and the consumer gets a PendingModelChangesWarning that
+        local unit tests do not catch.
+      - >-
+        A new csproj that a packable csproj references must itself be packable and must be
+        added to Stratara.Publish.slnf - otherwise the parent nuspec declares a dependency on a
+        package that does not exist on the feed.
+      - >-
+        Never point a file in this repository at one outside it. The agent context this project is
+        worked with lives in a private repository and is linked in, so a path into it resolves for
+        the person who wrote it and for nobody else. Write what the referenced file says instead.
+      - >-
+        Tests are xUnit v3 on the Microsoft Testing Platform. Run one project with
+        "dotnet test tests/<Project>.Tests" and the full gate with "./scripts/local-gauntlet.sh".
+        Integration tests live in dedicated *IntegrationTests projects and are excluded from
+        that gate.
+      - >-
+        Version bumps are lockstep and deliberate. Use the /bump-version skill; a stable v* tag
+        is a public-release decision, not a reflex after every merge. Test-only, doc-only and
+        CI-only changes do not bump.
+  archive:
+    guidance:
+      - >-
+        Confirm the change's Impact list is complete before archiving - after the archive it is
+        the only concordance from a retired source to the capability that absorbed it.

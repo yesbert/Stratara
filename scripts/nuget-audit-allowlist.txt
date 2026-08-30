@@ -1,0 +1,15 @@
+# NuGet vulnerability-audit allowlist
+#
+# Advisories listed here are accepted by `scripts/security-audit.sh` (and the pipeline's
+# "Audit NuGet Packages" step, which calls that script) so they do NOT fail the build. An
+# advisory belongs here ONLY when there is no patched version to upgrade to yet AND the
+# affected package is not on a shipped runtime path.
+#
+# Each entry MUST carry a one-line reason. The /update-dependencies skill (Step 5) and this
+# script both re-check the list every run: an entry that no longer appears in the live
+# `dotnet list package --vulnerable` output is STALE and **fails the audit** until it is deleted.
+# That is deliberate — a suppression that outlives its advisory is one nobody is deciding to keep,
+# and it silently covers whatever fires under that id next.
+#
+# Format: <GHSA-id>  # <reason — package@version, why unfixable, why low risk, date>
+

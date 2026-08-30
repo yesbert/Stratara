@@ -1,18 +1,24 @@
 <!--
-Heads-up: Stratara currently does NOT accept pull requests.
+Thanks for the pull request. A few things that make review quick:
 
-The github.com/yesbert/Stratara repository is a public mirror — every release is
-force-pushed as a single squashed commit from our internal Azure DevOps source-of-truth.
-Any PR opened here would be lost on the next release sync.
+- Branch prefixed feature/, fix/, refactor/, chore/ or docs/.
+- ./scripts/local-gauntlet.sh green before pushing.
+- Commit messages short and imperative.
 
-Please see CONTRIBUTING.md for the contribution model and how to file a bug report
-or question through GitHub Issues instead.
-
-This PR will be closed automatically. Thank you for your interest in Stratara.
+See CONTRIBUTING.md for what the review looks for.
 -->
 
-This pull request will be closed automatically. See [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-for the current contribution model.
+## What this changes
 
-If you found a bug or have a question, please open an
-[issue](https://github.com/yesbert/Stratara/issues/new/choose) instead — that we can act on.
+<!-- One or two sentences. What did you change, and what does a user notice? -->
+
+## Why
+
+<!-- The problem it solves. Link the issue if there is one. -->
+
+## How it was verified
+
+<!-- Which tests cover it. If it changes behaviour a consumer can observe, say which specification
+     in openspec/specs/ carries that guarantee. -->
+
+- [ ] `./scripts/local-gauntlet.sh` passes

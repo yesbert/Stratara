@@ -1,0 +1,135 @@
+# Nightly static analysis with coverage, against the project's own analysis server.
+#
+# Triggers on `schedule` and `workflow_dispatch` only. Never on `pull_request`, and under no
+# circumstance on `pull_request_target`: the analysis token is a secret that reaches a private
+# server, and `pull_request_target` runs a fork's code in this repository's context with access to
+# secrets. A `pull_request` run would get no secrets and simply fail, which is noise; the build
+# workflow is what gates a pull request.
+#
+# 04:00 UTC keeps it clear of the other nightly runs that share the analysis server.
+#
+# Coverage comes from the Microsoft Testing Platform's own extension rather than a coverlet wrapper:
+# under MTP's AssemblyLoadContext coverlet did not instrument the production assemblies, and every
+# nightly run reported 0%. `--coverage --coverage-output-format xml` writes Visual-Studio-Coverage
+# XML, which is what sonar.cs.vscoveragexml.reportsPaths below reads.
+#
+# The integration suites are excluded — they need Testcontainers and run in integration.yml.
+# Stratara.Benchmarks is excluded by the *.Tests.csproj glob.
+name: Analysis
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analysis-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analyse:
+    name: Static analysis + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BUILD_CONFIGURATION: Debug
+      COVERAGE_DIR: ${{ github.workspace }}/TestResults/coverage
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A shallow clone makes the scanner attribute every line to the checkout commit, which
+          # ruins new-code measurement.
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install the scanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      # Every property is passed here rather than read from sonar-project.properties: the .NET
+      # scanner does not read that file. It is kept in the repository as documentation of the same
+      # scope, and the two are meant to agree.
+      - name: Begin analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"stratara" \
+            /n:"Stratara" \
+            /d:sonar.token="${SONAR_TOKEN}" \
+            /d:sonar.host.url="${SONAR_HOST_URL}" \
+            /d:sonar.exclusions='**/bin/**,**/obj/**,**/TestResults/**,artifacts/**,reports/**,samples/**,scripts/**,tools/**,**/*.g.cs,tmp/**,docs/**,.junie/**' \
+            /d:sonar.coverage.exclusions='src/Stratara.Contracts/**,src/Stratara.Diagnostics/**,src/Stratara.Identity.AspNetCore/**,src/Stratara.ServiceDefaults/**,src/Stratara.ServiceDefaults.AspNetCore/**,**/*Command.cs,**/*Query.cs,**/*Event.cs,**/*Events.cs,**/*DbContext.cs,**/*Dto.cs,**/*Options.cs,**/LogEvents.cs,**/Program.cs,**/Migrations/**' \
+            /d:sonar.cpd.exclusions='src/Stratara.Contracts/**/*.cs,**/*Dto.cs,**/*Options.cs,**/*Event.cs,**/*Events.cs' \
+            /d:sonar.cs.file.suffixes=.cs \
+            /d:sonar.cs.vscoveragexml.reportsPaths="${COVERAGE_DIR}/*.coverage.xml" \
+            /d:sonar.issue.ignore.multicriteria=ireadonlyListConvention,constantArraysInTests,staticMethodsInTests,docCommentsLookLikeCode \
+            /d:sonar.issue.ignore.multicriteria.ireadonlyListConvention.ruleKey=external_roslyn:CA1859 \
+            /d:sonar.issue.ignore.multicriteria.ireadonlyListConvention.resourceKey='**' \
+            /d:sonar.issue.ignore.multicriteria.constantArraysInTests.ruleKey=external_roslyn:CA1861 \
+            /d:sonar.issue.ignore.multicriteria.constantArraysInTests.resourceKey='tests/**' \
+            /d:sonar.issue.ignore.multicriteria.staticMethodsInTests.ruleKey=external_roslyn:CA1822 \
+            /d:sonar.issue.ignore.multicriteria.staticMethodsInTests.resourceKey='tests/**' \
+            /d:sonar.issue.ignore.multicriteria.docCommentsLookLikeCode.ruleKey=csharpsquid:S125 \
+            /d:sonar.issue.ignore.multicriteria.docCommentsLookLikeCode.resourceKey='src/**'
+
+      - name: Restore
+        run: dotnet restore Stratara.Publish.slnf
+
+      - name: Build
+        run: dotnet build Stratara.Publish.slnf -c "${BUILD_CONFIGURATION}" --no-restore --nologo
+
+      # `dotnet test ... --` so MTP receives the coverage arguments. Running the dll directly hands
+      # them to xUnit, which rejects --coverage as an unknown option.
+      - name: Unit tests with coverage
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "${COVERAGE_DIR}"
+          failed=0
+          for proj in tests/*/*.Tests.csproj; do
+            [[ -f "${proj}" ]] || continue
+            [[ "${proj}" == *IntegrationTests* ]] && continue
+            name="$(basename "$(dirname "${proj}")")"
+            echo ""
+            echo "=== Coverage: ${name} ==="
+            dotnet test "${proj}" --no-build -c "${BUILD_CONFIGURATION}" -- \
+              --coverage \
+              --coverage-output-format xml \
+              --coverage-output "${COVERAGE_DIR}/${name}.coverage.xml" \
+              || failed=1
+          done
+          exit ${failed}
+
+      - name: End analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+
+      # A report of what the run found, on the run's own summary page. Best-effort: a failure here
+      # does not invalidate the analysis, which has already been submitted.
+      - name: Export the results
+        if: always()
+        continue-on-error: true
+        env:
+          SONARQUBE_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONARQUBE_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          BUILD_ARTIFACT_DIR: ${{ github.workspace }}/TestResults/analysis
+        run: |
+          mkdir -p "${BUILD_ARTIFACT_DIR}"
+          bash scripts/ci/export-sonarqube-results.sh
+
+      - name: Upload the analysis report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-report
+          path: TestResults/analysis
+          if-no-files-found: ignore

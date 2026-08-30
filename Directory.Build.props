@@ -62,8 +62,10 @@
              Combined with TreatWarningsAsErrors above, every public type/
              member in every project must carry XML docs (CS1591 escalates
              to an error). Non-packable test/sample projects suppress CS1591
-             themselves via <NoWarn>$(NoWarn);CS1591</NoWarn>. Policy:
-             .claude/docs/nuget-public-api-documentation-policy.md. -->
+             themselves via <NoWarn>$(NoWarn);CS1591</NoWarn>. A registration
+             method documents the configuration key path it binds, its
+             prerequisites and ordering constraints, and carries one
+             <example>. -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
 
