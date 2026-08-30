@@ -16,6 +16,53 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: the six deprecated members held for the major are gone.** Every one shipped with a
+  named successor and at least one minor version of overlap; this is the second half of that promise.
+  A consumer still calling one stops compiling, at the call site, with the successor named in the
+  deprecation message it has been seeing since the member was deprecated.
+
+  | Removed | Package | Replace with |
+  |---|---|---|
+  | `ISnapshotRepository.GetAsync(Guid, long?, CancellationToken)` | `Stratara.Abstractions` | `GetAsync(streamId, aggregateTypeName, toVersion, ct)` |
+  | `ISnapshotRepository.GetLatestVersionOrDefaultAsync(Guid, CancellationToken)` | `Stratara.Abstractions` | `GetLatestVersionOrDefaultAsync(streamId, aggregateTypeName, ct)` |
+  | the two implementations of the above | `Stratara.EventSourcing.EntityFrameworkCore` | — |
+  | `AddNpsqlWriteDbContextFactory<TDbContext>()` | `Stratara.EventSourcing.EntityFrameworkCore` | `AddNpgsqlWriteDbContextFactory<TDbContext>()` |
+  | `UseAuthorizationExceptionTo403()` | `Stratara.Infrastructure` | `AddStrataraProblemDetails()` + `app.UseExceptionHandler()` |
+
+  The `aggregateTypeName` the snapshot overloads now require is the value the framework itself passes,
+  `aggregateType.GetQualifiedTypeName()` — not new information a caller has to invent. A type-less
+  lookup could return a snapshot written for a *different* aggregate type sharing the stream id, which
+  was then deserialized into the requested type and yielded corrupt or default state; that is why the
+  overloads were deprecated and why they are now gone.
+
+  `AddNpsqlWriteDbContextFactory` was the original misspelling — no `g` in `Npgsql`. It forwarded
+  verbatim to the correctly-spelled name from `3.2.0` onward. Adding the `g` is the whole migration.
+
+- **BREAKING: `UseAuthorizationExceptionTo403()` and the middleware behind it are removed, and the
+  replacement answers in a different shape.** This is the one removal that is not a
+  signature-for-signature substitution, so it gets its own paragraph rather than a table row.
+
+  The removed middleware mapped an authorization refusal and a tenant-access denial to a bare `403`
+  with no body. `AddStrataraProblemDetails()` in `Stratara.ServiceDefaults.AspNetCore` maps the same
+  two refusals — plus validation failures — to one RFC 7807 problem shape, so a host that migrates
+  gains a response body it did not have. Both lines are needed: the registration alone does nothing
+  without `app.UseExceptionHandler()` in the pipeline.
+
+  A host that wants neither the middleware nor the problem shape can map the refusals itself.
+  `AuthorizationException` and `TenantAccessDeniedException` are both declared in
+  `Stratara.Abstractions`, so a host's own exception handler catches them without referencing the
+  mediator or infrastructure packages.
+
+  The two must never have been registered together — the middleware answered first and the handler
+  never saw the exception. That trap goes with the middleware.
+
+- **If you implement `ISnapshotRepository` yourself, nothing breaks at compile time.** Removing a
+  member from an interface leaves an implementor with two methods that no longer implement anything;
+  the compiler does not complain about an extra method, so there is no error to hunt. Delete them at
+  leisure.
+
 ### Changed
 
 - **`StackExchange.Redis` moves to `3.x` in the published dependency graph.** `Stratara.Infrastructure`

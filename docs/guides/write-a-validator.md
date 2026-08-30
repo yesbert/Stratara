@@ -113,9 +113,13 @@ A validation rejection becomes `400` with the failures grouped by the field each
 authorization refusal and a tenant-access denial each become `403`, in the same RFC 7807 shape.
 Anything the framework did not raise is left alone and reaches your own diagnostics unchanged.
 
-**It supersedes `UseAuthorizationExceptionTo403()`**, which maps the same two refusals to a bare
-status code with no body. That method is marked obsolete and is removed in the next major version.
-Do not register both: the middleware answers first and the handler never sees the exception.
+**Both lines are needed.** `AddStrataraProblemDetails()` registers the handler and
+`app.UseExceptionHandler()` is what reaches it — register the first without the second and nothing is
+converted, exactly as if the mapping were absent.
+
+> **Removed in 4.0.0:** `UseAuthorizationExceptionTo403()` mapped the two refusals to a bare status
+> code with no body. It was obsolete from 3.3.0 and is gone; a host still calling it registers the two
+> lines above instead and gains an RFC 7807 body on the 403.
 
 ### If you want your own error model
 

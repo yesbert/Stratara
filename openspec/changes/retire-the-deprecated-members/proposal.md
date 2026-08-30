@@ -138,6 +138,20 @@ Corrected, because they name a member that will not exist:
 - `src/Stratara.ServiceDefaults.AspNetCore/StrataraProblemDetailsServiceCollectionExtensions.cs:25,35`
   — XML documentation warning against registering the obsolete middleware alongside it.
 
+Two more the plan did not name, both found by a gate rather than by reading:
+
+- `tests/Stratara.Documentation.Tests/registration-coverage-allowlist.txt` — exempted both removed
+  registrations from the DI-cheatsheet coverage requirement. Its own header says an entry that no
+  longer resolves to a registration fails `DiCheatsheetCoverageTests`, so both lines go with their
+  subjects. The file stays, header and all: the test reads it, and the next deprecation will need it.
+- `scripts/check-doc-symbols.py` — the fabricated-API gate fails on any `Add*`/`Map*`/`Use*` symbol a
+  doc names that `src/` does not declare, which is exactly what a migration note does. The gate's own
+  reason is that *"readers copy these verbatim"*, and a note reading "removed in 4.0.0, call X
+  instead" is the opposite case. A `RETIRED` set alongside the existing `EXTERNAL` and `DOC_LOCAL`
+  ones carries the two names with the version that removed them. Without it the only way to pass the
+  gate is to stop naming the removed member, which would delete the migration path exactly when a
+  consumer needs it.
+
 Unaffected, and worth stating:
 
 - `openspec/specs/aggregate-rehydration/spec.md` — already requires the type-scoped lookup. Removing

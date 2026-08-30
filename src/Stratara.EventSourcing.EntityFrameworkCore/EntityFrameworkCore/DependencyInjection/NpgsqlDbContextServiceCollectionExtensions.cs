@@ -40,17 +40,6 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Obsolete misspelling of <see cref="AddNpgsqlWriteDbContextFactory{TDbContext}"/> — kept so
-    /// hosts registered against the 3.1.x name keep compiling. Forwards verbatim.
-    /// </summary>
-    /// <typeparam name="TDbContext">The concrete write-store DbContext type.</typeparam>
-    /// <param name="services">The service collection to add registrations to.</param>
-    /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-    [Obsolete("Renamed to AddNpgsqlWriteDbContextFactory (the original name was missing the 'g' in 'Npgsql'). This alias will be removed in the next major version.")]
-    public static IServiceCollection AddNpsqlWriteDbContextFactory<TDbContext>(this IServiceCollection services) where TDbContext : DbContext, IWriteDbContext
-        => AddNpgsqlWriteDbContextFactory<TDbContext>(services);
-
-    /// <summary>
     /// Registers an Npgsql-backed <see cref="IDbContextFactory{TContext}"/> for a read-store
     /// DbContext along with the default <see cref="IDbResolver"/> if none has been registered yet.
     /// </summary>

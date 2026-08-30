@@ -51,9 +51,10 @@ Most hosts don't call these directly — the worker composites in `Stratara.Even
 (`AddCommandWorkerServices()`, `AddEventProjectionWorkerServices()`, …) already compose `AddWriteStore`
 for you. Reach for the explicit form when you build a host that none of the composites fit.
 
-> **Renamed in 3.2.0:** the write-side factory was `AddNpsqlWriteDbContextFactory` (missing the `g`)
-> through 3.1.x. The correctly-spelled `AddNpgsqlWriteDbContextFactory` is now the canonical name; the
-> old spelling still compiles as an `[Obsolete]` alias and will be removed in the next major version.
+> **Renamed in 3.2.0, removed in 4.0.0:** the write-side factory was `AddNpsqlWriteDbContextFactory`
+> (missing the `g`) through 3.1.x. `AddNpgsqlWriteDbContextFactory` replaced it in 3.2.0 and the old
+> spelling stayed as an `[Obsolete]` alias until 4.0.0, which removed it. A host still on the old
+> spelling adds the `g`; nothing else about the call changes.
 
 ## Health checks
 
