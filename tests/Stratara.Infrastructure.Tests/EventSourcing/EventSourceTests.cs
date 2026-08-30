@@ -4,6 +4,7 @@ using Stratara.Contracts.Session;
 using Stratara.Domain;
 using Stratara.Domain.Multitenancy;
 using Stratara.Infrastructure.EventSourcing;
+using Stratara.Abstractions.Domain;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
@@ -60,8 +61,35 @@ public class EventSourceTests
         public string Name { get; set; } = "";
     }
 
+    private sealed class TenantScopedAggregate : ITenantAggregate
+    {
+        public Guid Id { get; set; }
+        public Guid TenantId { get; set; }
+    }
+
     private sealed record TestCreated(string Name);
     private sealed record TestRenamed(string NewName);
+
+    private static EventStreamEntry EntryOwnedBy(Guid streamId, Guid ownerTenantId) => new()
+    {
+        StreamId = streamId,
+        Version = 1,
+        EventTypeName = "Existing",
+        AggregateTypeName = "Existing",
+        DataJson = "{}",
+        BucketId = 0,
+        TenantId = ownerTenantId,
+        ActorTenantId = ownerTenantId,
+        ActorUserId = Guid.NewGuid(),
+    };
+
+    private void GivenAnExistingStreamOwnedBy(Guid streamId, Guid ownerTenantId)
+    {
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(1L);
+        _eventStreamRepoMock.Setup(r => r.GetFirstOrDefaultAsync(streamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(EntryOwnedBy(streamId, ownerTenantId));
+    }
 
     [Fact]
     public async Task ExistsAsync_DelegatesToRepository()
@@ -412,4 +440,202 @@ public class EventSourceTests
     private static DbUpdateException CreateUniqueViolationDbUpdateException() =>
         new("unique constraint violation",
             new PostgresException("duplicate key value violates unique constraint", "ERROR", "ERROR", "23505"));
+
+    /// <summary>
+    /// The test that would have caught the defect. A plain <c>IAggregate</c> skipped the stream
+    /// lookup entirely, so the session won and one stream could end up with two owners.
+    /// </summary>
+    [Fact]
+    public async Task AppendAsync_PlainAggregateOnAnExistingStream_KeepsTheStreamsOwner()
+    {
+        var streamId = Guid.NewGuid();
+        var firstOwner = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, firstOwner);
+
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("New"));
+        await _eventSource.SaveChangesAsync();
+
+        var entry = Assert.Single(Assert.Single(_capturedAddRangeCalls));
+        Assert.Equal(firstOwner, entry.TenantId);
+        Assert.NotEqual(_tenantId, entry.TenantId);
+        Assert.Equal(_tenantId, entry.ActorTenantId);
+    }
+
+    [Fact]
+    public async Task AppendAsync_TenantAggregateOnAnExistingStream_StillKeepsTheStreamsOwner()
+    {
+        var streamId = Guid.NewGuid();
+        var firstOwner = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, firstOwner);
+
+        await _eventSource.AppendAsync<TenantScopedAggregate>(streamId, new TestRenamed("New"));
+        await _eventSource.SaveChangesAsync();
+
+        var entry = Assert.Single(Assert.Single(_capturedAddRangeCalls));
+        Assert.Equal(firstOwner, entry.TenantId);
+        Assert.NotEqual(_tenantId, entry.TenantId);
+    }
+
+    /// <summary>
+    /// Shared ownership stays available — it just has to be stated. The override outranks the
+    /// stream's owner, and a later batch appending normally returns to it.
+    /// </summary>
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_OutranksTheStreamsOwner_AndDoesNotOutliveItsBatch()
+    {
+        var streamId = Guid.NewGuid();
+        var firstOwner = Guid.NewGuid();
+        var onBehalfOf = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, firstOwner);
+
+        await _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+            streamId, new TestRenamed("Stated"), new EventSubject(onBehalfOf));
+        await _eventSource.SaveChangesAsync();
+
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Ordinary"));
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Equal(2, _capturedAddRangeCalls.Count);
+        Assert.Equal(onBehalfOf, Assert.Single(_capturedAddRangeCalls[0]).TenantId);
+        Assert.Equal(firstOwner, Assert.Single(_capturedAddRangeCalls[1]).TenantId);
+    }
+
+    /// <summary>
+    /// The lookup now runs for every aggregate, so it also runs for a stream that does not exist yet.
+    /// A first append must still resolve from the creation event, and from the session where the
+    /// event carries no tenant.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_NewStream_ResolvesFromTheCreationEvent()
+    {
+        var newTenantId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(newTenantId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await _eventSource.CreateAsync<Tenant>(newTenantId,
+            new TenantCreated(newTenantId, Guid.NewGuid(), "Acme", "de-DE", true, DateTimeOffset.UtcNow));
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Equal(newTenantId, Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId);
+    }
+
+    [Fact]
+    public async Task CreateAsync_NewStream_FallsBackToTheSessionWhenTheEventNamesNoTenant()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Equal(_tenantId, Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId);
+    }
+
+    [Fact]
+    public async Task AppendAsync_NoHistoryNoCreationEventNoSessionTenant_StillFailsNamingTheThreeWays()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _sessionContextProviderMock.Setup(s => s.Current)
+            .Returns(new SessionContext("corr-1", "caus-1", null, Guid.Empty, _userId, Guid.Empty, null));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("New")));
+
+        Assert.Contains(nameof(TestRenamed), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(streamId.ToString(), ex.Message, StringComparison.Ordinal);
+        Assert.Contains("AppendOnBehalfOfAsync", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(IAggregateCreationEvent), ex.Message, StringComparison.Ordinal);
+        Assert.Contains("SessionContext.TenantId", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The reason the change exists. Two tenants writing to one stream used to leave entries owned by
+    /// whoever wrote them, so erasing either tenant covered only part of the stream — and once that
+    /// tenant's key was shredded, its entries no longer decrypted and the aggregate could not be
+    /// rebuilt for anyone. One owner means one erasure covers all of it.
+    /// </summary>
+    [Fact]
+    public async Task TwoTenantsAppendingToOneStream_LeaveOneOwner_SoASingleErasureCoversIt()
+    {
+        var streamId = Guid.NewGuid();
+        var firstOwner = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, firstOwner);
+
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("by the session tenant"));
+        await _eventSource.SaveChangesAsync();
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("and again"));
+        await _eventSource.SaveChangesAsync();
+
+        var recorded = _capturedAddRangeCalls.SelectMany(entries => entries).ToList();
+        Assert.Equal(2, recorded.Count);
+        Assert.Single(recorded.Select(e => e.TenantId).Distinct());
+        Assert.Equal(firstOwner, recorded[0].TenantId);
+
+        _serializerMock.Verify(
+            s => s.SerializeAsync(It.IsAny<object>(), firstOwner, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+        _serializerMock.Verify(
+            s => s.SerializeAsync(It.IsAny<object>(), _tenantId, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// The cost of the change, as a count rather than a claim. The stream-owner lookup now runs for
+    /// aggregates that skipped it; the per-batch cache bounds it to once per stream per batch, and
+    /// the reads only happen when the stream already exists. Pinned here so a later change on this
+    /// write path can be weighed against a number.
+    /// </summary>
+    [Fact]
+    public async Task TheStreamOwnerLookup_RunsAtMostOncePerStreamPerBatch()
+    {
+        var streamId = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, Guid.NewGuid());
+
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("one"));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("two"));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("three"));
+        await _eventSource.SaveChangesAsync();
+
+        _eventStreamRepoMock.Verify(
+            r => r.GetFirstOrDefaultAsync(streamId, It.IsAny<CancellationToken>()), Times.Once);
+        _eventStreamRepoMock.Verify(
+            r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task TheStreamOwnerLookup_RunsOncePerStream_WhenABatchSpansSeveral()
+    {
+        var streams = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        foreach (var streamId in streams)
+        {
+            GivenAnExistingStreamOwnedBy(streamId, Guid.NewGuid());
+        }
+
+        foreach (var streamId in streams)
+        {
+            await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("one"));
+            await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("two"));
+        }
+
+        await _eventSource.SaveChangesAsync();
+
+        foreach (var streamId in streams)
+        {
+            _eventStreamRepoMock.Verify(
+                r => r.GetFirstOrDefaultAsync(streamId, It.IsAny<CancellationToken>()), Times.Once);
+        }
+    }
+
+    [Fact]
+    public async Task TheStreamOwnerLookup_ReadsNothingFurther_WhenTheStreamDoesNotExistYet()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
+        await _eventSource.SaveChangesAsync();
+
+        _eventStreamRepoMock.Verify(
+            r => r.GetFirstOrDefaultAsync(streamId, It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

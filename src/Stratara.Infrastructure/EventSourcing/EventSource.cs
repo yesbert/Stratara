@@ -24,8 +24,8 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// <remarks>
 /// <para>
 /// Subject (TenantId / UserId) is resolved in the following priority order: explicit override
-/// (via <see cref="AppendOnBehalfOfAsync{TAggregate}"/>), per-batch cache, existing aggregate's
-/// TenantId, <see cref="IAggregateCreationEvent"/> payload, then <see cref="SessionContext"/> fallback.
+/// (via <see cref="AppendOnBehalfOfAsync{TAggregate}"/>), per-batch cache, the owner recorded on the
+/// stream, <see cref="IAggregateCreationEvent"/> payload, then <see cref="SessionContext"/> fallback.
 /// If none yields a non-empty Subject, the append fails fast with an <see cref="InvalidOperationException"/>.
 /// </para>
 /// <para>
@@ -237,7 +237,7 @@ internal sealed class EventSource(
 
         var streamVersion = _streamVersions[streamId] + 1;
 
-        var subject = await ResolveSubjectAsync<TAggregate>(streamId, @event, session, cancellationToken);
+        var subject = await ResolveSubjectAsync(streamId, @event, session, cancellationToken);
         var dataJson = await serializer.SerializeAsync(@event, subject.TenantId, subject.UserId, cancellationToken);
 
         var eventStreamEntry = new EventStreamEntry
@@ -274,14 +274,14 @@ internal sealed class EventSource(
     /// 1. Explicit override (set by AppendOnBehalfOfAsync, which has already rejected an empty
     ///    tenant id — that is why this stage needs no emptiness check of its own)
     /// 2. Per-batch cache (previous event in the same SaveChanges resolved Subject for this stream)
-    /// 3. Existing aggregate's TenantId (for ITenantAggregate streams that already exist)
+    /// 3. The owner recorded on the stream's first entry, for any aggregate type — a stream keeps
+    ///    the owner it was created with, whatever session appends to it later
     /// 4. Event payload's IAggregateCreationEvent.TenantId
     /// 5. SessionContext.TenantId fallback
     /// 6. Hard failure if Subject still unresolved (all candidates empty)
     /// </summary>
-    private async Task<EventSubject> ResolveSubjectAsync<TAggregate>(
+    private async Task<EventSubject> ResolveSubjectAsync(
         Guid streamId, object @event, SessionContext session, CancellationToken cancellationToken)
-        where TAggregate : notnull, new()
     {
         if (_explicitSubjectOverrides.TryGetValue(@event, out var explicitSubject))
         {
@@ -293,13 +293,10 @@ internal sealed class EventSource(
             return cachedSubject;
         }
 
-        if (typeof(ITenantAggregate).IsAssignableFrom(typeof(TAggregate)))
+        var existingTenantId = await LookupExistingAggregateTenantIdAsync(streamId, cancellationToken);
+        if (existingTenantId.HasValue && existingTenantId.Value != Guid.Empty)
         {
-            var existingTenantId = await LookupExistingAggregateTenantIdAsync(streamId, cancellationToken);
-            if (existingTenantId.HasValue && existingTenantId.Value != Guid.Empty)
-            {
-                return new EventSubject(existingTenantId.Value);
-            }
+            return new EventSubject(existingTenantId.Value);
         }
 
         if (@event is IAggregateCreationEvent creation && creation.TenantId != Guid.Empty)
