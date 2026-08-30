@@ -18,6 +18,19 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **`StackExchange.Redis` moves to `3.x` in the published dependency graph.** `Stratara.Infrastructure`
+  and `Stratara.Outbox.RabbitMQ` now declare `StackExchange.Redis` `3.1.31`, up from `2.13.10`. Both
+  packages use it on a runtime path — the distributed cache registration, the outbox lock and the
+  projection replay state — so this reaches consumers: an application pinning `StackExchange.Redis`
+  `2.x` will have to move with it. The framework's own use of the client is unchanged and the
+  behaviour is covered by the Redis integration suite.
+
+- **Test-support toolchain moved to xunit v3 `4.0.0`.** `xunit.v3`, `xunit.runner.visualstudio` and
+  `Microsoft.Testing.Extensions.CodeCoverage` moved together, because xunit v3 `4.0.0` is the first
+  release shipping a Microsoft.Testing.Platform v2 variant — which is what the CodeCoverage
+  extension has required since `18.1.0`. This affects how the framework tests itself and does not
+  change any published package's surface.
+
 - **Dependency refresh across the package family.** 58 pinned versions moved to their current
   releases: the .NET 10 stack (Entity Framework Core, `Microsoft.Extensions.*`, ASP.NET Core
   authentication and identity) to `10.0.11`, OpenTelemetry to `1.18.0`, `Microsoft.Extensions.*`
