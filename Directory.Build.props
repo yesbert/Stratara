@@ -80,20 +80,6 @@
         <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
     </ItemGroup>
 
-    <!-- AUDIT-SUPPRESSION (revalidated by /update-dependencies, Step 5).
-         GHSA-2m69-gcr7-jv3q — High severity, SQLitePCLRaw.lib.e_sqlite3 2.1.11.
-         Reached ONLY transitively through Microsoft.EntityFrameworkCore.Sqlite, which
-         the Stratara.Testing.EntityFrameworkCore test-support package uses for the
-         in-memory SQLite EventStore host. It is NOT on any runtime code path of a
-         non-test package. As of 2026-06-19 the latest published lib.e_sqlite3 IS 2.1.11
-         (verified: EF Core SQLite 10.0.8 and 10.0.9 both still resolve 2.1.11), so there
-         is no version to upgrade to yet. Suppress this single advisory until SQLitePCLRaw
-         ships a patched release; the /update-dependencies skill re-checks on every run and
-         drops this entry once the advisory no longer fires. -->
-    <ItemGroup>
-        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
-    </ItemGroup>
-
     <!-- Extracts <PackageReleaseNotes> from CHANGELOG.md at pack time. Imported
          unconditionally; the target hooks GenerateNuspec, so it only fires for
          IsPackable=true projects. -->

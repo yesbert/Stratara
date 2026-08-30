@@ -16,6 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency refresh across the package family.** 58 pinned versions moved to their current
+  releases: the .NET 10 stack (Entity Framework Core, `Microsoft.Extensions.*`, ASP.NET Core
+  authentication and identity) to `10.0.11`, OpenTelemetry to `1.18.0`, `Microsoft.Extensions.*`
+  resilience and service discovery to `10.9.0`, `Microsoft.IdentityModel.*` to `8.22.0`, plus
+  Serilog, Npgsql, RabbitMQ.Client and Azure.Messaging.ServiceBus. These are the versions the
+  published packages now declare, so a consumer resolving Stratara picks them up transitively.
+
+### Security
+
+- **The SQLitePCLRaw advisory `GHSA-2m69-gcr7-jv3q` is resolved and no longer suppressed.**
+  The High-severity advisory against `SQLitePCLRaw.lib.e_sqlite3` 2.1.11 was reached transitively
+  through `Microsoft.EntityFrameworkCore.Sqlite` — used by the `Stratara.Testing.EntityFrameworkCore`
+  test-support package, never on a shipped runtime path — and had no patched version to move to, so
+  it was suppressed in the build audit. Entity Framework Core `10.0.11` resolves a patched
+  `lib.e_sqlite3`, and both suppression entries have been removed. The repository now carries no
+  audit suppressions at all.
+
 ### Documentation
 
 - **The signature scope documented for bus-envelope integrity now matches what 3.4.0 signs.**
