@@ -135,8 +135,9 @@
 - [x] 8.4 Clone `yesbert/Stratara` fresh as the working copy and re-run `link.sh` against it. Verify:
       `git remote -v` shows only the GitHub remote, `readlink .claude` resolves, and
       `./scripts/local-gauntlet.sh` passes in the new clone.
-- [ ] 8.5 Register the trusted-publishing policy on nuget.org (owner `yesbert`, repository
-      `Stratara`, workflow `release.yml`, environment `nuget-org`), then exercise the release
+- [ ] 8.5 Register the trusted-publishing policy on nuget.org (glob `Stratara.*` — the form requires
+      one, owner `yesbert`, repository `Stratara`, workflow `release.yml`, environment `nuget-org`),
+      then exercise the release
       workflow once with a prerelease tag. Verify: the run's log says it published with a
       short-lived key rather than falling back, the package appears on nuget.org as a prerelease,
       and it is then unlisted. Afterwards delete `NUGET_ORG_API_KEY`, the key on nuget.org, and the
