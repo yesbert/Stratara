@@ -68,9 +68,10 @@ internal sealed class AuthorizingMediator(
         var held = await permissionResolver.ResolvePermissionsAsync(
             session.ActorUserId, session.TenantId, cancellationToken);
 
-        foreach (var permission in required.Where(permission => !held.Contains(permission)))
+        var missing = required.FirstOrDefault(permission => !held.Contains(permission));
+        if (missing is not null)
         {
-            throw new PermissionAuthorizationException(permission);
+            throw new PermissionAuthorizationException(missing);
         }
     }
 }
