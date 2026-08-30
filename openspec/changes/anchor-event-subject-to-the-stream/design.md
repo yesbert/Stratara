@@ -62,7 +62,25 @@ capability this change removes by accident is fully available by intent.
 The lookup now runs for aggregates that previously skipped it. It is bounded by the existing
 per-batch `_streamSubjects` cache, so it happens at most once per stream per batch, and only when
 the stream already exists. This is the same read that `AR-2` and `UC-1` are separately trying to
-reduce on the write path, so the cost should be stated in the tasks rather than assumed negligible.
+reduce on the write path, so the cost should be stated rather than assumed negligible.
+
+**Measured, 2026-08-30.** The figure is a round-trip count rather than a duration: a timing taken
+against test doubles measures the doubles, and one taken against a real database measures that
+database rather than this change. Counts are what a later change on the same write path can be
+weighed against. Pinned by
+`EventSourceTests.TheStreamOwnerLookup_*` so the numbers below fail a build if they move:
+
+| Shape | Before | After |
+|---|---|---|
+| Append to an existing stream, aggregate is not `ITenantAggregate` | 0 reads | **1 transaction + `StreamExistsAsync` + `GetFirstOrDefaultAsync` = 2 queries**, once per stream per batch |
+| Three events on that same stream in one batch | 0 | still **1 lookup** — the batch cache absorbs the second and third |
+| Three streams × two events in one batch | 0 | **1 lookup per stream**, three in total |
+| First append to a stream that does not exist yet | 0 | **1 query** — `StreamExistsAsync` returns false and the second read is never issued |
+| Aggregate is `ITenantAggregate` | 1 lookup | unchanged |
+
+So the worst case added by this change is **two queries per distinct existing stream per
+`SaveChanges`**, and the common case of several events on one stream costs the same two as a single
+event. It does not scale with the number of events.
 
 ## Risks / Trade-offs
 

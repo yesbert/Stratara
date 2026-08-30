@@ -18,6 +18,50 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **BREAKING: an event's owner now comes from its stream, not from the session that wrote it.**
+  Every event records a subject — the tenant whose key encrypts its payload and whose erasure reaches
+  it. Resolution consulted the owner already recorded on the stream *only* when the aggregate
+  implemented `ITenantAggregate`. For any other aggregate it fell through to the session, so a stream
+  written by two tenants ended up with entries owned by whoever happened to write them.
+
+  `ITenantAggregate` adds exactly one member — `Guid TenantId { get; set; }` — so that a rehydrated
+  aggregate carries its tenant as a property. It is a statement about the shape of the class, not
+  about whether the stream has an owner. Every entry has one either way, which is why the condition
+  was testing the wrong thing.
+
+  **What it cost.** Erasure became incomplete: erasing one tenant shredded its key while the other
+  tenant's entries on the same stream stayed readable, so neither erasure covered the aggregate. And
+  because each event is decrypted with the subject recorded on its own entry, once one key was
+  shredded the aggregate could no longer be rebuilt **at all** — a lawful erasure in one tenant broke
+  a shared aggregate for everyone.
+
+  After this change, once a stream has a recorded owner every later event carries the same owner,
+  whatever session appends it. The acting session is still recorded separately as the actor.
+  Consumers that genuinely want an event attributed to a different subject keep the explicit route,
+  `AppendOnBehalfOfAsync`, which outranks everything — the difference is that shared ownership is now
+  something a consumer states rather than something the absence of an interface produces.
+
+  **Nothing stops compiling.** Events simply start being attributed differently, so a consumer
+  relying on the old behaviour gets no compile-time warning — which is the whole reason for this
+  note. If you deliberately appended to one stream from several tenants, those appends now land on
+  the stream's first owner.
+
+  **Existing mixed-ownership streams are not repaired.** Their recorded entries keep the owners they
+  were written with; only new appends follow the stream's first owner. The store does not rewrite
+  recorded events, by design. A consumer with such a stream still has an erasure that does not cover
+  all of it, and this change does not fix that retroactively — you can find them by looking for one
+  stream whose entries carry differing tenant ids.
+
+  **The framework's own `Tenant` aggregate is affected too.** `Tenant` is a plain `IAggregate` — a
+  tenant does not belong to a tenant — so its streams previously took the session's tenant on
+  non-creation events and now take the owner recorded at creation. This is not only a consumer's
+  behaviour changing.
+
+  The cost is one extra read on the write path, bounded by the existing per-batch cache: at most one
+  transaction plus two queries per distinct existing stream per `SaveChanges`, regardless of how many
+  events that batch appends to it. A first append to a stream that does not exist yet costs one
+  query, and `ITenantAggregate` aggregates are unchanged.
+
 - **BREAKING: a user with several active memberships and no valid selection now receives no tenant
   claim.** Previously the framework picked one for them — the first of the active memberships sorted
   by `TenantId`. `OrderBy` on a `Guid` compares byte groups in an order of its own, so the winner was
