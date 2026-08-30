@@ -1,4 +1,4 @@
-> **Status:** proposed
+> **Status:** approved
 
 # Anchor an event's subject to its stream, not to the session that wrote it
 

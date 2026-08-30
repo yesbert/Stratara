@@ -5,8 +5,13 @@
 The tenant an event belongs to SHALL be resolved in this order: an explicit subject supplied by the
 caller for that event; the subject already established for that stream in the current batch; the
 tenant recorded on the stream's first existing event; a tenant carried by the event itself where the
-event declares itself a creation event; and only then the session's data-owner tenant. Where none of
-these yields a tenant, the append SHALL fail rather than guess.
+event declares itself a creation event; and only then the session's data-owner tenant. Every
+candidate SHALL name a tenant to be used, including the explicitly supplied one. Where none of these
+yields a tenant, the append SHALL fail rather than guess.
+
+An explicit subject that names no tenant SHALL fail the append rather than fall through to the
+remaining candidates, because a caller who stated the subject has already said which other candidate
+is not to be used.
 
 Reading the tenant from the stream before the session is what stops a privileged operator's session
 silently re-homing an existing aggregate into another tenant. That reasoning does not depend on the
@@ -35,6 +40,12 @@ it by omission.
 - **WHEN** the caller appends on behalf of a stated subject
 - **THEN** that subject is used for that event, overriding every other source, and the override
   applies to that event only
+
+#### Scenario: The caller supplies a subject that names no tenant
+
+- **WHEN** the caller appends on behalf of a subject whose tenant is absent
+- **THEN** the append fails with a message naming the event and the stream, no event is recorded,
+  and the remaining candidates are not consulted
 
 #### Scenario: Nothing identifies a tenant
 
