@@ -21,18 +21,15 @@ public static class StrataraProblemDetailsServiceCollectionExtensions
     /// does not call this.
     /// </para>
     /// <para>
-    /// Call <c>app.UseExceptionHandler()</c> in the pipeline for the handler to run. This supersedes
-    /// <c>UseAuthorizationExceptionTo403()</c>, which maps the same two refusals to a bare status
-    /// code with no body; do not register both, or the middleware will answer first and this handler
-    /// will never see the exception.
+    /// Call <c>app.UseExceptionHandler()</c> in the pipeline for the handler to run. Without it the
+    /// handler is registered but never reached, and failures propagate as if the mapping were absent.
     /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
     /// One RFC 7807 shape for a validation rejection (400 with the failures grouped by field) and for an
-    /// authorization or tenant-access refusal (403). Pair it with the exception handler, and do not also
-    /// register the obsolete <c>UseAuthorizationExceptionTo403</c> middleware — it answers first:
+    /// authorization or tenant-access refusal (403). Pair it with the exception handler:
     /// <code>
     /// services.AddStrataraProblemDetails();
     /// app.UseExceptionHandler();

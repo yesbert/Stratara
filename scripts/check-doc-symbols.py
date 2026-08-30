@@ -56,6 +56,16 @@ DOC_LOCAL = {
     "MapAccountEndpoints",    # sample-local endpoint-group method
 }
 
+# Symbols that existed and no longer do, named by a migration note so a consumer arriving from the
+# version that had them finds the sentence that retires them. The gate is about calls a reader would
+# copy verbatim; a note reading "removed in 4.0.0, call X instead" is the opposite of that. An entry
+# earns its place only next to a doc sentence that retires it — without one, delete the entry rather
+# than let it excuse a genuinely fabricated call.
+RETIRED = {
+    "AddNpsqlWriteDbContextFactory",   # misspelling of AddNpgsqlWriteDbContextFactory; renamed in 3.2.0, removed in 4.0.0
+    "UseAuthorizationExceptionTo403",  # bare-403 middleware superseded by AddStrataraProblemDetails; removed in 4.0.0
+}
+
 DECL = re.compile(
     r"\b(?:class|interface|record|struct|enum|delegate)\s+(\w+)"
     r"|\b(?:public|internal|private|protected)\s+(?:static\s+)?(?:async\s+)?"
@@ -123,7 +133,7 @@ def main():
         text = t.read_text(encoding="utf-8", errors="ignore")
         missing, internal_only = [], []
         for sym in sorted(candidates(text)):
-            if sym in EXTERNAL or sym in DOC_LOCAL:
+            if sym in EXTERNAL or sym in DOC_LOCAL or sym in RETIRED:
                 continue
             vis = decls.get(sym)
             if vis is None:

@@ -72,8 +72,9 @@ services
 The behavior compares the request's `TenantId` (the *data owner*) against the ambient session's
 data-owner tenant (`SessionContext.TenantId`), not the *actor* tenant (`SessionContext.ActorTenantId`).
 A request whose payload names a different tenant than the established session subject is rejected with
-`TenantAccessDeniedException` (translated to HTTP 403 by `AuthorizationExceptionMiddleware` on ASP.NET
-hosts; surfaced through the message-failure path on workers).
+`TenantAccessDeniedException` (translated to HTTP 403 on ASP.NET hosts that register
+`AddStrataraProblemDetails()` from `Stratara.ServiceDefaults.AspNetCore`; surfaced through the
+message-failure path on workers).
 
 ### Default vs. strict mode
 
