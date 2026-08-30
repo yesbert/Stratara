@@ -115,7 +115,7 @@
 
 ## 8. Flip
 
-- [ ] 8.1 Push the cleaned tree to `yesbert/Stratara` as one commit on top of the current mirror
+- [x] 8.1 Push the cleaned tree to `yesbert/Stratara` as one commit on top of the current mirror
       `HEAD`, including `openspec/` and the workflows. **This branch is never merged into the Azure
       DevOps `main`** — its content becomes the first GitHub commit instead. Merging it there would
       delete the Azure pipeline definitions while those pipelines are still the live CI and the
@@ -124,12 +124,12 @@
       where the runtime verifications the workflows could not have before they existed are made
       good: 6.1 (a pull request shows the check), 6.2 (containers start), 6.3 (a manual analysis run
       reports non-zero coverage).
-- [ ] 8.2 Create the `nuget-org` environment with a required reviewer and add `NUGET_ORG_API_KEY` to
+- [x] 8.2 Create the `nuget-org` environment with a required reviewer and add `NUGET_ORG_API_KEY` to
       it; add `SONAR_TOKEN` and `SONAR_HOST_URL` as repository secrets. Verify: the environment
       lists the reviewer, and the analysis workflow's manual run reaches the server.
-- [ ] 8.3 Add a ruleset on `main`: pull request required, the build check required, force-push
+- [x] 8.3 Add a ruleset on `main`: pull request required, the build check required, force-push
       blocked. Verify: a direct push to `main` is rejected.
-- [ ] 8.4 Clone `yesbert/Stratara` fresh as the working copy and re-run `link.sh` against it. Verify:
+- [x] 8.4 Clone `yesbert/Stratara` fresh as the working copy and re-run `link.sh` against it. Verify:
       `git remote -v` shows only the GitHub remote, `readlink .claude` resolves, and
       `./scripts/local-gauntlet.sh` passes in the new clone.
 - [ ] 8.5 Exercise the release workflow once with a prerelease tag. Verify: the package appears on
@@ -149,14 +149,14 @@
 
 ## 10. Follow through
 
-- [ ] 10.1 Rebuild the `pr` skill against `gh pr` and GitHub checks, dropping `az repos pr`. Verify:
+- [x] 10.1 Rebuild the `pr` skill against `gh pr` and GitHub checks, dropping `az repos pr`. Verify:
       the skill opens a pull request and waits for the build check.
-- [ ] 10.2 Rebuild the `publish-nugets` skill against the release workflow, and point `bump-version`
+- [x] 10.2 Rebuild the `publish-nugets` skill against the release workflow, and point `bump-version`
       at the GitHub remote. Verify: neither skill invokes `az`.
-- [ ] 10.3 Rewrite the internal publish-pipeline operator document for GitHub Actions, and update the
+- [x] 10.3 Rewrite the internal publish-pipeline operator document for GitHub Actions, and update the
       project's state file: the internal-feed field goes, the pipeline table becomes the workflow
       table. Verify: no internal document describes a pipeline that no longer exists.
-- [ ] 10.4 Update the context file and core rules: the pipeline table, the Git section, the skill
+- [x] 10.4 Update the context file and core rules: the pipeline table, the Git section, the skill
       table, and the removed cleanliness rule. Verify: every path and command it names resolves.
 - [x] 10.5 Rewrite `CONTRIBUTING.md` so a pull request is the contribution path rather than a
       pointless act, and fix the badges in `README.md`. Verify: `CONTRIBUTING.md` contains no
@@ -164,14 +164,16 @@
 - [x] 10.6 Sweep `docs/` for references to the Azure pipelines and the mirror. Verify:
       `grep -rn "Azure DevOps\|azure-pipelines\|mirror" docs/` returns only historically accurate
       statements.
-- [ ] 10.7 Record the migration in the project's phase history with its date. Verify: the entry says
+- [x] 10.7 Record the migration in the project's phase history with its date. Verify: the entry says
       what moved, what was frozen, and what a reader has to do to find the old history.
 
 ## 11. Close
 
-- [ ] 11.1 Archive `publish-openspec-to-mirror`, noting that this change reached its goal by removing
+- [x] 11.1 Archive `publish-openspec-to-mirror`, noting that this change reached its goal by removing
       the mirror. Verify: it is under `openspec/changes/archive/` and `openspec list` no longer shows
-      it as open.
-- [ ] 11.2 Confirm the open changes `anchor-event-subject-to-the-stream` and
+      it as open. Its status line stays `proposed` — it was never implemented as written, and marking
+      a superseded plan approved after the fact is exactly what the rule against retroactive approval
+      forbids.
+- [x] 11.2 Confirm the open changes `anchor-event-subject-to-the-stream` and
       `require-an-explicit-tenant-selection` came through the move intact. Verify:
       `openspec validate --all --strict` passes and both still read as proposed.
