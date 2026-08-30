@@ -106,8 +106,8 @@ projection or saga instead of calling `SetMembershipAsync` inline.
 
 ## The sign-in tenant claim
 
-Both bridge modes resolve the same way — **persisted active-tenant selection → the user's only (or
-deterministically first) active membership → no claim at all**. They differ only in *when* the
+Both bridge modes resolve the same way — **persisted active-tenant selection → the user's only
+active membership, where they have exactly one → no claim at all**. They differ only in *when* the
 lookup runs:
 
 | Mode | Behavior |
@@ -123,6 +123,50 @@ builder.Services
 
 The two compose: a principal that already carries `stratara:tenant_id` — stamped at issuance, by an
 earlier transformation run, or by your own machine-JWT minting — **passes through untouched**.
+
+## The framework will not choose a tenant for a user
+
+**A user with several active memberships and no valid selection gets no claim.** Not the first by
+some order, not the oldest, not a guess. If you expected a sensible default, this is the paragraph
+that says there isn't one.
+
+The reason is asymmetry in how the two failures behave. A *missing* claim fails closed and visibly:
+the request is refused and somebody notices. A *wrong* claim fails invisibly — the work lands in the
+wrong tenant, it succeeds, and nothing reports it. There is no basis in the directory for picking
+between a user's tenants, so the framework does not pretend there is one.
+
+**What this means for your host:** a user who belongs to several tenants must choose before they can
+act. Call `SetActiveTenantAsync` once they have, and the selection persists.
+
+<!-- stratara-snippet-ignore: narrative fragment - the store and the example users come from the surrounding text -->
+```csharp
+await memberships.SetActiveTenantAsync(alice, acme);   // now she has a claim
+```
+
+Until then their requests carry no tenant, so any route that needs one will refuse them. Give them a
+route that does not — a tenant picker — or they have nowhere to go.
+
+### Telling the two no-claim cases apart
+
+"No claim" covers two situations that call for opposite responses, and they look identical from the
+principal. `GetMembershipsAsync` distinguishes them, and the count is the whole distinction:
+
+<!-- stratara-snippet-ignore: narrative fragment - the store and the example users come from the surrounding text -->
+```csharp
+var active = (await memberships.GetMembershipsAsync(alice))
+    .Where(m => m.Status == MembershipStatus.Active)
+    .ToList();
+
+var next = active.Count switch
+{
+    0 => "no access at all — a dead end, say so",
+    1 => "unreachable: one active membership always resolves",
+    _ => "several tenants, none chosen — prompt for one",
+};
+```
+
+Showing a multi-tenant user "you have no access" is the mistake this section exists to prevent. They
+have plenty; they have not said which.
 
 ## Why fail-closed resolution matters
 

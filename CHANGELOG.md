@@ -16,6 +16,55 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: a user with several active memberships and no valid selection now receives no tenant
+  claim.** Previously the framework picked one for them — the first of the active memberships sorted
+  by `TenantId`. `OrderBy` on a `Guid` compares byte groups in an order of its own, so the winner was
+  not the oldest membership, not the alphabetically first tenant and not the user's primary one. It
+  was an artefact of Guid comparison semantics, and whatever a user expected, it was not that.
+
+  A user with **exactly one** active membership is unaffected and keeps resolving to that tenant. A
+  user with a **valid stored selection** is unaffected. What is removed is only the guess.
+
+  **Nothing stops compiling.** A multi-tenant user simply stops receiving a claim they used to
+  receive, and the symptom is authorization failures downstream rather than an error naming the
+  cause — which is why this note exists. A host that supports multi-tenant users must obtain a
+  selection through `SetActiveTenantAsync` and offer a route reachable without a tenant claim to
+  obtain it on.
+
+  Distinguishing the two no-claim cases is a `GetMembershipsAsync` call: no active memberships means
+  no access at all, several means a tenant has not been chosen. They call for opposite responses, and
+  showing a multi-tenant user "you have no access" is the mistake worth guarding against. See
+  [Tenant Membership](https://docs.stratara.tech/guides/tenant-membership.html).
+
+  **The removed behaviour never matched the specification.** The `tenant-directory` requirement has
+  said "otherwise no claim at all" since it was written; the implementation emitted a claim anyway.
+  A consumer relying on it was relying on a defect — which does not make the break less real for
+  them, but does explain why it is being removed rather than specified. The requirement's scenario
+  hedged with "deterministic rather than arbitrary", which a Guid sort satisfies while defeating the
+  sentence above it; that scenario is replaced with one that states the outcome.
+
+- **`StackExchange.Redis` moves to `3.x` in the published dependency graph.** `Stratara.Infrastructure`
+  and `Stratara.Outbox.RabbitMQ` now declare `StackExchange.Redis` `3.1.31`, up from `2.13.10`. Both
+  packages use it on a runtime path — the distributed cache registration, the outbox lock and the
+  projection replay state — so this reaches consumers: an application pinning `StackExchange.Redis`
+  `2.x` will have to move with it. The framework's own use of the client is unchanged and the
+  behaviour is covered by the Redis integration suite.
+
+- **Test-support toolchain moved to xunit v3 `4.0.0`.** `xunit.v3`, `xunit.runner.visualstudio` and
+  `Microsoft.Testing.Extensions.CodeCoverage` moved together, because xunit v3 `4.0.0` is the first
+  release shipping a Microsoft.Testing.Platform v2 variant — which is what the CodeCoverage
+  extension has required since `18.1.0`. This affects how the framework tests itself and does not
+  change any published package's surface.
+
+- **Dependency refresh across the package family.** 58 pinned versions moved to their current
+  releases: the .NET 10 stack (Entity Framework Core, `Microsoft.Extensions.*`, ASP.NET Core
+  authentication and identity) to `10.0.11`, OpenTelemetry to `1.18.0`, `Microsoft.Extensions.*`
+  resilience and service discovery to `10.9.0`, `Microsoft.IdentityModel.*` to `8.22.0`, plus
+  Serilog, Npgsql, RabbitMQ.Client and Azure.Messaging.ServiceBus. These are the versions the
+  published packages now declare, so a consumer resolving Stratara picks them up transitively.
+
 ### Removed
 
 - **BREAKING: the six deprecated members held for the major are gone.** Every one shipped with a
@@ -62,28 +111,6 @@ applies to the entire NuGet family.
   member from an interface leaves an implementor with two methods that no longer implement anything;
   the compiler does not complain about an extra method, so there is no error to hunt. Delete them at
   leisure.
-
-### Changed
-
-- **`StackExchange.Redis` moves to `3.x` in the published dependency graph.** `Stratara.Infrastructure`
-  and `Stratara.Outbox.RabbitMQ` now declare `StackExchange.Redis` `3.1.31`, up from `2.13.10`. Both
-  packages use it on a runtime path — the distributed cache registration, the outbox lock and the
-  projection replay state — so this reaches consumers: an application pinning `StackExchange.Redis`
-  `2.x` will have to move with it. The framework's own use of the client is unchanged and the
-  behaviour is covered by the Redis integration suite.
-
-- **Test-support toolchain moved to xunit v3 `4.0.0`.** `xunit.v3`, `xunit.runner.visualstudio` and
-  `Microsoft.Testing.Extensions.CodeCoverage` moved together, because xunit v3 `4.0.0` is the first
-  release shipping a Microsoft.Testing.Platform v2 variant — which is what the CodeCoverage
-  extension has required since `18.1.0`. This affects how the framework tests itself and does not
-  change any published package's surface.
-
-- **Dependency refresh across the package family.** 58 pinned versions moved to their current
-  releases: the .NET 10 stack (Entity Framework Core, `Microsoft.Extensions.*`, ASP.NET Core
-  authentication and identity) to `10.0.11`, OpenTelemetry to `1.18.0`, `Microsoft.Extensions.*`
-  resilience and service discovery to `10.9.0`, `Microsoft.IdentityModel.*` to `8.22.0`, plus
-  Serilog, Npgsql, RabbitMQ.Client and Azure.Messaging.ServiceBus. These are the versions the
-  published packages now declare, so a consumer resolving Stratara picks them up transitively.
 
 ### Security
 

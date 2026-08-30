@@ -12,9 +12,11 @@ namespace Stratara.Identity.AspNetCore.Services;
 internal static class MembershipTenantClaimResolver
 {
     /// <summary>
-    /// Resolves the tenant to stamp: the user's persisted active-tenant selection when it points
-    /// at an active membership, otherwise the user's only — or deterministically first — active
-    /// membership. <c>null</c> when the user holds no active membership at all.
+    /// Resolves the tenant to stamp: the user's persisted active-tenant selection when it points at
+    /// an active membership, otherwise their only active membership where they hold exactly one.
+    /// <c>null</c> when the user holds no active membership, and equally when they hold several and
+    /// have not chosen between them — the framework does not choose for them, because a wrong tenant
+    /// claim fails invisibly where a missing one fails closed.
     /// </summary>
     internal static async Task<Guid?> ResolveTenantAsync(
         ITenantMembershipStore membershipStore, Guid userId, CancellationToken cancellationToken)
@@ -22,7 +24,6 @@ internal static class MembershipTenantClaimResolver
         var memberships = await membershipStore.GetMembershipsAsync(userId, cancellationToken);
         var active = memberships
             .Where(m => m.Status == MembershipStatus.Active)
-            .OrderBy(m => m.TenantId)
             .ToList();
 
         if (active.Count == 0)
@@ -36,7 +37,7 @@ internal static class MembershipTenantClaimResolver
             return selected;
         }
 
-        return active[0].TenantId;
+        return active.Count == 1 ? active[0].TenantId : null;
     }
 
     /// <summary>
