@@ -1,4 +1,4 @@
-> **Status:** proposed
+> **Status:** approved
 
 # Require an explicit tenant selection instead of guessing one
 

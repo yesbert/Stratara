@@ -1,4 +1,4 @@
-> **Status:** proposed
+> **Status:** approved
 
 # Leave no analysis issue open
 
