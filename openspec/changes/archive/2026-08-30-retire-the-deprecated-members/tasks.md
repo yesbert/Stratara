@@ -128,12 +128,12 @@ close the change.
       shipped example.
 - [x] 7.2 Confirm the surface is genuinely free of deprecations. Verify:
       `grep -rn "Obsolete(" src --include="*.cs"` returns nothing at all.
-- [ ] 7.3 Open the pull request through the `/pr` skill, let `Build + unit tests` pass, merge.
+- [x] 7.3 Open the pull request through the `/pr` skill, let `Build + unit tests` pass, merge.
       Verify: the required check is green on the pull request, not only locally.
-- [ ] 7.4 Run the analysis workflow by hand on `main` and read the gate. Verify: `new_violations` is
+- [x] 7.4 Run the analysis workflow by hand on `main` and read the gate. Verify: `new_violations` is
       **0**. Six means this change did not land; anything between one and five means one of the
       removals was partial; anything else means `leave-no-analysis-issue-open` has not shipped yet or
       something new arrived — read the report before assuming which.
-- [ ] 7.5 Update the project's state file: the quality gate now stands at zero, and the deprecation
+- [x] 7.5 Update the project's state file: the quality gate now stands at zero, and the deprecation
       reminders it was carrying are collected. Verify: a reader who sees a red nightly after this can
       tell within one file that red is no longer expected.
