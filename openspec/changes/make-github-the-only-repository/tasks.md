@@ -147,14 +147,21 @@
 
 ## 9. Coordinate, then freeze
 
-- [ ] 9.1 Tell the downstream consumer, on the private channel, that the preview feed stops and that
-      only tagged releases follow. Verify: the consumer has confirmed, and the confirmation is
-      recorded in the project's state file.
-- [ ] 9.2 Only after 9.1: disable the five Azure pipelines — Unit Tests, Publish NuGets, SonarQube,
+- [x] 9.1 Tell the downstream consumer, on the private channel, that the preview feed stops and that
+      only tagged releases follow. **Closed on the owner's word on 2026-08-30 — "assume the consumers
+      are informed" — not on a recorded confirmation.** The distinction is written into the state
+      file rather than smoothed over: if the consumer's build breaks on a missing preview, this is
+      the line to re-read.
+- [x] 9.2 Only after 9.1: disable the five Azure pipelines — Unit Tests, Publish NuGets, SonarQube,
       Integration Tests, Sync GitHub. Verify: each shows as disabled and no run is queued.
-- [ ] 9.3 Set the Azure DevOps repository read-only and add a note to its description pointing at
-      GitHub. Verify: a push to it is rejected.
-- [ ] 9.4 Leave the Azure Artifacts feed in place, unfed, rather than deleting it. Verify: existing
+- [x] 9.3 Set the Azure DevOps repository read-only and add a note pointing at GitHub. Done by
+      denying Contribute, Force push, Create branch, Create tag and Contribute to pull requests to
+      `Project Valid Users` on the repository — read stays allowed and `ManagePermissions` was left
+      alone, so it is reversible. `isDisabled` was deliberately not used: it makes the repository
+      unreachable rather than read-only, and the 1,975 commits are the point of keeping it. An Azure
+      DevOps git repository has no description field, so the note went on the project. Verify: a push
+      is rejected with TF401027, confirmed against the archive clone.
+- [x] 9.4 Leave the Azure Artifacts feed in place, unfed, rather than deleting it. Verify: existing
       preview versions still resolve for anyone who pinned one.
 
 ## 10. Follow through
