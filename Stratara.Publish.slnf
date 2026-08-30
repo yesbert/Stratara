@@ -27,6 +27,7 @@
       "src/Stratara.Testing/Stratara.Testing.csproj",
       "src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj",
       "src/Stratara.Validation/Stratara.Validation.csproj",
+      "tests/Stratara.Documentation.Tests/Stratara.Documentation.Tests.csproj",
       "tests/Stratara.EntityFrameworkCore.Tests/Stratara.EntityFrameworkCore.Tests.csproj",
       "tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests/Stratara.EventSourcing.Pipeline.CommandAudit.Tests.csproj",
       "tests/Stratara.EventSourcing.WorkerDefaults.Tests/Stratara.EventSourcing.WorkerDefaults.Tests.csproj",
