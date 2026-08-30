@@ -71,7 +71,34 @@ report regardless. The list came over unchanged from the Azure pipeline, so it w
 inert there. Whatever this change suppresses, it suppresses at the site in source, where the reason
 sits next to the code and a reader can see it.
 
-**Affected:** roughly 40 files, almost all under `tests/`. On the source side only
-`RabbitMqBus.cs`, `EfApiKeyStore.cs`, `IdentityDirectoryDbContext.cs`, `AggregateSnapshotShapeGuard.cs`
-and the overload ordering in `SnapshotRepository.cs` and `ISnapshotRepository.cs`. No public signature
-changes, so no consumer recompiles anything and no version bump follows from this change.
+**Affected:** 32 files, almost all under `tests/`. On the source side, nine:
+
+- `src/Stratara.Outbox.RabbitMQ/Messaging/RabbitMqBus.cs` — `[SuppressMessage]` for the two `S2068`
+- `src/Stratara.Infrastructure/EventSourcing/AggregateSnapshotShapeGuard.cs` — `[SuppressMessage]` for `S3011`
+- `src/Stratara.Identity.EntityFrameworkCore/EfApiKeyStore.cs` — `CA1859`, parameter type
+- `src/Stratara.Identity.EntityFrameworkCore/IdentityDirectoryDbContext.cs` — `S927`, parameter name
+- `src/Stratara.Abstractions/Abstractions/EventSourcing/ISnapshotRepository.cs` and
+  `src/Stratara.EventSourcing.EntityFrameworkCore/WriteStore/EventSourcing/SnapshotRepository.cs` —
+  `S4136`, overload ordering only
+- `src/Stratara.Mediator/Authorization/AuthorizingMediator.cs`,
+  `src/Stratara.Infrastructure/Authorization/AuthorizingCommandOutboxDispatcher.cs` and
+  `src/Stratara.Abstractions/Authorization/PermissionCatalog.cs` — `S3267`, the three permission loops
+
+No public signature changes, so no consumer recompiles anything and no version bump follows from this
+change.
+
+**Two things went differently than this proposal expected, and the archive is where that is
+recorded.**
+
+`CA1859` was **fixed rather than suppressed.** This proposal assumed it conflicted with the project's
+`IReadOnlyList<T>` rule; it does not, because that rule is about public surfaces and the finding is on
+a private static helper. The single caller hands it a `List<Guid>` straight out of `ToListAsync`, so
+the parameter type was the fix and no suppression was needed. Only two suppressions exist, both in
+`RabbitMqBus.cs` and `AggregateSnapshotShapeGuard.cs`.
+
+The three permission loops needed **two passes.** Rewriting them as `foreach (… .Where(…)) { throw; }`
+satisfied `S3267` and immediately raised `S1751` — the body exits unconditionally, so the loop never
+runs twice — and the first analysis run after the merge read **9** rather than 6. `FirstOrDefault`
+removed the loop and closed both rules, in the follow-up `fix/close-the-loop-findings`. This is the
+risk `design.md` named under *"A rule fires on the replacement"*, and it is the reason the
+verification in task 7.3 is a number and not a feeling.

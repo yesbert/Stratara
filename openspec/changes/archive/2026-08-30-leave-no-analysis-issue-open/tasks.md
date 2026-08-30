@@ -90,11 +90,17 @@ assertion is the failure mode to watch for.
 
 - [x] 7.1 `./scripts/local-gauntlet.sh` green. Verify: it passes, including the documentation tests
       that compile every shipped example.
-- [ ] 7.2 Open the pull request, let `Build + unit tests` pass, merge. Verify: the required check is
+- [x] 7.2 Open the pull request, let `Build + unit tests` pass, merge. Verify: the required check is
       green on the pull request, not only locally.
-- [ ] 7.3 Run the analysis workflow by hand on `main` and read the gate. Verify: `new_violations` is
+- [x] 7.3 Run the analysis workflow by hand on `main` and read the gate. Verify: `new_violations` is
       **6**, and all six are `S1133` on the deprecated members named in `proposal.md`. Any other
       number means something in groups 2–6 did not land, or the run picked up something new.
-- [ ] 7.4 Record in the project's state file that the gate stands at six deprecation reminders and
+      *The first run came back at 9.* The three extra were `S1751` — "refactor the containing loop to
+      do more than one iteration" — one on each loop task 5.2 had just rewritten as
+      `foreach (… .Where(…)) { throw; }`, whose body exits on the first iteration. `S3267` and
+      `S1751` were pointing at the same thing from opposite sides: the loop should not be a loop.
+      `FirstOrDefault` closed both (#8). The re-run reads 6, all `S1133`, coverage 88.9 %,
+      duplication 0.37 %. This is the risk `design.md` named: "a rule fires on the replacement".
+- [x] 7.4 Record in the project's state file that the gate stands at six deprecation reminders and
       that they clear with `4.0.0`. Verify: a reader who sees a red nightly knows within one file
       whether it is expected.
