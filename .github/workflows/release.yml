@@ -6,8 +6,16 @@
 # Two jobs. `pack` builds, tests and packs without any credential in scope. `publish` runs in the
 # `nuget-org` environment, which carries a required reviewer — a push to nuget.org cannot be taken
 # back, packages can be deprecated or unlisted but never deleted, so a human confirms before the
-# packages leave. The API key is an environment secret and is therefore out of reach until that
-# approval is given.
+# packages leave.
+#
+# Publishing uses trusted publishing: the job proves its identity to nuget.org with a short-lived
+# OIDC token and gets an API key valid for one hour, so no long-lived key is stored anywhere. One
+# policy on nuget.org covers every package the account owns, and it names this repository, this
+# workflow file and this environment — a workflow that is not this one cannot use it.
+#
+# Until that policy exists the job falls back to NUGET_ORG_API_KEY from the environment. Delete the
+# secret, the fallback and this paragraph once trusted publishing has published once: a stored
+# credential that nothing needs is a credential that can leak.
 name: Release
 
 on:
@@ -111,8 +119,11 @@ jobs:
     needs: pack
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The approval gate. The API key lives here, not on the repository.
+    # The approval gate. Nothing below runs until a reviewer confirms.
     environment: nuget-org
+    permissions:
+      contents: read
+      id-token: write   # lets the job request the OIDC token trusted publishing exchanges
     steps:
       - name: Download the packages
         uses: actions/download-artifact@v4
@@ -125,21 +136,44 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # The key this returns is valid for one hour, so it is fetched immediately before the push.
+      # continue-on-error so that a missing policy falls through to the stored key rather than
+      # failing the release; remove both once the policy has published once.
+      - name: Exchange the OIDC token for a short-lived key
+        id: login
+        continue-on-error: true
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       # Sibling .snupkg files are discovered by `dotnet nuget push` and forwarded to
       # symbols.nuget.org in the same call, so there is no separate symbol push.
       # --skip-duplicate keeps the job idempotent across a re-run of the same tag.
       - name: Push
         env:
-          NUGET_ORG_API_KEY: ${{ secrets.NUGET_ORG_API_KEY }}
+          SHORT_LIVED_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+          STORED_KEY: ${{ secrets.NUGET_ORG_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -n "${SHORT_LIVED_KEY:-}" ]]; then
+            key="${SHORT_LIVED_KEY}"
+            echo "Publishing with a short-lived key from trusted publishing."
+          elif [[ -n "${STORED_KEY:-}" && "${STORED_KEY}" != PLACEHOLDER-* ]]; then
+            key="${STORED_KEY}"
+            echo "::warning::Trusted publishing did not yield a key; falling back to the stored one."
+          else
+            echo "No usable credential. Either the trusted-publishing policy on nuget.org is" >&2
+            echo "missing or does not match (owner yesbert, repository Stratara, workflow" >&2
+            echo "release.yml, environment nuget-org), or NUGET_ORG_API_KEY is still a placeholder." >&2
+            exit 1
+          fi
           cd artifacts/nupkgs
           echo "Pushing $(ls ./*.nupkg | wc -l | tr -d ' ') packages"
           for nupkg in ./*.nupkg; do
             echo "--- ${nupkg} ---"
             dotnet nuget push "${nupkg}" \
               --source https://api.nuget.org/v3/index.json \
-              --api-key "${NUGET_ORG_API_KEY}" \
+              --api-key "${key}" \
               --skip-duplicate
           done
