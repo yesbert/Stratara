@@ -144,6 +144,14 @@
       short-lived key rather than falling back, the package appears on nuget.org as a prerelease,
       and it is then unlisted. Afterwards delete `NUGET_ORG_API_KEY`, the key on nuget.org, and the
       fallback branch in `release.yml`.
+      *Registration done — owner's confirmation, 2026-08-30.* What is left is the half that proves it.
+      `release.yml` has **never run**, so nothing has yet exercised the policy, and a registration
+      nobody has published through is a configuration rather than a working path. The three artefacts
+      the task says to delete afterwards are all still present, which is the observable evidence that
+      the run has not happened: the `NUGET_ORG_API_KEY` environment secret, the fallback branch at
+      `release.yml:155-177`, and the paragraph at `release.yml:11-17` that says to remove all three
+      once trusted publishing has published once. The prerelease run is what distinguishes a
+      short-lived key from a silent fallback — see the two log lines at `release.yml:161` and `:166`.
 
 ## 9. Coordinate, then freeze
 
