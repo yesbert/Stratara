@@ -59,7 +59,8 @@ public class AggregateSnapshotShapeGuardTests
     [Fact]
     public async Task AWellShapedAggregatePasses()
     {
-        await GuardOver(typeof(WellShapedAggregate)).StartAsync(CancellationToken.None);
+        Assert.Null(await Record.ExceptionAsync(() =>
+            GuardOver(typeof(WellShapedAggregate)).StartAsync(CancellationToken.None)));
     }
 
     [Fact]
@@ -76,7 +77,8 @@ public class AggregateSnapshotShapeGuardTests
     [Fact]
     public async Task AComputedPropertyIsNotAViolation_BecauseItIsRecomputedAfterARestore()
     {
-        await GuardOver(typeof(ComputedPropertyAggregate)).StartAsync(CancellationToken.None);
+        Assert.Null(await Record.ExceptionAsync(() =>
+            GuardOver(typeof(ComputedPropertyAggregate)).StartAsync(CancellationToken.None)));
     }
 
     [Fact]
@@ -91,7 +93,8 @@ public class AggregateSnapshotShapeGuardTests
     [Fact]
     public async Task ATypeThatIsNotAnAggregateIsIgnored()
     {
-        await GuardOver(typeof(NotAnAggregate)).StartAsync(CancellationToken.None);
+        Assert.Null(await Record.ExceptionAsync(() =>
+            GuardOver(typeof(NotAnAggregate)).StartAsync(CancellationToken.None)));
     }
 
     [Fact]

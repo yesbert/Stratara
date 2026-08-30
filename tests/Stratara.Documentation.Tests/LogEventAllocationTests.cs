@@ -8,9 +8,12 @@ namespace Stratara.Documentation.Tests;
 /// The allocation table is what a consumer reads to pick an event-ID range that will not collide
 /// with the framework's. It stopped three buckets short of the code for two releases.
 /// </summary>
-public class LogEventAllocationTests
+public partial class LogEventAllocationTests
 {
     private const string SchemaPage = "docs/reference/log-events-schema.md";
+
+    [GeneratedRegex(@"currently allocated `[0-9_]+ – ([0-9_]+)`")]
+    private static partial Regex AllocatedRangePattern();
 
     public static TheoryData<string, int> Buckets
     {
@@ -47,7 +50,7 @@ public class LogEventAllocationTests
         var highest = Allocated().Max(entry => entry.Bucket);
         var expected = $"{highest / 1000}_999";
 
-        var stated = Regex.Match(page, @"currently allocated `[0-9_]+ – ([0-9_]+)`");
+        var stated = AllocatedRangePattern().Match(page);
 
         Assert.True(stated.Success, $"{SchemaPage} no longer states the allocated range.");
         Assert.Equal(expected, stated.Groups[1].Value);

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -245,6 +246,12 @@ internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration co
         });
     }
 
+    [SuppressMessage("Major Code Smell", "S2068:Hard-coded credentials are security-sensitive",
+        Justification = "The two matches are prose inside the exception thrown when credentials are missing " +
+                        "outside Development. It names RABBITMQ_USERNAME and RABBITMQ_PASSWORD so an operator " +
+                        "knows what to set, and spells out RABBITMQ_PASSWORD=guest as the way to opt into the " +
+                        "guest account deliberately. Neither literal is assigned to anything; the credentials " +
+                        "themselves are read from configuration.")]
     private ConnectionFactory CreateConnectionFactory()
     {
         var host = configuration["RABBITMQ_HOST"];

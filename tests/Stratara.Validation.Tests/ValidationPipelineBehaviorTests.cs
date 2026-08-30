@@ -89,8 +89,8 @@ public class ValidationPipelineBehaviorTests
         var ex = await Assert.ThrowsAsync<StrataraValidationException>(() =>
             behavior.HandleAsync(new EchoQuery("x"), () => Task.FromResult("handled"), CancellationToken.None));
 
-        Assert.Single(ex.Failures);
-        Assert.Equal("E", ex.Failures[0].PropertyName);
+        var failure = Assert.Single(ex.Failures);
+        Assert.Equal("E", failure.PropertyName);
     }
 
     [Fact]

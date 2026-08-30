@@ -52,8 +52,8 @@ public class ProjectionHandlerTests
 
         var result = _handler.GetRelevantEventTypeNames(projection);
 
-        Assert.Single(result);
-        Assert.Equal(typeof(TestEventA).GetQualifiedTypeName(), result[0]);
+        var eventTypeName = Assert.Single(result);
+        Assert.Equal(typeof(TestEventA).GetQualifiedTypeName(), eventTypeName);
     }
 
     [Fact]

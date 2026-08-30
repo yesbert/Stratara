@@ -37,9 +37,9 @@ public class IdentityDirectoryDbContext<TContext>(DbContextOptions<TContext> opt
     public DbSet<ApiKeyEntry> ApiKeys => Set<ApiKeyEntry>();
 
     /// <inheritdoc/>
-    protected override void OnModelCreating(ModelBuilder builder)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        base.OnModelCreating(builder);
-        builder.ApplyIdentityDirectoryModel();
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.ApplyIdentityDirectoryModel();
     }
 }

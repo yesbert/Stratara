@@ -132,8 +132,8 @@ public class SagaMethodInvokerTests
         var handler = invoker.GetOrCreateDelegate(saga, typeof(OrderPlaced));
         await handler(saga, orderEvent, CancellationToken.None);
 
-        Assert.Single(saga.ReceivedOrders);
-        Assert.Equal(orderEvent, saga.ReceivedOrders[0]);
+        var received = Assert.Single(saga.ReceivedOrders);
+        Assert.Equal(orderEvent, received);
     }
 
     [Fact]

@@ -5,8 +5,11 @@ using Stratara.Abstractions.Reflections;
 
 namespace Stratara.Shared.Tests.Reflections;
 
-public class TrustedTypeResolverTests
+public partial class TrustedTypeResolverTests
 {
+    [GeneratedRegex(@"Version=[\d.]+")]
+    private static partial Regex AssemblyVersionPattern();
+
     public sealed record GenericEvent<TPayload>(TPayload Payload);
 
     public sealed record PayloadA(string Value);
@@ -14,7 +17,7 @@ public class TrustedTypeResolverTests
     public sealed record PayloadB(int Value);
 
     private static string WithUpgradedAssemblyVersions(string assemblyQualifiedName) =>
-        Regex.Replace(assemblyQualifiedName, @"Version=[\d.]+", "Version=99.0.0.0");
+        AssemblyVersionPattern().Replace(assemblyQualifiedName, "Version=99.0.0.0");
 
     [Fact]
     public void Register_ClosedGeneric_ResolvesByItsAssemblyQualifiedName()

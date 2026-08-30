@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Domain;
@@ -72,6 +73,11 @@ internal sealed class AggregateSnapshotShapeGuard(ITrustedTypeResolver typeResol
     /// break working code. An auto-property without a public setter does hold state, and that state
     /// is what disappears.
     /// </summary>
+    [SuppressMessage("Major Code Smell", "S3011:Reflection should not be used to increase accessibility of classes, methods, or fields",
+        Justification = "Reading the compiler-generated backing field is the only way to tell an auto-property " +
+                        "from a computed one, which is the distinction the guard exists to make: an auto-property " +
+                        "without a public setter loses its state on restore, a computed property does not. " +
+                        "Nothing is invoked or mutated — the field is only tested for existence.")]
     private static bool HoldsState(Type aggregateType, PropertyInfo property) =>
         aggregateType.GetField(
             $"<{property.Name}>k__BackingField",

@@ -75,9 +75,9 @@ public class ProjectionWorkerMetricsTests
             .Where(m => Equals(m.Tags.GetValueOrDefault("event.type"), eventType))
             .ToList();
 
-        Assert.Single(processed);
-        Assert.Equal(1, processed[0].Value);
-        Assert.Equal("success", processed[0].Tags.GetValueOrDefault("outcome"));
+        var measurement = Assert.Single(processed);
+        Assert.Equal(1, measurement.Value);
+        Assert.Equal("success", measurement.Tags.GetValueOrDefault("outcome"));
 
         Assert.Contains(measurements, m => m.Instrument == "projection.bundle.duration");
     }
@@ -100,8 +100,8 @@ public class ProjectionWorkerMetricsTests
             .Where(m => Equals(m.Tags.GetValueOrDefault("event.type"), eventType))
             .ToList();
 
-        Assert.Single(processed);
-        Assert.Equal("failure", processed[0].Tags.GetValueOrDefault("outcome"));
+        var measurement = Assert.Single(processed);
+        Assert.Equal("failure", measurement.Tags.GetValueOrDefault("outcome"));
     }
 
     private static EventBundle BundleWith(string eventTypeName)

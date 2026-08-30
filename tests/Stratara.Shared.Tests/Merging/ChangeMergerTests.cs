@@ -99,8 +99,8 @@ public class ChangeMergerTests
 
         var result = ChangeMerger<Entity, Changes>.ApplyChanges(source, current, changes);
 
-        Assert.Single(result.Differences);
-        Assert.Equal("Name", result.Differences[0].PropertyName);
+        var difference = Assert.Single(result.Differences);
+        Assert.Equal("Name", difference.PropertyName);
     }
 
     [Fact]

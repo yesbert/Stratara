@@ -65,14 +65,11 @@ public sealed class PermissionCatalog
             throw new ArgumentException("Role names must be non-empty.", nameof(role));
         }
 
-        foreach (var permission in permissions)
+        foreach (var permission in permissions.Where(permission => !_permissions.Contains(permission)))
         {
-            if (!_permissions.Contains(permission))
-            {
-                throw new ArgumentException(
-                    $"Permission '{permission}' is not declared in the catalog; call Add(\"{permission}\") before granting it.",
-                    nameof(permissions));
-            }
+            throw new ArgumentException(
+                $"Permission '{permission}' is not declared in the catalog; call Add(\"{permission}\") before granting it.",
+                nameof(permissions));
         }
 
         if (!_roleGrants.TryGetValue(role, out var grants))

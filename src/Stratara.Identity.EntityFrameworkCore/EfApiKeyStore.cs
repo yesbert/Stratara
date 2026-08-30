@@ -345,7 +345,7 @@ internal sealed class EfApiKeyStore<TContext>(
     }
 
     private static async Task RemoveMachineMembershipsAsync(
-        TContext context, IReadOnlyCollection<Guid> machineKeyIds, CancellationToken cancellationToken)
+        TContext context, List<Guid> machineKeyIds, CancellationToken cancellationToken)
     {
         if (machineKeyIds.Count == 0)
         {

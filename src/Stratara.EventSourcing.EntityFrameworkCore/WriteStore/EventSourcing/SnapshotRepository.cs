@@ -28,10 +28,12 @@ internal sealed class SnapshotRepository(IWriteDbContext context) : ISnapshotRep
     }
 
     /// <inheritdoc/>
-    public async Task AddAsync(Snapshot snapshot, CancellationToken cancellationToken = default)
-    {
-        await context.Set<Snapshot>().AddAsync(snapshot, cancellationToken);
-    }
+    [Obsolete("Use GetAsync(streamId, aggregateTypeName, toVersion, cancellationToken). The type-less lookup can return a snapshot of a different aggregate type sharing the stream id and corrupt the rehydrated state.")]
+    public Task<Snapshot?> GetAsync(Guid streamId, long? toVersion = null, CancellationToken cancellationToken = default) =>
+        context.Set<Snapshot>().AsNoTracking()
+            .Where(e => e.StreamId == streamId && (!toVersion.HasValue || e.Version <= toVersion))
+            .OrderByDescending(e => e.Version)
+            .FirstOrDefaultAsync(cancellationToken);
 
     /// <inheritdoc/>
     public async Task<long> GetLatestVersionOrDefaultAsync(Guid streamId, string aggregateTypeName, CancellationToken cancellationToken = default)
@@ -47,14 +49,6 @@ internal sealed class SnapshotRepository(IWriteDbContext context) : ISnapshotRep
     }
 
     /// <inheritdoc/>
-    [Obsolete("Use GetAsync(streamId, aggregateTypeName, toVersion, cancellationToken). The type-less lookup can return a snapshot of a different aggregate type sharing the stream id and corrupt the rehydrated state.")]
-    public Task<Snapshot?> GetAsync(Guid streamId, long? toVersion = null, CancellationToken cancellationToken = default) =>
-        context.Set<Snapshot>().AsNoTracking()
-            .Where(e => e.StreamId == streamId && (!toVersion.HasValue || e.Version <= toVersion))
-            .OrderByDescending(e => e.Version)
-            .FirstOrDefaultAsync(cancellationToken);
-
-    /// <inheritdoc/>
     [Obsolete("Use GetLatestVersionOrDefaultAsync(streamId, aggregateTypeName, cancellationToken). The type-less lookup can report the version of a foreign-type snapshot on a shared stream.")]
     public async Task<long> GetLatestVersionOrDefaultAsync(Guid streamId, CancellationToken cancellationToken = default) =>
         await context.Set<Snapshot>().AsNoTracking()
@@ -62,4 +56,10 @@ internal sealed class SnapshotRepository(IWriteDbContext context) : ISnapshotRep
             .OrderByDescending(e => e.Version)
             .Select(e => (long?)e.Version)
             .FirstOrDefaultAsync(cancellationToken) ?? 0L;
+
+    /// <inheritdoc/>
+    public async Task AddAsync(Snapshot snapshot, CancellationToken cancellationToken = default)
+    {
+        await context.Set<Snapshot>().AddAsync(snapshot, cancellationToken);
+    }
 }

@@ -68,7 +68,7 @@ public class AuthorizingMediatorPermissionTests
             CreateMediator().HandleAsync<string>(new ReadSimsQuery()));
 
         Assert.Equal("sims.read", ex.RequiredPermission);
-        Assert.IsAssignableFrom<AuthorizationException>(ex);
+        Assert.IsType<AuthorizationException>(ex, exactMatch: false);
         Assert.Contains("sims.read", ex.Message);
         _innerMock.Verify(i => i.HandleAsync<string>(It.IsAny<IRequest<string>>(), It.IsAny<CancellationToken>()), Times.Never);
     }

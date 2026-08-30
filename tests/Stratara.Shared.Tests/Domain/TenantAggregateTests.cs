@@ -181,8 +181,9 @@ public class TenantAggregateTests
     {
         var tenantId = Guid.NewGuid();
 
-        var creationEvent = Assert.IsAssignableFrom<IAggregateCreationEvent>(
-            new TenantCreated(tenantId, Guid.NewGuid(), "Acme", "de-DE", true, DateTimeOffset.UtcNow));
+        var creationEvent = Assert.IsType<IAggregateCreationEvent>(
+            new TenantCreated(tenantId, Guid.NewGuid(), "Acme", "de-DE", true, DateTimeOffset.UtcNow),
+            exactMatch: false);
 
         Assert.Equal(tenantId, creationEvent.TenantId);
     }
