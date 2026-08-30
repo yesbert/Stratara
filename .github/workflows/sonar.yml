@@ -52,9 +52,23 @@ jobs:
       - name: Install the scanner
         run: dotnet tool install --global dotnet-sonarscanner
 
-      # Every property is passed here rather than read from sonar-project.properties: the .NET
-      # scanner does not read that file. It is kept in the repository as documentation of the same
-      # scope, and the two are meant to agree.
+      # Every property is passed here. The .NET scanner does not read a sonar-project.properties and
+      # in fact refuses to post-process while one exists, which is why the repository no longer has
+      # one — it was documentation of this list, and documentation that disagreed with it in places.
+      #
+      # What the exclusions are for:
+      #   Contracts, Diagnostics          wire-level records, ActivitySource / Meter / log schema
+      #   Identity.AspNetCore             ASP.NET Core identity wiring, host glue
+      #   ServiceDefaults[.AspNetCore]    OpenTelemetry + Serilog + host bootstrap
+      #   *Command/Query/Event(s)/Dto/Options.cs   data carriers and dispatch glue
+      #   *DbContext.cs                   EF Core configuration plumbing
+      #   LogEvents.cs                    the source-generated [LoggerMessage] schema
+      #   Program.cs, Migrations/**       host entry point and EF migrations
+      # Sonar counts a file with no coverage data as 0% covered, so excluding the data-only ones is
+      # what keeps the number about behaviour rather than about records.
+      #
+      # sonar.sources and sonar.tests are deliberately absent: the .NET scanner derives both from
+      # the MSBuild analysis, and the old pipeline never set them either.
       - name: Begin analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -69,6 +83,7 @@ jobs:
             /d:sonar.coverage.exclusions='src/Stratara.Contracts/**,src/Stratara.Diagnostics/**,src/Stratara.Identity.AspNetCore/**,src/Stratara.ServiceDefaults/**,src/Stratara.ServiceDefaults.AspNetCore/**,**/*Command.cs,**/*Query.cs,**/*Event.cs,**/*Events.cs,**/*DbContext.cs,**/*Dto.cs,**/*Options.cs,**/LogEvents.cs,**/Program.cs,**/Migrations/**' \
             /d:sonar.cpd.exclusions='src/Stratara.Contracts/**/*.cs,**/*Dto.cs,**/*Options.cs,**/*Event.cs,**/*Events.cs' \
             /d:sonar.cs.file.suffixes=.cs \
+            /d:sonar.sourceEncoding=UTF-8 \
             /d:sonar.qualitygate.wait=true \
             /d:sonar.cs.vscoveragexml.reportsPaths="${COVERAGE_DIR}/*.coverage.xml" \
             /d:sonar.issue.ignore.multicriteria=ireadonlyListConvention,constantArraysInTests,staticMethodsInTests,docCommentsLookLikeCode \

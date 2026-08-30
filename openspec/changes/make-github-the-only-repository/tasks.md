@@ -73,10 +73,12 @@
 - [x] 5.2 Remove the public-mirror cleanliness scan from `scripts/local-gauntlet.sh` and delete the
       rule file it enforced. Verify: `./scripts/local-gauntlet.sh` runs green and no step references
       a deleted script.
-- [x] 5.3 Delete the five `azure-pipelines-*.yml` files and `sonar-project.properties`' Azure-only
-      settings, keeping the analysis configuration the new workflow needs. Verify: no
-      `azure-pipelines-*.yml` remains, and `sonar-project.properties` names no Azure task or
-      variable.
+- [x] 5.3 Delete the five `azure-pipelines-*.yml` files, and carry the analysis configuration into
+      the new workflow. `sonar-project.properties` goes with them: the .NET scanner does not read it
+      and refuses to post-process while it exists — the first real analysis run failed on exactly
+      that. Its exclusion rationale moved into `sonar.yml` as comments; four of its settings were
+      dropped because the old pipeline never applied them either. Verify: no `azure-pipelines-*.yml`
+      and no `sonar-project.properties` remain, and a manual analysis run reaches the quality gate.
 - [x] 5.4 Grep the tree for what the removed apparatus used to hide, and fix every live dependency
       on it — a script, a test, a build comment, a page of documentation. Verify:
       `grep -rn "dev.azure.com\|azure-pipelines\|sync-to-github\|check-public-mirror" --include='*.md' --include='*.cs' --include='*.yml' --include='*.sh' --include='*.props' --include='*.targets' .`
