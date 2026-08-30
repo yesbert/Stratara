@@ -117,10 +117,8 @@
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <!-- Pinned to 18.0.6 — the last version on Microsoft.Testing.Platform v1 (1.8.4). xunit.v3 3.2.2
-         depends on xunit.v3.core.mtp-v1 which requires Platform v1 (1.9.1); CodeCoverage 18.1.0+
-         jumped to Platform v2 and breaks the load with TypeLoadException on IDataConsumer. Bump
-         when xunit.v3 ships an mtp-v2 variant. -->
+    <!-- Held at 18.0.6 by scripts/dependency-pins.txt, which carries the reason and is
+         enforced by scripts/update-dependencies.sh. Do not raise this by hand. -->
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.0.6" />
   </ItemGroup>
   <!-- Blazor host packages consumed by Stratara.Identity.AspNetCore -->
