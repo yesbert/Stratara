@@ -1,4 +1,14 @@
-> **Status:** proposed
+> **Status:** proposed — and never implemented as written. Superseded by `make-github-the-only-repository`, 2026-08-30.
+
+> **Outcome.** Its goal was reached, by the opposite route to the one planned here. Rather than
+> extending the mirror's allowlist to carry `openspec/`, the mirror itself was removed: GitHub became
+> the only repository, so everything in it is public by construction. Of the four preconditions,
+> two were met on their own — the three security changes shipped in `3.4.0` and the consumer was
+> coordinated with privately before that tag — and two were carried out by the superseding change:
+> the internal references were resolved into the statements they carried, and the design notes that
+> named consumer applications went with the pre-migration archive into the private context
+> repository. The tasks below are left as they were written, including the ones about a sync script
+> that no longer exists; rewriting them would hide which plan was actually followed.
 
 # Publish `openspec/` to the public mirror — after the cleanup and the fixes
 
