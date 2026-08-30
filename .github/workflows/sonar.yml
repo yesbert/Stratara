@@ -58,7 +58,7 @@ jobs:
       - name: Begin analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
         run: |
           dotnet sonarscanner begin \
             /k:"stratara" \
@@ -69,6 +69,7 @@ jobs:
             /d:sonar.coverage.exclusions='src/Stratara.Contracts/**,src/Stratara.Diagnostics/**,src/Stratara.Identity.AspNetCore/**,src/Stratara.ServiceDefaults/**,src/Stratara.ServiceDefaults.AspNetCore/**,**/*Command.cs,**/*Query.cs,**/*Event.cs,**/*Events.cs,**/*DbContext.cs,**/*Dto.cs,**/*Options.cs,**/LogEvents.cs,**/Program.cs,**/Migrations/**' \
             /d:sonar.cpd.exclusions='src/Stratara.Contracts/**/*.cs,**/*Dto.cs,**/*Options.cs,**/*Event.cs,**/*Events.cs' \
             /d:sonar.cs.file.suffixes=.cs \
+            /d:sonar.qualitygate.wait=true \
             /d:sonar.cs.vscoveragexml.reportsPaths="${COVERAGE_DIR}/*.coverage.xml" \
             /d:sonar.issue.ignore.multicriteria=ireadonlyListConvention,constantArraysInTests,staticMethodsInTests,docCommentsLookLikeCode \
             /d:sonar.issue.ignore.multicriteria.ireadonlyListConvention.ruleKey=external_roslyn:CA1859 \
@@ -108,7 +109,10 @@ jobs:
           done
           exit ${failed}
 
-      - name: End analysis
+      # `end` submits the analysis and, because the begin step asked for it, waits for the server's
+      # verdict rather than finishing at "uploaded". Without the wait this job is green whatever the
+      # analysis found — worse than no analysis, because it looks like a check.
+      - name: End analysis and wait for the quality gate
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
@@ -119,7 +123,7 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          SONARQUBE_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONARQUBE_URL: ${{ vars.SONAR_HOST_URL }}
           SONARQUBE_TOKEN: ${{ secrets.SONAR_TOKEN }}
           BUILD_ARTIFACT_DIR: ${{ github.workspace }}/TestResults/analysis
         run: |

@@ -124,16 +124,23 @@
       where the runtime verifications the workflows could not have before they existed are made
       good: 6.1 (a pull request shows the check), 6.2 (containers start), 6.3 (a manual analysis run
       reports non-zero coverage).
-- [x] 8.2 Create the `nuget-org` environment with a required reviewer and add `NUGET_ORG_API_KEY` to
-      it; add `SONAR_TOKEN` and `SONAR_HOST_URL` as repository secrets. Verify: the environment
-      lists the reviewer, and the analysis workflow's manual run reaches the server.
+- [x] 8.2 Create the `nuget-org` environment with a required reviewer and a deployment policy for
+      `v*` tags. `SONAR_HOST_URL` and `NUGET_USER` are repository **variables**, not secrets — a URL
+      and a username are not credentials, and a variable is readable in the log when a run cannot
+      reach the server. `SONAR_TOKEN` is a repository secret; `NUGET_ORG_API_KEY` is an environment
+      secret and only until trusted publishing has published once. Verify: the environment lists the
+      reviewer, and the analysis workflow's manual run reaches the server.
 - [x] 8.3 Add a ruleset on `main`: pull request required, the build check required, force-push
       blocked. Verify: a direct push to `main` is rejected.
 - [x] 8.4 Clone `yesbert/Stratara` fresh as the working copy and re-run `link.sh` against it. Verify:
       `git remote -v` shows only the GitHub remote, `readlink .claude` resolves, and
       `./scripts/local-gauntlet.sh` passes in the new clone.
-- [ ] 8.5 Exercise the release workflow once with a prerelease tag. Verify: the package appears on
-      nuget.org as a prerelease, then unlist it.
+- [ ] 8.5 Register the trusted-publishing policy on nuget.org (owner `yesbert`, repository
+      `Stratara`, workflow `release.yml`, environment `nuget-org`), then exercise the release
+      workflow once with a prerelease tag. Verify: the run's log says it published with a
+      short-lived key rather than falling back, the package appears on nuget.org as a prerelease,
+      and it is then unlisted. Afterwards delete `NUGET_ORG_API_KEY`, the key on nuget.org, and the
+      fallback branch in `release.yml`.
 
 ## 9. Coordinate, then freeze
 

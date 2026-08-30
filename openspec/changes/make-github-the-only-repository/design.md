@@ -120,13 +120,22 @@ disclosure, and the repository rule that Stratara never references a consumer ap
 The nuget.org push runs in an environment with a required reviewer. Everything else — build, tests,
 analysis — runs ungated.
 
-*Alternative rejected.* Trusted publishing over OIDC gives provenance attestation and removes the
-stored API key, and it is what LoomWeaver uses for npm. NuGet supports it, but it must be configured
-per package on nuget.org against a named repository and workflow. With 25 packages that is 25
-configurations, and it is a separate change once the workflow it names exists and has run.
+*And it publishes over trusted publishing, not a stored key.* The job proves its identity to
+nuget.org with a short-lived OIDC token and receives an API key valid for one hour.
 
-*Consequence:* `NUGET_ORG_API_KEY` remains a stored secret, scoped to the environment rather than the
-repository.
+This was very nearly decided the other way, on a wrong fact. The first version of this design
+rejected trusted publishing because it was believed to need one configuration per package — 25 of
+them. It does not: nuget.org's documentation states that *"the policy will apply to all packages
+owned by the selected owner"*. One policy, naming the repository, the workflow file and this
+environment, covers the whole family. With that corrected there is no argument left for keeping a
+long-lived key.
+
+*Consequence:* `NUGET_ORG_API_KEY` survives only as a fallback for the first release, because a
+policy for a repository that has never published cannot be verified in advance. It is deleted once
+trusted publishing has published once — a stored credential that nothing needs is a credential that
+can leak.
+
+*Evidence:* <https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing>, read 2026-08-30.
 
 ### Analysis never runs on a fork's pull request
 
