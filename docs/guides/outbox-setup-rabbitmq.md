@@ -77,6 +77,56 @@ Override any of them by name:
 
 Topics are **fanout exchanges** + per-subscription queues. Multiple worker hosts can scale out by sharing a queue — RabbitMQ does the work-stealing.
 
+## Establish subscriptions before the first publish
+
+A queue exists from the moment something binds it, and RabbitMQ delivers only to queues that already
+exist. It does not hold a message for a queue that shows up later.
+
+That is fine while one subscription binds late — the publish reaches nobody, the broker returns it,
+and the outbox retries. It is **not** fine when a topic carries more than one subscription, which
+`event-bundle` does: projections and sagas share it. If the saga queue is bound and the projection
+queue is not, the publish is confirmed, no outbox row is written, nothing retries, and nothing logs.
+The projection simply never sees that event.
+
+The window is real. Two workers that start twenty seconds apart — separate deployments, a shared
+migration lock, a cold environment — are enough.
+
+Close it from whichever process publishes first, before it publishes anything:
+
+```csharp
+var ids = app.Services.GetRequiredService<IMessagingIdentifier>();
+var bus = app.Services.GetRequiredService<IMessageBus>();
+
+await bus.EnsureSubscriptionAsync(ids.EventBundleTopic, ids.EventBundleSubscription);
+await bus.EnsureSubscriptionAsync(ids.EventBundleTopic, ids.EventBundleSagaSubscription);
+```
+
+`EnsureSubscriptionAsync` creates the queue and its binding **without consuming from it**. That is
+the whole difference from `SubscribeAsync`, which can only create a queue by also starting to read it
+— and therefore only when the worker that reads is ready. Anyone can establish anyone's subscription,
+so the publishing host can create a queue for a worker that has not started, or will not start for
+another hour.
+
+Three things worth knowing:
+
+- **Only the first time matters.** Worker queues are durable and are not auto-deleted, so once they
+  exist they survive restarts of the app and of the broker. This is a cold-environment problem: a new
+  stage, a rebuilt host, a CI run against a fresh broker.
+- **Take the names from `IMessagingIdentifier`, not from strings.** A subscription you forget is a
+  subscription that keeps losing messages, silently, and a typo produces a second queue nobody reads.
+- **Nothing calls this for you.** The framework cannot know your start-up order or which processes
+  publish, so it makes no attempt to guess. If your host runs every worker in one process and nothing
+  publishes before the host is serving, you may not need it at all.
+
+**What it costs.** Once a subscription is established, messages published to it are kept until
+something consumes them — where before they were dropped. If you establish a subscription for a
+worker you then never deploy, its queue grows. That is the trade this makes deliberately: a fact kept
+somewhere you must clear is better than a fact silently gone.
+
+Client subscriptions (`default-*`) are refused: they are declared exclusive and auto-deleting, so a
+queue established ahead of its consumer would be removed the moment the declaring channel closed.
+Establishing one would look like it worked and retain nothing.
+
 ## Backpressure
 
 The `OutboxWorker` polls the outbox table every `OutboxOptions.PollingIntervalSeconds` (default 30) and publishes pending rows. If the broker is unreachable, rows sit in the table — at-least-once delivery preserved. The next poll-cycle retries.

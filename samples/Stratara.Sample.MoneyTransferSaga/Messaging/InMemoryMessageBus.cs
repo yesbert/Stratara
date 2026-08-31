@@ -14,6 +14,14 @@ public sealed class InMemoryMessageBus : IMessageBus
         return channel.Writer.WriteAsync(message!, cancellationToken).AsTask();
     }
 
+    public Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default)
+    {
+        // Creating the channel is what starts retention here: it is unbounded, so everything
+        // published from now on waits for whoever reads it.
+        _topics.GetOrAdd(topic, _ => Channel.CreateUnbounded<object>());
+        return Task.CompletedTask;
+    }
+
     public async Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler,
         CancellationToken cancellationToken = default)
     {

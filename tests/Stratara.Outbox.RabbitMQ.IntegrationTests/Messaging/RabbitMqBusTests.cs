@@ -48,6 +48,111 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         Assert.Equal("hello", result.Payload);
     }
 
+    /// <summary>
+    /// The defect this change exists to remove, pinned as it behaves today: on a topic with more
+    /// than one subscription, a subscription that binds after a publication misses it — and the
+    /// publisher is told nothing, because the subscription that was already bound is enough for the
+    /// broker to consider the message routed. A single-subscription version of this test raises a
+    /// return and proves the opposite.
+    /// </summary>
+    [Fact]
+    public async Task PublishAsync_WhenASecondSubscriptionBindsLate_ItMissesTheMessageAndPublishStaysSilent()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var boundEarly = $"worker-early-{Guid.NewGuid():N}";
+        var boundLate = $"worker-late-{Guid.NewGuid():N}";
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var early = new TaskCompletionSource<TestMessage>();
+        var late = new TaskCompletionSource<TestMessage>();
+
+        await bus.SubscribeAsync<TestMessage>(topic, boundEarly, msg =>
+        {
+            early.TrySetResult(msg);
+            return Task.CompletedTask;
+        }, cts.Token);
+        await Task.Delay(200, cts.Token);
+
+        // No exception here is half the finding: the early subscription is enough for the broker to
+        // route it, so nothing tells the publisher that the late one did not exist.
+        await bus.PublishAsync(topic, new TestMessage("only-the-early-one-sees-this"), cts.Token);
+
+        var seenByEarly = await early.Task.WaitAsync(TimeSpan.FromSeconds(30), cts.Token);
+        Assert.Equal("only-the-early-one-sees-this", seenByEarly.Payload);
+
+        await bus.SubscribeAsync<TestMessage>(topic, boundLate, msg =>
+        {
+            late.TrySetResult(msg);
+            return Task.CompletedTask;
+        }, cts.Token);
+
+        var deliveredToLate = await Task.WhenAny(late.Task, Task.Delay(TimeSpan.FromSeconds(5), cts.Token));
+        Assert.NotSame(late.Task, deliveredToLate);
+        Assert.False(late.Task.IsCompleted);
+    }
+
+    /// <summary>
+    /// The counterpart, and the point of the change: the same ordering as the test above, except
+    /// the second subscription is established before the publication rather than after it. It then
+    /// receives what it would otherwise have missed, once its handler attaches.
+    /// </summary>
+    [Fact]
+    public async Task EnsureSubscriptionAsync_EstablishedBeforePublish_DeliversOnceTheHandlerAttaches()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var boundEarly = $"worker-early-{Guid.NewGuid():N}";
+        var establishedEarly = $"worker-established-{Guid.NewGuid():N}";
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var early = new TaskCompletionSource<TestMessage>();
+        var established = new TaskCompletionSource<TestMessage>();
+
+        await bus.SubscribeAsync<TestMessage>(topic, boundEarly, msg =>
+        {
+            early.TrySetResult(msg);
+            return Task.CompletedTask;
+        }, cts.Token);
+
+        await bus.EnsureSubscriptionAsync(topic, establishedEarly, cts.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("both-must-see-this"), cts.Token);
+
+        var seenByEarly = await early.Task.WaitAsync(TimeSpan.FromSeconds(30), cts.Token);
+        Assert.Equal("both-must-see-this", seenByEarly.Payload);
+
+        await bus.SubscribeAsync<TestMessage>(topic, establishedEarly, msg =>
+        {
+            established.TrySetResult(msg);
+            return Task.CompletedTask;
+        }, cts.Token);
+
+        var seenByEstablished = await established.Task.WaitAsync(TimeSpan.FromSeconds(30), cts.Token);
+        Assert.Equal("both-must-see-this", seenByEstablished.Payload);
+    }
+
+    /// <summary>
+    /// A client subscription is exclusive and auto-deleting, so a queue established for it ahead of
+    /// its consumer would be gone before the handler attached. Refusing is the honest answer; a
+    /// no-op would be indistinguishable from having worked.
+    /// </summary>
+    [Fact]
+    public async Task EnsureSubscriptionAsync_ForAClientSubscription_IsRefused()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var clientSubscription = $"default-{Guid.NewGuid():N}";
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => bus.EnsureSubscriptionAsync(topic, clientSubscription, cts.Token));
+
+        Assert.Contains("auto-deleting", thrown.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task SubscribeAsync_HandlerSucceeds_MessageIsAcked()
     {

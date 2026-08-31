@@ -18,6 +18,40 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **BREAKING: `IMessageBus` gains `EnsureSubscriptionAsync`, and a subscription can now be created
+  without consuming from it.** A broker delivers only to queues that already exist, and until now the
+  only way to create one was `SubscribeAsync` — which also starts reading, so a queue could not exist
+  before the worker that reads it was ready. On a topic carrying more than one subscription that is a
+  silent loss: `event-bundle` carries the projection and the saga subscription, and one bound queue is
+  enough for a publish to be confirmed. A worker that binds a few seconds later misses everything
+  published in between, no outbox row is written, nothing retries, and nothing logs. Two workers
+  starting twenty seconds apart on a fresh broker is enough.
+
+  ```csharp
+  var ids = app.Services.GetRequiredService<IMessagingIdentifier>();
+  var bus = app.Services.GetRequiredService<IMessageBus>();
+
+  await bus.EnsureSubscriptionAsync(ids.EventBundleTopic, ids.EventBundleSubscription);
+  await bus.EnsureSubscriptionAsync(ids.EventBundleTopic, ids.EventBundleSagaSubscription);
+  ```
+
+  Call it from whichever process publishes first, before its first publish. Worker queues are durable,
+  so it only matters on a broker that has never seen them — a new environment, a rebuilt host, a CI
+  run. **Nothing calls it for you:** the framework cannot know your start-up order or which processes
+  publish, and a protection that holds in one topology while silently failing in another is the defect
+  this fixes, not a fix for it.
+
+  *What it costs:* an established subscription retains until something consumes, where before the
+  message was dropped. A queue whose worker never starts will grow.
+
+  *If you implement `IMessageBus` yourself*, add the member. Azure Service Bus implements it as a
+  no-op, and that is the whole implementation for any transport whose subscriptions are provisioned
+  before the application runs. A transport that cannot establish a subscription ahead of its consumer
+  should throw rather than return successfully — RabbitMQ does exactly that for client subscriptions
+  (`default-*`), whose queues are exclusive and auto-deleting and would vanish before a handler
+  attached. `Stratara.Testing.InMemoryMessageBus` now retains for an established subscription and
+  replays on attach, so a test cannot pass on start-up ordering that production fails.
+
 - **BREAKING: an event's owner now comes from its stream, not from the session that wrote it.**
   Every event records a subject — the tenant whose key encrypts its payload and whose erasure reaches
   it. Resolution consulted the owner already recorded on the stream *only* when the aggregate

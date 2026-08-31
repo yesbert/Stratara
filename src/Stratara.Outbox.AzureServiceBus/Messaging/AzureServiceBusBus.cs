@@ -60,6 +60,18 @@ internal sealed class AzureServiceBusBus(ILogger<AzureServiceBusBus> logger, Ser
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Does nothing, and that is correct rather than unimplemented. Service Bus topics and
+    /// subscriptions are provisioned administratively — through the portal, a template or a
+    /// deployment step — so a subscription exists before the application that reads it starts, and
+    /// there is nothing for a host to establish. Do not "fix" this into a management-client call:
+    /// the credentials a running host holds are data-plane credentials, and creating entities from
+    /// them is a different permission and a different lifecycle.
+    /// </remarks>
+    public Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    /// <inheritdoc/>
     public async Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default)
     {
         var processor = client.CreateProcessor(topic, subscription, new ServiceBusProcessorOptions());

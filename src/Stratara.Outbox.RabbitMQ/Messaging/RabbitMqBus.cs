@@ -177,6 +177,45 @@ internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration co
     }
 
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="subscription"/> is a client subscription, whose queue cannot outlive the
+    /// channel that declares it.
+    /// </exception>
+    public async Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default)
+    {
+        if (IsClientSubscription(subscription))
+        {
+            throw new InvalidOperationException(
+                $"Cannot establish '{subscription}' ahead of its consumer: a client subscription is declared " +
+                "exclusive and auto-deleting, so its queue is removed the moment the declaring channel closes. " +
+                "Establishing it early would look successful and retain nothing. Only a durable worker " +
+                "subscription can be established before its handler attaches.");
+        }
+
+        var factory = CreateConnectionFactory();
+        await using var connection = await factory.CreateConnectionAsync(cancellationToken);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+
+        await DeclareAndBindAsync(channel, topic, subscription, cancellationToken);
+    }
+
+    private static bool IsClientSubscription(string subscription) =>
+        subscription.StartsWith("default-", StringComparison.Ordinal);
+
+    // Establishing and subscribing must declare the same queue with the same arguments: RabbitMQ
+    // rejects a redeclaration whose properties differ, so a drift here would surface as a channel
+    // error on whichever path ran second.
+    private static async Task DeclareAndBindAsync(IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
+    {
+        await channel.ExchangeDeclareAsync(topic, ExchangeType.Fanout, cancellationToken: cancellationToken);
+
+        var isClientSubscription = IsClientSubscription(subscription);
+        await channel.QueueDeclareAsync(subscription, durable: !isClientSubscription, exclusive: isClientSubscription,
+            autoDelete: isClientSubscription, cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(subscription, topic, string.Empty, cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default)
     {
         var factory = CreateConnectionFactory();
@@ -185,15 +224,7 @@ internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration co
         var connection = await factory.CreateConnectionAsync(cancellationToken);
         var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
-        await channel.ExchangeDeclareAsync(topic, ExchangeType.Fanout, cancellationToken: cancellationToken);
-
-        var isClientSubscription = subscription.StartsWith("default-", StringComparison.Ordinal);
-        var durable = !isClientSubscription;
-        var exclusive = isClientSubscription;
-        var autoDelete = isClientSubscription;
-
-        await channel.QueueDeclareAsync(subscription, durable, exclusive, autoDelete, cancellationToken: cancellationToken);
-        await channel.QueueBindAsync(subscription, topic, string.Empty, cancellationToken: cancellationToken);
+        await DeclareAndBindAsync(channel, topic, subscription, cancellationToken);
 
         var consumer = new AsyncEventingBasicConsumer(channel);
         consumer.ReceivedAsync += async (_, args) =>
