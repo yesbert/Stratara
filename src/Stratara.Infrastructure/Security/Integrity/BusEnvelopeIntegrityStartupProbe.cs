@@ -49,6 +49,6 @@ internal sealed partial class BusEnvelopeIntegrityStartupProbe(
     [LoggerMessage(
         EventId = LogEvents.BusEnvelopeIntegrity.IntegrityEnabledWithoutSigner,
         Level = LogLevel.Warning,
-        Message = "BusEnvelopeIntegrityOptions.Mode is {Mode} but no IBusEnvelopeSigner is registered — verification silently returns Skipped for every envelope. Register the signer on both publisher AND consumer hosts via AddBusEnvelopeIntegrity(\"<base64-key>\") with a shared 32-byte key, otherwise the integrity contract is no-op.")]
+        Message = "BusEnvelopeIntegrityOptions.Mode is {Mode} but no IBusEnvelopeSigner is registered — verification silently returns Skipped for every envelope. Register the signer on both publisher AND consumer hosts via AddBusEnvelopeIntegrity(\"<base64-key>\", mode) — or the Action<BusEnvelopeIntegrityOptions> / IConfiguration overloads — with a shared key of at least 32 bytes, otherwise the integrity contract is no-op.")]
     private static partial void LogIntegrityEnabledWithoutSigner(ILogger logger, string mode);
 }

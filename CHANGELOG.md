@@ -18,6 +18,52 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **`AddBusEnvelopeIntegrity` gains a base64-string overload, and the start-up warning stops naming
+  one that did not exist.** When integrity is enabled with no signer registered, the probe told the
+  operator to call `AddBusEnvelopeIntegrity("<base64-key>")`. No such overload existed — the two that
+  did take an `Action<BusEnvelopeIntegrityOptions>` or an `IConfiguration`. The message sent whoever
+  was fixing the problem looking for an API that was not there.
+
+  The message now names the overloads that exist, and the one it promised has been added, because it
+  was the right shape: `SharedKey` is a `byte[]`, which configuration binding cannot produce from a
+  string, so the `IConfiguration` overload binds the mode and leaves the key to a second call.
+
+  ```csharp
+  services.AddBusEnvelopeIntegrity(
+      builder.Configuration["BUS_ENVELOPE_SIGNING_KEY"]!,
+      BusEnvelopeIntegrityMode.Permissive);
+  ```
+
+  It rejects a malformed base64 string and a key shorter than 32 bytes at registration, where a host
+  can still fix it, rather than at the first signed message. Read the key from a secret store or an
+  injected environment variable — not from a checked-in `appsettings.json`, which signs for anyone who
+  can read the repository.
+
+- **BREAKING: encrypting at a level that claims isolation, with no identifying dimension at all, is
+  now refused outside development.** `TenantScoped` claims that a value is encrypted under
+  a key belonging to that tenant. On an aggregate that has none, that was never true: an event row's
+  tenant is not nullable, so a tenant-less aggregate supplied the empty identifier and every such
+  value across every subject resolved to one scope —
+  `TenantScoped:00000000-...-000000000000:00000000-...-000000000000` — and therefore one key. Erasing
+  one subject would have erased all of them, so crypto-shredding was unavailable at that level while
+  the annotation implied it was there, and nothing reported the difference.
+
+  A guard for the same mistake already existed and refused a *null* tenant. It could not fire on the
+  event path, which never produces null. It was one condition away from the case it was written for.
+
+  **A coarser scope than the level names is not refused.** A user-scoped value carrying only a tenant
+  resolves to a per-tenant key — weaker than the name suggests, but it separates tenants, and the
+  framework binds an event's payload to its stream's owner exactly that way. Only the collapse to a
+  single system-wide key is refused.
+
+  **Migration: use `DataSensitivityLevel.Confidential`** for data that genuinely has no tenant. It
+  claims one system-wide key and no isolation, which is what was happening anyway — the difference is
+  that it says so.
+
+  In development the same encryption warns and proceeds, so local work continues while the mistake
+  stays visible. **Decryption is untouched:** values already written into that scope decrypt exactly
+  as before, because a refusal on the read path would destroy access to data rather than protect it.
+
 - **BREAKING: `IMessageBus` gains `EnsureSubscriptionAsync`, and a subscription can now be created
   without consuming from it.** A broker delivers only to queues that already exist, and until now the
   only way to create one was `SubscribeAsync` — which also starts reading, so a queue could not exist

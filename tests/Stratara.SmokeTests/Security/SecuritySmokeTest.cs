@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
+using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Infrastructure.Security.Serialization;
 using Stratara.Security;
 using Stratara.Abstractions.Security;
@@ -30,7 +31,7 @@ public static class SecuritySmokeTest
             .AddStrataraBlobEncryption()
             .BuildServiceProvider()
             .GetRequiredService<IEncryptionFactory>();
-        var serializer = new SecureJsonSerializer(keyStore, encryptionFactory);
+        var serializer = new SecureJsonSerializer(keyStore, encryptionFactory, NullLogger<SecureJsonSerializer>.Instance, devEnvironment);
 
         // Always use the same tenant and user IDs for encryption and decryption
         var tenantId = Guid.NewGuid();

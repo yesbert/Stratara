@@ -84,4 +84,76 @@ public static class IntegrityServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.Extensions.Hosting.IHostedService, BusEnvelopeIntegrityStartupProbe>());
         return services;
     }
+
+    /// <summary>
+    /// Overload that takes the shared key as a base64 string and the enforcement mode directly — the
+    /// shape a host reaches for first, and the one the start-up probe points at.
+    /// </summary>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <param name="base64SharedKey">
+    /// The HMAC shared secret, base64-encoded. Decodes to at least 32 bytes and must be identical on
+    /// every host that shares the bus.
+    /// </param>
+    /// <param name="mode">Enforcement mode. Defaults to <see cref="BusEnvelopeIntegrityMode.Strict"/>.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="base64SharedKey"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="base64SharedKey"/> is not valid base64, or decodes to fewer than 32 bytes.
+    /// Both are checked here rather than at the first publish, so a mistyped secret fails at
+    /// registration instead of on a message.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Where the key comes from matters more than this overload does.</b> Read it from a secret
+    /// store, a key vault or an environment variable injected at deploy time — not from a checked-in
+    /// <c>appsettings.json</c>. A signing key in source control signs for anyone who can read the
+    /// repository, which is the threat this option exists to close.
+    /// </para>
+    /// <para>
+    /// The two other overloads remain the right choice when the key is already a <c>byte[]</c>, or
+    /// when everything but the key is bound from configuration.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// services.AddBusEnvelopeIntegrity(
+    ///     builder.Configuration["BUS_ENVELOPE_SIGNING_KEY"]!,
+    ///     BusEnvelopeIntegrityMode.Permissive);
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddBusEnvelopeIntegrity(
+        this IServiceCollection services,
+        string base64SharedKey,
+        BusEnvelopeIntegrityMode mode = BusEnvelopeIntegrityMode.Strict)
+    {
+        ArgumentNullException.ThrowIfNull(base64SharedKey);
+
+        byte[] key;
+        try
+        {
+            key = Convert.FromBase64String(base64SharedKey);
+        }
+        catch (FormatException e)
+        {
+            throw new ArgumentException(
+                "The shared key is not valid base64. Supply the key base64-encoded, or use the " +
+                "Action<BusEnvelopeIntegrityOptions> overload to assign the bytes directly.",
+                nameof(base64SharedKey), e);
+        }
+
+        if (key.Length < HmacBusEnvelopeSigner.MinKeyLengthBytes)
+        {
+            throw new ArgumentException(
+                $"The shared key decodes to {key.Length} bytes; at least {HmacBusEnvelopeSigner.MinKeyLengthBytes} are required. " +
+                "Every host that shares the bus must use the same key.",
+                nameof(base64SharedKey));
+        }
+
+        return services.AddBusEnvelopeIntegrity(options =>
+        {
+            options.Mode = mode;
+            options.SharedKey = key;
+        });
+    }
+
 }

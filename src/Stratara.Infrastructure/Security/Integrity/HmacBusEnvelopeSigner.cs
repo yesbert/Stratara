@@ -12,7 +12,11 @@ namespace Stratara.Infrastructure.Security.Integrity;
 /// </summary>
 internal sealed class HmacBusEnvelopeSigner : IBusEnvelopeSigner
 {
-    private const int MinKeyLengthBytes = 32;
+    /// <summary>
+    /// Minimum shared-key length. Internal so the registration overload that accepts a base64 string
+    /// rejects a short key where the host can still fix it, rather than at the first signed message.
+    /// </summary>
+    internal const int MinKeyLengthBytes = 32;
 
     private readonly byte[] _sharedKey;
 

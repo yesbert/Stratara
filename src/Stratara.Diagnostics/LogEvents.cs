@@ -217,6 +217,8 @@ public static class LogEvents
         public const int ScopeErased = 112_005;
         /// <summary>The in-memory key-store state was reloaded from disk to pick up keys written by another process.</summary>
         public const int KeyStoreReloaded = 112_006;
+        /// <summary>A value was encrypted at a level naming a dimension that was absent, so its scope cannot isolate (warning, development only).</summary>
+        public const int ScopeCannotIsolate = 112_007;
     }
 
     /// <summary>External-login provisioning event-IDs (115_000s) — emitted by the JIT external-login provisioning service.</summary>

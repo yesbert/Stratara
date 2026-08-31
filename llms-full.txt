@@ -97,6 +97,7 @@ Public extension methods a host calls to wire Stratara, with what each one does 
 | `AddBackgroundTasks()` | Stratara.Infrastructure | Registers QueuedHostedService and a singleton IBackgroundTaskQueue with a default capacity of 100 pending items |
 | `AddBusEnvelopeIntegrity(Action<BusEnvelopeIntegrityOptions> configure)` | Stratara.Infrastructure | Opt in to HMAC integrity protection on every bus envelope |
 | `AddBusEnvelopeIntegrity(IConfiguration configuration)` | Stratara.Infrastructure | Opt in to HMAC integrity protection on every bus envelope |
+| `AddBusEnvelopeIntegrity(String base64SharedKey, BusEnvelopeIntegrityMode mode)` | Stratara.Infrastructure | Opt in to HMAC integrity protection on every bus envelope |
 | `AddCaching()` | Stratara.Infrastructure | Registers a singleton IConnectionMultiplexer built from the ConnectionStrings:redis configuration entry |
 | `AddCatalogPermissionResolver()` | Stratara.Identity.EntityFrameworkCore | Register CatalogPermissionResolver as the IPermissionResolver — permissions derive from tenant-scoped membership roles mapped through the catalog's role grants |
 | `AddCatalogPermissionResolver<TUser>()` | Stratara.Identity.EntityFrameworkCore | Register CatalogPermissionResolver as the IPermissionResolver — permissions derive from tenant-scoped membership roles mapped through the catalog's role grants |
