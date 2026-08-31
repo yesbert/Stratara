@@ -162,6 +162,12 @@ A double that quietly ignores a guarantee turns every test that relies on it int
 - **THEN** a matching subscriber receives it, a subscriber for a different message type on the same
   topic does not, and every message is recorded for assertion whether or not anything was listening
 
+#### Scenario: The message bus double stands in for a subscription established early
+
+- **WHEN** a test establishes a subscription, publishes, and only then attaches a handler
+- **THEN** the handler receives what was published in between, so a test cannot pass on start-up
+  ordering the real broker would fail
+
 #### Scenario: The blob encryptor double is used
 
 - **WHEN** a test encrypts and decrypts through the test encryptor
