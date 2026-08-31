@@ -107,12 +107,16 @@ it changes nothing, so the script refused the one tag this change exists to enab
       *Also dropped:* `continue-on-error` on the OIDC exchange step, which only existed so a failed
       exchange could fall through to the stored key. Without a fallback the release must stop there,
       and it now does.
-- [ ] 5.4 **Revoke the API key on nuget.org itself.** 5.2 removed the copy GitHub held; the key it
+- [x] 5.4 **Revoke the API key on nuget.org itself.** 5.2 removed the copy GitHub held; the key it
       held is still valid until it is revoked on the account, so anyone with a copy can still publish
       as this owner. This task exists because 5.2 was written without it — the original wording in
       the move's task 8.5 named "the key on nuget.org" and the rewrite lost it. Only the owner can do
       this: it is on the nuget.org account page, not behind an API. Verify: the key no longer appears
       under API Keys on nuget.org.
+      *Deleted by the owner, 2026-08-31.* Note for the record that the agent could not confirm the
+      key existed: a GitHub secret is write-only, so `NUGET_ORG_API_KEY` was deleted without its
+      value ever being read. The inference rested on the releases `3.0.23`–`3.4.0`, which were pushed
+      to nuget.org from Azure DevOps and needed a real key to do so.
 - [x] 5.3 Record the outcome in `.claude/roadmap/STATE.md`: the release path is proven or it is not,
       and the release-blockers field says which. Verify: no field still describes the release path as
       never exercised.
