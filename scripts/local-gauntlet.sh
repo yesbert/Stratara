@@ -53,7 +53,7 @@ for test_proj in tests/*/*.csproj; do
     name="$(basename "$(dirname "${test_proj}")")"
     case "${name}" in
         Stratara.Benchmarks) continue ;;  # benchmark project, not a test runner
-        *IntegrationTests) continue ;;    # require Docker; run via the integration pipeline
+        *IntegrationTests) continue ;;    # require Docker; run via the integration workflow
     esac
     dll="${ROOT_DIR}/tests/${name}/bin/Release/net10.0/${name}.dll"
     if [[ ! -f "${dll}" ]]; then
@@ -99,6 +99,25 @@ else
     echo "=== Doc-symbol check (skipped — python3 not found) ==="
 fi
 
+step "Internal-reference check (published surfaces)"
+# The agent working directory is linked into the checkout and ignored by git, so it exists for a
+# maintainer and for nobody else. A path into it that ships — in an XML doc comment, a docs page, a
+# sample, the readme or the changelog — is a dead link for every consumer. Scan the surfaces that
+# ship; scripts/ and openspec/ are not among them, and this file names the directory itself.
+internal_refs=$(
+    grep -rIn --exclude-dir=_site --exclude-dir=api --exclude-dir=obj --exclude-dir=bin \
+        -e '\.claude' \
+        "${ROOT_DIR}/src" "${ROOT_DIR}/docs" "${ROOT_DIR}/samples" \
+        "${ROOT_DIR}/README.md" "${ROOT_DIR}/CHANGELOG.md" 2>/dev/null || true
+)
+if [[ -n "${internal_refs}" ]]; then
+    echo "Published surfaces reference the internal working directory:" >&2
+    echo "${internal_refs}" >&2
+    echo "Replace the reference with what the file it points at says." >&2
+    exit 1
+fi
+echo "No published surface references the internal working directory."
+
 if [[ ${SKIP_PACK} -eq 0 ]]; then
     pack_args=("${SLNF}" -c Release --no-build --nologo)
     if [[ ${SIMULATE_TAG_MODE} -eq 1 ]]; then
@@ -106,7 +125,7 @@ if [[ ${SKIP_PACK} -eq 0 ]]; then
         # Empty VersionSuffix overrides the `dev` default from Directory.Build.props,
         # producing stable-versioned nupkgs (e.g. 1.0.0 instead of 1.0.0-dev). NU5104
         # and other stable-only validations fire here — exactly what the tag-driven
-        # publish pipeline (#32) runs in CI.
+        # publish workflow runs in CI.
         pack_args+=(-p:VersionSuffix=)
     else
         step "Pack-check (sanity)"

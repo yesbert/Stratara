@@ -8,7 +8,7 @@
 | `2.0.x` | maintenance — security fixes only |
 | `1.x`   | :x: end-of-life    |
 
-`preview` builds (`{version}-preview.{BuildId}`) are not supported. Production deployments must pin to a released tag (`v*`).
+Only versions published to nuget.org from a `v*` tag are supported. There is no preview channel and no second feed — a build that carries no tag is not something we ship, and a report against one is a report against an unreleased tree.
 
 ## Reporting a vulnerability
 
@@ -25,7 +25,7 @@ We aim to acknowledge within **5 business days** and ship a fix or an explicit "
 - Vulnerabilities in third-party dependencies (report to the respective project)
 - Issues that require physical access to the host running Stratara
 - Self-XSS, CSRF on local-only endpoints, and other findings that depend on the consumer's hosting configuration rather than the framework code
-- Findings against `preview` builds (treat preview as untrusted)
+- Findings against unreleased code — the `main` branch between tags, or a fork
 
 ## Trust boundaries
 

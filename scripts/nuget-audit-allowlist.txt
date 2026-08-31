@@ -1,6 +1,6 @@
 # NuGet vulnerability-audit allowlist
 #
-# Advisories listed here are accepted by `scripts/security-audit.sh` (and the pipeline's
+# Advisories listed here are accepted by `scripts/security-audit.sh` (and the workflow's
 # "Audit NuGet Packages" step, which calls that script) so they do NOT fail the build. An
 # advisory belongs here ONLY when there is no patched version to upgrade to yet AND the
 # affected package is not on a shipped runtime path.

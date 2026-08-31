@@ -202,3 +202,60 @@
 - [x] 11.2 Confirm the open changes `anchor-event-subject-to-the-stream` and
       `require-an-explicit-tenant-selection` came through the move intact. Verify:
       `openspec validate --all --strict` passes and both still read as proposed.
+
+## 12. Reconcile the specification with what shipped
+
+*Added 2026-08-31. The move changed two `package-distribution` guarantees and said it changed none;
+these tasks pay that debt. The delta is at `specs/package-distribution/spec.md`.*
+
+- [x] 12.1 Restore the internal-material gate in `scripts/local-gauntlet.sh` — a grep across `src/`,
+      `docs/`, `samples/`, `README.md` and `CHANGELOG.md` for a reference to the ignored working
+      directory, failing the run when one is found. It replaces the scan that left with the mirror,
+      minus the allowlist logic that only a mirror needed. Verify: the gate is green on the current
+      tree, and a deliberately planted reference in a scratch file makes it red.
+- [x] 12.2 Confirm the delta's other half needs no code: nothing publishes on a merge, and the
+      release workflow already gates the registry push behind the `nuget-org` environment. Verify:
+      no workflow other than `release.yml` runs `dotnet nuget push`, and `release.yml` triggers only
+      on `v*`.
+
+## 13. Finish the documentation sweep
+
+*Task 10.6 swept `docs/` and stopped there. Everything below states, in the present tense, how a
+system that was switched off on 2026-08-30 works.*
+
+- [x] 13.1 `README.md` — the Versioning section claims main-branch pushes publish
+      `{VersionPrefix}-preview.{BuildId}` pre-releases. Verify: it agrees with `CONTRIBUTING.md`,
+      which already says there is no preview channel.
+- [x] 13.2 `SECURITY.md` — the supported-versions note and the out-of-scope list both treat `preview`
+      builds as something a consumer can obtain. Verify: no sentence offers a build that no feed
+      serves, and the supported-versions table still answers what a reporter needs to know.
+- [x] 13.3 `SUPPORT.md` — "developed primarily as an in-house framework" and "triaged on our internal
+      tracker" describe the project before it moved. Verify: every route it names is one a reader
+      outside the project can actually take.
+- [x] 13.4 `scripts/ci/export-sonarqube-results.sh` and `scripts/local-gauntlet.sh` — a comment
+      announcing an Azure DevOps build tab above a write to the GitHub step summary, and a comment
+      citing an Azure pipeline by id. Verify: no comment in `scripts/` names a pipeline that no
+      longer exists.
+- [x] 13.5 Internal reference documentation: the versioning document still calls the internal feed
+      the primary distribution channel and its release table stops at `v3.0.20`; the nuget.org
+      publish plan is a superseded phase plan with no banner saying so; the operational caveats cite
+      an integration pipeline by id and an Azure-hosted agent pool. Verify: each document either
+      describes the current system or opens by saying it is history, the way the migration-option
+      document already does.
+- [x] 13.6 The context file names one directory `docs/` in two meanings — the published site in the
+      repository and the private reference documentation beside it — and links the state file the
+      same ambiguous way. It also still lists the migration option as uncommissioned, which this
+      change commissioned. Verify: a reader who has never seen the symlink can tell, for every path
+      the file names, which of the two trees it is in.
+- [x] 13.7 Drop the dead `az pipelines` and `az repos pr` allow-rules from the agent settings, and
+      refresh the state file. The consumer's preview channel is no longer tracked as a blocker — the
+      owner has taken it on. Verify: `Stand`, `Repository`, `Release blockers` and the CI table each
+      describe 2026-08-31, and no field mentions a pipeline or a feed as live.
+- [x] 13.8 Re-run the sweep across the whole tree rather than one directory, which is what 10.6
+      should have done. Verify: `git grep -In -i "azure devops\|azure-pipelines\|az repos\|az pipelines\|preview feed\|sync-to-github\|check-public-mirror\|internal feed"`
+      returns only `CHANGELOG.md` history, `openspec/changes/archive/`, and this change's own
+      artifacts.
+      *Run 2026-08-31: clean, with one expected residual.* Three hits remain in
+      `openspec/specs/package-distribution/spec.md` — the requirement this change's delta replaces.
+      They go when `/opsx:archive` folds the delta into the main spec, and their presence until then
+      is what an unarchived delta looks like rather than a miss.

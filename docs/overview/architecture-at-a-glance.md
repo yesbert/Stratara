@@ -46,7 +46,7 @@ Tier-C  (builds on Tier-B + Tier-A)
 - **Tier-B implements Tier-A interfaces** that are general enough to not need infrastructure (mediator, domain primitives).
 - **Tier-C does the rest** — anything touching EF Core, a broker, ASP.NET, or a third-party SDK lives in Tier-C.
 
-A package that another packable package `ProjectReferences` must itself be packable — otherwise the parent's nuspec lists a dependency that doesn't exist on the feed. The `Stratara.Publish.slnf` solution filter enforces which projects are packable.
+A package that another packable package `ProjectReferences` must itself be packable — otherwise the parent's nuspec lists a dependency that doesn't exist on nuget.org. The `Stratara.Publish.slnf` solution filter enforces which projects are packable.
 
 ## What lives where, in plain English
 
