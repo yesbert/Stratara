@@ -113,6 +113,14 @@ publish pipeline.
 No consumer recompiles anything because of this change; the only consumer-visible effect is the
 retired preview feed and, from the tag after this ships, a release published from a different system.
 
+**Handed on**
+
+The proof that the release path works — one prerelease run through `release.yml`, and the deletion of
+the three fallback artefacts that go once it has published under a short-lived key — moved to
+`open-a-tagged-prerelease-lane` on 2026-08-31. It was never executable from inside this change:
+`release.yml` rejects a prerelease tag, because its version check compares the whole tag against
+`<VersionPrefix>`. What stayed here is what this change did achieve — registering the policy.
+
 **Corrected**
 
 The consistency sweep the move owed and did not pay: the statements about the preview feed, the

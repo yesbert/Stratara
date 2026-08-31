@@ -205,7 +205,7 @@ dotnet test
 
 ## Versioning
 
-Lockstep across the whole family — one `<VersionPrefix>` in `Directory.Build.props` controls every package. A `v*` tag publishes stable versions to nuget.org, and that is the only publishing path: there is no preview channel, so what is not tagged is not published anywhere. SemVer applies — see [`CHANGELOG.md`](CHANGELOG.md) for per-release notes.
+Lockstep across the whole family — one `<VersionPrefix>` in `Directory.Build.props` controls every package. A `v*` tag publishes to nuget.org, and that is the only publishing path — what is not tagged is not published anywhere. A tag may name a prerelease (`v4.0.0-preview.1`), which publishes as a prerelease and reaches you only if you ask for one; `dotnet add package` without `--prerelease` always resolves the newest stable version. SemVer applies — see [`CHANGELOG.md`](CHANGELOG.md) for per-release notes.
 
 ## License
 

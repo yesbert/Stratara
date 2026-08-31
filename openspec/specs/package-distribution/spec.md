@@ -118,8 +118,9 @@ written.
 ### Requirement: Published artefacts never reference internal-only material
 
 No published artefact — documentation comment in a shipped assembly, documentation site page,
-sample, readme or changelog — SHALL reference the repository's internal working directory, whose
-contents are excluded from the public mirror and would be a dead link for every consumer.
+sample, readme or changelog — SHALL reference the project's internal working directory. That
+directory is not part of the published repository, so a path into it resolves for a maintainer and
+is a dead link for every consumer.
 
 #### Scenario: A documentation comment references an internal path
 
@@ -146,29 +147,6 @@ after the consumer has designed around it.
 - **WHEN** documentation presents a symbol that exists only as a non-public declaration
 - **THEN** the verification gate fails
 
-### Requirement: Publication has distinct lanes and a public release is deliberate
-
-Every push to the main branch SHALL publish a pre-release build to the internal feed, so that an
-internal consumer sees a change within minutes of merge. A public release SHALL happen only on an
-explicit version tag, and SHALL require an approval before reaching the public registry.
-
-#### Scenario: A change merges to main
-
-- **WHEN** a change merges to the main branch
-- **THEN** a pre-release build of every package is published to the internal feed
-
-#### Scenario: A public release is cut
-
-- **WHEN** a version tag is pushed
-- **THEN** the stable packages go to the internal feed, and reaching the public registry
-  additionally requires an approval
-
-#### Scenario: A change does not warrant a release
-
-- **WHEN** a change touches only tests, documentation or continuous integration
-- **THEN** no version bump is required and no public release occurs — the pre-release lane carries
-  it to internal consumers without a release decision
-
 ### Requirement: The framework never depends on a consumer application
 
 No published package SHALL reference any application that consumes the framework, or contain
@@ -179,3 +157,27 @@ domain logic specific to one.
 - **WHEN** a consumer needs behaviour specific to its own domain
 - **THEN** that behaviour lives in the consumer's own repository, and the framework offers an
   extension point rather than the behaviour
+
+### Requirement: A release is published only from a version tag, and only with approval
+
+Packages SHALL be published only in response to an explicit version tag, and reaching the public
+registry SHALL additionally require a human approval. Neither a merge nor a push to the main branch
+SHALL publish anything anywhere. There is no pre-release channel: a version that carries no tag is
+obtainable from no feed.
+
+#### Scenario: A change merges to the main branch
+
+- **WHEN** a change merges to the main branch
+- **THEN** no package is published, and a consumer receives the change only with the next release
+
+#### Scenario: A public release is cut
+
+- **WHEN** a version tag is pushed
+- **THEN** the packages are built from that tag, and an approval is required before they reach the
+  public registry
+
+#### Scenario: A change does not warrant a release
+
+- **WHEN** a change touches only tests, documentation or continuous integration
+- **THEN** no version bump and no tag are required, and the change reaches consumers with the next
+  release cut for another reason
