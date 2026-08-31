@@ -89,7 +89,7 @@ operations:
         class; the exception parameter comes first after "this ILogger logger"; message
         templates use PascalCase placeholders and only simple parameter types (string, Guid,
         int, DateTimeOffset, enum). Never call logger.LogInformation() and friends directly.
-        Event IDs come from Stratara.Diagnostics/LogEvents.cs in the 100_000 range.
+        Event IDs come from src/Stratara.Diagnostics/LogEvents.cs in the 100_000 range.
       - >-
         Tracing and metrics come from Stratara.Diagnostics.ApplicationDiagnostics - never
         construct an ActivitySource or Meter ad hoc. Metric, meter, activity and tag names are
