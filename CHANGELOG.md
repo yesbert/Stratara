@@ -18,6 +18,27 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **`AddBusEnvelopeIntegrity` gains a base64-string overload, and the start-up warning stops naming
+  one that did not exist.** When integrity is enabled with no signer registered, the probe told the
+  operator to call `AddBusEnvelopeIntegrity("<base64-key>")`. No such overload existed — the two that
+  did take an `Action<BusEnvelopeIntegrityOptions>` or an `IConfiguration`. The message sent whoever
+  was fixing the problem looking for an API that was not there.
+
+  The message now names the overloads that exist, and the one it promised has been added, because it
+  was the right shape: `SharedKey` is a `byte[]`, which configuration binding cannot produce from a
+  string, so the `IConfiguration` overload binds the mode and leaves the key to a second call.
+
+  ```csharp
+  services.AddBusEnvelopeIntegrity(
+      builder.Configuration["BUS_ENVELOPE_SIGNING_KEY"]!,
+      BusEnvelopeIntegrityMode.Permissive);
+  ```
+
+  It rejects a malformed base64 string and a key shorter than 32 bytes at registration, where a host
+  can still fix it, rather than at the first signed message. Read the key from a secret store or an
+  injected environment variable — not from a checked-in `appsettings.json`, which signs for anyone who
+  can read the repository.
+
 - **BREAKING: encrypting at a level that claims isolation, with no identifying dimension at all, is
   now refused outside development.** `TenantScoped` claims that a value is encrypted under
   a key belonging to that tenant. On an aggregate that has none, that was never true: an event row's
