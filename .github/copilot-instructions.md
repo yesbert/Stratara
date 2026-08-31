@@ -31,7 +31,7 @@ them to skim your review.
   an error there. Rationale belongs in the design note of the change that made the decision.
 - **Do not suggest `logger.LogInformation()` and friends.** Logging is source-generated only:
   `[LoggerMessage]` on a partial method in a partial class, the exception parameter first after
-  `this ILogger logger`, PascalCase placeholders, event IDs from `Stratara.Diagnostics/LogEvents.cs`.
+  `this ILogger logger`, PascalCase placeholders, event IDs from `src/Stratara.Diagnostics/LogEvents.cs`.
 - **Do not suggest `ConfigureAwait(false)`.** It is deliberately not used in this repository.
 - **Do not suggest a `Stopwatch`.** Allocating one is forbidden; `Stopwatch.GetTimestamp()` is fine
   and is what the framework's own workers use.
