@@ -111,6 +111,9 @@ public class CommandWorkerLaneTests
 
         public Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
+        public Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
         public Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default)
         {
             lock (_gate)

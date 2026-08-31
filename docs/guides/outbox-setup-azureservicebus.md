@@ -51,6 +51,16 @@ builder.AddCommandWorkerServices();
 - **Subscriptions** per worker host, defaulting to `command-subscription`, `heavy-command-subscription`, `event-bundle-subscription` and `event-bundle-saga-subscription`. Service Bus subscriptions are durable — a worker that's down accumulates messages in its subscription until it reconnects.
 - **Provision topics and subscriptions up front.** Unlike RabbitMQ, where the bus declares its own exchanges, Service Bus entities must exist before a worker connects.
 
+`EnsureSubscriptionAsync` — the call the [RabbitMQ guide](outbox-setup-rabbitmq.md) shows for closing
+the cold-start gap — exists here too and deliberately does nothing. It has nothing to do: your
+subscriptions were created by a template or a deployment step long before the process that would call
+it started, which is the same end state the RabbitMQ call is reaching for. Code written against one
+transport therefore runs unchanged against the other, and the property it depends on holds in both.
+
+It is not left unimplemented by oversight, and it should not be "fixed" into a management-client call:
+the credentials a running host holds are data-plane credentials, and creating entities from them is a
+different permission and a different lifecycle.
+
 ## Processor tuning
 
 The subscription processor runs with the Azure SDK's default `ServiceBusProcessorOptions` —

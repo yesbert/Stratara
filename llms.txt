@@ -33,6 +33,16 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - **Routing convention:** mutation without result → `ICommand` via `ICommandOutboxDispatcher`;
   mutation with synchronous result → `ICommand<T>` via `IMediator`; read → `IQuery<T>` via
   `IMediator`. Never bypass the mediator/dispatcher from an endpoint.
+- **Message bus:** `IMessageBus` has `PublishAsync`, `SubscribeAsync` and
+  `EnsureSubscriptionAsync(topic, subscription, ct)`. The last one creates a subscription's queue
+  **without consuming from it**, so any process can create a queue for a worker that has not started.
+  It exists because a broker delivers only to queues that already exist, and on a topic with more
+  than one subscription — `event-bundle` carries the projection and saga subscriptions — one bound
+  queue is enough for the publish to be confirmed, so a missing second one loses messages silently.
+  Call it from whichever process publishes first, before its first publish, with names from
+  `IMessagingIdentifier`. Nothing calls it automatically. Worker queues are durable, so it only
+  matters on a broker that has never seen them. Azure Service Bus implements it as a no-op because
+  its subscriptions are provisioned administratively.
 - **Aggregates:** `IAggregate` (`Guid Id`), `ITenantAggregate : IAggregate` (`Guid TenantId`).
   Events are immutable `sealed record`s. Aggregate properties use `set` (public setter, NOT
   `private set`) so snapshot JSON deserialization works. `Apply` methods hold the write logic.
