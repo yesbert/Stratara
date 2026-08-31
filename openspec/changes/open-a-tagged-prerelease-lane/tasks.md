@@ -73,11 +73,30 @@ true half stays everywhere.*
       changelog section instead, and is renamed `TheStatedStableVersion_MatchesTheNewestRelease`.
       Owner's call, 2026-08-31.
 
+## 4b. Make the tag reachable from the tooling
+
+*Added 2026-08-31, after the owner asked to be able to hand tagging over. `bump-version.sh` builds a
+tag from MAJOR.MINOR.PATCH and aborts when `Directory.Build.props` shows no change — for a prerelease
+it changes nothing, so the script refused the one tag this change exists to enable.*
+
+- [x] 4b.1 Add a `prerelease <identifier>` form to `scripts/bump-version.sh` that tags
+      `v<current>-<identifier>` without editing a file or making a commit, and refuses an identifier
+      whose segment mixes letters and digits — `preview1` orders as a string, so `preview10` would
+      sort before `preview9`, and a published order cannot be corrected. Verify: `preview.1`, `rc.2`
+      and `alpha.beta.10` tag and report the commit; `preview1`, `rc2`, `pre view`, `preview.` and an
+      empty identifier are refused; a dirty tree is refused; an existing tag is refused.
+- [x] 4b.2 Document the form and the permission boundary in the `bump-version` skill: the owner
+      released tagging to the agent on 2026-08-31, the `nuget-org` approval stays with the owner, and
+      the skill says plainly that this is a discipline boundary rather than a permission one — the
+      required reviewer is `yesbert` and `gh` is authenticated as `yesbert`. Verify: the skill states
+      who may tag, who may approve, and that the agent could technically do the latter and does not.
+
 ## 5. Prove the release path — adopted from the move's task 8.5
 
 *The owner's to run: it publishes, and a publish cannot be undone.*
 
-- [ ] 5.1 Push `v4.0.0-preview.1` and approve the `nuget-org` deployment. Verify: the run's log shows
+- [ ] 5.1 Tag and push `v4.0.0-preview.1` (`./scripts/bump-version.sh prerelease preview.1`); the
+      owner approves the `nuget-org` deployment. Verify: the run's log shows
       the short-lived-key path at `release.yml:161` rather than the fallback at `:166`; the 25
       packages appear on nuget.org as a prerelease; and `dotnet add package Stratara.Mediator` without
       `--prerelease` still resolves `3.4.0`. **The prerelease stays listed** — it exists to be tested.

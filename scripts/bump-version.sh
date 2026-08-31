@@ -4,10 +4,17 @@
 # commit, and tag. Pushing the commit + tag is the caller's job
 # (do it via `git push && git push origin refs/tags/v<x.y.z>`).
 #
+# The prerelease form tags a build of the version the tree is already working
+# toward, so it changes no file and creates no commit — <VersionPrefix> stays put
+# for the whole cycle and only the tag differs. That is what release.yml expects:
+# it compares the tag's release part against the props and passes the identifier
+# through as VersionSuffix.
+#
 # Usage:
-#   ./scripts/bump-version.sh patch   # 0.1.0 → 0.1.1
-#   ./scripts/bump-version.sh minor   # 0.1.0 → 0.2.0
-#   ./scripts/bump-version.sh major   # 0.1.0 → 1.0.0
+#   ./scripts/bump-version.sh patch              # 0.1.0 → 0.1.1
+#   ./scripts/bump-version.sh minor              # 0.1.0 → 0.2.0
+#   ./scripts/bump-version.sh major              # 0.1.0 → 1.0.0
+#   ./scripts/bump-version.sh prerelease rc.1    # tag v<current>-rc.1, no file changes
 #
 
 set -euo pipefail
@@ -19,20 +26,24 @@ PROPS_FILE="${ROOT_DIR}/Directory.Build.props"
 usage() {
     cat <<EOF
 Usage: $0 <major|minor|patch>
+       $0 prerelease <identifier>
 
 Examples:
-  $0 patch   # 0.1.0 → 0.1.1
-  $0 minor   # 0.1.0 → 0.2.0
-  $0 major   # 0.1.0 → 1.0.0
+  $0 patch                # 0.1.0 → 0.1.1
+  $0 minor                # 0.1.0 → 0.2.0
+  $0 major                # 0.1.0 → 1.0.0
+  $0 prerelease preview.1 # tag v<current>-preview.1, changing no file
+
+The prerelease form does not touch Directory.Build.props and creates no commit.
+It tags the current commit as a build of the version already declared there.
 EOF
     exit 1
 }
 
-[[ $# -ne 1 ]] && usage
-
-BUMP_TYPE="$1"
+BUMP_TYPE="${1:-}"
 case "${BUMP_TYPE}" in
-    major|minor|patch) ;;
+    major|minor|patch) [[ $# -ne 1 ]] && usage ;;
+    prerelease)        [[ $# -ne 2 ]] && usage ;;
     *) usage ;;
 esac
 
@@ -51,6 +62,53 @@ if [[ -z "${CURRENT}" ]]; then
     echo "Error: Could not read <VersionPrefix> from ${PROPS_FILE}" >&2
     exit 1
 fi
+
+# --- prerelease: tag only, no file changes ---------------------------------
+#
+# Every segment of the identifier must be all-digits or all-letters, never a mix.
+# SemVer compares a purely numeric segment numerically and anything else as a
+# string, so `preview.10` sorts after `preview.9` while `preview10` sorts before
+# `preview9`. A published order cannot be corrected, only added to.
+if [[ "${BUMP_TYPE}" == "prerelease" ]]; then
+    IDENTIFIER="$2"
+
+    if [[ ! "${IDENTIFIER}" =~ ^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$ ]]; then
+        echo "Error: '${IDENTIFIER}' is not a valid SemVer prerelease identifier." >&2
+        exit 1
+    fi
+    IFS='.' read -ra SEGMENTS <<< "${IDENTIFIER}"
+    for segment in "${SEGMENTS[@]}"; do
+        if [[ "${segment}" =~ [0-9] && "${segment}" =~ [A-Za-z] ]]; then
+            echo "Error: segment '${segment}' mixes letters and digits, which orders as a string." >&2
+            echo "Separate them with a dot — 'preview.1', not 'preview1' — or SemVer sorts" >&2
+            echo "'${segment%%[0-9]*}10' before '${segment%%[0-9]*}9'. A published order cannot be fixed." >&2
+            exit 1
+        fi
+    done
+
+    TAG="v${CURRENT}-${IDENTIFIER}"
+
+    if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+        echo "Error: tag ${TAG} already exists. A prerelease identity is never reused." >&2
+        exit 1
+    fi
+    if [[ -n "$(git status --porcelain)" ]]; then
+        echo "Error: the working tree is dirty. A tag must name a committed state." >&2
+        exit 1
+    fi
+
+    git tag -a "${TAG}" -m "Prerelease ${CURRENT}-${IDENTIFIER}"
+    echo ""
+    echo "Tagged ${TAG} at $(git rev-parse --short HEAD). Nothing was committed — ${PROPS_FILE##*/} still says ${CURRENT}."
+    echo ""
+    echo "Push with:"
+    echo "  git push origin refs/tags/${TAG}"
+    echo ""
+    echo "That starts release.yml. Its pack job holds no credential; the push to nuget.org"
+    echo "waits for a required reviewer in the nuget-org environment."
+    exit 0
+fi
+
 
 IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT}"
 
