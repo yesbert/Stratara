@@ -1,7 +1,7 @@
 # Getting help with Stratara
 
-Stratara is developed primarily as an in-house framework, with limited public support
-at this stage. Here is how to find help.
+Stratara is developed in the open on GitHub, with limited public support at this
+stage. Here is how to find help.
 
 ## Documentation first
 
@@ -52,7 +52,7 @@ all requests.
 
 ## What to expect
 
-- **Bugs:** triaged on our internal tracker; fixes land in the next `v*` release.
+- **Bugs:** triaged on the issue tracker above; fixes land in the next `v*` release.
   Typical turnaround is days to weeks. No SLA.
 - **Questions:** best-effort answers, no SLA.
 - **Feature requests:** not currently accepted — see [`CONTRIBUTING.md`](CONTRIBUTING.md).

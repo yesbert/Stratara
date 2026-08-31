@@ -16,9 +16,9 @@ no consumer should read. Move that directory out, and the entire apparatus — t
 scripts, the cleanliness scan, the pipeline that runs them — has nothing left to defend. What
 replaces roughly a thousand lines of sync machinery is one line in `.gitignore`.
 
-**Published behaviour does not change.** No package, no public type, no API surface and no
-requirement in `openspec/specs/` is touched. What changes is where the project lives, how it is
-built, and what a consumer can see and do.
+**No package, no public type and no API surface changes.** What changes is where the project lives,
+how it is built, and what a consumer can see and do — plus one thing a consumer relies on directly:
+how packages reach them. That last one is a guarantee, and it carries a spec delta.
 
 ## What Changes
 
@@ -51,8 +51,24 @@ None. This change introduces no capability.
 
 ### Modified Capabilities
 
-None. No requirement in any existing capability changes: this change moves the project, it does not
-alter what the framework guarantees. `.openspec.yaml` therefore sets `skip_specs: true`.
+**`package-distribution`** — two requirements.
+
+*Publication lanes.* The capability guaranteed that every push to the main branch publishes a
+pre-release build to the internal feed, and that a tag additionally reaches the public registry
+behind an approval. Retiring the feed withdraws the first half outright — the breaking change this
+proposal states above. What replaces it says the one thing that is still true: only a version tag
+publishes, only with an approval, and nothing at all is published between tags.
+
+*Internal-only material.* The requirement forbidding a published artefact from referencing the
+internal working directory stands, but it justified itself by that directory being excluded from the
+mirror's allowlist. With no mirror, the reason is now simply that the directory is not in the
+repository — and the gate the requirement promises has to exist again, because removing the mirror
+took the cleanliness scan with it.
+
+*This delta was missed when the change was written.* The proposal set `skip_specs: true` on the
+reasoning that moving a project alters no guarantee, while two sections higher it called the retired
+feed breaking for the consumer. Both statements cannot hold. The marker is removed and the delta
+lives at `specs/package-distribution/spec.md`.
 
 ## Impact
 
@@ -92,7 +108,14 @@ publish pipeline.
 
 **Unaffected**
 
-`src/`, `tests/`, `samples/`, `docs/` content, `Directory.Build.props`, `Directory.Packages.props`,
-every `.csproj`, `Stratara.Publish.slnf`, and every requirement in `openspec/specs/`. No consumer
-recompiles anything because of this change; the only consumer-visible effect is the retired preview
-feed and, from the tag after this ships, a release published from a different system.
+`src/`, `tests/`, `samples/`, `Directory.Build.props`, `Directory.Packages.props`, every `.csproj`,
+`Stratara.Publish.slnf`, and every capability in `openspec/specs/` other than `package-distribution`.
+No consumer recompiles anything because of this change; the only consumer-visible effect is the
+retired preview feed and, from the tag after this ships, a release published from a different system.
+
+**Corrected**
+
+The consistency sweep the move owed and did not pay: the statements about the preview feed, the
+internal tracker and the Azure pipelines that survived in `README.md`, `SECURITY.md`, `SUPPORT.md`,
+two scripts and the internal reference documentation, each of which now describes a system that was
+switched off. Listed individually in `tasks.md` §11.

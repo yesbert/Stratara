@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Description: Export SonarQube analysis results as pipeline artifacts (issues, hotspots,
+# Description: Export SonarQube analysis results as workflow artifacts (issues, hotspots,
 # quality gate, duplications, measures + a Markdown summary uploaded to the build page).
 # Designed to run after the analysis has been submitted, in .github/workflows/sonar.yml.
 #
@@ -256,7 +256,7 @@ SUMMARY_FILE="$OUTPUT_DIR/summary.md"
 
 } > "$SUMMARY_FILE"
 
-# --- Upload summary as Azure DevOps build tab ---
+# --- Publish the summary onto the workflow run ---
 
 cat "$SUMMARY_FILE" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
@@ -272,5 +272,5 @@ echo "Duplications: ${DUP_DENSITY}% ($DUP_LINES lines, $DUP_BLOCKS blocks in $DU
 echo ""
 echo "Results exported to: $OUTPUT_DIR"
 
-# Signal to pipeline that artifacts are ready for publishing
+# Signal to the workflow that artifacts are ready for publishing
 echo "export-success=true" >> "${GITHUB_OUTPUT:-/dev/null}"

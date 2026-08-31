@@ -165,6 +165,37 @@ Owner decision. Only `v*` tags publish, and only to nuget.org.
 plan that breaks something outside this repository, which is why it is ordered explicitly: the
 consumer is coordinated with, and confirms, **before** the publishing pipeline is switched off.
 
+*Second consequence, seen late:* it is also a change to a published guarantee. `package-distribution`
+required a pre-release build on every merge. Withdrawing the feed withdraws that requirement, which
+makes this a spec change and not only a move — see the correction below.
+
+### The move carries a spec delta after all
+
+Written into the plan on 2026-08-31, after the work had shipped. The original proposal set
+`skip_specs: true` and reasoned that relocating a project alters no guarantee. That reasoning is
+sound and it does not cover this change, because two of its steps were not relocations:
+
+- **Retiring the preview feed** removed a lane `package-distribution` guaranteed. The proposal knew
+  this — it labels the step breaking for the consumer — and the two statements were never reconciled.
+- **Deleting the mirror apparatus** took the cleanliness scan out of the local gate with it, while
+  the requirement that gate enforced stayed in the spec. A guarantee whose enforcement was removed as
+  a side effect reads as intact and is not.
+
+The rule that catches this is the project's own: does behaviour a consumer can observe change? A
+consumer observes both — one when a merge stops producing a build they can resolve, the other when a
+shipped readme links somewhere they cannot follow.
+
+*Decision on the second one:* keep the requirement and restore the gate rather than drop the
+requirement. The internal directory is git-ignored rather than filtered, so it can still be linked to
+from a file that ships, and the link is dead for everyone but a maintainer — the failure the
+requirement describes survived the mirror that motivated it. The replacement is a grep over the
+published surfaces, which is what the deleted scan did minus the allowlist logic that had a mirror to
+serve.
+
+*Rejected:* folding this into a separate change. The delta is not new work — it is the part of this
+change that was mis-classified, and a second change would archive this one with a proposal that still
+contradicts itself.
+
 ## Risks / Trade-offs
 
 **The consumer's build breaks without warning when the preview feed stops.** → The coordination step
