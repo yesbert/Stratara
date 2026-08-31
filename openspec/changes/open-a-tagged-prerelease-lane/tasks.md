@@ -95,15 +95,24 @@ it changes nothing, so the script refused the one tag this change exists to enab
 
 *The owner's to run: it publishes, and a publish cannot be undone.*
 
-- [ ] 5.1 Tag and push `v4.0.0-preview.1` (`./scripts/bump-version.sh prerelease preview.1`); the
+- [x] 5.1 Tag and push `v4.0.0-preview.1` (`./scripts/bump-version.sh prerelease preview.1`); the
       owner approves the `nuget-org` deployment. Verify: the run's log shows
       the short-lived-key path at `release.yml:161` rather than the fallback at `:166`; the 25
       packages appear on nuget.org as a prerelease; and `dotnet add package Stratara.Mediator` without
       `--prerelease` still resolves `3.4.0`. **The prerelease stays listed** — it exists to be tested.
-- [ ] 5.2 Only after 5.1 has published through the short-lived key: delete the `NUGET_ORG_API_KEY`
+- [x] 5.2 Only after 5.1 has published through the short-lived key: delete the `NUGET_ORG_API_KEY`
       environment secret, the fallback branch at `release.yml:155-177` and the paragraph explaining
       it at `release.yml:11-17`. Verify: `grep -n "NUGET_ORG_API_KEY" .github/workflows/release.yml`
       returns nothing, and the repository's environment secrets no longer list it.
-- [ ] 5.3 Record the outcome in `.claude/roadmap/STATE.md`: the release path is proven or it is not,
+      *Also dropped:* `continue-on-error` on the OIDC exchange step, which only existed so a failed
+      exchange could fall through to the stored key. Without a fallback the release must stop there,
+      and it now does.
+- [ ] 5.4 **Revoke the API key on nuget.org itself.** 5.2 removed the copy GitHub held; the key it
+      held is still valid until it is revoked on the account, so anyone with a copy can still publish
+      as this owner. This task exists because 5.2 was written without it — the original wording in
+      the move's task 8.5 named "the key on nuget.org" and the rewrite lost it. Only the owner can do
+      this: it is on the nuget.org account page, not behind an API. Verify: the key no longer appears
+      under API Keys on nuget.org.
+- [x] 5.3 Record the outcome in `.claude/roadmap/STATE.md`: the release path is proven or it is not,
       and the release-blockers field says which. Verify: no field still describes the release path as
       never exercised.

@@ -13,10 +13,6 @@
 # OIDC token and gets an API key valid for one hour, so no long-lived key is stored anywhere. One
 # policy on nuget.org covers every package the account owns, and it names this repository, this
 # workflow file and this environment — a workflow that is not this one cannot use it.
-#
-# Until that policy exists the job falls back to NUGET_ORG_API_KEY from the environment. Delete the
-# secret, the fallback and this paragraph once trusted publishing has published once: a stored
-# credential that nothing needs is a credential that can leak.
 name: Release
 
 on:
@@ -151,11 +147,10 @@ jobs:
           dotnet-version: '10.0.x'
 
       # The key this returns is valid for one hour, so it is fetched immediately before the push.
-      # continue-on-error so that a missing policy falls through to the stored key rather than
-      # failing the release; remove both once the policy has published once.
+      # There is no fallback: if the exchange fails the release stops here, which is the point. It
+      # first published through this path on 2026-08-31 with v4.0.0-preview.1.
       - name: Exchange the OIDC token for a short-lived key
         id: login
-        continue-on-error: true
         uses: NuGet/login@v1
         with:
           user: ${{ vars.NUGET_USER }}
@@ -166,22 +161,17 @@ jobs:
       - name: Push
         env:
           SHORT_LIVED_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-          STORED_KEY: ${{ secrets.NUGET_ORG_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "${SHORT_LIVED_KEY:-}" ]]; then
-            key="${SHORT_LIVED_KEY}"
-            echo "Publishing with a short-lived key from trusted publishing."
-          elif [[ -n "${STORED_KEY:-}" && "${STORED_KEY}" != PLACEHOLDER-* ]]; then
-            key="${STORED_KEY}"
-            echo "::warning::Trusted publishing did not yield a key; falling back to the stored one."
-          else
-            echo "No usable credential. Either the trusted-publishing policy on nuget.org is" >&2
-            echo "missing or does not match (owner yesbert, repository Stratara, workflow" >&2
-            echo "release.yml, environment nuget-org), or NUGET_ORG_API_KEY is still a placeholder." >&2
+          if [[ -z "${SHORT_LIVED_KEY:-}" ]]; then
+            echo "Trusted publishing yielded no key. The policy on nuget.org is missing or does" >&2
+            echo "not match (owner yesbert, repository Stratara, workflow release.yml, environment" >&2
+            echo "nuget-org). Nothing is published; fix the policy rather than storing a key." >&2
             exit 1
           fi
+          key="${SHORT_LIVED_KEY}"
+          echo "Publishing with a short-lived key from trusted publishing."
           cd artifacts/nupkgs
           echo "Pushing $(ls ./*.nupkg | wc -l | tr -d ' ') packages"
           for nupkg in ./*.nupkg; do
