@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -36,7 +38,15 @@ public class SecureJsonSerializerTests
         _keyStoreMock.Setup(k => k.GetDataEncryptionKeyAsync(TestKeyId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(key);
 
-        _serializer = new SecureJsonSerializer(_keyStoreMock.Object, _encryptionFactory);
+        _serializer = CreateSerializer(Environments.Production);
+    }
+
+    private SecureJsonSerializer CreateSerializer(string environmentName)
+    {
+        var environment = new Mock<IHostEnvironment>();
+        environment.SetupGet(e => e.EnvironmentName).Returns(environmentName);
+        return new SecureJsonSerializer(
+            _keyStoreMock.Object, _encryptionFactory, NullLogger<SecureJsonSerializer>.Instance, environment.Object);
     }
 
     private sealed class PlainDto
@@ -57,6 +67,136 @@ public class SecureJsonSerializerTests
         public string Plain { get; set; } = "";
 
         [EncryptData(DataSensitivityLevel.UserScoped)]
+        public string Secret { get; set; } = "";
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task Serialize_TenantScopedWithNothingToIsolateBy_IsRefusedOutsideDevelopment(string? tenantId)
+    {
+        var sut = CreateSerializer(Environments.Production);
+        var tenant = tenantId is null ? (Guid?)null : Guid.Parse(tenantId);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SerializeAsync(new FullyEncryptedDto { Name = "n", Value = 1 }, tenant, Guid.Empty));
+
+        Assert.Contains("TenantScoped", thrown.Message, StringComparison.Ordinal);
+        Assert.Contains("TenantId", thrown.Message, StringComparison.Ordinal);
+        Assert.Contains("Confidential", thrown.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The mirror of the user-scoped case: a tenant-scoped value carrying only a user still resolves
+    /// to a distinct scope per user, so it isolates. Refusing it would be refusing a coarser shape,
+    /// not an absent one.
+    /// </summary>
+    [Fact]
+    public async Task Serialize_TenantScopedWithAUserButNoTenant_IsAccepted()
+    {
+        var sut = CreateSerializer(Environments.Production);
+
+        var json = await sut.SerializeAsync(
+            new FullyEncryptedDto { Name = "n", Value = 1 }, Guid.Empty, Guid.CreateVersion7());
+
+        Assert.Contains(SecurityConstants.EncryptionMarker, json, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task Serialize_UserScopedWithNeitherUserNorTenant_IsRefusedOutsideDevelopment(string? userId)
+    {
+        var sut = CreateSerializer(Environments.Production);
+        var user = userId is null ? (Guid?)null : Guid.Parse(userId);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SerializeAsync(new PartiallyEncryptedDto { Plain = "p", Secret = "s" }, Guid.Empty, user));
+
+        Assert.Contains("UserScoped", thrown.Message, StringComparison.Ordinal);
+        Assert.Contains("Confidential", thrown.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Not the degenerate case, and the framework relies on it: the scope resolves to
+    /// "UserScoped:&lt;tenant&gt;:", which still separates tenants. Coarser than the level's name,
+    /// but isolation rather than its absence — an event's payload is bound to its stream's owner
+    /// exactly this way.
+    /// </summary>
+    [Fact]
+    public async Task Serialize_UserScopedWithATenantButNoUser_IsAccepted()
+    {
+        var sut = CreateSerializer(Environments.Production);
+
+        var json = await sut.SerializeAsync(
+            new PartiallyEncryptedDto { Plain = "p", Secret = "s" }, Guid.CreateVersion7(), null);
+
+        Assert.Contains(SecurityConstants.EncryptionMarker, json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Serialize_TenantScopedWithoutATenant_ProceedsInDevelopment()
+    {
+        var sut = CreateSerializer(Environments.Development);
+
+        var json = await sut.SerializeAsync(new FullyEncryptedDto { Name = "n", Value = 1 }, Guid.Empty, Guid.Empty);
+
+        Assert.Contains(SecurityConstants.EncryptionMarker, json, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The difference between a guard and a data-loss bug. Values written into the degenerate scope
+    /// before the refusal existed have to stay readable — refusing on the read path would destroy
+    /// access to them rather than protect anything.
+    /// </summary>
+    [Fact]
+    public async Task Deserialize_ValueWrittenIntoTheDegenerateScope_StillReadsOutsideDevelopment()
+    {
+        var written = await CreateSerializer(Environments.Development)
+            .SerializeAsync(new FullyEncryptedDto { Name = "written-before-the-guard", Value = 7 }, Guid.Empty, Guid.Empty);
+
+        var read = await CreateSerializer(Environments.Production)
+            .DeserializeAsync<FullyEncryptedDto>(written, Guid.Empty, Guid.Empty);
+
+        Assert.Equal("written-before-the-guard", read!.Name);
+        Assert.Equal(7, read.Value);
+    }
+
+    /// <summary>
+    /// The migration this guard points at. `Confidential` claims one system-wide key and no
+    /// isolation, so the scope guard does not fire for it — an absent tenant is what that level is
+    /// for. The empty identifier is what a tenant-less aggregate actually supplies: an event row's
+    /// tenant is not nullable, so the value is empty rather than missing.
+    /// </summary>
+    [Fact]
+    public async Task Serialize_ConfidentialWithoutATenant_IsAccepted()
+    {
+        var sut = CreateSerializer(Environments.Production);
+
+        var json = await sut.SerializeAsync(new ConfidentialDto { Secret = "s" }, Guid.Empty, Guid.Empty);
+
+        Assert.Contains(SecurityConstants.EncryptionMarker, json, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A separate, older guard: the additional authenticated data is built from the tenant whatever
+    /// the level, so an explicitly null tenant is refused for `Confidential` too. Pinned here because
+    /// the migration advice would otherwise read as "pass nothing", which does not work.
+    /// </summary>
+    [Fact]
+    public async Task Serialize_ConfidentialWithAnExplicitlyNullTenant_IsStillRefusedByTheAadGuard()
+    {
+        var sut = CreateSerializer(Environments.Production);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SerializeAsync(new ConfidentialDto { Secret = "s" }, null, null));
+
+        Assert.Contains("null TenantId", thrown.Message, StringComparison.Ordinal);
+    }
+
+    [EncryptData(DataSensitivityLevel.Confidential)]
+    private sealed class ConfidentialDto
+    {
         public string Secret { get; set; } = "";
     }
 

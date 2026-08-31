@@ -18,6 +18,31 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **BREAKING: encrypting at a level that claims isolation, with no identifying dimension at all, is
+  now refused outside development.** `TenantScoped` claims that a value is encrypted under
+  a key belonging to that tenant. On an aggregate that has none, that was never true: an event row's
+  tenant is not nullable, so a tenant-less aggregate supplied the empty identifier and every such
+  value across every subject resolved to one scope —
+  `TenantScoped:00000000-...-000000000000:00000000-...-000000000000` — and therefore one key. Erasing
+  one subject would have erased all of them, so crypto-shredding was unavailable at that level while
+  the annotation implied it was there, and nothing reported the difference.
+
+  A guard for the same mistake already existed and refused a *null* tenant. It could not fire on the
+  event path, which never produces null. It was one condition away from the case it was written for.
+
+  **A coarser scope than the level names is not refused.** A user-scoped value carrying only a tenant
+  resolves to a per-tenant key — weaker than the name suggests, but it separates tenants, and the
+  framework binds an event's payload to its stream's owner exactly that way. Only the collapse to a
+  single system-wide key is refused.
+
+  **Migration: use `DataSensitivityLevel.Confidential`** for data that genuinely has no tenant. It
+  claims one system-wide key and no isolation, which is what was happening anyway — the difference is
+  that it says so.
+
+  In development the same encryption warns and proceeds, so local work continues while the mistake
+  stays visible. **Decryption is untouched:** values already written into that scope decrypt exactly
+  as before, because a refusal on the read path would destroy access to data rather than protect it.
+
 - **BREAKING: `IMessageBus` gains `EnsureSubscriptionAsync`, and a subscription can now be created
   without consuming from it.** A broker delivers only to queues that already exist, and until now the
   only way to create one was `SubscribeAsync` — which also starts reading, so a queue could not exist

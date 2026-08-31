@@ -1,6 +1,9 @@
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
+using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Infrastructure.Security.Serialization;
 using Stratara.Abstractions.Security;
 
@@ -10,6 +13,8 @@ namespace Stratara.Benchmarks.Security;
 [SimpleJob]
 public class SecureJsonSerializerBenchmark
 {
+    private static readonly HostingEnvironment DevEnvironment = new() { EnvironmentName = Environments.Development };
+
     private readonly Guid _tenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly Guid _userId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private string _baselineClassJson = string.Empty;
@@ -34,7 +39,7 @@ public class SecureJsonSerializerBenchmark
             .AddStrataraBlobEncryption()
             .BuildServiceProvider()
             .GetRequiredService<IEncryptionFactory>();
-        _secureSerializer = new SecureJsonSerializer(keyStore, encryptionFactory);
+        _secureSerializer = new SecureJsonSerializer(keyStore, encryptionFactory, NullLogger<SecureJsonSerializer>.Instance, DevEnvironment);
 
         _fieldEncrypted = new PersonFieldEncrypted
         {

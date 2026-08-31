@@ -2,6 +2,10 @@ using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Stratara.Diagnostics;
 using Stratara.Infrastructure.Security.Mapping;
 using Stratara.Abstractions.Security;
 using Stratara.Shared.Reflections;
@@ -26,7 +30,11 @@ namespace Stratara.Infrastructure.Security.Serialization;
 /// between subjects fails decryption.
 /// </para>
 /// </remarks>
-internal sealed class SecureJsonSerializer(IKeyStore keyStore, IEncryptionFactory encryptionFactory) : ISecureJsonSerializer
+internal sealed partial class SecureJsonSerializer(
+    IKeyStore keyStore,
+    IEncryptionFactory encryptionFactory,
+    ILogger<SecureJsonSerializer>? logger = null,
+    IHostEnvironment? environment = null) : ISecureJsonSerializer
 {
     /// <inheritdoc/>
     /// <exception cref="ArgumentException">Thrown when <paramref name="obj"/> is not a reference-type instance.</exception>
@@ -147,6 +155,8 @@ internal sealed class SecureJsonSerializer(IKeyStore keyStore, IEncryptionFactor
     private async Task<EncryptedWrapper> EncryptToWrapperAsync(ReadOnlyMemory<byte> plainJsonUtf8, DataSensitivityLevel level, Guid? tenantId, Guid? userId,
         string scope, CancellationToken cancellationToken)
     {
+        EnsureScopeCanIsolate(level, tenantId, userId);
+
         var keyScope = new KeyScope(level, tenantId?.ToString(), userId?.ToString());
         var keyMaterial = await keyStore.GetOrCreateCurrentKeyAsync(keyScope, cancellationToken);
         var dataEncryptionKey = keyMaterial.Key.ToArray();
@@ -236,6 +246,51 @@ internal sealed class SecureJsonSerializer(IKeyStore keyStore, IEncryptionFactor
             CryptographicOperations.ZeroMemory(dataEncryptionKey.AsSpan());
         }
     }
+
+    // Writing only. Reading deliberately has no equivalent check: data already encrypted into a
+    // degenerate scope must stay decryptable, or the guard would destroy access rather than protect it.
+    private void EnsureScopeCanIsolate(DataSensitivityLevel level, Guid? tenantId, Guid? userId)
+    {
+        // A level that claims isolation must have at least one identifying dimension to isolate by.
+        // UserScoped without a user but with a tenant is not this case: it resolves to
+        // "UserScoped:<tenant>:", which still separates tenants and is a deliberate part of how an
+        // event's payload is bound to its stream's owner. What is refused is the collapse to a single
+        // system-wide key, where every subject shares one and erasing one erases all.
+        var claimsIsolation = level is DataSensitivityLevel.TenantScoped or DataSensitivityLevel.UserScoped;
+        var hasTenant = tenantId is not null && tenantId != Guid.Empty;
+        var hasUser = userId is not null && userId != Guid.Empty;
+
+        if (!claimsIsolation || hasTenant || hasUser)
+        {
+            return;
+        }
+
+        var missing = level == DataSensitivityLevel.TenantScoped ? "TenantId" : "TenantId and UserId";
+
+        // No IHostEnvironment means no host — a bare ServiceCollection, a test harness, an embedded
+        // composition. Unknown is treated as "not development", because the permissive branch is the
+        // one that lets unisolated data be written, and it should need a positive statement.
+        var environmentName = environment?.EnvironmentName ?? "unknown (no IHostEnvironment registered)";
+        if (environment?.IsDevelopment() == true)
+        {
+            LogScopeCannotIsolate(logger ?? NullLogger<SecureJsonSerializer>.Instance, level.ToString(), missing, environmentName);
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot encrypt at {level} because {missing} is absent (environment '{environmentName}'). " +
+            $"With no identifying dimension the scope collapses to a single system-wide key, so every subject " +
+            $"shares one and erasing one would erase all of them — the isolation {level} names would not exist. " +
+            $"Supply the {missing}, or, for data that genuinely has no tenant, use " +
+            $"{nameof(DataSensitivityLevel)}.{nameof(DataSensitivityLevel.Confidential)}, which claims a single " +
+            "system-wide key and no isolation.");
+    }
+
+    [LoggerMessage(
+        EventId = LogEvents.KeyManagement.ScopeCannotIsolate,
+        Level = LogLevel.Warning,
+        Message = "Encrypting at {Level} with no {MissingDimension}: every value in this position shares one key, so erasing one subject would erase all of them. Allowed because the environment is {EnvironmentName}; outside development this fails. Use Confidential for data that has no tenant.")]
+    private static partial void LogScopeCannotIsolate(ILogger logger, string level, string missingDimension, string environmentName);
 
     private static byte[] BuildAdditionalAuthenticatedData(Guid? tenantId, Guid? userId, string scope)
     {

@@ -55,6 +55,57 @@ await using var cipher = await blobEncryptor.EncryptAsync(
     cancellationToken);
 ```
 
+## Pick the level your data can actually satisfy
+
+A level that names a dimension needs that dimension to exist. `TenantScoped` means *this value is
+encrypted under a key belonging to this tenant* — which is only true if there is a tenant.
+
+An aggregate without one is a normal thing to have: a customer, an organisation, anything above the
+tenant in your hierarchy. Marking a field on it `TenantScoped` used to appear to work and quietly did
+something else. The tenant on an event row is not nullable, so a tenant-less aggregate supplies the
+empty identifier rather than nothing, and every such value across every subject collapsed into one
+scope:
+
+```
+TenantScoped:00000000-0000-0000-0000-000000000000:00000000-0000-0000-0000-000000000000
+```
+
+One scope is one key. Erasing one subject would have erased all of them, so crypto-shredding was not
+available at that level even though the annotation implied it. Nothing said so.
+
+**Since 4.0.0 this is refused** outside development, with a message naming the level and what was
+missing. In development it warns and proceeds, so local work is not blocked while the mistake is
+still visible.
+
+What is refused is the collapse to a *single system-wide key* — a level claiming isolation with
+nothing at all to isolate by. A **coarser** scope than the level names is fine: a `UserScoped` value
+carrying only a tenant resolves to a per-tenant key, which is weaker than the name suggests but still
+separates tenants. The framework itself binds an event's payload to its stream's owner that way.
+
+**Use `Confidential` for data that has no tenant.** It claims exactly what happens — one system-wide
+key, no per-subject isolation — instead of implying isolation that is not there:
+
+```csharp
+[EncryptData(DataSensitivityLevel.Confidential)]
+public sealed class OrganisationRegistered
+{
+    public string LegalName { get; set; } = "";
+}
+```
+
+Two things to know:
+
+- **Existing data stays readable.** The refusal governs writing only. Values already encrypted into
+  the degenerate scope decrypt exactly as before — a guard on the read path would destroy access to
+  them rather than protect anything.
+- **`Confidential` still needs a tenant *value*, just not a meaningful one.** The additional
+  authenticated data is built from the tenant whatever the level, so passing an explicit `null` is
+  refused by a separate, older check. On the event path this never comes up: the value is the empty
+  identifier, which is accepted.
+
+If per-subject shredding above the tenant is what you actually need, that is a different question
+from this one, and Stratara does not model a dimension above the tenant today.
+
 ## The AAD binding
 
 When Stratara serializes an `[EncryptData]` property, it includes the current `TenantId` from `SessionContext` as the AAD:
