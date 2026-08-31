@@ -1,7 +1,8 @@
 # Publish the 25 packages to nuget.org. Version tags only.
 #
-# The tag is the deliberate "release this" signal. A push to a branch never publishes, and there is
-# no preview channel: what is not tagged is not published anywhere.
+# The tag is the deliberate "release this" signal. A push to a branch never publishes: what is not
+# tagged is not published anywhere. The tag may name a prerelease — its identifier rides through to
+# VersionSuffix — and that changes who installs it, not how deliberate publishing it is.
 #
 # Two jobs. `pack` builds, tests and packs without any credential in scope. `publish` runs in the
 # `nuget-org` environment, which carries a required reviewer — a push to nuget.org cannot be taken
@@ -45,23 +46,34 @@ jobs:
         with:
           global-json-file: global.json
 
-      # The tag is the version, and the working tree has to agree with it. A tag that disagrees with
-      # Directory.Build.props means the bump and the tag drifted apart, and publishing either of
-      # them would be a guess.
+      # The tag is the version, and the working tree has to agree with it — but only about which
+      # version is being worked toward. Directory.Build.props states that; the tag states which build
+      # of it this is. So the release part of the tag must equal <VersionPrefix>, while the
+      # prerelease identifier after the first hyphen is free and rides through to pack as
+      # VersionSuffix. A tag whose release part disagrees still means the bump and the tag drifted
+      # apart, and publishing either of them would be a guess.
       - name: Resolve and verify the version
         id: version
         shell: bash
         run: |
           set -euo pipefail
           tag="${GITHUB_REF#refs/tags/v}"
+          release="${tag%%-*}"
+          suffix=""
+          [[ "${tag}" == *-* ]] && suffix="${tag#*-}"
           props="$(sed -n 's|.*<VersionPrefix>\([^<]*\)</VersionPrefix>.*|\1|p' Directory.Build.props)"
-          if [[ "${tag}" != "${props}" ]]; then
+          if [[ "${release}" != "${props}" ]]; then
             echo "Tag v${tag} disagrees with Directory.Build.props <VersionPrefix>${props}</VersionPrefix>." >&2
             echo "Bump with the bump-version skill so the tag and the props agree, then re-tag." >&2
             exit 1
           fi
           echo "value=${tag}" >> "$GITHUB_OUTPUT"
-          echo "Releasing version ${tag}"
+          echo "suffix=${suffix}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${suffix}" ]]; then
+            echo "Releasing version ${tag} — a prerelease of ${release}"
+          else
+            echo "Releasing version ${tag}"
+          fi
 
       - name: Restore
         run: dotnet restore Stratara.Publish.slnf --locked-mode || dotnet restore Stratara.Publish.slnf
@@ -91,8 +103,10 @@ jobs:
           done
           exit ${failed}
 
-      # An empty VersionSuffix overrides the `dev` default in Directory.Build.props, so the packages
-      # carry the stable version the tag names.
+      # VersionSuffix comes from the tag and overrides the `dev` default in Directory.Build.props.
+      # It is empty for a stable tag, so the packages carry exactly the version the tag names; for a
+      # prerelease tag it is the identifier after the first hyphen, so v4.0.0-preview.1 packs
+      # 4.0.0-preview.1.
       - name: Pack
         run: |
           dotnet pack Stratara.Publish.slnf \
@@ -100,7 +114,7 @@ jobs:
             --no-build \
             --nologo \
             /p:ContinuousIntegrationBuild=true \
-            /p:VersionSuffix= \
+            /p:VersionSuffix=${{ steps.version.outputs.suffix }} \
             -o artifacts/nupkgs
 
       - name: List what was produced

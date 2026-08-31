@@ -137,21 +137,18 @@
 - [x] 8.4 Clone `yesbert/Stratara` fresh as the working copy and re-run `link.sh` against it. Verify:
       `git remote -v` shows only the GitHub remote, `readlink .claude` resolves, and
       `./scripts/local-gauntlet.sh` passes in the new clone.
-- [ ] 8.5 Register the trusted-publishing policy on nuget.org (glob `Stratara.*` — the form requires
-      one, owner `yesbert`, repository `Stratara`, workflow `release.yml`, environment `nuget-org`),
-      then exercise the release
-      workflow once with a prerelease tag. Verify: the run's log says it published with a
-      short-lived key rather than falling back, the package appears on nuget.org as a prerelease,
-      and it is then unlisted. Afterwards delete `NUGET_ORG_API_KEY`, the key on nuget.org, and the
-      fallback branch in `release.yml`.
-      *Registration done — owner's confirmation, 2026-08-30.* What is left is the half that proves it.
-      `release.yml` has **never run**, so nothing has yet exercised the policy, and a registration
-      nobody has published through is a configuration rather than a working path. The three artefacts
-      the task says to delete afterwards are all still present, which is the observable evidence that
-      the run has not happened: the `NUGET_ORG_API_KEY` environment secret, the fallback branch at
-      `release.yml:155-177`, and the paragraph at `release.yml:11-17` that says to remove all three
-      once trusted publishing has published once. The prerelease run is what distinguishes a
-      short-lived key from a silent fallback — see the two log lines at `release.yml:161` and `:166`.
+- [x] 8.5 Register the trusted-publishing policy on nuget.org (glob `Stratara.*` — the form requires
+      one, owner `yesbert`, repository `Stratara`, workflow `release.yml`, environment `nuget-org`).
+      Verify: the policy is listed on nuget.org for that owner, repository, workflow and environment.
+      *Registered — owner's confirmation, 2026-08-30.*
+      **The half that proves it moved out of this change on 2026-08-31**, to
+      `open-a-tagged-prerelease-lane` task 5.1. The task originally continued "then exercise the
+      release workflow once with a prerelease tag ... and it is then unlisted", and that was never
+      executable here: `release.yml` rejects a prerelease tag outright, because its version check
+      compares the whole tag against `<VersionPrefix>`. The move had no means to produce the run it
+      asked for. Deleting the three fallback artefacts — the `NUGET_ORG_API_KEY` environment secret,
+      the fallback branch at `release.yml:155-177` and the paragraph at `release.yml:11-17` — went
+      with it, since they only go once a run has published through the short-lived key.
 
 ## 9. Coordinate, then freeze
 

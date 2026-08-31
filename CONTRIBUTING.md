@@ -53,8 +53,12 @@ a guarantee without touching its specification will be asked about it.
 ## Releases
 
 Versions are lockstep: one `<VersionPrefix>` in `Directory.Build.props` governs all 25 packages, and
-a `v*` tag publishes them to nuget.org. There is no preview channel — what is not tagged is not
-published.
+a `v*` tag publishes them to nuget.org. What is not tagged is not published — there is no feed that
+fills itself from `main`, so a change reaches a consumer when someone decides to release it.
+
+A tag may name a prerelease: `v4.0.0-preview.1` publishes `4.0.0-preview.1`, behind the same
+approval as any other release. It exists so a version can be tested before it is final, and it is
+invisible to anyone who does not ask for prereleases.
 
 ## Code of Conduct
 

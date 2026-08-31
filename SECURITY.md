@@ -8,7 +8,9 @@
 | `2.0.x` | maintenance — security fixes only |
 | `1.x`   | :x: end-of-life    |
 
-Only versions published to nuget.org from a `v*` tag are supported. There is no preview channel and no second feed — a build that carries no tag is not something we ship, and a report against one is a report against an unreleased tree.
+Only versions published to nuget.org from a `v*` tag are supported. There is no second feed — a build that carries no tag is not something we ship, and a report against one is a report against an unreleased tree.
+
+**Prereleases are in scope.** A `v*` tag may name one (`4.0.0-preview.1`), and it is published precisely so that it gets tested — a finding against a prerelease is welcome and is handled like any other. It is not a build to run in production: it exists to be reported on before the version it precedes becomes final.
 
 ## Reporting a vulnerability
 
