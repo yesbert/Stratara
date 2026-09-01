@@ -232,8 +232,10 @@ jobs:
       # The second implementation of the match in build/PackageReleaseNotes.targets. That one feeds
       # <PackageReleaseNotes> at pack time and is written in C#; this one feeds the release entry and
       # is written in awk. Both take the `## [<version>]` heading and the body up to the next
-      # `## [` heading. Two languages, one changelog — keep the pair in step rather than deleting
-      # either as redundant.
+      # `## [` heading, and both tolerate whitespace between the hashes and the bracket — the C#
+      # side matches `^##\s*\[`, so the heading is normalised here before it is compared, or a
+      # changelog the packages read fine would leave this entry without notes. Two languages, one
+      # changelog — keep the pair in step rather than deleting either as redundant.
       #
       # A version the changelog does not document is announced without notes instead of failing the
       # release, which is what the pack side does with the same absence.
@@ -245,8 +247,9 @@ jobs:
         run: |
           set -euo pipefail
           awk -v want="## [${RELEASE}]" '
-            index($0, want) == 1 { capture = 1; next }
-            capture && index($0, "## [") == 1 { exit }
+            { heading = $0; sub(/^##[ \t]*\[/, "## [", heading) }
+            index(heading, want) == 1 { capture = 1; next }
+            capture && index(heading, "## [") == 1 { exit }
             capture {
               if (!started && !NF) next
               started = 1
