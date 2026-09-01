@@ -16,7 +16,15 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `4.0.0`._
+### Changed
+
+- **A published version now announces itself in the repository.** The release workflow gained a
+  third job that creates the GitHub release entry for the tag once the packages have reached
+  nuget.org, with the changelog section for that version as its notes — the same section the
+  packages already carry as their release notes. A prerelease tag is marked as one, so it does not
+  displace the current stable version. Until now the release list was maintained by hand and had
+  fallen behind: 4.0.0 was on nuget.org while the repository still presented 3.4.0 as current.
+  Nothing about what publishes, when, or on whose approval has changed.
 
 ## [4.0.0] — 2026-08-31
 

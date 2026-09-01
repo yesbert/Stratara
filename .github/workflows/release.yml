@@ -4,10 +4,12 @@
 # tagged is not published anywhere. The tag may name a prerelease — its identifier rides through to
 # VersionSuffix — and that changes who installs it, not how deliberate publishing it is.
 #
-# Two jobs. `pack` builds, tests and packs without any credential in scope. `publish` runs in the
-# `nuget-org` environment, which carries a required reviewer — a push to nuget.org cannot be taken
-# back, packages can be deprecated or unlisted but never deleted, so a human confirms before the
-# packages leave.
+# Three jobs, cut by what each one is trusted with. `pack` builds, tests and packs without any
+# credential in scope. `publish` runs in the `nuget-org` environment, which carries a required
+# reviewer — a push to nuget.org cannot be taken back, packages can be deprecated or unlisted but
+# never deleted, so a human confirms before the packages leave. `announce` then creates this
+# repository's release entry for the tag, and holds the only `contents: write` token in the
+# workflow — which is why it is a job of its own and not a step at the end of `publish`.
 #
 # Publishing uses trusted publishing: the job proves its identity to nuget.org with a short-lived
 # OIDC token and gets an API key valid for one hour, so no long-lived key is stored anywhere. One
@@ -181,3 +183,106 @@ jobs:
               --api-key "${key}" \
               --skip-duplicate
           done
+
+  # The third job, and the reason it is a job rather than a step at the end of `publish`: creating a
+  # release entry needs `contents: write`, and that token has no business in the job that holds the
+  # nuget.org key and the packages about to leave. `pack` is kept apart from `publish` by exactly
+  # this argument; announcing extends the cut rather than widening the job that carries a credential.
+  #
+  # `needs: publish` inherits the approval gate rather than declaring a second one. A reviewer who
+  # declines produces no packages and no announcement, and a push that fails announces nothing —
+  # what is announced is what was published.
+  announce:
+    name: Announce the release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # creating the release entry — the only write anywhere in this workflow
+    steps:
+      # The tag is what is checked out, so CHANGELOG.md below is the one the release was cut from.
+      - uses: actions/checkout@v4
+
+      # The release part of the tag, by the same first-hyphen boundary the version check in `pack`
+      # uses — one definition of "is this a prerelease" in this workflow, not two that can drift.
+      # The changelog documents versions rather than builds of them, so a prerelease takes its notes
+      # from the section of the version it is a prerelease of. That is already what
+      # build/PackageReleaseNotes.targets does with $(VersionPrefix), so the packages and this entry
+      # quote the same text.
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          {
+            echo "tag=${tag}"
+            echo "value=${version}"
+            echo "release=${version%%-*}"
+          } >> "$GITHUB_OUTPUT"
+          if [[ "${version}" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Announcing ${version} as a prerelease of ${version%%-*}"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "Announcing ${version}"
+          fi
+
+      # The second implementation of the match in build/PackageReleaseNotes.targets. That one feeds
+      # <PackageReleaseNotes> at pack time and is written in C#; this one feeds the release entry and
+      # is written in awk. Both take the `## [<version>]` heading and the body up to the next
+      # `## [` heading. Two languages, one changelog — keep the pair in step rather than deleting
+      # either as redundant.
+      #
+      # A version the changelog does not document is announced without notes instead of failing the
+      # release, which is what the pack side does with the same absence.
+      - name: Extract the changelog section
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          awk -v want="## [${{ steps.version.outputs.release }}]" '
+            index($0, want) == 1 { capture = 1; next }
+            capture && index($0, "## [") == 1 { exit }
+            capture {
+              if (!started && !NF) next
+              started = 1
+              lines[++n] = $0
+              if (NF) last = n
+            }
+            END { for (i = 1; i <= last; i++) print lines[i] }
+          ' CHANGELOG.md > release-notes.md
+          if [[ -s release-notes.md ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Extracted $(wc -l < release-notes.md) lines from the changelog."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No '## [${{ steps.version.outputs.release }}]' section in CHANGELOG.md;"
+            echo "announcing without notes rather than failing a release that already published."
+          fi
+
+      # An entry that exists is left alone rather than overwritten: a maintainer may have edited it
+      # by hand after the fact, and a re-run must not discard that silently. Declining to overwrite
+      # is what --skip-duplicate does on the push loop above.
+      - name: Announce
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "A release entry for ${tag} already exists; leaving it untouched."
+            exit 0
+          fi
+          args=(--title "Stratara ${{ steps.version.outputs.value }}" --verify-tag)
+          if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          if [[ "${{ steps.notes.outputs.found }}" == "true" ]]; then
+            args+=(--notes-file release-notes.md)
+          else
+            args+=(--notes "")
+          fi
+          gh release create "${tag}" "${args[@]}"
