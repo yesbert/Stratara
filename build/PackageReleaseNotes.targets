@@ -12,6 +12,11 @@
       changelog, or a branch experimenting with a fresh version), the build stays green
       and the package simply ships without releaseNotes. Stable-tag builds must have the
       [Unreleased] section renamed to [<version>] by `/bump-version` Step 0.
+
+      This match exists twice, deliberately. The `announce` job in
+      .github/workflows/release.yml repeats it in awk to give the release entry in the
+      repository the same notes the packages carry. Two languages, one changelog — keep
+      the pair in step rather than deleting either as redundant.
     -->
 
     <UsingTask

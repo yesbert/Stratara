@@ -64,4 +64,7 @@ The architecture is strict: **no consumer-specific code** lives in the framework
 
 - Licensed under the [MIT License](https://opensource.org/license/mit) — OSI-approved open source, free for any use including commercial.
 - Lockstep versioning — all 25 packages ship at the same `<VersionPrefix>`.
-- See `CHANGELOG.md` in the repo root for release notes.
+- See `CHANGELOG.md` in the repo root for release notes. Every published version is also announced
+  on the repository's [releases page](https://github.com/yesbert/Stratara/releases), carrying that
+  same changelog section — a prerelease is marked as one, so the version listed as latest is always
+  the newest stable one.
