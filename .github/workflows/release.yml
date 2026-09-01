@@ -240,9 +240,11 @@ jobs:
       - name: Extract the changelog section
         id: notes
         shell: bash
+        env:
+          RELEASE: ${{ steps.version.outputs.release }}
         run: |
           set -euo pipefail
-          awk -v want="## [${{ steps.version.outputs.release }}]" '
+          awk -v want="## [${RELEASE}]" '
             index($0, want) == 1 { capture = 1; next }
             capture && index($0, "## [") == 1 { exit }
             capture {
@@ -258,31 +260,38 @@ jobs:
             echo "Extracted $(wc -l < release-notes.md) lines from the changelog."
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "No '## [${{ steps.version.outputs.release }}]' section in CHANGELOG.md;"
-            echo "announcing without notes rather than failing a release that already published."
+            echo "No '## [${RELEASE}]' section in CHANGELOG.md; announcing without notes"
+            echo "rather than failing a release that already published."
           fi
 
       # An entry that exists is left alone rather than overwritten: a maintainer may have edited it
       # by hand after the fact, and a re-run must not discard that silently. Declining to overwrite
       # is what --skip-duplicate does on the push loop above.
+      #
+      # Every value the script uses arrives through `env` rather than a `${{ }}` expression spliced
+      # into the shell. A tag name is not a trusted string — git permits quotes and dollar signs in
+      # one — and this is the job that carries `contents: write`.
       - name: Announce
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.value }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          HAS_NOTES: ${{ steps.notes.outputs.found }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ steps.version.outputs.tag }}"
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            echo "A release entry for ${tag} already exists; leaving it untouched."
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "A release entry for ${TAG} already exists; leaving it untouched."
             exit 0
           fi
-          args=(--title "Stratara ${{ steps.version.outputs.value }}" --verify-tag)
-          if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then
+          args=(--title "Stratara ${VERSION}" --verify-tag)
+          if [[ "${PRERELEASE}" == "true" ]]; then
             args+=(--prerelease)
           fi
-          if [[ "${{ steps.notes.outputs.found }}" == "true" ]]; then
+          if [[ "${HAS_NOTES}" == "true" ]]; then
             args+=(--notes-file release-notes.md)
           else
             args+=(--notes "")
           fi
-          gh release create "${tag}" "${args[@]}"
+          gh release create "${TAG}" "${args[@]}"
