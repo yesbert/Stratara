@@ -73,11 +73,25 @@ None. This change introduces no capability.
 `.github/workflows/release.yml` — a third job, `announce`, needing `publish`, with
 `contents: write`. Nothing in `pack` or `publish` changes.
 
+`build/PackageReleaseNotes.targets` — its match is unchanged; it gains a comment naming the awk
+extractor in `release.yml` as the second implementation of the same heading match, so the pair is
+discoverable from either end.
+
+`CHANGELOG.md` — an `[Unreleased]` entry.
+
 **Corrected**
 
 `.claude/docs/nuget-publish-pipeline.md` — describes the pipeline as `pack` and `publish` and now
-misses a job. `.claude/skills/publish-nugets/SKILL.md` — walks a release from tag to nuget.org and
-stops at the registry; verifying it landed now includes the announcement.
+misses a job. The same document's "Environment secret — temporary" section told the reader to delete
+`NUGET_ORG_API_KEY` and the fallback branch in `release.yml` after trusted publishing had published
+once; both were already gone, so the instruction described work that no longer existed. It now
+states the fact instead: there is no nuget.org secret anywhere.
+
+`.claude/skills/publish-nugets/SKILL.md` — walks a release from tag to nuget.org and stops at the
+registry; verifying it landed now includes the announcement.
+
+`docs/overview/what-is-stratara.md` — said the changelog is where release notes live. It now also
+names the releases page and states that a prerelease does not displace the latest stable version.
 
 **Done once, outside the workflow**
 
@@ -87,7 +101,6 @@ separately from approving this change.
 
 **Unaffected**
 
-`Directory.Build.props`, `build/PackageReleaseNotes.targets` (read from, not changed),
-`scripts/bump-version.sh`, `Stratara.Publish.slnf`, every `.csproj`, `src/`, `tests/`, `samples/`,
-and every capability other than `package-distribution`. No published type or API surface changes, so
-no consumer recompiles because of this.
+`Directory.Build.props`, `scripts/bump-version.sh`, `Stratara.Publish.slnf`, every `.csproj`,
+`src/`, `tests/`, `samples/`, and every capability other than `package-distribution`. No published
+type or API surface changes, so no consumer recompiles because of this.
