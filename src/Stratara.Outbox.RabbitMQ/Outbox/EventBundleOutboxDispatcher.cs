@@ -26,7 +26,7 @@ namespace Stratara.Outbox.RabbitMQ.Outbox;
 /// several consumers may process two consecutive bundles at the same time and in either order.
 /// What a handler may rely on is the projection and saga workers' guarantee that bundles about
 /// one aggregate are applied one at a time within a process, and the retry they give a handler
-/// that throws <see cref="Abstractions.EventSourcing.PrecedingFactMissingException"/>.
+/// that throws <see cref="Stratara.Abstractions.EventSourcing.PrecedingFactMissingException"/>.
 /// </remarks>
 internal sealed class EventBundleOutboxDispatcher(
     ILogger<EventBundleOutboxDispatcher> logger,

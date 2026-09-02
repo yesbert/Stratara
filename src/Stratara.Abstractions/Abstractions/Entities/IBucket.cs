@@ -6,11 +6,11 @@ namespace Stratara.Abstractions.Entities;
 /// </summary>
 /// <remarks>
 /// Computed via <c>BucketCalculator.GetBucketId(aggregateId)</c> — hash modulo
-/// <see cref="Partitioning.BucketLockPool.BucketCount"/>. Collisions within a bucket are tolerated
+/// <see cref="Stratara.Abstractions.Partitioning.BucketLockPool.BucketCount"/>. Collisions within a bucket are tolerated
 /// (they just serialise more than strictly needed).
 /// </remarks>
 public interface IBucket
 {
-    /// <summary>The bucket index in <c>[0, <see cref="Partitioning.BucketLockPool.BucketCount"/>)</c>.</summary>
+    /// <summary>The bucket index in <c>[0, <see cref="Stratara.Abstractions.Partitioning.BucketLockPool.BucketCount"/>)</c>.</summary>
     int BucketId { get; set; }
 }
