@@ -16,6 +16,41 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **Bundles about one aggregate are now applied one at a time within a process, a handler can say
+  "not yet", and the workers' parallelism is configurable.** The projection worker and the saga
+  worker open one consumer per processor on a shared queue, so two bundles published milliseconds
+  apart — the fact that creates an entity and the first fact about it — landed on two consumers and
+  ran at the same time, and whichever finished first won. A projection that then found no row for
+  the follow-up could only warn and acknowledge a fact it never applied, or throw and have the
+  bundle discarded; either way the read model lost the fact until a replay. The command worker has
+  never had this problem, because it takes a per-aggregate lock before it runs a command.
+
+  Both workers now take the same lock, keyed on the streams the bundle's events belong to. Bundles
+  about different aggregates still run in parallel; bundles about one aggregate queue behind each
+  other. The guarantee is per process — two replicas consuming the same subscription do not
+  serialise against each other — and the delivery guarantee now says so explicitly.
+
+  The lock serialises but does not order, so the residual case gets a second chance:
+  `PrecedingFactMissingException(streamId, eventTypeName)` in `Stratara.Abstractions` is the one
+  exception the workers retry — five attempts from 100 ms doubling, about three seconds in all,
+  under the new named policy `ResilienceNames.PrecedingFact`, with every aggregate lock released
+  between attempts so the creating fact can land in the gap. Once the retries are exhausted the
+  bundle fails as any unhandled failure does, and the warning logged on each attempt
+  (`104_010` for projections, `110_005` for sagas) names the stream and the event type. Any other
+  exception fails the bundle on the first attempt, as before.
+
+  `Projections:DegreeOfParallelism` and `Sagas:DegreeOfParallelism` set the number of consumers each
+  worker opens; a value that is not a positive number means the processor count, and `1` gives a
+  worker that applies every bundle in the order the transport delivers it.
+
+  A consumer that changes nothing gets the serialisation and the default parallelism it had. A
+  consumer that implements `IMessageBus` itself is unaffected: the retry runs inside the worker
+  before the transport sees an outcome. `BucketLockPool`, previously internal to the mediator, is
+  now public in `Stratara.Abstractions` so that every worker takes the same lock from the same
+  place; the mediator's own copy is gone.
+
 ### Changed
 
 - **A published version now announces itself in the repository.** The release workflow gained a

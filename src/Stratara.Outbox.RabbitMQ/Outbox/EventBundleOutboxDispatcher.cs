@@ -22,7 +22,11 @@ namespace Stratara.Outbox.RabbitMQ.Outbox;
 /// <remarks>
 /// Delivery semantics are at-least-once. Projection handlers must therefore be idempotent —
 /// either by checkpointing the highest event version per stream or by deduplicating on the
-/// event identifier.
+/// event identifier. Delivery order across consumers is not guaranteed: a subscription with
+/// several consumers may process two consecutive bundles at the same time and in either order.
+/// What a handler may rely on is the projection and saga workers' guarantee that bundles about
+/// one aggregate are applied one at a time within a process, and the retry they give a handler
+/// that throws <see cref="Stratara.Abstractions.EventSourcing.PrecedingFactMissingException"/>.
 /// </remarks>
 internal sealed class EventBundleOutboxDispatcher(
     ILogger<EventBundleOutboxDispatcher> logger,

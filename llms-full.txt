@@ -47,12 +47,14 @@ Every bindable options type, the section it binds from, and the default each key
 | Key | Type | Default |
 |---|---|---|
 | `Projections:BatchSize` | `Int32` | `5000` |
+| `Projections:DegreeOfParallelism` | `Int32?` | — |
 | `Projections:IdleDelaySeconds` | `Int32` | `5` |
 
 ### `Sagas` — Stratara.Sagas.Services.SagaOptions
 
 | Key | Type | Default |
 |---|---|---|
+| `Sagas:DegreeOfParallelism` | `Int32?` | — |
 
 ### `Stratara:BlobEncryption` — Stratara.Security.StrataraBlobEncryptionOptions
 
@@ -187,6 +189,7 @@ What the framework throws. Catching one of these is a contract; catching `Except
 | `Stratara.Abstractions.Authorization.PermissionAuthorizationException` | Stratara.Abstractions | Thrown by the authorizing mediator/dispatcher decorators when the caller does not hold a permission required by RequirePermissionAttribute on the dispatched request type |
 | `Stratara.Abstractions.Erasure.ErasureIncompleteException` | Stratara.Abstractions | Raised when one plane's sweep fails during a composed erasure |
 | `Stratara.Abstractions.EventSourcing.ConcurrencyException` | Stratara.Abstractions | Thrown by SaveChangesAsync when another writer committed to the same stream first and the optimistic version check fails |
+| `Stratara.Abstractions.EventSourcing.PrecedingFactMissingException` | Stratara.Abstractions | Reports that the entity a fact refers to does not exist in the handler's read model yet, so the fact cannot be applied until the fact that created the entity has been |
 | `Stratara.Abstractions.Multitenancy.TenantAccessDeniedException` | Stratara.Abstractions | Thrown by the tenant-isolation pipeline behavior when an ITenantScopedRequest is rejected: either its TenantId does not match the current session's data-owner tenant, or strict mode observed an unauthorized cross-tenant operation |
 | `Stratara.Abstractions.Persistence.ConcurrencyConflictException` | Stratara.Abstractions | Thrown by an ITransaction implementation when an optimistic-concurrency conflict is detected during commit (i.e |
 | `Stratara.Abstractions.Validation.StrataraValidationException` | Stratara.Abstractions | Thrown by the validation pipeline behavior when a request fails validation with one or more Error-severity failures |

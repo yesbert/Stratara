@@ -5,11 +5,12 @@ namespace Stratara.Abstractions.Entities;
 /// layer to dispatch aggregate-scoped commands single-writer per bucket.
 /// </summary>
 /// <remarks>
-/// Computed via <c>BucketCalculator.GetBucketId(aggregateId)</c> — hash modulo 4096 buckets.
-/// Collisions within a bucket are tolerated (they just serialise more than strictly needed).
+/// Computed via <c>BucketCalculator.GetBucketId(aggregateId)</c> — hash modulo
+/// <see cref="Stratara.Abstractions.Partitioning.BucketLockPool.BucketCount"/>. Collisions within a bucket are tolerated
+/// (they just serialise more than strictly needed).
 /// </remarks>
 public interface IBucket
 {
-    /// <summary>The bucket index in <c>[0, 4096)</c>.</summary>
+    /// <summary>The bucket index in <c>[0, <see cref="Stratara.Abstractions.Partitioning.BucketLockPool.BucketCount"/>)</c>.</summary>
     int BucketId { get; set; }
 }

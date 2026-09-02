@@ -155,6 +155,7 @@ public class SagaWorkerIntegrityTests
                 PipelineProvider.Object,
                 Options.Create(new BusEnvelopeJsonOptions { MaxBodyBytes = maxBodyBytes }),
                 Options.Create(new BusEnvelopeIntegrityOptions { Mode = integrityMode }),
+                Options.Create(new SagaOptions()),
                 signer);
         }
     }

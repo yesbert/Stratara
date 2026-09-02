@@ -75,6 +75,8 @@ public static class LogEvents
         public const int ProjectionReplayBatchPublished = 104_008;
         /// <summary>Projection replay failed (error).</summary>
         public const int ProjectionReplayFailed = 104_109;
+        /// <summary>A bundle refers to an entity no projection has applied yet; it is retried (warning).</summary>
+        public const int PrecedingFactMissing = 104_010;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>
@@ -171,6 +173,8 @@ public static class LogEvents
         public const int SagaFailed = 110_103;
         /// <summary>Received event bundle does not contain events relevant to any saga.</summary>
         public const int EventsNotRelevantForSaga = 110_004;
+        /// <summary>A bundle refers to an entity no saga has seen yet; it is retried (warning).</summary>
+        public const int PrecedingFactMissing = 110_005;
     }
 
     /// <summary>Event-bundle integrity event-IDs (111_000s) — emitted by every worker that consumes <c>EventBundle</c>s (projection, saga).</summary>

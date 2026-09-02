@@ -43,6 +43,17 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   `IMessagingIdentifier`. Nothing calls it automatically. Worker queues are durable, so it only
   matters on a broker that has never seen them. Azure Service Bus implements it as a no-op because
   its subscriptions are provisioned administratively.
+- **Bundle order (since 4.1.0):** across the consumers of one subscription bundles are **not**
+  ordered — the projection and saga workers open one consumer per processor
+  (`Projections:DegreeOfParallelism` / `Sagas:DegreeOfParallelism`; a non-positive value means the
+  processor count, `1` means strict transport order) and the broker deals consecutive bundles to
+  different ones. What they guarantee: bundles about one aggregate are applied one at a time
+  **within a process** (per-aggregate bucket lock, `BucketLockPool` in `Stratara.Abstractions`).
+  A projection or saga that finds the entity a fact refers to absent throws
+  `PrecedingFactMissingException(streamId, eventTypeName)`; the worker retries the bundle under the
+  `ResilienceNames.PrecedingFact` policy (5 attempts, ~3 s total) with the lock released between
+  attempts, and fails it only when the retries are exhausted. Any other exception fails the bundle
+  on the first attempt. A beginning that is minutes late is what replay is for, not the retry.
 - **Aggregates:** `IAggregate` (`Guid Id`), `ITenantAggregate : IAggregate` (`Guid TenantId`).
   Events are immutable `sealed record`s. Aggregate properties use `set` (public setter, NOT
   `private set`) so snapshot JSON deserialization works. `Apply` methods hold the write logic.

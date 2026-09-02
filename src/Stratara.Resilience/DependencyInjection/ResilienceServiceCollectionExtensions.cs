@@ -35,6 +35,7 @@ public static class ResilienceServiceCollectionExtensions
         services.AddCommandDispatcherPipeline();
         services.AddEventBundleDispatcherPipeline();
         services.AddConcurrencyConflictPipeline();
+        services.AddPrecedingFactPipeline();
         return services;
     }
 
@@ -56,5 +57,10 @@ public static class ResilienceServiceCollectionExtensions
     private static void AddConcurrencyConflictPipeline(this IServiceCollection services)
     {
         services.AddResiliencePipeline(ResilienceNames.ConcurrencyConflict, ResilienceFactory.CreateConcurrencyConflictPipeline);
+    }
+
+    private static void AddPrecedingFactPipeline(this IServiceCollection services)
+    {
+        services.AddResiliencePipeline(ResilienceNames.PrecedingFact, ResilienceFactory.CreatePrecedingFactPipeline);
     }
 }

@@ -118,6 +118,28 @@ Three things worth knowing:
   publish, so it makes no attempt to guess. If your host runs every worker in one process and nothing
   publishes before the host is serving, you may not need it at all.
 
+### How many consumers a worker opens
+
+The projection worker and the saga worker each open several consumers on their subscription — one
+per processor by default — and the broker deals consecutive bundles to different ones, so bundles are
+**not** processed in publication order. What the workers guarantee is that bundles about one
+aggregate are applied one at a time within the process; see [Write a projection](write-a-projection.md)
+for what a handler may rely on and how it says "not yet".
+
+Both counts are configuration:
+
+```json
+{
+  "Projections": { "DegreeOfParallelism": 1 },
+  "Sagas": { "DegreeOfParallelism": 1 }
+}
+```
+
+A value that is not a positive number — including leaving the key out — means one consumer per
+processor. `1` gives a worker that applies every bundle in the order the transport delivers it, at
+the cost of the parallelism; it is the right setting for a host that needs strict order, and the
+wrong one for a host that only needs the per-aggregate guarantee, which it already has.
+
 **What it costs.** Once a subscription is established, messages published to it are kept until
 something consumes them — where before they were dropped. If you establish a subscription for a
 worker you then never deploy, its queue grows. That is the trade this makes deliberately: a fact kept
