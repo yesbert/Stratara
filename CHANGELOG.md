@@ -16,9 +16,9 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `4.1.0`._
+_no changes yet since `4.0.1`._
 
-## [4.1.0] — 2026-09-02
+## [4.0.1] — 2026-09-02
 
 ### Added
 
@@ -3020,8 +3020,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.1.0...main
-[4.1.0]: https://github.com/yesbert/Stratara/releases/tag/v4.1.0
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.1...main
+[4.0.1]: https://github.com/yesbert/Stratara/releases/tag/v4.0.1
 [4.0.0]: https://github.com/yesbert/Stratara/releases/tag/v4.0.0
 [3.4.0]: https://github.com/yesbert/Stratara/releases/tag/v3.4.0
 [3.3.0]: https://github.com/yesbert/Stratara/releases/tag/v3.3.0
