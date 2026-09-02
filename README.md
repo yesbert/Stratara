@@ -218,7 +218,7 @@ Stratara is OSI-approved open source. You may use, copy, modify, and distribute 
 Issues, questions, and ideas are genuinely welcome — they shape where Stratara goes next:
 
 - **Bug reports** — [open an issue](https://github.com/yesbert/Stratara/issues/new/choose) with the bug template.
-- **Pull requests** — branch, run `./scripts/local-gauntlet.sh`, open the PR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **Pull requests** — fork, branch, run `./scripts/local-gauntlet.sh`, open the PR against `main`. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 - **Questions** — open an issue with the question template (check [docs.stratara.tech](https://docs.stratara.tech) first).
 - **Security issues** — see [`SECURITY.md`](SECURITY.md); please don't file a public issue.
 

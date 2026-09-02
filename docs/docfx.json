@@ -83,7 +83,15 @@
       "_appFaviconPath": "assets/icon.png",
       "_appBaseUrl": "https://docs.stratara.tech",
       "_enableSearch": true,
-      "_disableContribution": true
+      "_gitContribute": {
+        "repo": "https://github.com/yesbert/Stratara",
+        "branch": "main"
+      }
+    },
+    "fileMetadata": {
+      "_disableContribution": {
+        "reference/api/**": true
+      }
     },
     "dest": "_site",
     "template": [
