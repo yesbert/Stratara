@@ -16,7 +16,7 @@ release, which is why the history before 2026-08-30 is coarse. Everything after 
 | **Pull requests** | Yes, and see below. Small and focused beats large and sweeping. |
 | **Questions** | Open an issue with the `question` template. Please check <https://docs.stratara.tech> first. |
 | **Security issues** | Follow [`SECURITY.md`](SECURITY.md) — do **not** file a public issue. |
-| **Documentation feedback** | An issue is fine, a pull request is better. The docs live in `docs/` and ship on the same cadence as the code. |
+| **Documentation feedback** | An issue is fine, a pull request is better. The docs live in `docs/` and ship on the same cadence as the code; every hand-written page on the site carries an **Edit this page** link that lands on its source file. The API reference has none — it is generated from the XML documentation comments in `src/`, so it is fixed there. |
 
 Feature requests are the one exception: please **do not file them** yet. The focus is on stabilising
 the surface that exists, and an issue proposing a new one will be closed with a pointer to this
@@ -25,15 +25,20 @@ always welcome, and is a different thing.
 
 ## Opening a pull request
 
-1. **Branch from `main`**, prefixed by what the change is: `feature/`, `fix/`, `refactor/`,
-   `chore/` or `docs/`.
+1. **Fork the repository, then branch from `main`**, prefixed by what the change is: `feature/`,
+   `fix/`, `refactor/`, `chore/` or `docs/`. A ruleset rejects a direct push to `main`, and only
+   maintainers can push a branch to this repository at all — everyone else opens the pull request
+   from their fork.
 2. **Run the local gate before you push**: `./scripts/local-gauntlet.sh`. It builds the full
    solution, runs every unit test project, builds the documentation site with warnings as errors,
    and packs every package as a sanity check — which is more than CI does, deliberately.
 3. **Keep commit messages short and imperative.** "Fix the drain worker's progress check", not
    "Fixed a bug where...".
 4. **The build check must pass** before a pull request can merge. It runs on every push to the
-   branch.
+   branch — except on a first-time contributor's fork, where it waits for a maintainer to release
+   it. A check that sits pending on your first pull request is that, not a failure.
+5. **Every review thread must be resolved** before it can merge, and Copilot reviews every pull
+   request, so expect at least one thread to answer even when no human has commented yet.
 
 Integration suites (`tests/*.IntegrationTests`) need Docker and are excluded from the local gate;
 they run in their own workflow after a merge.
