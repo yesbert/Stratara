@@ -16,4 +16,12 @@ public sealed class ProjectionOptions // NOSONAR — used as generic type parame
 
     /// <summary>Idle delay in seconds the worker waits between polls when no work is available. Defaults to 5.</summary>
     public int IdleDelaySeconds { get; set; } = 5;
+
+    /// <summary>
+    /// Number of parallel consumers the projection worker opens on its subscription. A value that is not a
+    /// positive number — including the default of <see langword="null"/> — means one consumer per processor.
+    /// Bundles about one aggregate are applied one at a time within the process whatever the value; set it
+    /// to 1 for a worker that must apply every bundle in the order the transport delivers it.
+    /// </summary>
+    public int? DegreeOfParallelism { get; set; }
 }

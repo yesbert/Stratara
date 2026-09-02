@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.EventSourcing;
+using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 
 namespace Stratara.Shared.Tests.Diagnostics;
@@ -39,6 +40,23 @@ public class LoggerProjectionExtensionsTests
                 It.IsAny<EventId>(),
                 It.IsAny<It.IsAnyType>(),
                 null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public void LogProjectionPrecedingFactMissing_LogsWarningWithItsEventId()
+    {
+        var exception = new PrecedingFactMissingException(Guid.NewGuid(), "Updated");
+
+        _loggerMock.Object.LogProjectionPrecedingFactMissing(exception, exception.StreamId, exception.EventTypeName, 2);
+
+        _loggerMock.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.Is<EventId>(e => e.Id == LogEvents.Projection.PrecedingFactMissing),
+                It.IsAny<It.IsAnyType>(),
+                exception,
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }

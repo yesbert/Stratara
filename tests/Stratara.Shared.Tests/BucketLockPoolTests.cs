@@ -1,7 +1,7 @@
-using Stratara.Mediator;
-using Stratara.Outbox.RabbitMQ.Mediator;
+using Stratara.Abstractions.Partitioning;
+using Stratara.Shared.Partitioning;
 
-namespace Stratara.Infrastructure.Tests.Mediator;
+namespace Stratara.Shared.Tests;
 
 public class BucketLockPoolTests
 {
@@ -75,5 +75,21 @@ public class BucketLockPoolTests
         using var second = await pool.AcquireAsync(1, TestContext.Current.CancellationToken);
 
         Assert.NotNull(second);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(BucketLockPool.BucketCount)]
+    public async Task AcquireAsync_OutOfRange_Throws(int bucketId)
+    {
+        var pool = new BucketLockPool();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await pool.AcquireAsync(bucketId, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void BucketCount_IsTheOneTheCalculatorPartitionsBy()
+    {
+        Assert.Equal(BucketLockPool.BucketCount, BucketConstants.TotalBucketCount);
     }
 }

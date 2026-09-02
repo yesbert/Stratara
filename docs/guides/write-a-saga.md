@@ -61,6 +61,23 @@ Sagas **must be idempotent** — at-least-once delivery means the bus can replay
 - **State tracking** in your own read-store — `HasTransferBeenStarted(transferId)` before enqueueing, so a replay is a no-op.
 - **Deterministic command identity** — derive the down-stream command's own key from the source event so a duplicate enqueue collapses at the handler rather than moving money twice.
 
+## Order is per aggregate, and per process
+
+The saga worker opens several consumers on its subscription — one per processor unless
+`Sagas:DegreeOfParallelism` says otherwise — so consecutive bundles land on different consumers and
+are not dispatched in publication order. What it guarantees: **bundles about one aggregate reach
+sagas one at a time within a process.** Across two processes on the same subscription there is no
+such promise.
+
+A saga that reads a view before it dispatches can therefore see a follow-up fact before the view has
+the entity it is about. Throw `PrecedingFactMissingException(streamId, eventTypeName)` where the
+lookup comes back empty: the worker retries the bundle — five attempts, about three seconds in all,
+with the aggregate lock released in between — and fails it only when the retries run out. Every
+other exception fails the bundle on the first attempt.
+
+A host that needs strict order sets `Sagas:DegreeOfParallelism` to `1`; a value that is not a
+positive number means one consumer per processor.
+
 ## Compensation is your job
 
 Stratara does **not** provide a two-phase commit. If the `WithdrawCommand` succeeds and the `DepositCommand` fails (the destination account was closed mid-transfer), the saga's down-stream listener has to emit a compensating `RefundCommand` against the source account.

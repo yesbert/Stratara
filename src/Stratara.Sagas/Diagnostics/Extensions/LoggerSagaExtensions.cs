@@ -28,6 +28,12 @@ public static partial class LoggerSagaExtensions
     public static partial void LogEventsNotRelevantForSaga(this ILogger logger, int eventCount, DistinctEventTypeNames eventTypeNames, string sagaName);
 
     [LoggerMessage(
+        EventId = LogEvents.Saga.PrecedingFactMissing,
+        Level = LogLevel.Warning,
+        Message = "Saga bundle refers to an entity not seen yet on stream {StreamId} ({EventTypeName}); attempt {Attempt}.")]
+    public static partial void LogSagaPrecedingFactMissing(this ILogger logger, Exception exception, Guid streamId, string eventTypeName, int attempt);
+
+    [LoggerMessage(
         EventId = LogEvents.Saga.SagaFailed,
         Level = LogLevel.Error,
         Message = "Error while processing saga {SagaName}.")]

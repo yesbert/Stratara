@@ -1,6 +1,7 @@
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
 
 namespace Stratara.Resilience;
@@ -12,6 +13,12 @@ internal static class ResilienceFactory
 
     private const int ConcurrencyConflictRetryAttempts = 5;
     private static readonly TimeSpan ConcurrencyConflictRetryDelay = TimeSpan.FromMilliseconds(50);
+
+    // Five attempts from 100 ms, doubling: about three seconds in the worst case. That covers a
+    // preceding fact in flight on a neighbouring consumer of the same process, which is milliseconds
+    // away, and deliberately not one whose consumer has failed — that is what replay is for.
+    private const int PrecedingFactRetryAttempts = 5;
+    private static readonly TimeSpan PrecedingFactRetryDelay = TimeSpan.FromMilliseconds(100);
 
     internal static readonly TimeSpan MessageBusBaseDelay = TimeSpan.FromSeconds(10);
     internal static readonly TimeSpan MessageBusMaxDelay = TimeSpan.FromSeconds(60);
@@ -80,6 +87,16 @@ internal static class ResilienceFactory
             ShouldHandle = new PredicateBuilder().Handle<ConcurrencyConflictException>(),
             MaxRetryAttempts = ConcurrencyConflictRetryAttempts,
             Delay = ConcurrencyConflictRetryDelay,
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true
+        });
+
+    public static void CreatePrecedingFactPipeline(ResiliencePipelineBuilder pipelineBuilder) =>
+        pipelineBuilder.AddRetry(new RetryStrategyOptions
+        {
+            ShouldHandle = new PredicateBuilder().Handle<PrecedingFactMissingException>(),
+            MaxRetryAttempts = PrecedingFactRetryAttempts,
+            Delay = PrecedingFactRetryDelay,
             BackoffType = DelayBackoffType.Exponential,
             UseJitter = true
         });

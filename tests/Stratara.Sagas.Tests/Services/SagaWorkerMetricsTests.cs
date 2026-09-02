@@ -161,6 +161,7 @@ public class SagaWorkerMetricsTests
                 pipelineProvider.Object,
                 Options.Create(new BusEnvelopeJsonOptions { MaxBodyBytes = 1_048_576 }),
                 Options.Create(new BusEnvelopeIntegrityOptions { Mode = BusEnvelopeIntegrityMode.Off }),
+                Options.Create(new SagaOptions()),
                 signer: null);
         }
     }

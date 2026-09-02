@@ -159,6 +159,7 @@ public class ProjectionWorkerMetricsTests
                 pipelineProvider.Object,
                 Options.Create(new BusEnvelopeJsonOptions { MaxBodyBytes = 1_048_576 }),
                 Options.Create(new BusEnvelopeIntegrityOptions { Mode = BusEnvelopeIntegrityMode.Off }),
+                Options.Create(new ProjectionOptions()),
                 signer: null);
         }
     }

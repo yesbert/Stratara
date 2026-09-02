@@ -51,6 +51,7 @@ is wrapped, and there is no cost to having the behaviour registered.
 | `CommandDispatcher` | Up to four attempts, exponential backoff | Bounded retry around command dispatch |
 | `EventBundleDispatcher` | Up to four attempts, exponential backoff | Bounded retry around bundle dispatch |
 | `MessageBus` | Retries indefinitely, behind a circuit breaker | Broker traffic, where dropping the message is worse than waiting |
+| `PrecedingFact` | Retries **only** `PrecedingFactMissingException`, up to six attempts, from 100 ms doubling — about three seconds in all | The projection and saga workers run every bundle under it; a handler that finds the entity a fact refers to absent throws the exception and is retried with the aggregate lock released in between |
 
 `ConcurrencyConflict` is the one most in-process handlers want, and it is deliberately narrow:
 anything that is not a concurrency conflict propagates on the first attempt. A retry policy that

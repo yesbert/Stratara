@@ -88,6 +88,36 @@ The `AddAsync` lines above are the honest trade-off this example makes for brevi
 either derive the absolute value, or record the last applied `Version` per stream and skip anything
 already seen.
 
+### Order is per aggregate, and per process
+
+Bundles are not delivered in order across consumers. The projection worker opens several consumers
+on its subscription — one per processor unless `Projections:DegreeOfParallelism` says otherwise —
+and the broker hands consecutive bundles to different ones. What the worker guarantees is narrower
+and enough: **bundles about one aggregate are applied one at a time within a process.** Two bundles
+about different aggregates run in parallel; two about the same one queue behind each other. Across
+two processes consuming the same subscription there is no such promise.
+
+The lock serialises; it does not order. Rarely, the follow-up fact takes the lock before the fact
+that created its entity, finds no row, and has to decide what that means. Say so, and the framework
+does the rest:
+
+<!-- stratara-snippet-ignore: narrative fragment - the repository and the event come from the surrounding text -->
+```csharp
+var entry = await repository.GetAsync(@event.StreamId, cancellationToken)
+    ?? throw new PrecedingFactMissingException(@event.StreamId, nameof(EntryProcessingStepStarted));
+```
+
+`PrecedingFactMissingException` is the one exception the worker retries: five attempts, from 100 ms
+doubling, about three seconds in all, with the aggregate lock **released between attempts** so the
+creating fact can land in the gap. Any other exception fails the bundle on the first attempt, as
+*A failing projection stops the bundle* requires. If the retries run out, the bundle fails the same
+way, and the log names the stream and the event type — at that point the beginning is not late, it
+is missing, and that is what replay is for.
+
+A host that needs every bundle applied in the order the transport delivers it sets
+`Projections:DegreeOfParallelism` to `1`. A value that is not a positive number means one consumer
+per processor.
+
 ### The two races, and the one that needs help
 
 Two things happen routinely and are not faults. A row can vanish between your read and your write,

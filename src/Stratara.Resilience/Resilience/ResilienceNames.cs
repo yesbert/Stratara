@@ -32,4 +32,12 @@ public static class ResilienceNames
     /// re-applies on a version clash.
     /// </summary>
     public const string ConcurrencyConflict = "ConcurrencyConflictPipeline";
+
+    /// <summary>
+    /// Pipeline that retries only <c>PrecedingFactMissingException</c> — a handler's report that the entity a
+    /// fact refers to has not been applied yet — a bounded number of times with a short exponential backoff,
+    /// about three seconds in total. Every other failure surfaces on the first occurrence. The projection and
+    /// saga workers run every bundle under it.
+    /// </summary>
+    public const string PrecedingFact = "PrecedingFactPipeline";
 }

@@ -13,28 +13,37 @@ using Stratara.Contracts.Messages;
 using Stratara.Sagas.Abstractions;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
+using Stratara.Abstractions.Partitioning;
 using Stratara.Abstractions.Session;
 using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
+using Stratara.Shared.Partitioning;
 using Stratara.Resilience;
 
 namespace Stratara.Sagas.Services;
 
 /// <summary>
-/// Hosted background service that subscribes to the event-bundle topic, deserializes incoming bundles
-/// into events, restores the session context, and dispatches to <see cref="ISagaManager"/>. Runs
-/// <see cref="Environment.ProcessorCount"/> parallel subscriptions wrapped in the
-/// <c>MessageBus</c> resilience pipeline.
+/// Background service that subscribes to the event-bundle topic under the saga subscription and dispatches
+/// each bundle through the <see cref="ISagaManager"/>. It opens <see cref="SagaOptions.DegreeOfParallelism"/>
+/// consumers on the subscription — one per processor unless configured — and dispatches bundles about one
+/// aggregate one at a time within the process, so a follow-up fact cannot overtake the fact that created
+/// its entity on a neighbouring consumer.
 /// </summary>
 /// <remarks>
-/// When <see cref="IBusEnvelopeSigner"/> is registered and <see cref="BusEnvelopeIntegrityOptions.Mode"/>
-/// is non-<see cref="BusEnvelopeIntegrityMode.Off"/>, the bundle's signature is verified before the
-/// session context is restored; Strict-mode failures throw, Permissive-mode failures log a warning.
+/// Each bundle is processed in a fresh DI scope with the bundle's <c>SessionContext</c> restored onto
+/// <c>ISessionContextProvider</c>. The named resilience pipeline <c>MessageBus</c> wraps subscription
+/// creation so transient broker outages are retried. A saga that throws
+/// <see cref="PrecedingFactMissingException"/> has its bundle retried under the <c>PrecedingFact</c>
+/// policy, with every aggregate lock released between attempts; any other failure propagates on the first
+/// occurrence. When <see cref="IBusEnvelopeSigner"/> is registered and
+/// <see cref="BusEnvelopeIntegrityOptions.Mode"/> is non-<see cref="BusEnvelopeIntegrityMode.Off"/>, the
+/// bundle's signature is verified before the session context is restored; Strict-mode failures throw,
+/// Permissive-mode failures log a warning.
 /// </remarks>
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
     Justification = "DI-resolved sealed internal worker; primary-constructor parameters reflect intrinsic " +
                     "framework dependencies (logger, bus, scope, pipeline, mapper, envelope options, " +
-                    "integrity options, signer) and are not a hand-called API surface.")]
+                    "integrity options, saga options, signer) and are not a hand-called API surface.")]
 internal sealed class SagaWorker(
     ILogger<SagaWorker> logger,
     IMessageBus messageBus,
@@ -44,12 +53,16 @@ internal sealed class SagaWorker(
     ResiliencePipelineProvider<string> pipelineProvider,
     IOptions<BusEnvelopeJsonOptions> envelopeOptions,
     IOptions<BusEnvelopeIntegrityOptions> integrityOptions,
+    IOptions<SagaOptions> sagaOptions,
     IBusEnvelopeSigner? signer = null) : BackgroundService
 {
     private readonly ResiliencePipeline _pipeline = pipelineProvider.GetPipeline(ResilienceNames.MessageBus);
+    private readonly ResiliencePipeline _precedingFactPipeline = pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact);
+    private readonly BucketLockPool _bucketLockPool = new();
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly BusEnvelopeIntegrityMode _integrityMode = integrityOptions.Value.Mode;
+    private readonly int _degreeOfParallelism = EffectiveDegreeOfParallelism(sagaOptions.Value.DegreeOfParallelism);
 
     /// <inheritdoc/>
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -66,11 +79,17 @@ internal sealed class SagaWorker(
     }
 
     /// <inheritdoc/>
+    public override void Dispose()
+    {
+        _bucketLockPool.Dispose();
+        base.Dispose();
+    }
+
+    /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var degreeOfParallelism = Environment.ProcessorCount;
-        var workers = new Task[degreeOfParallelism];
-        for (var i = 0; i < degreeOfParallelism; i++)
+        var workers = new Task[_degreeOfParallelism];
+        for (var i = 0; i < _degreeOfParallelism; i++)
         {
             workers[i] = CreateSubscriptionAsync(stoppingToken);
         }
@@ -97,16 +116,13 @@ internal sealed class SagaWorker(
             BusEnvelopeJsonGuard.EnsureWithinSizeLimit(Encoding.UTF8.GetByteCount(eventBundle.SessionContextJson), _envelopeOptions.MaxBodyBytes, "SessionContextJson");
             VerifyEnvelopeIntegrity(eventBundle);
 
-            using var scope = scopeFactory.CreateScope();
-
-            var sessionContextProvider = scope.ServiceProvider.GetRequiredService<ISessionContextProvider>();
-            var sessionContext = JsonSerializer.Deserialize<SessionContext>(eventBundle.SessionContextJson, _deserializeOptions)
-                ?? throw new InvalidOperationException("Failed to deserialize session context from event bundle.");
-            sessionContextProvider.Set(sessionContext);
-
-            var sagaManager = scope.ServiceProvider.GetRequiredService<ISagaManager>();
-            var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
-            await sagaManager.HandleAsync(events, cancellationToken);
+            var bucketIds = BucketIdsOf(eventBundle);
+            var attempt = 0;
+            await _precedingFactPipeline.ExecuteAsync(async ct =>
+            {
+                attempt++;
+                await DispatchUnderLocksAsync(eventBundle, bucketIds, attempt, ct);
+            }, cancellationToken);
 
             outcome = ApplicationDiagnostics.Outcomes.Success;
         }
@@ -125,6 +141,56 @@ internal sealed class SagaWorker(
             }
         }
     }
+
+    private async Task DispatchUnderLocksAsync(EventBundle eventBundle, int[] bucketIds, int attempt, CancellationToken cancellationToken)
+    {
+        var releasers = new IDisposable?[bucketIds.Length];
+        try
+        {
+            for (var i = 0; i < bucketIds.Length; i++)
+            {
+                releasers[i] = await _bucketLockPool.AcquireAsync(bucketIds[i], cancellationToken);
+            }
+
+            await DispatchAsync(eventBundle, cancellationToken);
+        }
+        catch (PrecedingFactMissingException ex)
+        {
+            logger.LogSagaPrecedingFactMissing(ex, ex.StreamId, ex.EventTypeName, attempt);
+            throw;
+        }
+        finally
+        {
+            for (var i = releasers.Length - 1; i >= 0; i--)
+            {
+                releasers[i]?.Dispose();
+            }
+        }
+    }
+
+    private async Task DispatchAsync(EventBundle eventBundle, CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+
+        var sessionContextProvider = scope.ServiceProvider.GetRequiredService<ISessionContextProvider>();
+        var sessionContext = JsonSerializer.Deserialize<SessionContext>(eventBundle.SessionContextJson, _deserializeOptions)
+            ?? throw new InvalidOperationException("Failed to deserialize session context from event bundle.");
+        sessionContextProvider.Set(sessionContext);
+
+        var sagaManager = scope.ServiceProvider.GetRequiredService<ISagaManager>();
+        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
+        await sagaManager.HandleAsync(events, cancellationToken);
+    }
+
+    private static int[] BucketIdsOf(EventBundle eventBundle) =>
+        eventBundle.Events
+            .Select(e => BucketCalculator.GetBucketId(e.StreamId))
+            .Distinct()
+            .Order()
+            .ToArray();
+
+    private static int EffectiveDegreeOfParallelism(int? configured) =>
+        configured is > 0 ? configured.Value : Environment.ProcessorCount;
 
     private void VerifyEnvelopeIntegrity(EventBundle bundle)
     {

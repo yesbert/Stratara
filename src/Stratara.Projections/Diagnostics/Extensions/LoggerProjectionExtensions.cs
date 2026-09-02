@@ -44,6 +44,18 @@ public static partial class LoggerProjectionExtensions
         Message = "Error while processing projection {ProjectionName}.")]
     public static partial void LogProjectionFailed(this ILogger logger, Exception exception, string projectionName);
 
+    /// <summary>Logs that a bundle refers to an entity that has not been applied yet and will be retried.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">The handler's report.</param>
+    /// <param name="streamId">The stream the fact belongs to.</param>
+    /// <param name="eventTypeName">The type name of the fact that could not be applied yet.</param>
+    /// <param name="attempt">The attempt that failed, counting from one.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.PrecedingFactMissing,
+        Level = LogLevel.Warning,
+        Message = "Projection bundle refers to an entity not applied yet on stream {StreamId} ({EventTypeName}); attempt {Attempt}.")]
+    public static partial void LogProjectionPrecedingFactMissing(this ILogger logger, Exception exception, Guid streamId, string eventTypeName, int attempt);
+
     /// <summary>Logs that projection replay has started.</summary>
     /// <param name="logger">The logger.</param>
     [LoggerMessage(

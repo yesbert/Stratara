@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Stratara.Sagas.Abstractions;
 using Stratara.Sagas.Services;
 
@@ -38,6 +39,31 @@ public class SagaServiceCollectionExtensionsTests
         var descriptor = Assert.Single(services, d => d.ImplementationType == typeof(SagaWorker));
         Assert.Equal(typeof(IHostedService), descriptor.ServiceType);
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+    }
+
+    [Fact]
+    public void AddSagaWorker_BindsDegreeOfParallelismFromTheSagasSection()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Sagas:DegreeOfParallelism"] = "1" })
+            .Build();
+
+        services.AddSagaWorker(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Equal(1, provider.GetRequiredService<IOptions<SagaOptions>>().Value.DegreeOfParallelism);
+    }
+
+    [Fact]
+    public void AddSagaWorker_LeavesDegreeOfParallelismUnsetByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSagaWorker(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Null(provider.GetRequiredService<IOptions<SagaOptions>>().Value.DegreeOfParallelism);
     }
 
     [Fact]

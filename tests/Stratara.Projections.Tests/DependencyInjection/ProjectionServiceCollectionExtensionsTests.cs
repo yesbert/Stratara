@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Stratara.Projections.Abstractions;
 using Stratara.Projections.Services;
 
@@ -45,6 +46,31 @@ public class ProjectionServiceCollectionExtensionsTests
 
         Assert.Single(services, d => d.ImplementationType == typeof(ProjectionWorker));
         Assert.Single(services, d => d.ImplementationType == typeof(ProjectionReplayWorker));
+    }
+
+    [Fact]
+    public void AddProjectionWorker_BindsDegreeOfParallelismFromTheProjectionsSection()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Projections:DegreeOfParallelism"] = "1" })
+            .Build();
+
+        services.AddProjectionWorker(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Equal(1, provider.GetRequiredService<IOptions<ProjectionOptions>>().Value.DegreeOfParallelism);
+    }
+
+    [Fact]
+    public void AddProjectionWorker_LeavesDegreeOfParallelismUnsetByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddProjectionWorker(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Null(provider.GetRequiredService<IOptions<ProjectionOptions>>().Value.DegreeOfParallelism);
     }
 
     [Fact]
