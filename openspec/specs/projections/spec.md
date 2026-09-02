@@ -45,7 +45,12 @@ have it.
 ### Requirement: A failing projection stops the bundle
 
 Where a projection handler fails, the failure SHALL propagate rather than being swallowed, so the
-bundle is not acknowledged and is redelivered.
+bundle is not acknowledged and is not treated as processed. What happens to the bundle after that
+is decided by the transport's failure policy, not by this requirement. On the RabbitMQ transport, a
+bundle that fails for anything other than a concurrency conflict is rejected without requeue, so
+the read model is repaired by a replay rather than by a redelivery. Propagating the failure
+guarantees that it is recorded and that the bundle is never counted as applied — it does not
+guarantee that the transport will try again.
 
 A projection that silently skipped a failed event would leave a read model permanently missing that
 event, with nothing recording which one — a corruption that only a full replay could repair and
