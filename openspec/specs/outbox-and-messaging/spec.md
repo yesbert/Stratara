@@ -40,7 +40,7 @@ message more than once.
 A stored message SHALL be counted as published only once the bus has accepted it, so that the count
 reflects what was delivered rather than what was read from storage.
 
-Delivery order across consumers is NOT guaranteed. Where a subscription is consumed by more than one
+Delivery order across consumers is not guaranteed. Where a subscription is consumed by more than one
 consumer, two messages published one after the other may be handed to different consumers and
 processed at the same time, so a handler MUST NOT assume that a message about an entity arrives after
 the message that created it. What a handler MAY rely on is the per-process serialisation the
