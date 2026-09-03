@@ -27,7 +27,7 @@ projection-replay batch.
 ### Requirement: The replay-batch policy retries a bounded number of times over a short window
 
 The projection-replay-batch policy SHALL retry a failing operation a small, bounded number of times
-with exponential, jittered backoff whose attempts together span on the order of half a minute, and
+with exponential, jittered backoff whose waits between attempts add up to several seconds, and
 SHALL then surface the failure. It SHALL retry any failure except cancellation.
 
 The window is longer than the dispatch policies' because what it waits for is a read store under

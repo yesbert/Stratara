@@ -177,8 +177,8 @@ it subscribes and waits. But when a request arrives it begins immediately. There
 
 **A batch that fails is retried before the replay gives up.** Each batch — reading it from the
 event store and applying it — runs under the `ResilienceNames.ProjectionReplayBatch` policy: five
-attempts, exponential backoff from one second with jitter, about thirty seconds in all, any
-exception except cancellation. A read-store timeout or a dropped connection mid-rebuild is retried;
+attempts in all, exponential backoff from one second with jitter between them — about fifteen
+seconds of waiting plus jitter before the last one — any exception except cancellation. A read-store timeout or a dropped connection mid-rebuild is retried;
 each attempt after a failure logs `104_011` so you can see the replay struggling rather than merely
 slow. A retried batch is applied again **from its first entry**, in a fresh scope — which is why the
 converge-not-accumulate rule above is not optional. A failure that persists through every attempt

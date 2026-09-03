@@ -37,7 +37,7 @@ among the ones that end it.
 
 - **A replay retries a failing batch before it gives up.** Each batch — the read from the event
   store and the application of its entries — runs under a new named resilience policy: a small,
-  bounded number of attempts with exponential, jittered backoff, on the order of half a minute in
+  bounded number of attempts with exponential, jittered backoff, several seconds of waiting in
   all. A failure that passes within that window no longer ends the replay. A failure that does not
   still ends it exactly as today, with the same failure record and the same partial state.
 - **A retried batch is re-applied from its start.** Entries applied before the failure are applied
@@ -66,8 +66,8 @@ _none_
   before it fails, re-applying the batch from its start; the existing *A replay fails partway*
   scenario is unchanged and now describes what happens once the attempts are exhausted.
 - `resilience`: *The framework registers named resilience policies* counts six policies rather than
-  five; a new requirement describes the replay policy — bounded attempts, backoff on the order of
-  half a minute, any failure retried except cancellation.
+  five; a new requirement describes the replay policy — bounded attempts, several seconds of backoff,
+  any failure retried except cancellation.
 
 ## Impact
 

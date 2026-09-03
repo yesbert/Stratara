@@ -7,8 +7,8 @@
 ## 2. The sixth policy
 
 - [x] 2.1 `src/Stratara.Resilience/Resilience/ResilienceNames.cs`: add `ProjectionReplayBatch`,
-      documented like its five siblings — five attempts, exponential from one second with jitter,
-      about thirty seconds in all, any exception, cancellation excluded.
+      documented like its five siblings — five attempts in all, exponential from one second with
+      jitter, any exception, cancellation excluded.
 - [x] 2.2 `ResilienceFactory.CreateProjectionReplayBatchPipeline` with named constants for the
       attempt count and base delay; `ResilienceServiceCollectionExtensions.AddResiliencePipelines`
       registers it. Update the extension's XML doc, which lists the policies.
@@ -51,7 +51,7 @@ default and a zero-delay five-attempt retry for the retry tests.
 - [x] 4.3 *A batch fails on every attempt*: the manager always throws; the replay ends with
       `SetFailed` carrying the last exception's message, `Deactivate` called, and the manager invoked
       as many times as the policy allows. The harness's zero-delay pipeline keeps the test from
-      waiting thirty seconds; the real policy's shape is pinned in `ResilienceFactoryTests`.
+      waiting on real backoff; the real policy's shape is pinned in `ResilienceFactoryTests`.
 - [x] 4.4 *The host shuts down while a batch is being retried*: cancellation during a retry ends the
       replay with no `SetFailed`, as `ReplayCallback_OperationCanceledException_IsSwallowedNoSetFailed`
       pins for the unretried case.
@@ -60,7 +60,7 @@ default and a zero-delay five-attempt retry for the retry tests.
 ## 5. Documentation and changelog
 
 - [x] 5.1 `docs/guides/write-a-projection.md`, *Replay is destructive, and it is all-or-nothing*:
-      state that a batch is retried a bounded number of times over about thirty seconds before the
+      state that a batch is retried a bounded number of times, with backoff, before the
       replay fails, that a retried batch is re-applied from its start, and — under the existing
       "treat a failed replay as run it again" — that a replay is a maintenance operation to run in a
       window after a backup, the backup being the fallback when a replay cannot complete.

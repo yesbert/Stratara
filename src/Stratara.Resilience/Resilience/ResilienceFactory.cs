@@ -20,11 +20,13 @@ internal static class ResilienceFactory
     private const int PrecedingFactRetryAttempts = 5;
     private static readonly TimeSpan PrecedingFactRetryDelay = TimeSpan.FromMilliseconds(100);
 
-    // Five attempts from one second, doubling: about thirty seconds in the worst case. What it waits
-    // for is a read store under load recovering — a timeout that resolves in seconds — not a broker
-    // accepting a message, which is why it is slower than the dispatcher policies. It is bounded
-    // because a replay that retried indefinitely could not be told apart from one that is hung.
-    private const int ProjectionReplayBatchRetryAttempts = 5;
+    // Five attempts in all — the first plus four retries — from one second, doubling: about fifteen
+    // seconds of backoff plus jitter in the worst case. What it waits for is a read store under load
+    // recovering — a timeout that resolves in seconds — not a broker accepting a message, which is
+    // why it is slower than the dispatcher policies. It is bounded because a replay that retried
+    // indefinitely could not be told apart from one that is hung. Polly counts retries, not attempts.
+    internal const int ProjectionReplayBatchAttempts = 5;
+    private const int ProjectionReplayBatchRetries = ProjectionReplayBatchAttempts - 1;
     private static readonly TimeSpan ProjectionReplayBatchRetryDelay = TimeSpan.FromSeconds(1);
 
     internal static readonly TimeSpan MessageBusBaseDelay = TimeSpan.FromSeconds(10);
@@ -117,7 +119,7 @@ internal static class ResilienceFactory
     public static void CreateProjectionReplayBatchPipeline(ResiliencePipelineBuilder pipelineBuilder) =>
         pipelineBuilder.AddRetry(new RetryStrategyOptions
         {
-            MaxRetryAttempts = ProjectionReplayBatchRetryAttempts,
+            MaxRetryAttempts = ProjectionReplayBatchRetries,
             Delay = ProjectionReplayBatchRetryDelay,
             BackoffType = DelayBackoffType.Exponential,
             UseJitter = true

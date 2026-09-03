@@ -100,7 +100,7 @@ public static partial class LoggerProjectionExtensions
         Message = "Projection replay failed.")]
     public static partial void LogProjectionReplayFailed(this ILogger logger, Exception exception);
 
-    /// <summary>Logs that one projection-replay batch failed on an attempt; the batch is retried from its start while attempts remain.</summary>
+    /// <summary>Logs that one projection-replay batch failed on an attempt. While the policy allows another attempt the batch is applied again from its start; after the last one the replay fails.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="exception">The failure.</param>
     /// <param name="afterSequence">The sequence number the batch starts after.</param>
@@ -108,6 +108,6 @@ public static partial class LoggerProjectionExtensions
     [LoggerMessage(
         EventId = LogEvents.Projection.ProjectionReplayBatchFailed,
         Level = LogLevel.Warning,
-        Message = "Projection replay: batch after sequence {AfterSequence} failed on attempt {Attempt}; retried from its start while attempts remain.")]
+        Message = "Projection replay: batch after sequence {AfterSequence} failed on attempt {Attempt}. It is applied again from its start if the policy allows another attempt; otherwise the replay fails.")]
     public static partial void LogProjectionReplayBatchFailed(this ILogger logger, Exception exception, long afterSequence, int attempt);
 }

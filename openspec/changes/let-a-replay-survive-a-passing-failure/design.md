@@ -109,8 +109,8 @@ the same sequence number and its entries are applied again.
 ### A sixth named policy, shaped like the dispatch policies but slower
 
 `ResilienceNames.ProjectionReplayBatch`, built by `ResilienceFactory.CreateProjectionReplayBatchPipeline`:
-five attempts, exponential from one second with jitter, roughly thirty seconds in all, retrying
-any exception. Polly's default predicate already excludes `OperationCanceledException`, which is
+five attempts in all, exponential from one second with jitter between them, retrying any
+exception. Polly counts retries rather than attempts, so the option is set to four. Polly's default predicate already excludes `OperationCanceledException`, which is
 what makes host shutdown during a retry surface as cancellation rather than as a failed replay.
 
 *Rejected: reuse the event-bundle-dispatch policy.* Right shape, wrong scale: three attempts inside
@@ -128,8 +128,7 @@ Evidence: `ResilienceFactoryTests` for the shape; the resilience spec delta for 
 ### Progress and the lease are untouched; the retry is logged
 
 Progress is reported after a batch completes, as today; a batch under retry reports nothing until it
-succeeds. The lease default of `300` seconds comfortably outlasts a thirty-second retry window plus a
-slow batch, so the marking does not lapse mid-retry. A consumer who has lowered the lease below the
+succeeds. The lease default of `300` seconds comfortably outlasts the retry window plus a slow batch, so the marking does not lapse mid-retry. A consumer who has lowered the lease below the
 retry window would already have set it below a slow batch, which the guide warns against.
 
 Each attempt after the first logs a warning — new id `104_011`, `ProjectionReplayBatchRetried` —
@@ -138,7 +137,7 @@ operator watching a replay sees it struggling rather than merely slow.
 
 ## Risks / Trade-offs
 
-- [A deterministic failure now ends the replay about thirty seconds later than before] → Accepted.
+- [A deterministic failure now ends the replay some seconds later than before] → Accepted.
   The failure record and the final state are identical; only the ending is delayed, and the retry
   warnings in between say why.
 - [A projection that does not converge under a second application double-counts during a retry] →
