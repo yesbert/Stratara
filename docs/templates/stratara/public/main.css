@@ -7,19 +7,30 @@
 /* ---------- Landing page (docs/index.md, _layout: landing) ---------- */
 
 :root {
-  --st-accent: #0a84ff;
-  --st-accent-deep: #1d4ed8;
-  --st-accent-soft: rgba(10, 132, 255, 0.10);
+  --st-brand-rgb: 6, 115, 203;         /* the wordmark blue from the logo; never themed */
+  --st-brand-deep-rgb: 5, 88, 156;
+  --st-accent-rgb: var(--st-brand-rgb);
+  --st-accent-deep-rgb: var(--st-brand-deep-rgb);
+  --st-accent: rgb(var(--st-accent-rgb));
+  --st-accent-deep: rgb(var(--st-accent-deep-rgb));
+  --st-accent-soft: rgba(var(--st-accent-rgb), 0.10);
   --st-border: rgba(0, 0, 0, 0.10);
 }
 
 [data-bs-theme="dark"] {
-  --st-accent: #4da3ff;
-  --st-accent-deep: #93c5fd;
-  --st-accent-soft: rgba(77, 163, 255, 0.14);
+  --st-accent-rgb: 61, 151, 230;       /* the same hue, lifted for contrast on dark */
+  --st-accent-deep-rgb: 140, 196, 245;
+  --st-accent-soft: rgba(var(--st-accent-rgb), 0.16);
   --st-border: rgba(255, 255, 255, 0.12);
 }
 
+/* Both themes read the accent variables, so dark mode needs no second rule. */
+body[data-layout="landing"] {
+  --bs-link-color: var(--st-accent);
+  --bs-link-hover-color: var(--st-accent-deep);
+  --bs-link-color-rgb: var(--st-accent-rgb);
+  --bs-link-hover-color-rgb: var(--st-accent-deep-rgb);
+}
 body[data-layout="landing"] .actionbar { display: none; }
 body[data-layout="landing"] article { max-width: none; overflow-x: hidden; }
 body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
@@ -28,7 +39,7 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
   padding: 3.5rem 0 2.5rem;
   text-align: center;
 }
-.st-hero img { width: 200px; max-width: 60vw; height: auto; margin-bottom: 1.25rem; }
+.st-hero .st-logo { width: 200px; max-width: 60vw; height: auto; margin-bottom: 1.25rem; }
 .st-hero h1 {
   overflow-wrap: anywhere;
   font-size: clamp(1.9rem, 4vw, 3rem);
@@ -48,8 +59,14 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
 }
 .st-cta { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
 .st-cta .btn { padding: 0.65rem 1.4rem; font-weight: 600; }
+/* The filled button carries white text, so it stays on the brand blue in both themes. */
+.st-cta .btn-primary {
+  --bs-btn-bg: rgb(var(--st-brand-rgb)); --bs-btn-border-color: rgb(var(--st-brand-rgb));
+  --bs-btn-hover-bg: rgb(var(--st-brand-deep-rgb)); --bs-btn-hover-border-color: rgb(var(--st-brand-deep-rgb));
+  --bs-btn-active-bg: rgb(var(--st-brand-deep-rgb)); --bs-btn-active-border-color: rgb(var(--st-brand-deep-rgb));
+}
 .st-badges { margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
-.st-badges img { height: 20px; }
+.st-badges img { width: auto; height: 20px; }
 
 .st-section { padding: 2.5rem 0 1rem; }
 .st-section > h2 {

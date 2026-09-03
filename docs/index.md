@@ -4,7 +4,7 @@ title: Stratara — CQRS and Event Sourcing for .NET
 ---
 
 <section class="st-hero">
-  <img src="assets/logo.png" alt="Stratara">
+  <img class="st-logo" src="assets/logo.png" alt="Stratara">
   <h1>CQRS and Event Sourcing for .NET. <em>Start small, keep the receipts.</em></h1>
   <p class="st-lead">
     Begin with a lean mediator. Add an event store when you need one. Scale out with an outbox,
