@@ -24,11 +24,8 @@
   --st-border: rgba(255, 255, 255, 0.12);
 }
 
-/* The whole site, not only the landing page. DocFX's template hangs every blue it
-   draws on Bootstrap's --bs-primary and --bs-link-*, which default to #0d6efd — a
-   visibly different blue from the wordmark. Redirecting the variables recolours
-   links, focus rings and anything else derived from them in one place. Both themes
-   read the accent variables, so dark mode needs no second rule. */
+/* Every blue the template draws comes from these Bootstrap variables, so redirecting
+   them here is what makes the whole site use the wordmark blue rather than #0d6efd. */
 :root,
 [data-bs-theme="light"],
 [data-bs-theme="dark"] {
