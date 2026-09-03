@@ -18,6 +18,15 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **Registering a store context now registers its unit of work.**
+  `AddNpgsqlWriteDbContextFactory<T>()` registered the context factory, the context and the default
+  connection resolver but not the `IWriteUnitOfWork` that the event source, the outbox dispatcher and
+  the command worker take from the container — and nothing else in the published packages did, so a
+  host composed exactly as documented failed at its first command with a dependency-injection error.
+  The write registration now try-adds a scoped `IWriteUnitOfWork` over its context, and
+  `AddNpgsqlReadDbContextFactory<T>()` try-adds `IProjectionsUnitOfWork` and `IReadUnitOfWork`
+  likewise. A unit of work the host registers itself, before or after, is still the one used; a
+  hand-written registration can simply be deleted.
 - **`AddMediator()` no longer requires the host to register an OpenTelemetry `Tracer`.** The
   mediator traces every dispatch and obtained its tracer from the host, but nothing registered one,
   so a host that called `AddMediator()` and nothing else failed at the first resolve of `IMediator`.
