@@ -65,7 +65,10 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
   --bs-btn-hover-bg: rgb(var(--st-brand-deep-rgb)); --bs-btn-hover-border-color: rgb(var(--st-brand-deep-rgb));
   --bs-btn-active-bg: rgb(var(--st-brand-deep-rgb)); --bs-btn-active-border-color: rgb(var(--st-brand-deep-rgb));
 }
-.st-badges { margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+/* The anchors are flex items around an inline image, so without inline-flex they
+   carry the line box's descender space and sit lower than an unwrapped badge. */
+.st-badges { margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: center; align-items: center; flex-wrap: wrap; }
+.st-badges a { display: inline-flex; }
 .st-badges img { width: auto; height: 20px; }
 
 .st-section { padding: 2.5rem 0 1rem; }

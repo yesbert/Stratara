@@ -19,7 +19,7 @@ title: Stratara — CQRS and Event Sourcing for .NET
     <a href="https://www.nuget.org/packages?q=Stratara"><img src="https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet" alt="NuGet"></a>
     <a href="https://github.com/yesbert/Stratara/actions/workflows/ci.yml"><img src="https://github.com/yesbert/Stratara/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="https://github.com/yesbert/Stratara/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT"></a>
-    <img src="https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet" alt=".NET 10">
+    <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet" alt=".NET 10"></a>
   </div>
 </section>
 
