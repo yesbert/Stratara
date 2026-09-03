@@ -29,7 +29,7 @@ application of the same event converges on the same state, because delivery is a
 #### Scenario: Reading a batch fails once and then succeeds
 
 - **WHEN** reading a batch from the event store fails on the first attempt and succeeds on a later
-  one
+  one within the attempt limit
 - **THEN** the replay continues from that batch as if the read had succeeded the first time
 
 #### Scenario: A batch fails on every attempt
