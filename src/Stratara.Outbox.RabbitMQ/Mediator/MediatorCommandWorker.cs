@@ -166,19 +166,35 @@ internal sealed class MediatorCommandWorker(
 
     private void VerifyEnvelopeIntegrity(CommandEnvelope envelope)
     {
-        var result = BusEnvelopeIntegrityVerifier.Verify(signer, _integrityMode, BusEnvelopeCanonical.Of(envelope), envelope.Signature);
+        var result = BusEnvelopeIntegrityVerifier.Verify(signer, _integrityMode, BusEnvelopeCanonical.Of(envelope), envelope.Signature, out var failure);
         if (result is BusEnvelopeIntegrityResult.Skipped or BusEnvelopeIntegrityResult.Verified)
         {
             return;
         }
 
+        var unsigned = failure == BusEnvelopeIntegrityFailure.Absent;
+
         if (result == BusEnvelopeIntegrityResult.RejectedStrict)
         {
+            if (unsigned)
+            {
+                logger.LogCommandEnvelopeUnsignedRejected(envelope.Id);
+                throw new InvalidOperationException(
+                    $"CommandEnvelope {envelope.Id} carries no signature and the mode is Strict. " +
+                    "A publisher is not signing: register the signer on every publisher host, or roll the fleet through Permissive mode first.");
+            }
+
             logger.LogCommandEnvelopeIntegrityRejected(envelope.Id);
             throw new InvalidOperationException(
-                $"CommandEnvelope {envelope.Id} failed integrity verification under Strict mode. " +
+                $"CommandEnvelope {envelope.Id} carries a signature that does not verify and the mode is Strict. " +
                 "Confirm that publishers and consumers share the same BusEnvelopeIntegrityOptions.SharedKey " +
                 "and that the bus is not relaying tampered messages.");
+        }
+
+        if (unsigned)
+        {
+            logger.LogCommandEnvelopeUnsignedWarning(envelope.Id);
+            return;
         }
 
         logger.LogCommandEnvelopeIntegrityWarning(envelope.Id);

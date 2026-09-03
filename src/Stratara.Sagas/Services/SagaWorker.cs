@@ -194,7 +194,7 @@ internal sealed class SagaWorker(
 
     private void VerifyEnvelopeIntegrity(EventBundle bundle)
     {
-        var result = BusEnvelopeIntegrityVerifier.Verify(signer, _integrityMode, BusEnvelopeCanonical.Of(bundle), bundle.Signature);
+        var result = BusEnvelopeIntegrityVerifier.Verify(signer, _integrityMode, BusEnvelopeCanonical.Of(bundle), bundle.Signature, out var failure);
         if (result is BusEnvelopeIntegrityResult.Skipped or BusEnvelopeIntegrityResult.Verified)
         {
             return;
@@ -202,14 +202,29 @@ internal sealed class SagaWorker(
 
         var firstEventId = bundle.Events.Count > 0 ? bundle.Events[0].Id : Guid.Empty;
         var eventCount = bundle.Events.Count;
+        var unsigned = failure == BusEnvelopeIntegrityFailure.Absent;
 
         if (result == BusEnvelopeIntegrityResult.RejectedStrict)
         {
+            if (unsigned)
+            {
+                logger.LogEventBundleUnsignedRejected(firstEventId, eventCount);
+                throw new InvalidOperationException(
+                    $"EventBundle (first event {firstEventId}, {eventCount} events) carries no signature and the mode is Strict. " +
+                    "A publisher is not signing: register the signer on every publisher host, or roll the fleet through Permissive mode first.");
+            }
+
             logger.LogEventBundleIntegrityRejected(firstEventId, eventCount);
             throw new InvalidOperationException(
-                $"EventBundle (first event {firstEventId}, {eventCount} events) failed integrity verification under Strict mode. " +
+                $"EventBundle (first event {firstEventId}, {eventCount} events) carries a signature that does not verify and the mode is Strict. " +
                 "Confirm that publishers and consumers share the same BusEnvelopeIntegrityOptions.SharedKey " +
                 "and that the bus is not relaying tampered messages.");
+        }
+
+        if (unsigned)
+        {
+            logger.LogEventBundleUnsignedWarning(firstEventId, eventCount);
+            return;
         }
 
         logger.LogEventBundleIntegrityWarning(firstEventId, eventCount);
