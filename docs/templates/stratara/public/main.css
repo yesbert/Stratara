@@ -7,19 +7,21 @@
 /* ---------- Landing page (docs/index.md, _layout: landing) ---------- */
 
 :root {
-  --st-accent: #0a84ff;
-  --st-accent-deep: #1d4ed8;
-  --st-accent-soft: rgba(10, 132, 255, 0.10);
+  --st-accent: #0673cb;          /* the wordmark blue from the logo */
+  --st-accent-deep: #05589c;
+  --st-accent-soft: rgba(6, 115, 203, 0.10);
   --st-border: rgba(0, 0, 0, 0.10);
 }
 
 [data-bs-theme="dark"] {
-  --st-accent: #4da3ff;
-  --st-accent-deep: #93c5fd;
-  --st-accent-soft: rgba(77, 163, 255, 0.14);
+  --st-accent: #3d97e6;          /* the same hue, lifted for contrast on dark */
+  --st-accent-deep: #8cc4f5;
+  --st-accent-soft: rgba(61, 151, 230, 0.16);
   --st-border: rgba(255, 255, 255, 0.12);
 }
 
+body[data-layout="landing"] { --bs-link-color: #0673cb; --bs-link-hover-color: #05589c; --bs-link-color-rgb: 6, 115, 203; --bs-link-hover-color-rgb: 5, 88, 156; }
+[data-bs-theme="dark"] body[data-layout="landing"], body[data-layout="landing"][data-bs-theme="dark"] { --bs-link-color: #3d97e6; --bs-link-hover-color: #8cc4f5; --bs-link-color-rgb: 61, 151, 230; --bs-link-hover-color-rgb: 140, 196, 245; }
 body[data-layout="landing"] .actionbar { display: none; }
 body[data-layout="landing"] article { max-width: none; overflow-x: hidden; }
 body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
@@ -28,7 +30,7 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
   padding: 3.5rem 0 2.5rem;
   text-align: center;
 }
-.st-hero img { width: 200px; max-width: 60vw; height: auto; margin-bottom: 1.25rem; }
+.st-hero .st-logo { width: 200px; max-width: 60vw; height: auto; margin-bottom: 1.25rem; }
 .st-hero h1 {
   overflow-wrap: anywhere;
   font-size: clamp(1.9rem, 4vw, 3rem);
@@ -48,8 +50,13 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
 }
 .st-cta { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
 .st-cta .btn { padding: 0.65rem 1.4rem; font-weight: 600; }
+.st-cta .btn-primary {
+  --bs-btn-bg: #0673cb; --bs-btn-border-color: #0673cb;
+  --bs-btn-hover-bg: #05589c; --bs-btn-hover-border-color: #05589c;
+  --bs-btn-active-bg: #05589c; --bs-btn-active-border-color: #05589c;
+}
 .st-badges { margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
-.st-badges img { height: 20px; }
+.st-badges img { width: auto; height: 20px; }
 
 .st-section { padding: 2.5rem 0 1rem; }
 .st-section > h2 {
