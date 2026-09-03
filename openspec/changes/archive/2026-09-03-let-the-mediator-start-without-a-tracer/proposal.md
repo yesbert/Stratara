@@ -57,6 +57,7 @@ _none_
   — the same line goes from each; the smoke tests prove they still run.
 - `tests/Stratara.Infrastructure.Tests/DependencyInjection/MediatorServiceCollectionExtensionsTests.cs`
   — the existing test that registers a tracer first is joined by the cases the delta names.
+- `docs/guides/write-a-command-handler.md` — gains a *Tracing* section saying where dispatch spans come from.
 - `CHANGELOG.md` — `[Unreleased]`.
 - Additive on the published surface: a patch release. No consumer has to change anything; a consumer
   may delete a line.
