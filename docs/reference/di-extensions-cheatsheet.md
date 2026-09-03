@@ -120,8 +120,8 @@ transport, but registering both in one host is still a smell — pick one.
 
 | Extension | What it does |
 |---|---|
-| `services.AddNpgsqlWriteDbContextFactory<TContext>()` | Npgsql-backed `IDbContextFactory<TContext>` for the write-store context, plus the default `IWriteUnitOfWork` if none is registered |
-| `services.AddNpgsqlReadDbContextFactory<TContext>()` | The same for a read-store context |
+| `services.AddNpgsqlWriteDbContextFactory<TContext>()` | Npgsql-backed `IDbContextFactory<TContext>` for the write-store context, plus a scoped `IWriteUnitOfWork` over it unless the host registered its own — this call is all the write store needs |
+| `services.AddNpgsqlReadDbContextFactory<TContext>()` | The same for a read-store context, plus a scoped `IProjectionsUnitOfWork` / `IReadUnitOfWork` over it unless the host registered its own |
 | `services.AddNpgsqlIdentityDbContextFactory<TContext>()` | The same for an identity-store context, **plus** a scoped resolution of the context itself so ASP.NET Identity can inject it directly |
 | `services.AddWriteStore(configuration)` | Binds `EventSourcingOptions` from the `EventSourcing` section — snapshot cadence, batch sizes and the other write-side knobs |
 | `services.AddCommandAuditing()` | `CommandAuditBehavior` for both command shapes — persists an audit row per dispatched command; queries pass through (`Stratara.EventSourcing.Pipeline.CommandAudit`) |
