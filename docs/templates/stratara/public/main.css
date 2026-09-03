@@ -4,7 +4,7 @@
   margin-right: 0.5rem;
 }
 
-/* ---------- Landing page (docs/index.md, _layout: landing) ---------- */
+/* ---------- Brand colours (whole site) and the landing page ---------- */
 
 :root {
   --st-brand-rgb: 6, 115, 203;         /* the wordmark blue from the logo; never themed */
@@ -24,8 +24,13 @@
   --st-border: rgba(255, 255, 255, 0.12);
 }
 
-/* Both themes read the accent variables, so dark mode needs no second rule. */
-body[data-layout="landing"] {
+/* Every blue the template draws comes from these Bootstrap variables, so redirecting
+   them here is what makes the whole site use the wordmark blue rather than #0d6efd. */
+:root,
+[data-bs-theme="light"],
+[data-bs-theme="dark"] {
+  --bs-primary: var(--st-accent);
+  --bs-primary-rgb: var(--st-accent-rgb);
   --bs-link-color: var(--st-accent);
   --bs-link-hover-color: var(--st-accent-deep);
   --bs-link-color-rgb: var(--st-accent-rgb);
