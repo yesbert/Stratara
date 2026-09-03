@@ -16,6 +16,15 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_no changes yet since `4.0.2`._
+
+## [4.0.2] — 2026-09-03
+
+Two operational fixes, both found while a consumer rolled out bus-envelope signing and reasoned
+about rebuilding its read models: a projection replay now survives a passing failure, and an
+integrity failure says whether the signature was absent or wrong. Additive on every published
+surface.
+
 ### Added
 
 - **A projection replay retries a failing batch before it gives up.** Each batch — the read from
@@ -3049,7 +3058,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.1...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.2...main
+[4.0.2]: https://github.com/yesbert/Stratara/releases/tag/v4.0.2
 [4.0.1]: https://github.com/yesbert/Stratara/releases/tag/v4.0.1
 [4.0.0]: https://github.com/yesbert/Stratara/releases/tag/v4.0.0
 [3.4.0]: https://github.com/yesbert/Stratara/releases/tag/v3.4.0
