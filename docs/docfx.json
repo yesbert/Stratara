@@ -78,7 +78,7 @@
     ],
     "globalMetadata": {
       "_appName": "Stratara",
-      "_appTitle": "Stratara — Application-Agnostic CQRS + Event Sourcing Framework",
+      "_appTitle": "Stratara \u2014 CQRS and Event Sourcing for .NET, MIT",
       "_appLogoPath": "assets/icon.png",
       "_appFaviconPath": "assets/icon.png",
       "_appBaseUrl": "https://docs.stratara.tech",
@@ -86,7 +86,8 @@
       "_gitContribute": {
         "repo": "https://github.com/yesbert/Stratara",
         "branch": "main"
-      }
+      },
+      "_description": "Start with a lean mediator, grow into event sourcing, outbox, projections and sagas. Tamper-evident streams and tenant-bound encryption built in. 25 MIT-licensed NuGet packages for .NET 10."
     },
     "fileMetadata": {
       "_disableContribution": {

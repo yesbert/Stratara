@@ -3,3 +3,122 @@
   width: auto;
   margin-right: 0.5rem;
 }
+
+/* ---------- Landing page (docs/index.md, _layout: landing) ---------- */
+
+:root {
+  --st-accent: #0a84ff;
+  --st-accent-deep: #1d4ed8;
+  --st-accent-soft: rgba(10, 132, 255, 0.10);
+  --st-border: rgba(0, 0, 0, 0.10);
+}
+
+[data-bs-theme="dark"] {
+  --st-accent: #4da3ff;
+  --st-accent-deep: #93c5fd;
+  --st-accent-soft: rgba(77, 163, 255, 0.14);
+  --st-border: rgba(255, 255, 255, 0.12);
+}
+
+body[data-layout="landing"] .actionbar { display: none; }
+body[data-layout="landing"] article { max-width: none; overflow-x: hidden; }
+body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
+
+.st-hero {
+  padding: 3.5rem 0 2.5rem;
+  text-align: center;
+}
+.st-hero img { width: 200px; max-width: 60vw; height: auto; margin-bottom: 1.25rem; }
+.st-hero h1 {
+  overflow-wrap: anywhere;
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 auto 1rem;
+  max-width: 22ch;
+  line-height: 1.15;
+}
+.st-hero h1 em { font-style: normal; color: var(--st-accent); }
+.st-hero p.st-lead {
+  padding: 0 0.5rem;
+  font-size: 1.15rem;
+  max-width: 62ch;
+  margin: 0 auto 1.5rem;
+  opacity: 0.85;
+}
+.st-cta { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+.st-cta .btn { padding: 0.65rem 1.4rem; font-weight: 600; }
+.st-badges { margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+.st-badges img { height: 20px; }
+
+.st-section { padding: 2.5rem 0 1rem; }
+.st-section > h2 {
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  border: 0;
+}
+.st-section > p.st-sub { text-align: center; opacity: 0.8; max-width: 60ch; margin: 0 auto 1.75rem; }
+
+.st-door {
+  border: 1px solid var(--st-border);
+  border-radius: 14px;
+  padding: 1.5rem 1.5rem 1.25rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bs-body-bg);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.st-door:hover { border-color: var(--st-accent); box-shadow: 0 6px 24px var(--st-accent-soft); }
+.st-door .st-icon {
+  width: 44px; height: 44px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--st-accent-soft); color: var(--st-accent); font-size: 1.35rem;
+  margin-bottom: 0.9rem;
+}
+.st-door h3 { font-size: 1.2rem; font-weight: 700; margin: 0 0 0.25rem; }
+.st-door p.st-who { font-size: 0.95rem; opacity: 0.8; margin-bottom: 0.9rem; }
+.st-door pre { margin: 0 0 0.75rem; font-size: 0.74rem; max-width: 100%; overflow-x: auto; }
+.st-door pre code { white-space: pre; }
+.st-door .st-not { font-size: 0.9rem; margin: 0.25rem 0 1rem; }
+.st-door .st-not strong { color: var(--st-accent-deep); }
+.st-door .st-go { margin-top: auto; font-weight: 600; }
+
+.st-grow { text-align: center; }
+.st-grow img, .st-grow svg { width: 100%; max-width: 980px; height: auto; color: var(--bs-body-color); }
+.st-grow figcaption { font-size: 0.9rem; opacity: 0.75; margin-top: 0.5rem; }
+
+.st-feature {
+  border-left: 3px solid var(--st-accent);
+  padding: 0.25rem 0 0.25rem 1rem;
+  height: 100%;
+}
+.st-feature h4 { font-size: 1rem; font-weight: 700; margin: 0 0 0.25rem; }
+.st-feature p { font-size: 0.92rem; margin: 0; opacity: 0.85; }
+
+.st-numbers { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; }
+.st-number {
+  flex: 1 1 200px; max-width: 260px;
+  border: 1px solid var(--st-border); border-radius: 14px; padding: 1.25rem; text-align: center;
+}
+.st-number .st-big { font-size: 2rem; font-weight: 800; color: var(--st-accent); line-height: 1.1; }
+.st-number .st-what { font-size: 0.9rem; opacity: 0.85; margin-top: 0.35rem; }
+
+.st-compare table { width: 100%; font-size: 0.92rem; }
+.st-compare td:first-child { white-space: nowrap; font-weight: 600; }
+.st-compare .st-note { font-size: 0.85rem; opacity: 0.75; text-align: center; margin-top: 0.5rem; }
+
+.st-final {
+  text-align: center; padding: 3rem 1rem;
+  border: 1px solid var(--st-border); border-radius: 18px;
+  background: linear-gradient(135deg, var(--st-accent-soft), transparent 70%);
+  margin: 2rem 0 3rem;
+}
+.st-final h2 { border: 0; font-weight: 700; }
+
+@media (max-width: 767.98px) {
+  .st-hero { padding-top: 2rem; }
+  .st-door { margin-bottom: 1rem; }
+}
