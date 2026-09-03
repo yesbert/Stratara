@@ -81,7 +81,7 @@
       "_appTitle": "Stratara — CQRS and Event Sourcing for .NET, MIT",
       "_appLogoPath": "assets/icon.png",
       "_appFaviconPath": "assets/icon.png",
-      "_appBaseUrl": "https://stratara.tech",
+      "_appBaseUrl": "https://docs.stratara.tech",
       "_enableSearch": true,
       "_gitContribute": {
         "repo": "https://github.com/yesbert/Stratara",
