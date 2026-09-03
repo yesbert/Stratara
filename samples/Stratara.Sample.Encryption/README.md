@@ -45,7 +45,7 @@ Expected: same-tenant decryption succeeds, both cross-tenant attempts raise `Cry
 
 ## Concept doc
 
-For the wider *why* — threat model, key-rotation story, why GCM specifically — see [Tenant-Aware Encryption](https://stratara.tech/concepts/tenant-aware-encryption.html).
+For the wider *why* — threat model, key-rotation story, why GCM specifically — see [Tenant-Aware Encryption](https://docs.stratara.tech/concepts/tenant-aware-encryption.html).
 
 ## Sister hero sample
 

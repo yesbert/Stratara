@@ -5,10 +5,8 @@
 # environment (the second always loses — "deployment in progress"). Triggering only on main covers
 # every case where docs/ actually changed.
 #
-# Source-of-truth for the docs is the docs/ tree in this repo; the published site is at
-# stratara.tech (Custom Domain configured via docs/CNAME). The former host docs.stratara.tech
-# keeps working because its DNS record still points at Pages, which redirects a previous custom
-# domain to the current one — so that record must not be deleted.
+# Source-of-truth for the docs is the docs/ tree in this repo; the published
+# site is at docs.stratara.tech (Custom Domain configured via docs/CNAME).
 
 name: Deploy DocFX site to GitHub Pages
 

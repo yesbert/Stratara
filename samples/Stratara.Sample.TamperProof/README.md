@@ -50,7 +50,7 @@ Expected: the clean verify passes; the naive tamper is caught at sequence #2; af
 
 ## Concept doc
 
-For the wider *why* — threat model, what we hash, why SHA-256, how the worker schedules itself — see [Tamper-Evident Streams](https://stratara.tech/concepts/tamper-evident-streams.html).
+For the wider *why* — threat model, what we hash, why SHA-256, how the worker schedules itself — see [Tamper-Evident Streams](https://docs.stratara.tech/concepts/tamper-evident-streams.html).
 
 ## Sister hero sample
 

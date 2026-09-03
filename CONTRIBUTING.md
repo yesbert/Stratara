@@ -14,7 +14,7 @@ release, which is why the history before 2026-08-30 is coarse. Everything after 
 |---|---|
 | **Bug reports** | Open an issue with the `bug` template. The more reproducible, the better — include the Stratara version, the .NET version, and a minimal repro if you can. |
 | **Pull requests** | Yes, and see below. Small and focused beats large and sweeping. |
-| **Questions** | Open an issue with the `question` template. Please check <https://stratara.tech> first. |
+| **Questions** | Open an issue with the `question` template. Please check <https://docs.stratara.tech> first. |
 | **Security issues** | Follow [`SECURITY.md`](SECURITY.md) — do **not** file a public issue. |
 | **Documentation feedback** | An issue is fine, a pull request is better. The docs live in `docs/` and ship on the same cadence as the code; every hand-written page on the site carries an **Edit this page** link that lands on its source file. The API reference has none — it is generated from the XML documentation comments in `src/`, so it is fixed there. |
 
