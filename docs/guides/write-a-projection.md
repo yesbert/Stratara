@@ -175,9 +175,24 @@ in the host is emptied, including the ones that were fine.
 it subscribes and waits. But when a request arrives it begins immediately. There is no dry run, no
 "are you sure", and no built-in guard on who may ask.
 
+**A batch that fails is retried before the replay gives up.** Each batch — reading it from the
+event store and applying it — runs under the `ResilienceNames.ProjectionReplayBatch` policy: five
+attempts in all, exponential backoff from one second with jitter between them — about fifteen
+seconds of waiting plus jitter before the last one — any exception except cancellation. A read-store timeout or a dropped connection mid-rebuild is retried;
+each attempt after a failure logs `104_011` so you can see the replay struggling rather than merely
+slow. A retried batch is applied again **from its first entry**, in a fresh scope — which is why the
+converge-not-accumulate rule above is not optional. A failure that persists through every attempt
+ends the replay exactly as an unretried one would.
+
 And when it ends, it marks itself inactive **whether it succeeded or not**. A replay that dies
 half-way leaves you with partially rebuilt read models and no flag saying so. Treat a failed replay
 as "run it again", not as "it stopped safely".
+
+**A replay is a maintenance operation.** Run it in a window, after a backup of the read store. The
+retry above covers a failure that passes; it does not make a deterministic one survivable, and the
+framework does not keep the previous views for you. If a replay fails and does not complete on a
+second or third attempt, the backup is the fallback while you look for the cause — that procedure
+belongs to your operations, not to the framework.
 
 **A host that is killed does not get to mark anything.** Failing is an ending; being killed is not.
 A `SIGKILL`, a container stop, an out-of-memory kill or a reboot leaves the replay with no chance to

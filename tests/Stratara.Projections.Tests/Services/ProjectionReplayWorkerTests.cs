@@ -1,6 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Registry;
+using Polly.Retry;
+using Stratara.Diagnostics;
 using Stratara.Projections.Abstractions;
 using Stratara.Projections.Services;
 using Stratara.Abstractions.EventSourcing;
@@ -154,6 +158,116 @@ public class ProjectionReplayWorkerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task ReplayCallback_BatchFailsOnceThenSucceeds_ReplayCompletesAndBatchIsReapplied()
+    {
+        var harness = new Harness(batchPipeline: FastRetryPipeline());
+        var entry = NewEntry(sequenceNumber: 1);
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        harness.EventStreamRepository
+            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns<long, int, CancellationToken>((afterSeq, _, _) =>
+                Task.FromResult<IReadOnlyList<EventStreamEntry>>(afterSeq == 0 ? [entry] : []));
+        var calls = 0;
+        harness.ProjectionManager
+            .Setup(m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()))
+            .Returns(() => ++calls == 1
+                ? Task.FromException(new TimeoutException("read store busy"))
+                : Task.CompletedTask);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Equal(2, calls);
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+        harness.ReplayState.Verify(s => s.SetProgress(1, 1), Times.AtLeastOnce);
+        harness.ReplayState.Verify(s => s.Deactivate(), Times.Once);
+        var retry = Assert.Single(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ProjectionReplayBatchFailed);
+        Assert.Equal(LogLevel.Warning, retry.Level);
+        Assert.Contains("attempt 1", retry.Message);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_BatchReadFailsOnceThenSucceeds_ReplayContinuesFromTheSameSequence()
+    {
+        var harness = new Harness(batchPipeline: FastRetryPipeline());
+        var entry = NewEntry(sequenceNumber: 1);
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        var capturedAfterSequences = new List<long>();
+        harness.EventStreamRepository
+            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns<long, int, CancellationToken>((afterSeq, _, _) =>
+            {
+                capturedAfterSequences.Add(afterSeq);
+                if (capturedAfterSequences.Count == 1)
+                {
+                    throw new TimeoutException("event store busy");
+                }
+
+                return Task.FromResult<IReadOnlyList<EventStreamEntry>>(afterSeq == 0 ? [entry] : []);
+            });
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Equal([0L, 0L, 1L], capturedAfterSequences);
+        harness.ProjectionManager.Verify(
+            m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_BatchFailsOnEveryAttempt_ReplayFailsAfterTheBound()
+    {
+        var harness = new Harness(batchPipeline: FastRetryPipeline());
+        var entry = NewEntry(sequenceNumber: 1);
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        harness.EventStreamRepository
+            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([entry]);
+        harness.ProjectionManager
+            .Setup(m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("row missing"));
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ProjectionManager.Verify(
+            m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(FastRetryAttempts));
+        harness.ReplayState.Verify(s => s.SetFailed(It.Is<string>(m => m.Contains("row missing"))), Times.Once);
+        harness.ReplayState.Verify(s => s.Deactivate(), Times.Once);
+        Assert.Equal(FastRetryAttempts, harness.Logger.Entries.Count(e => e.EventId == LogEvents.Projection.ProjectionReplayBatchFailed));
+    }
+
+    [Fact]
+    public async Task ReplayCallback_CancelledDuringABatch_IsNotRetriedAndNotRecordedAsFailure()
+    {
+        var harness = new Harness(batchPipeline: FastRetryPipeline());
+        var entry = NewEntry(sequenceNumber: 1);
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        harness.EventStreamRepository
+            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([entry]);
+        harness.ProjectionManager
+            .Setup(m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ProjectionManager.Verify(
+            m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+        harness.ReplayState.Verify(s => s.Deactivate(), Times.Once);
+        Assert.DoesNotContain(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ProjectionReplayBatchFailed);
+    }
+
+    private const int FastRetryAttempts = 5;
+
+    private static ResiliencePipeline FastRetryPipeline() =>
+        new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = FastRetryAttempts - 1, Delay = TimeSpan.Zero })
+            .Build();
+
     private static void SetupBatchSequence(Harness harness, IReadOnlyList<EventStreamEntry>[] batches)
     {
         var queue = new Queue<IReadOnlyList<EventStreamEntry>>(batches);
@@ -178,6 +292,9 @@ public class ProjectionReplayWorkerTests
 
     private sealed class Harness
     {
+        private readonly ResiliencePipeline _batchPipeline;
+
+        public RecordingLogger<ProjectionReplayWorker> Logger { get; } = new();
         public Mock<IProjectionReplayState> ReplayState { get; } = new();
         public Mock<IProjectionViewTruncator> ViewTruncator { get; } = new();
         public Mock<IProjectionManager> ProjectionManager { get; } = new();
@@ -187,8 +304,9 @@ public class ProjectionReplayWorkerTests
         public Mock<IEventMapperFactory> EventMapperFactory { get; } = new();
         public Mock<ISessionContextProvider> SessionContextProvider { get; } = new();
 
-        public Harness()
+        public Harness(ResiliencePipeline? batchPipeline = null)
         {
+            _batchPipeline = batchPipeline ?? ResiliencePipeline.Empty;
             UnitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Transaction.Object);
             UnitOfWork.Setup(u => u.CreateEventStreamRepository(It.IsAny<ITransaction>())).Returns(EventStreamRepository.Object);
             EventStreamRepository
@@ -222,11 +340,15 @@ public class ProjectionReplayWorkerTests
             var sp = services.BuildServiceProvider();
             var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
 
+            var pipelineProvider = new Mock<ResiliencePipelineProvider<string>>();
+            pipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(_batchPipeline);
+
             var options = Options.Create(new ProjectionOptions { BatchSize = 100 });
             var worker = new ProjectionReplayWorker(
-                NullLogger<ProjectionReplayWorker>.Instance,
+                Logger,
                 scopeFactory,
                 ReplayState.Object,
+                pipelineProvider.Object,
                 options);
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -240,5 +362,16 @@ public class ProjectionReplayWorkerTests
 
             await worker.StopAsync(CancellationToken.None);
         }
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
     }
 }

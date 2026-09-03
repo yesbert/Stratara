@@ -145,7 +145,7 @@ Public extension methods a host calls to wire Stratara, with what each one does 
 | `AddProjectionsFromAssemblyContaining<T>()` | Stratara.Projections | Scans the assembly containing T and registers every concrete IProjection implementation it finds as a scoped service |
 | `AddQueryHandlersFromAssemblyContaining<T>()` | Stratara.Mediator | Scan the assembly containing T and register every concrete IQueryHandler`2 implementation as a scoped service |
 | `AddRedisOutboxLock()` | Stratara.Outbox.RabbitMQ | Replaces the default NullOutboxLock with the Redis-backed RedisOutboxLock, enabling safe multi-instance outbox-worker deployments |
-| `AddResiliencePipelines()` | Stratara.Resilience | Register every Stratara named resilience pipeline (MessageBus, CommandDispatcher, EventBundleDispatcher, ConcurrencyConflict) with the application's Polly registry |
+| `AddResiliencePipelines()` | Stratara.Resilience | Register every Stratara named resilience pipeline (MessageBus, CommandDispatcher, EventBundleDispatcher, ConcurrencyConflict, PrecedingFact, ProjectionReplayBatch) with the application's Polly registry |
 | `AddSagaWorker(IConfiguration configuration)` | Stratara.Sagas | Registers the saga runtime services (ISagaManager, ISagaHandler, ISagaMethodInvoker) and the hosted SagaWorker; binds SagaOptions from the Sagas configuration section |
 | `AddSagaWorkerServices()` | Stratara.EventSourcing.WorkerDefaults | Registers the saga-worker stack: common framework services + write store + event sourcing + outbox dispatcher + saga worker (hosted service that reacts to event bundles) |
 | `AddSagasFromAssemblyContaining<T>()` | Stratara.Sagas | Scans the assembly that contains T for concrete ISaga implementations and registers each as a scoped ISaga |

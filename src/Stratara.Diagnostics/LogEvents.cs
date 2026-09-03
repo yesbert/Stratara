@@ -77,6 +77,8 @@ public static class LogEvents
         public const int ProjectionReplayFailed = 104_109;
         /// <summary>A bundle refers to an entity no projection has applied yet; it is retried (warning).</summary>
         public const int PrecedingFactMissing = 104_010;
+        /// <summary>A projection-replay batch failed on one attempt and is retried under the replay-batch policy (warning).</summary>
+        public const int ProjectionReplayBatchFailed = 104_011;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>

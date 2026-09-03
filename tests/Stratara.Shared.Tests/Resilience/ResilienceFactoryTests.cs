@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Polly;
 using Polly.Registry;
 using Stratara.Abstractions.EventSourcing;
@@ -114,5 +115,80 @@ public class ResilienceFactoryTests
         }
 
         Assert.NotSame(pipelines.GetPipeline(ResilienceNames.PrecedingFact), pipelines.GetPipeline(ResilienceNames.ConcurrencyConflict));
+    }
+
+    [Fact]
+    public async Task CreateProjectionReplayBatchPipeline_RetriesAnyExceptionAndReturnsTheEventualResult()
+    {
+        var clock = new FakeTimeProvider();
+        var pipeline = ProjectionReplayBatchPipelineOn(clock);
+
+        var attempts = 0;
+        var execution = pipeline.ExecuteAsync(_ =>
+        {
+            attempts++;
+            return attempts < 3
+                ? throw new TimeoutException("read store busy")
+                : ValueTask.FromResult(42);
+        }).AsTask();
+
+        await PumpAsync(clock, () => execution.IsCompleted);
+
+        Assert.Equal(42, await execution);
+        Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public async Task CreateProjectionReplayBatchPipeline_StopsAfterFiveAttemptsAndSurfacesTheLastException()
+    {
+        var clock = new FakeTimeProvider();
+        var pipeline = ProjectionReplayBatchPipelineOn(clock);
+
+        var attempts = 0;
+        var execution = pipeline.ExecuteAsync(_ =>
+        {
+            attempts++;
+            throw new InvalidOperationException($"attempt {attempts}");
+        }).AsTask();
+
+        await PumpAsync(clock, () => execution.IsCompleted);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => execution);
+        Assert.Equal(ResilienceFactory.ProjectionReplayBatchAttempts, attempts);
+        Assert.Equal($"attempt {ResilienceFactory.ProjectionReplayBatchAttempts}", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateProjectionReplayBatchPipeline_DoesNotRetryCancellation()
+    {
+        var builder = new ResiliencePipelineBuilder();
+        ResilienceFactory.CreateProjectionReplayBatchPipeline(builder);
+        var pipeline = builder.Build();
+
+        var attempts = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await pipeline.ExecuteAsync(_ =>
+            {
+                attempts++;
+                throw new OperationCanceledException();
+            }));
+
+        Assert.Equal(1, attempts);
+    }
+
+    private static ResiliencePipeline ProjectionReplayBatchPipelineOn(FakeTimeProvider clock)
+    {
+        var builder = new ResiliencePipelineBuilder { TimeProvider = clock };
+        ResilienceFactory.CreateProjectionReplayBatchPipeline(builder);
+        return builder.Build();
+    }
+
+    private static async Task PumpAsync(FakeTimeProvider clock, Func<bool> until, int seconds = 600)
+    {
+        for (var i = 0; i < seconds && !until(); i++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(1));
+            await Task.Yield();
+        }
     }
 }

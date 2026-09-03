@@ -13,7 +13,8 @@ public static class ResilienceServiceCollectionExtensions
     /// <summary>
     /// Register every Stratara named resilience pipeline (<see cref="ResilienceNames.MessageBus"/>,
     /// <see cref="ResilienceNames.CommandDispatcher"/>, <see cref="ResilienceNames.EventBundleDispatcher"/>,
-    /// <see cref="ResilienceNames.ConcurrencyConflict"/>) with the application's Polly registry.
+    /// <see cref="ResilienceNames.ConcurrencyConflict"/>, <see cref="ResilienceNames.PrecedingFact"/>,
+    /// <see cref="ResilienceNames.ProjectionReplayBatch"/>) with the application's Polly registry.
     /// </summary>
     /// <remarks>
     /// Idempotent — subsequent calls re-register the same pipelines, which Polly tolerates by
@@ -36,6 +37,7 @@ public static class ResilienceServiceCollectionExtensions
         services.AddEventBundleDispatcherPipeline();
         services.AddConcurrencyConflictPipeline();
         services.AddPrecedingFactPipeline();
+        services.AddProjectionReplayBatchPipeline();
         return services;
     }
 
@@ -62,5 +64,10 @@ public static class ResilienceServiceCollectionExtensions
     private static void AddPrecedingFactPipeline(this IServiceCollection services)
     {
         services.AddResiliencePipeline(ResilienceNames.PrecedingFact, ResilienceFactory.CreatePrecedingFactPipeline);
+    }
+
+    private static void AddProjectionReplayBatchPipeline(this IServiceCollection services)
+    {
+        services.AddResiliencePipeline(ResilienceNames.ProjectionReplayBatch, ResilienceFactory.CreateProjectionReplayBatchPipeline);
     }
 }

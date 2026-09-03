@@ -40,4 +40,12 @@ public static class ResilienceNames
     /// saga workers run every bundle under it.
     /// </summary>
     public const string PrecedingFact = "PrecedingFactPipeline";
+
+    /// <summary>
+    /// Pipeline the projection-replay worker runs each batch under: five attempts in all, exponential backoff
+    /// from one second with jitter between them, retrying any exception except cancellation. A
+    /// read-store timeout or a dropped connection mid-rebuild is retried; a failure that persists through
+    /// every attempt ends the replay as an unretried one would.
+    /// </summary>
+    public const string ProjectionReplayBatch = "ProjectionReplayBatchPipeline";
 }
