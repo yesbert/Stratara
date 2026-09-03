@@ -22,7 +22,8 @@
       diagram; "Why Stratara" condensed to five bullets; performance section kept; documentation,
       install, license, contributing kept; package table replaced by a link to
       `docs/overview/packages.md`.
-- [x] 2.2 `tests/Stratara.Documentation.Tests` green (README and docs snippets compile).
+- [x] 2.2 `tests/Stratara.Documentation.Tests` green (the docs snippets compile; the README is not in
+      that suite's scope, so its door snippets were checked by hand to be self-contained).
 
 ## 3. Gate and follow-ups
 

@@ -34,9 +34,11 @@ public sealed class OpenAccountHandler : IQueryHandler<OpenAccount, Guid>
 }
 
 // Program.cs
+var builder = WebApplication.CreateBuilder(args);
 builder.Services
     .AddMediator()
     .AddQueryHandlersFromAssemblyContaining<Program>();
+var app = builder.Build();
 
 using var scope = app.Services.CreateScope();          // IMediator is scoped
 var id = await scope.ServiceProvider.GetRequiredService<IMediator>()
