@@ -89,8 +89,13 @@ function initConsent() {
       loadAnalytics()
       showBanner(false)
     } else if (target.closest('[data-consent-decline]')) {
+      // Declining after an earlier accept has to undo the accept, not just record the
+      // refusal: reload so nothing the script already registered outlives the answer.
+      const wasAccepted = readConsent() === 'accepted'
       writeConsent('declined')
+      unloadAnalytics()
       showBanner(false)
+      if (wasAccepted) location.reload()
     } else if (target.closest('[data-consent-open]')) {
       showBanner(true)
     } else if (target.closest('[data-consent-revoke]')) {
