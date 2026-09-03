@@ -88,10 +88,14 @@ public static class LogEvents
         public const int CommandWorkerStopped = 105_002;
         /// <summary>A command-worker lane (interactive or heavy) has bound to its topic/subscription.</summary>
         public const int CommandWorkerLaneStarted = 105_005;
-        /// <summary>Command envelope integrity-signature verification failed under Permissive mode (warning, payload still dispatched).</summary>
+        /// <summary>Command envelope carried a signature that did not verify, under Permissive mode (warning, payload still dispatched).</summary>
         public const int CommandEnvelopeIntegrityWarning = 105_003;
-        /// <summary>Command envelope integrity-signature verification failed under Strict mode (rejected, payload dropped).</summary>
+        /// <summary>Command envelope carried no signature, under Permissive mode (warning, payload still dispatched).</summary>
+        public const int CommandEnvelopeUnsignedWarning = 105_004;
+        /// <summary>Command envelope carried a signature that did not verify, under Strict mode (rejected, payload dropped).</summary>
         public const int CommandEnvelopeIntegrityRejected = 105_104;
+        /// <summary>Command envelope carried no signature, under Strict mode (rejected, payload dropped).</summary>
+        public const int CommandEnvelopeUnsignedRejected = 105_105;
     }
 
     /// <summary>Outbox worker event-IDs (106_000s).</summary>
@@ -180,10 +184,14 @@ public static class LogEvents
     /// <summary>Event-bundle integrity event-IDs (111_000s) — emitted by every worker that consumes <c>EventBundle</c>s (projection, saga).</summary>
     public static class EventBundleIntegrity
     {
-        /// <summary>Event bundle integrity-signature verification failed under Permissive mode (warning, payload still dispatched).</summary>
+        /// <summary>Event bundle carried a signature that did not verify, under Permissive mode (warning, payload still dispatched).</summary>
         public const int IntegrityWarning = 111_003;
-        /// <summary>Event bundle integrity-signature verification failed under Strict mode (rejected, payload dropped).</summary>
+        /// <summary>Event bundle carried no signature, under Permissive mode (warning, payload still dispatched).</summary>
+        public const int UnsignedWarning = 111_004;
+        /// <summary>Event bundle carried a signature that did not verify, under Strict mode (rejected, payload dropped).</summary>
         public const int IntegrityRejected = 111_104;
+        /// <summary>Event bundle carried no signature, under Strict mode (rejected, payload dropped).</summary>
+        public const int UnsignedRejected = 111_105;
     }
 
     /// <summary>Bus-envelope integrity startup event-IDs (113_000s) — emitted by the integrity-startup probe.</summary>

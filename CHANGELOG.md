@@ -16,7 +16,22 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `4.0.1`._
+### Changed
+
+- **An integrity failure now says whether the signature was absent or wrong, and the existing
+  warning and error ids fire only for a signature that is present and does not verify.** An
+  unsigned envelope — what every not-yet-restarted publisher emits during a `Permissive` roll —
+  was logged as *"signature mismatch"* under the same id as a key mismatch or tampering, so an
+  operator could not tell a rolling restart from an attack without correlating host start times.
+  Four new event ids carry the unsigned case: `105_004` (command, permissive), `111_004` (event
+  bundle, permissive), `105_105` (command, strict) and `111_105` (event bundle, strict). The
+  existing `105_003`, `111_003`, `105_104` and `111_104` keep their numbers and their level but
+  now mean a present signature that did not verify; an alert keyed on one of them goes quiet
+  during a roll instead of firing for every unsigned message. Strict-mode rejections name the
+  case in their exception message. `BusEnvelopeIntegrityVerifier.Verify` gains an overload with
+  `out BusEnvelopeIntegrityFailure` (`None`, `Absent`, `Invalid`); the existing overload and the
+  `BusEnvelopeIntegrityResult` values are unchanged. An absent signature no longer reaches the
+  signer, which already answered `false` for it.
 
 ## [4.0.1] — 2026-09-02
 

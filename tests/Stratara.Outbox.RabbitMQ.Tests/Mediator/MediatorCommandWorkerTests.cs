@@ -1,7 +1,8 @@
 using System.Text.Json;
 using Stratara.Outbox.RabbitMQ.Mediator;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Registry;
@@ -10,6 +11,7 @@ using Stratara.Contracts.Session;
 using Stratara.Mediator;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
+using Stratara.Diagnostics;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
@@ -171,8 +173,12 @@ public class MediatorCommandWorkerTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => harness.Sut.DispatchAsync(envelope, CancellationToken.None));
 
-        Assert.Contains("integrity verification", ex.Message);
+        Assert.Contains("carries no signature", ex.Message);
+        Assert.DoesNotContain("does not verify", ex.Message);
         harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.CommandProcessing.CommandEnvelopeUnsignedRejected, entry.Id.Id);
+        Assert.Equal(LogLevel.Error, entry.Level);
     }
 
     [Fact]
@@ -185,12 +191,18 @@ public class MediatorCommandWorkerTests
         var signed = unsigned with { Signature = signer.Sign(BusEnvelopeCanonical.Of(unsigned)) };
         var tampered = signed with { SessionContextJson = JsonSerializer.Serialize(SessionContext.Empty() with { TenantId = Guid.NewGuid() }) };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => harness.Sut.DispatchAsync(tampered, CancellationToken.None));
+
+        Assert.Contains("does not verify", ex.Message);
+        Assert.DoesNotContain("carries no signature", ex.Message);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.CommandProcessing.CommandEnvelopeIntegrityRejected, entry.Id.Id);
+        Assert.Equal(LogLevel.Error, entry.Level);
     }
 
     [Fact]
-    public async Task DispatchAsync_PermissiveMode_MissingSignature_DispatchesAnyway()
+    public async Task DispatchAsync_PermissiveMode_MissingSignature_DispatchesAndRecordsUnsigned()
     {
         var signer = new InMemoryEnvelopeSigner();
         var harness = new Harness(BusEnvelopeIntegrityMode.Permissive, signer);
@@ -199,6 +211,26 @@ public class MediatorCommandWorkerTests
         await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
 
         harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Once);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot(), e => e.Level == LogLevel.Warning);
+        Assert.Equal(LogEvents.CommandProcessing.CommandEnvelopeUnsignedWarning, entry.Id.Id);
+        Assert.Contains("carries no signature", entry.Message);
+        Assert.DoesNotContain(harness.Logger.Collector.GetSnapshot(), e => e.Id.Id == LogEvents.CommandProcessing.CommandEnvelopeIntegrityWarning);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_PermissiveMode_InvalidSignature_DispatchesAndRecordsInvalid()
+    {
+        var signer = new InMemoryEnvelopeSigner();
+        var harness = new Harness(BusEnvelopeIntegrityMode.Permissive, signer);
+        var envelope = NewEnvelope(new PlainCommand("hello"), SessionContext.Empty()) with { Signature = "not-the-signature" };
+
+        await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
+
+        harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Once);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot(), e => e.Level == LogLevel.Warning);
+        Assert.Equal(LogEvents.CommandProcessing.CommandEnvelopeIntegrityWarning, entry.Id.Id);
+        Assert.Contains("does not verify", entry.Message);
+        Assert.DoesNotContain(harness.Logger.Collector.GetSnapshot(), e => e.Id.Id == LogEvents.CommandProcessing.CommandEnvelopeUnsignedWarning);
     }
 
     [Fact]
@@ -235,6 +267,7 @@ public class MediatorCommandWorkerTests
         public Mock<ResiliencePipelineProvider<string>> PipelineProvider { get; } = new();
         public Mock<ISessionContextProvider> SessionContextProvider { get; } = new();
         public Mock<IMediator> Mediator { get; } = new();
+        public FakeLogger<MediatorCommandWorker> Logger { get; } = new();
 
         public MediatorCommandWorker Sut { get; }
 
@@ -258,7 +291,7 @@ public class MediatorCommandWorkerTests
                     Task.FromResult(JsonSerializer.Deserialize(json, type)));
 
             Sut = new MediatorCommandWorker(
-                NullLogger<MediatorCommandWorker>.Instance,
+                Logger,
                 MessageBus.Object,
                 MessagingIdentifier.Object,
                 scopeFactory,

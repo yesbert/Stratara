@@ -16,23 +16,43 @@ namespace Stratara.Shared.Diagnostics.Extensions;
 /// </remarks>
 public static partial class LoggerEventBundleExtensions
 {
-    /// <summary>Logs that an event bundle failed integrity verification under Permissive mode and is still being dispatched.</summary>
+    /// <summary>Logs that an event bundle carried a signature that did not verify, and is still being dispatched under Permissive mode.</summary>
     /// <param name="logger">The logger to emit through.</param>
     /// <param name="firstEventId">Id of the first event in the bundle.</param>
     /// <param name="eventCount">Number of events in the bundle.</param>
     [LoggerMessage(
         EventId = LogEvents.EventBundleIntegrity.IntegrityWarning,
         Level = LogLevel.Warning,
-        Message = "Event bundle (first event {FirstEventId}, {EventCount} events) integrity verification failed (Permissive mode) — dispatching but signature mismatch logged.")]
+        Message = "Event bundle (first event {FirstEventId}, {EventCount} events) carries a signature that does not verify (Permissive mode) — dispatching anyway. The publisher holds a different key, or the bundle was altered in transit.")]
     public static partial void LogEventBundleIntegrityWarning(this ILogger logger, Guid firstEventId, int eventCount);
 
-    /// <summary>Logs that an event bundle was rejected because integrity verification failed under Strict mode.</summary>
+    /// <summary>Logs that an event bundle carried no signature, and is still being dispatched under Permissive mode.</summary>
+    /// <param name="logger">The logger to emit through.</param>
+    /// <param name="firstEventId">Id of the first event in the bundle.</param>
+    /// <param name="eventCount">Number of events in the bundle.</param>
+    [LoggerMessage(
+        EventId = LogEvents.EventBundleIntegrity.UnsignedWarning,
+        Level = LogLevel.Warning,
+        Message = "Event bundle (first event {FirstEventId}, {EventCount} events) carries no signature (Permissive mode) — dispatching anyway. Expected while publishers are still being rolled over to signing; afterwards it means a publisher was missed.")]
+    public static partial void LogEventBundleUnsignedWarning(this ILogger logger, Guid firstEventId, int eventCount);
+
+    /// <summary>Logs that an event bundle was rejected under Strict mode because its signature did not verify.</summary>
     /// <param name="logger">The logger to emit through.</param>
     /// <param name="firstEventId">Id of the first event in the rejected bundle.</param>
     /// <param name="eventCount">Number of events in the rejected bundle.</param>
     [LoggerMessage(
         EventId = LogEvents.EventBundleIntegrity.IntegrityRejected,
         Level = LogLevel.Error,
-        Message = "Event bundle (first event {FirstEventId}, {EventCount} events) integrity verification failed (Strict mode) — rejecting bundle.")]
+        Message = "Event bundle (first event {FirstEventId}, {EventCount} events) carries a signature that does not verify (Strict mode) — rejecting bundle.")]
     public static partial void LogEventBundleIntegrityRejected(this ILogger logger, Guid firstEventId, int eventCount);
+
+    /// <summary>Logs that an event bundle was rejected under Strict mode because it carried no signature.</summary>
+    /// <param name="logger">The logger to emit through.</param>
+    /// <param name="firstEventId">Id of the first event in the rejected bundle.</param>
+    /// <param name="eventCount">Number of events in the rejected bundle.</param>
+    [LoggerMessage(
+        EventId = LogEvents.EventBundleIntegrity.UnsignedRejected,
+        Level = LogLevel.Error,
+        Message = "Event bundle (first event {FirstEventId}, {EventCount} events) carries no signature (Strict mode) — rejecting bundle. A publisher is not signing.")]
+    public static partial void LogEventBundleUnsignedRejected(this ILogger logger, Guid firstEventId, int eventCount);
 }

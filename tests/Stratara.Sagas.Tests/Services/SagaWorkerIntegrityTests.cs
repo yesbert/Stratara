@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
+using Stratara.Diagnostics;
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Registry;
@@ -50,8 +52,12 @@ public class SagaWorkerIntegrityTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => harness.Sut.HandleEventBundleAsync(bundle, CancellationToken.None));
 
-        Assert.Contains("integrity verification", ex.Message);
+        Assert.Contains("carries no signature", ex.Message);
+        Assert.DoesNotContain("does not verify", ex.Message);
         harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Never);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.UnsignedRejected, entry.Id.Id);
+        Assert.Equal(LogLevel.Error, entry.Level);
     }
 
     [Fact]
@@ -66,14 +72,19 @@ public class SagaWorkerIntegrityTests
             SessionContextJson = JsonSerializer.Serialize(SessionContext.Empty() with { TenantId = Guid.NewGuid() }),
         };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => harness.Sut.HandleEventBundleAsync(tampered, CancellationToken.None));
 
+        Assert.Contains("does not verify", ex.Message);
+        Assert.DoesNotContain("carries no signature", ex.Message);
         harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Never);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.IntegrityRejected, entry.Id.Id);
+        Assert.Equal(LogLevel.Error, entry.Level);
     }
 
     [Fact]
-    public async Task HandleEventBundleAsync_PermissiveMode_MissingSignature_DispatchesAnyway()
+    public async Task HandleEventBundleAsync_PermissiveMode_MissingSignature_DispatchesAndRecordsUnsigned()
     {
         var signer = new InMemoryEnvelopeSigner();
         var harness = new Harness(BusEnvelopeIntegrityMode.Permissive, signer);
@@ -82,6 +93,28 @@ public class SagaWorkerIntegrityTests
         await harness.Sut.HandleEventBundleAsync(bundle, CancellationToken.None);
 
         harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Once);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.UnsignedWarning, entry.Id.Id);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains("carries no signature", entry.Message);
+        Assert.DoesNotContain(harness.Logger.Collector.GetSnapshot(), e => e.Id.Id == LogEvents.EventBundleIntegrity.IntegrityWarning);
+    }
+
+    [Fact]
+    public async Task HandleEventBundleAsync_PermissiveMode_InvalidSignature_DispatchesAndRecordsInvalid()
+    {
+        var signer = new InMemoryEnvelopeSigner();
+        var harness = new Harness(BusEnvelopeIntegrityMode.Permissive, signer);
+        var bundle = NewBundle() with { Signature = "not-the-signature" };
+
+        await harness.Sut.HandleEventBundleAsync(bundle, CancellationToken.None);
+
+        harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Once);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.IntegrityWarning, entry.Id.Id);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains("does not verify", entry.Message);
+        Assert.DoesNotContain(harness.Logger.Collector.GetSnapshot(), e => e.Id.Id == LogEvents.EventBundleIntegrity.UnsignedWarning);
     }
 
     [Fact]
@@ -131,6 +164,7 @@ public class SagaWorkerIntegrityTests
         public Mock<ResiliencePipelineProvider<string>> PipelineProvider { get; } = new();
         public Mock<ISessionContextProvider> SessionContextProvider { get; } = new();
         public Mock<ISagaManager> SagaManager { get; } = new();
+        public FakeLogger<SagaWorker> Logger { get; } = new();
 
         public SagaWorker Sut { get; }
 
@@ -147,7 +181,7 @@ public class SagaWorkerIntegrityTests
             var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
 
             Sut = new SagaWorker(
-                NullLogger<SagaWorker>.Instance,
+                Logger,
                 MessageBus.Object,
                 MessagingIdentifier.Object,
                 scopeFactory,

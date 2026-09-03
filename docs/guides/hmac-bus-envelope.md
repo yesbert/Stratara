@@ -33,10 +33,22 @@ Three modes:
 | Mode | Producer behaviour | Consumer behaviour |
 |---|---|---|
 | `Off` (default) | No signature added | No verification — accepts any envelope |
-| `Permissive` | Always signs | Verifies if a signature is present; accepts unsigned (for rolling deployments) |
+| `Permissive` | Always signs | Verifies; accepts an unsigned envelope *and* one whose signature does not verify, recording each (for rolling deployments) |
 | `Strict` | Always signs | Rejects unsigned envelopes + envelopes with invalid signatures |
 
 Roll-out pattern: deploy producers with `Permissive` first, wait for the entire fleet to be running the signed version, then flip consumers to `Strict`.
+
+**What to expect in the log during a roll.** A consumer records the two failure cases as two
+different events, because they mean different things:
+
+| Event | Command worker | Projection / saga worker | Meaning |
+|---|---|---|---|
+| Unsigned envelope, dispatched | `105_004` | `111_004` | Expected while publishers are still being restarted. After the roll it means a publisher was missed |
+| Signature present but does not verify, dispatched | `105_003` | `111_003` | Not expected during a roll: the publisher holds a different key, or the envelope was altered in transit |
+| Unsigned envelope, rejected (`Strict`) | `105_105` | `111_105` | A publisher is not signing |
+| Signature does not verify, rejected (`Strict`) | `105_104` | `111_104` | Key mismatch or tampering |
+
+Alert on `105_003` / `111_003`; watch `105_004` / `111_004` fall to zero before flipping to `Strict`.
 
 **The same pattern applies when the projection itself changes**, and 3.4.0 is the first release where it does. Signatures produced by a pre-3.4.0 publisher do not verify against a 3.4.0 consumer. Move producers to 3.4.0 while consumers run `Permissive`, let the in-flight messages drain, then return consumers to `Strict`. Upgrading both sides straight into `Strict` rejects everything still in the queue.
 
