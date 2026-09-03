@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 300" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13">
+  <title id="t">How Stratara grows with you</title>
+  <desc id="d">Three stages: a mediator alone; the mediator plus an event store on PostgreSQL; the full stack with API hosts, a message bus, workers, the event store and read models.</desc>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4da3ff"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- stage labels -->
+  <g fill="currentColor" font-weight="700" font-size="14">
+    <text x="90" y="28" text-anchor="middle">1 · Mediator only</text>
+    <text x="330" y="28" text-anchor="middle">2 · + Event store</text>
+    <text x="740" y="28" text-anchor="middle">3 · + Workers and bus</text>
+  </g>
+  <g fill="currentColor" opacity="0.7" font-size="12">
+    <text x="90" y="46" text-anchor="middle">one package, in process</text>
+    <text x="330" y="46" text-anchor="middle">aggregates, events, PostgreSQL</text>
+    <text x="740" y="46" text-anchor="middle">competing consumers across N nodes</text>
+  </g>
+
+  <!-- stage 1 -->
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <rect x="30" y="110" width="120" height="56" rx="10" fill="url(#acc)" stroke="none"/>
+  </g>
+  <text x="90" y="133" text-anchor="middle" fill="#fff" font-weight="700">API host</text>
+  <text x="90" y="151" text-anchor="middle" fill="#fff" font-size="12">IMediator + handlers</text>
+
+  <!-- divider arrows -->
+  <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#arr)" opacity="0.6">
+    <line x1="170" y1="138" x2="215" y2="138"/>
+    <line x1="470" y1="138" x2="515" y2="138"/>
+  </g>
+
+  <!-- stage 2 -->
+  <rect x="222" y="90" width="146" height="56" rx="10" fill="url(#acc)"/>
+  <text x="295" y="113" text-anchor="middle" fill="#fff" font-weight="700">API host</text>
+  <text x="295" y="131" text-anchor="middle" fill="#fff" font-size="11">IMediator + IEventSource</text>
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <path d="M295 146 v34" marker-end="url(#arr)"/>
+    <ellipse cx="295" cy="200" rx="60" ry="10"/>
+    <path d="M235 200 v48 a60 10 0 0 0 120 0 v-48"/>
+  </g>
+  <text x="295" y="272" text-anchor="middle" fill="currentColor" font-size="12">event store · PostgreSQL</text>
+  <text x="295" y="288" text-anchor="middle" fill="currentColor" font-size="11" opacity="0.7">snapshots · outbox · hash chain</text>
+
+  <!-- stage 3 -->
+  <g>
+    <rect x="540" y="72" width="88" height="40" rx="8" fill="url(#acc)"/>
+    <rect x="540" y="120" width="88" height="40" rx="8" fill="url(#acc)"/>
+    <rect x="540" y="168" width="88" height="40" rx="8" fill="url(#acc)" opacity="0.7"/>
+    <text x="584" y="96" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">API host 1</text>
+    <text x="584" y="144" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">API host 2</text>
+    <text x="584" y="192" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">API host N</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#arr)" opacity="0.8">
+    <path d="M628 92 H660 V140 H676"/>
+    <path d="M628 140 H676"/>
+    <path d="M628 188 H660 V140"/>
+  </g>
+  <g stroke="currentColor" stroke-width="1.5" fill="var(--st-accent-soft, rgba(10,132,255,0.10))">
+    <path d="M700 118 h60 l16 22 l-16 22 h-60 l-16 -22 z"/>
+  </g>
+  <text x="730" y="136" text-anchor="middle" fill="currentColor" font-size="11" font-weight="700">message bus</text>
+  <text x="730" y="150" text-anchor="middle" fill="currentColor" font-size="10" opacity="0.8">RabbitMQ · Service Bus</text>
+  <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#arr)" opacity="0.8">
+    <path d="M776 130 H800 V96 H816"/>
+    <path d="M776 150 H800 V184 H816"/>
+  </g>
+  <g>
+    <rect x="818" y="76" width="150" height="40" rx="8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="818" y="164" width="150" height="40" rx="8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="893" y="93" text-anchor="middle" fill="currentColor" font-size="12" font-weight="700">command workers</text>
+    <text x="893" y="108" text-anchor="middle" fill="currentColor" font-size="10" opacity="0.8">competing consumers</text>
+    <text x="893" y="181" text-anchor="middle" fill="currentColor" font-size="12" font-weight="700">projection · saga workers</text>
+    <text x="893" y="196" text-anchor="middle" fill="currentColor" font-size="10" opacity="0.8">pushed event bundles</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <path d="M893 116 v22" marker-end="url(#arr)"/>
+    <ellipse cx="893" cy="150" rx="40" ry="6"/>
+    <path d="M853 150 v8 a40 6 0 0 0 80 0 v-8"/>
+    <path d="M893 204 v22" marker-end="url(#arr)"/>
+    <rect x="853" y="230" width="80" height="26" rx="6"/>
+  </g>
+  <text x="893" y="247" text-anchor="middle" fill="currentColor" font-size="10">read models</text>
+  <text x="740" y="286" text-anchor="middle" fill="currentColor" font-size="12" opacity="0.7">4096 stream buckets · single writer per aggregate · full parallelism across aggregates</text>
+</svg>
