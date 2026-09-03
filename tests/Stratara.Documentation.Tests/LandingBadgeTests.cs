@@ -22,20 +22,26 @@ public partial class LandingBadgeTests
     [GeneratedRegex(@"v(\d+\.\d+\.\d+)")]
     private static partial Regex BadgeVersionPattern();
 
-    [GeneratedRegex("""<img[^>]+src\s*=\s*"https?://|!\[[^\]]*\]\(\s*https?://""")]
+    // Quoted, single-quoted, bare and protocol-relative all reach another host, and so does a
+    // Markdown image. A guard that only knew the shape we happen to write today would pass the
+    // first time somebody wrote it differently, which is the one moment it exists for.
+    [GeneratedRegex("""<img[^>]+src\s*=\s*["']?(?:https?:)?//|!\[[^\]]*\]\(\s*(?:https?:)?//""")]
     private static partial Regex ExternallyHostedImagePattern();
 
     [Fact]
     public void TheReleaseBadge_NamesTheNewestRelease()
     {
         var root = RepositoryRoot.Locate();
-        var released = NewestReleasedVersionPattern()
-            .Match(File.ReadAllText(Path.Combine(root, "CHANGELOG.md"))).Groups[1].Value;
-        var badge = File.ReadAllText(Path.Combine(root, "docs", "assets", "badges", "nuget.svg"));
+        var release = NewestReleasedVersionPattern()
+            .Match(File.ReadAllText(Path.Combine(root, "CHANGELOG.md")));
+        var badge = BadgeVersionPattern()
+            .Match(File.ReadAllText(Path.Combine(root, "docs", "assets", "badges", "nuget.svg")));
 
-        var stated = BadgeVersionPattern().Match(badge).Groups[1].Value;
-
-        Assert.Equal(released, stated);
+        // Without these, a changelog heading or badge format we stopped recognising would leave
+        // both sides empty and the comparison would agree that nothing is wrong.
+        Assert.True(release.Success, "No dated release section was found in CHANGELOG.md.");
+        Assert.True(badge.Success, "No version was found in docs/assets/badges/nuget.svg.");
+        Assert.Equal(release.Groups[1].Value, badge.Groups[1].Value);
     }
 
     [Fact]
