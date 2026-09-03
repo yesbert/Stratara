@@ -12,6 +12,8 @@
 
 ---
 
+**New to the terms?** *Mediator* — your controller hands over one object (`OpenAccount`) and a dispatcher finds the single handler that answers it. *CQRS* — **C**ommand **Q**uery **R**esponsibility **S**egregation: a command changes something and returns little, a query reads and changes nothing, and keeping them apart lets each side take the shape its own job needs. *Event sourcing* — store the facts that happened (`AccountOpened`, `MoneyDeposited`) instead of the state they produced, and fold them to get the current value. Longer: the [glossary](https://docs.stratara.tech/overview/glossary.html).
+
 Stratara is one MIT-licensed family of 25 NuGet packages, versioned together: mediator, event store on PostgreSQL, outbox over RabbitMQ or Azure Service Bus, projections, sagas, identity — and, as defaults rather than add-ons, hash-chained tamper-evident event streams and tenant-bound field encryption with GDPR-grade crypto-shredding. Take one package or take all of them; they never disagree about each other's version.
 
 ## Pick your door
