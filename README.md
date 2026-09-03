@@ -104,8 +104,6 @@ Hello-mediator in five lines:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// The mediator traces each dispatch — AddMediator() does not register the Tracer for you.
-builder.Services.AddSingleton(TracerProvider.Default.GetTracer("MyApp"));
 builder.Services.AddMediator();
 builder.Services.AddCommandHandlersFromAssemblyContaining<Program>();
 

@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenTelemetry.Trace;
+using Stratara.Abstractions.Authorization;
 using Stratara.Abstractions.Mediator;
+using Stratara.Diagnostics;
 
 namespace Stratara.Infrastructure.Tests.DependencyInjection;
 
@@ -192,6 +195,116 @@ public class MediatorServiceCollectionExtensionsTests
         await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new TestQuery());
 
         Assert.Single(log);
+    }
+
+    [Fact]
+    public async Task AddMediator_Alone_ResolvesAndDispatches()
+    {
+        var services = new ServiceCollection();
+        services.AddMediator();
+        services.AddScoped<IQueryHandler<PingQuery, string>, PingQueryHandler>();
+        var sp = services.BuildServiceProvider();
+
+        using var scope = sp.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new PingQuery("hello"));
+
+        Assert.Equal("pong:hello", result);
+    }
+
+    [Fact]
+    public async Task AddMediator_WithoutHostTracer_EmitsDispatchSpansFromFrameworkSource()
+    {
+        var services = new ServiceCollection();
+        services.AddMediator();
+        services.AddScoped<IQueryHandler<PingQuery, string>, PingQueryHandler>();
+        var sp = services.BuildServiceProvider();
+
+        var spans = await CollectSpansAsync(ApplicationDiagnostics.Activity.SourceName, async () =>
+        {
+            using var scope = sp.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new PingQuery("x"));
+        });
+
+        Assert.Contains("Handle PingQuery", spans);
+    }
+
+    [Fact]
+    public async Task AddMediator_HostTracerRegisteredBefore_IsUsedForDispatchSpans()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(TracerProvider.Default.GetTracer("host-before"));
+        services.AddMediator();
+        services.AddScoped<IQueryHandler<PingQuery, string>, PingQueryHandler>();
+        var sp = services.BuildServiceProvider();
+
+        var spans = await CollectSpansAsync("host-before", async () =>
+        {
+            using var scope = sp.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new PingQuery("x"));
+        });
+
+        Assert.Contains("Handle PingQuery", spans);
+    }
+
+    [Fact]
+    public async Task AddMediator_HostTracerRegisteredAfter_IsUsedForDispatchSpans()
+    {
+        var services = new ServiceCollection();
+        services.AddMediator();
+        services.AddSingleton(TracerProvider.Default.GetTracer("host-after"));
+        services.AddScoped<IQueryHandler<PingQuery, string>, PingQueryHandler>();
+        var sp = services.BuildServiceProvider();
+
+        var spans = await CollectSpansAsync("host-after", async () =>
+        {
+            using var scope = sp.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new PingQuery("x"));
+        });
+
+        Assert.Contains("Handle PingQuery", spans);
+    }
+
+    [Fact]
+    public async Task AddAuthorizingMediator_WithoutAddMediatorOrHostTracer_ResolvesAndDispatches()
+    {
+        var services = new ServiceCollection();
+        services.AddAuthorizingMediator<AllowEverythingAuthorizationProvider>();
+        services.AddScoped<IQueryHandler<PingQuery, string>, PingQueryHandler>();
+        var sp = services.BuildServiceProvider();
+
+        using var scope = sp.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<IMediator>().HandleAsync(new PingQuery("auth"));
+
+        Assert.Equal("pong:auth", result);
+    }
+
+    private static async Task<IReadOnlyList<string>> CollectSpansAsync(string sourceName, Func<Task> act)
+    {
+        var names = new List<string>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == sourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => names.Add(activity.DisplayName),
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await act();
+
+        return names;
+    }
+
+    public sealed class AllowEverythingAuthorizationProvider : IAuthorizationProvider
+    {
+        public Task<bool> IsInRoleAsync(string role, CancellationToken cancellationToken) => Task.FromResult(true);
+    }
+
+    public sealed record PingQuery(string Payload) : IQuery<string>;
+
+    public sealed class PingQueryHandler : IQueryHandler<PingQuery, string>
+    {
+        public Task<string> HandleAsync(PingQuery request, CancellationToken cancellationToken) =>
+            Task.FromResult($"pong:{request.Payload}");
     }
 
     public sealed record TestCommand : ICommand;

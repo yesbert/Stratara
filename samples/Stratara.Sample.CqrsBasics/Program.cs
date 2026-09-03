@@ -1,7 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpenTelemetry.Trace;
 using Stratara.Sample.CqrsBasics.Commands;
 using Stratara.Sample.CqrsBasics.Domain;
 using Stratara.Sample.CqrsBasics.Infrastructure;
@@ -14,7 +13,6 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddSingleton<InMemoryAccountRepository>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(TracerProvider.Default.GetTracer("Stratara.Sample.CqrsBasics"));
 
 builder.Services
     .AddMediator()

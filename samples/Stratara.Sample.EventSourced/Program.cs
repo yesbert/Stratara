@@ -1,7 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpenTelemetry.Trace;
 using Stratara.Sample.EventSourced.Commands;
 using Stratara.Sample.EventSourced.Domain;
 using Stratara.Sample.EventSourced.EventStore;
@@ -18,7 +17,6 @@ builder.Services.AddSingleton<IProjection>(sp => sp.GetRequiredService<AccountBa
 builder.Services.AddSingleton<InMemoryEventStore>();
 builder.Services.AddSingleton<AggregationService>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(TracerProvider.Default.GetTracer("Stratara.Sample.EventSourced"));
 
 builder.Services
     .AddMediator()

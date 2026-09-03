@@ -16,7 +16,16 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `4.0.2`._
+### Fixed
+
+- **`AddMediator()` no longer requires the host to register an OpenTelemetry `Tracer`.** The
+  mediator traces every dispatch and obtained its tracer from the host, but nothing registered one,
+  so a host that called `AddMediator()` and nothing else failed at the first resolve of `IMediator`.
+  `AddMediator()` now registers a fallback that emits the dispatch spans from the framework's
+  `Stratara.Application` activity source — a host that subscribes to framework telemetry sees them,
+  a host that subscribes to nothing pays for nothing. A `Tracer` the host registers, before or after
+  `AddMediator()`, is still the one used, so no existing host changes behaviour; the registration
+  line can simply be deleted. The samples, the README and the package README no longer carry it.
 
 ## [4.0.2] — 2026-09-03
 
