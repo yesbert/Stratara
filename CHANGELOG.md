@@ -16,6 +16,17 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_no changes yet since `4.0.3`._
+
+## [4.0.3] — 2026-09-03
+
+Three fixes to the same complaint: a host composed exactly as the documentation describes did not
+start. Each one was a registration the composites assumed somebody else had made — a tracer, a unit
+of work, a Redis connection — and each is now made by the registration that needs it. Nothing that
+already worked changes: every fix defers to a registration the host makes itself, in either order,
+so the lines a working host added to get past these gaps can simply be deleted. Additive on every
+published surface.
+
 ### Fixed
 
 - **A host without Redis starts and dispatches.** Every composite that carries a dispatcher
@@ -3085,7 +3096,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.2...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.3...main
+[4.0.3]: https://github.com/yesbert/Stratara/releases/tag/v4.0.3
 [4.0.2]: https://github.com/yesbert/Stratara/releases/tag/v4.0.2
 [4.0.1]: https://github.com/yesbert/Stratara/releases/tag/v4.0.1
 [4.0.0]: https://github.com/yesbert/Stratara/releases/tag/v4.0.0
