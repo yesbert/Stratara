@@ -16,10 +16,9 @@ title: Stratara — CQRS and Event Sourcing for .NET
     <a class="btn btn-outline-secondary" href="https://github.com/yesbert/Stratara"><i class="bi bi-github"></i>&nbsp;GitHub</a>
   </div>
   <div class="st-badges">
-    <a href="https://www.nuget.org/packages?q=Stratara"><img src="https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet" alt="NuGet"></a>
-    <a href="https://github.com/yesbert/Stratara/actions/workflows/ci.yml"><img src="https://github.com/yesbert/Stratara/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="https://github.com/yesbert/Stratara/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT"></a>
-    <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet" alt=".NET 10"></a>
+    <a href="https://www.nuget.org/packages?q=Stratara"><img src="assets/badges/nuget.svg" alt="Latest release on NuGet"></a>
+    <a href="https://github.com/yesbert/Stratara/blob/main/LICENSE"><img src="assets/badges/license-mit.svg" alt="MIT licence"></a>
+    <a href="https://dotnet.microsoft.com/"><img src="assets/badges/dotnet-10.svg" alt=".NET 10"></a>
   </div>
 </section>
 

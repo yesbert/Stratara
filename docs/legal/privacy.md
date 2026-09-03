@@ -71,9 +71,9 @@ necessary storage; the legal basis is our legitimate interest in providing a fun
 
 ## Cookies
 
-This site sets no cookies. It embeds no advertising networks, and fonts are served from this site
-rather than from an external font CDN. Only the localStorage values described above are stored, and
-only the analytics tool described below is loaded — and that one only with your consent.
+This site sets no cookies. It embeds no advertising networks. Only the localStorage values
+described above are stored, and only the analytics tool described below is loaded — and that one
+only with your consent.
 
 ## Web analytics (Umami)
 
@@ -92,14 +92,12 @@ any time with effect for the future:
 
 <button type="button" class="btn btn-outline-secondary btn-sm" data-consent-revoke>Withdraw consent</button>
 
-## Status badges from third parties
+## No third-party requests before you agree
 
-Some pages — the start page above all — show status badges that are loaded as images from
-`img.shields.io` (Shields.io) and from `github.com` (GitHub Actions). Because your browser fetches
-these images directly from those providers, your IP address and your browser's request headers
-reach them when such a page loads. This happens before any consent, because the badges are page
-content rather than analytics; the legal basis is our legitimate interest in showing the current
-build and package status (Art. 6 (1) (f) GDPR). No cookies are set by these requests.
+Apart from the analytics described above, this site loads nothing from another host. Fonts, icons,
+diagrams, the search index and the status badges are all served from this site itself — the badges
+are committed images, refreshed when a release is cut, rather than hot-linked from a badge service.
+Until you accept the analytics notice, your browser therefore talks to nobody but this site's host.
 
 ## External links
 
