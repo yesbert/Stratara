@@ -139,3 +139,42 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
   .st-hero { padding-top: 2rem; }
   .st-door { margin-bottom: 1rem; }
 }
+
+/* ---------- Footer, legal links and the analytics consent banner ---------- */
+
+.st-footer { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; justify-content: space-between; }
+.st-legal { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.st-legal a,
+.st-legal button { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: none; opacity: 0.75; cursor: pointer; }
+.st-legal a:hover,
+.st-legal button:hover { opacity: 1; text-decoration: underline; }
+
+/* [hidden] loses to the author display below, so it needs saying explicitly. */
+#stratara-consent-banner { position: fixed; inset-inline: 0; bottom: 0; z-index: 1080; display: flex; justify-content: center; padding: 1rem; }
+#stratara-consent-banner[hidden] { display: none; }
+.st-consent-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  max-width: 48rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--st-border);
+  border-radius: 12px;
+  background: var(--bs-body-bg);
+  box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.25);
+}
+.st-consent-panel p { margin: 0; font-size: 0.925rem; line-height: 1.6; }
+.st-consent-actions { display: flex; gap: 0.5rem; }
+.st-consent-actions .btn { flex: 1; }
+.st-consent-actions .btn-primary {
+  --bs-btn-bg: rgb(var(--st-brand-rgb)); --bs-btn-border-color: rgb(var(--st-brand-rgb));
+  --bs-btn-hover-bg: rgb(var(--st-brand-deep-rgb)); --bs-btn-hover-border-color: rgb(var(--st-brand-deep-rgb));
+  --bs-btn-active-bg: rgb(var(--st-brand-deep-rgb)); --bs-btn-active-border-color: rgb(var(--st-brand-deep-rgb));
+}
+
+@media (min-width: 40rem) {
+  .st-consent-panel { flex-direction: row; align-items: center; }
+  .st-consent-panel p { flex-grow: 1; }
+  .st-consent-actions .btn { flex: none; }
+}
