@@ -38,6 +38,10 @@ You'll typically run **one host per worker concern** in production — each `Add
 - AES-GCM `[EncryptData]` infrastructure
 - Polly named pipelines from `Stratara.Resilience`
 
+Redis is not part of the base. The replay state every dispatching composite registers is held in
+process unless `builder.AddCaching()` registers a Redis connection, in which case it is shared and a
+replay spans hosts; the multi-replica outbox lock (`AddRedisOutboxLock()`) needs the same connection.
+
 You almost never call `AddCommonFrameworkServices()` directly — it's a transitive dependency of the worker / backend extensions.
 
 ## Handler / projection / saga discovery

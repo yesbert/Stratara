@@ -157,6 +157,15 @@ resume-from-sequence. The observability you get is throughput and latency
 checkpoint. Replay of the historical stream is coordinated separately, via the
 `IProjectionReplayState` in `Stratara.Outbox.RabbitMQ`.
 
+**Where that state lives depends on one registration.** With a Redis connection registered
+(`builder.AddCaching()`, connection string `redis`) the replay marking, its progress and the
+replay-request channel are shared by every host on that connection: a replay requested in the
+projection worker suppresses publication in the API host too. Without one, the state is held in
+process — a single host needs no Redis at all — and a replay requested in one host is neither seen
+by nor suppresses anything in another. A host that falls back says so once at start-up with warning
+`104_012`. A deployment of several hosts that needs a replay to suppress publication in all of them
+registers the shared connection; the order of that call and the composites does not matter.
+
 ## Replay is destructive, and it is all-or-nothing
 
 A replay is not a repair tool you reach for casually. Three properties, in the order they will

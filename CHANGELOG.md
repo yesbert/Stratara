@@ -18,6 +18,15 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A host without Redis starts and dispatches.** Every composite that carries a dispatcher
+  registered the projection-replay state, and its only implementation took a Redis connection that
+  no composite registers, so a host composed as documented failed at its first dispatch unless it
+  also ran Redis and called `AddCaching()`. `AddProjectionReplayState()` now chooses at first
+  resolution: with a registered `IConnectionMultiplexer` the Redis-backed state as before, without
+  one an in-process state with the same lease semantics — and a warning, once at start-up
+  (`104_012`), that replay coordination is confined to that process, so a replay requested there
+  suppresses publication there only. A deployment whose replay must reach several hosts registers
+  the shared connection, in either order. Redis-backed hosts observe no change.
 - **Registering a store context now registers its unit of work.**
   `AddNpgsqlWriteDbContextFactory<T>()` registered the context factory, the context and the default
   connection resolver but not the `IWriteUnitOfWork` that the event source, the outbox dispatcher and

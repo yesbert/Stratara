@@ -1,10 +1,14 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.Projections;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Projections;
+using Stratara.Shared.Diagnostics.Extensions;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -36,25 +40,57 @@ public static class OutboxServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>Registers the singleton Redis-backed <see cref="IProjectionReplayState"/>. Idempotent (<c>TryAddSingleton</c>).</summary>
+    /// <summary>
+    /// Registers the singleton <see cref="IProjectionReplayState"/>: Redis-backed where an
+    /// <see cref="IConnectionMultiplexer"/> is registered, held in process otherwise. Idempotent
+    /// (<c>TryAddSingleton</c>).
+    /// </summary>
     /// <remarks>
+    /// <para>
+    /// The choice is made when the state is first resolved, not when this method runs, so the order
+    /// of <c>AddCaching()</c> and the composites does not matter. With a Redis connection the replay
+    /// marking, its progress and the replay-request channel are shared by every host on that
+    /// connection, and a replay requested in one suppresses publication in all of them. Without one
+    /// they live in this process only — a replay requested here suppresses publication here only —
+    /// and the host records that once at start-up as a warning (event <c>104_012</c>). A host that
+    /// registers its own <see cref="IProjectionReplayState"/> keeps it.
+    /// </para>
+    /// <para>
     /// Also registers <see cref="ProjectionReplayOptions"/> with its defaults, so the replay marking is
     /// leased even when the consumer configures nothing. Bind the section with
     /// <c>services.Configure&lt;ProjectionReplayOptions&gt;(...)</c> to override the lease.
+    /// </para>
     /// </remarks>
     /// <example>
-    /// Registers <c>ProjectionReplayOptions</c> with its defaults, so the replay marking is leased even
-    /// when nothing is configured. Bind the <c>ProjectionReplay</c> section to change the lease:
+    /// One host needs no Redis; a deployment whose replay must reach several hosts registers the
+    /// shared connection, in either order:
     /// <code>
     /// services.AddProjectionReplayState();
+    /// builder.AddCaching();                       // optional: makes the replay state span hosts
     /// services.Configure&lt;ProjectionReplayOptions&gt;(o =&gt; o.LeaseSeconds = 600);
     /// </code>
     /// </example>
     public static IServiceCollection AddProjectionReplayState(this IServiceCollection services)
     {
         services.AddOptions<ProjectionReplayOptions>();
-        services.TryAddSingleton<IProjectionReplayState, ProjectionReplayState>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IProjectionReplayState>(CreateProjectionReplayState);
         return services;
+    }
+
+    private static IProjectionReplayState CreateProjectionReplayState(IServiceProvider serviceProvider)
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<ProjectionReplayOptions>>();
+        var redis = serviceProvider.GetService<IConnectionMultiplexer>();
+        if (redis is not null)
+        {
+            return new ProjectionReplayState(redis, options);
+        }
+
+        var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<InProcessProjectionReplayState>();
+        logger?.LogProjectionReplayCoordinationInProcess();
+
+        return new InProcessProjectionReplayState(options, serviceProvider.GetRequiredService<TimeProvider>(), logger);
     }
 
     /// <summary>Registers the <see cref="OutboxWorker"/> hosted service and binds <see cref="OutboxOptions"/> from configuration.</summary>

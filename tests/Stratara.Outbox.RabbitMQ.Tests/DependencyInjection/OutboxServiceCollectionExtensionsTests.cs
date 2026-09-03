@@ -2,6 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Stratara.Diagnostics;
+using Moq;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.Projections;
@@ -28,7 +31,7 @@ public class OutboxServiceCollectionExtensionsTests
         Assert.Equal(ServiceLifetime.Scoped, bundleDescriptor.Lifetime);
         Assert.Equal(typeof(EventBundleOutboxDispatcher), bundleDescriptor.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, replayDescriptor.Lifetime);
-        Assert.Equal(typeof(ProjectionReplayState), replayDescriptor.ImplementationType);
+        Assert.NotNull(replayDescriptor.ImplementationFactory);
     }
 
     [Fact]
@@ -41,7 +44,102 @@ public class OutboxServiceCollectionExtensionsTests
 
         var descriptor = Assert.Single(services, d => d.ServiceType == typeof(IProjectionReplayState));
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
-        Assert.Equal(typeof(ProjectionReplayState), descriptor.ImplementationType);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddProjectionReplayState_WithoutRedis_ResolvesInProcessStateAndWarnsOnce()
+    {
+        var services = new ServiceCollection();
+        var logs = new List<(LogLevel Level, EventId Id)>();
+        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(logs)));
+        services.AddProjectionReplayState();
+        var sp = services.BuildServiceProvider();
+
+        var first = sp.GetRequiredService<IProjectionReplayState>();
+        var second = sp.GetRequiredService<IProjectionReplayState>();
+
+        Assert.IsType<InProcessProjectionReplayState>(first);
+        Assert.Same(first, second);
+        Assert.Single(logs, l => l.Level == LogLevel.Warning && l.Id.Id == LogEvents.Projection.ProjectionReplayCoordinationInProcess);
+    }
+
+    [Fact]
+    public void AddProjectionReplayState_WithoutLogging_StillResolvesInProcessState()
+    {
+        var services = new ServiceCollection();
+        services.AddProjectionReplayState();
+        var sp = services.BuildServiceProvider();
+
+        Assert.IsType<InProcessProjectionReplayState>(sp.GetRequiredService<IProjectionReplayState>());
+    }
+
+    [Fact]
+    public void AddProjectionReplayState_RedisRegisteredBefore_ResolvesRedisStateWithoutWarning()
+    {
+        var services = new ServiceCollection();
+        var logs = new List<(LogLevel Level, EventId Id)>();
+        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(logs)));
+        services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+        services.AddProjectionReplayState();
+        var sp = services.BuildServiceProvider();
+
+        Assert.IsType<ProjectionReplayState>(sp.GetRequiredService<IProjectionReplayState>());
+        Assert.DoesNotContain(logs, l => l.Id.Id == LogEvents.Projection.ProjectionReplayCoordinationInProcess);
+    }
+
+    [Fact]
+    public void AddProjectionReplayState_RedisRegisteredAfter_ResolvesRedisState()
+    {
+        var services = new ServiceCollection();
+        services.AddProjectionReplayState();
+        services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+        var sp = services.BuildServiceProvider();
+
+        Assert.IsType<ProjectionReplayState>(sp.GetRequiredService<IProjectionReplayState>());
+    }
+
+    [Fact]
+    public void AddProjectionReplayState_ConsumerStateRegisteredBefore_Wins()
+    {
+        var services = new ServiceCollection();
+        var own = Mock.Of<IProjectionReplayState>();
+        services.AddSingleton(own);
+        services.AddProjectionReplayState();
+        var sp = services.BuildServiceProvider();
+
+        Assert.Same(own, sp.GetRequiredService<IProjectionReplayState>());
+    }
+
+    [Fact]
+    public void AddProjectionReplayState_ConsumerStateRegisteredAfter_Wins()
+    {
+        var services = new ServiceCollection();
+        var own = Mock.Of<IProjectionReplayState>();
+        services.AddProjectionReplayState();
+        services.AddSingleton(own);
+        var sp = services.BuildServiceProvider();
+
+        Assert.Same(own, sp.GetRequiredService<IProjectionReplayState>());
+    }
+
+    private sealed class CapturingLoggerProvider(List<(LogLevel Level, EventId Id)> sink) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(sink);
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(List<(LogLevel Level, EventId Id)> sink) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                lock (sink)
+                {
+                    sink.Add((logLevel, eventId));
+                }
+            }
+        }
     }
 
     [Fact]

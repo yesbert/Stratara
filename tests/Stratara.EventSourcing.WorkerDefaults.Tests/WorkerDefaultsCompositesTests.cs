@@ -137,6 +137,27 @@ public class WorkerDefaultsCompositesTests
         }
     }
 
+    [Fact]
+    public void EveryDispatchingComposite_ResolvesReplayStateWithoutRedis()
+    {
+        foreach (var apply in new Action<IHostApplicationBuilder>[]
+                 {
+                     b => b.AddBackendServices(),
+                     b => b.AddCommandWorkerServices(),
+                     b => b.AddHeavyCommandWorkerServices(),
+                     b => b.AddEventProjectionWorkerServices(),
+                     b => b.AddSagaWorkerServices(),
+                     b => b.AddOutboxWorkerServices(),
+                 })
+        {
+            var builder = NewBuilder();
+            apply(builder);
+            using var provider = builder.Services.BuildServiceProvider();
+
+            Assert.IsType<InProcessProjectionReplayState>(provider.GetRequiredService<IProjectionReplayState>());
+        }
+    }
+
     private static IHostApplicationBuilder NewBuilder() =>
         Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
         {

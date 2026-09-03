@@ -16,6 +16,7 @@ That's it for the minimum surface. The `Stratara.Mediator` + `Stratara.Abstracti
 |---|---|
 | `Stratara.EventSourcing.EntityFrameworkCore` | PostgreSQL 15+ (the EF Core provider; SQLite-only is not supported as the dialect uses Postgres-specific features) |
 | `Stratara.Outbox.RabbitMQ` | RabbitMQ 3.13+ with the management plugin (publisher confirms + reconnect) |
+| `Stratara.Outbox.RabbitMQ`, optional | Redis 7+ — only for a multi-replica outbox worker (`AddRedisOutboxLock()`) or a projection replay that must span hosts; a single host runs without it |
 | `Stratara.Outbox.AzureServiceBus` | An Azure Service Bus namespace; either a connection string or a `DefaultAzureCredential`-resolvable managed identity |
 | `Stratara.ServiceDefaults` | OpenTelemetry Collector endpoint (OTLP) if you want traces/metrics exported; runs no-op otherwise |
 | `Stratara.Identity.AspNetCore` | An ASP.NET Core host; no other identity provider locked in |
