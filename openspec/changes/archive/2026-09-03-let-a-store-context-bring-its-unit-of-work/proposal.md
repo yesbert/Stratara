@@ -62,5 +62,6 @@ _none_
 - `tests/Stratara.EntityFrameworkCore.Tests/` — the registration is pinned on both sides, including
   the precedence of a consumer-supplied unit of work.
 - `CHANGELOG.md` — `[Unreleased]`.
-- Additive on the published surface: a patch release. Source: consumer briefing for
-  `Stratara.Examples`, 2026-09-03 (`.claude/docs/examples-consumer-briefing.md`, item 1).
+- Additive on the published surface: a patch release. Source: the 2026-09-03 briefing for the first
+  consumer built from the published packages (`yesbert/Stratara.Examples`), which found that no
+  package registers the unit of work and that the reference page claimed one did.
