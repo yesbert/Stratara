@@ -140,7 +140,7 @@ Public extension methods a host calls to wire Stratara, with what each one does 
 | `AddPermissionCatalog(Action<PermissionCatalog> configure)` | Stratara.Identity.EntityFrameworkCore | Build and register the application's PermissionCatalog (singleton) — the declared permission vocabulary plus its role→permission grants, consumed by the catalog permission resolvers and the HTTP permission policies |
 | `AddPipelineBehavior(Type openGenericBehaviorType)` | Stratara.Mediator | Register an open-generic IPipelineBehavior`1 implementation for void commands |
 | `AddPipelineBehaviorWithResult(Type openGenericBehaviorType)` | Stratara.Mediator | Register an open-generic IPipelineBehavior`2 implementation |
-| `AddProjectionReplayState()` | Stratara.Outbox.RabbitMQ | Registers the singleton Redis-backed IProjectionReplayState |
+| `AddProjectionReplayState()` | Stratara.Outbox.RabbitMQ | Registers the singleton IProjectionReplayState: Redis-backed where an IConnectionMultiplexer is registered, held in process otherwise |
 | `AddProjectionWorker(IConfiguration configuration)` | Stratara.Projections | Registers the projection runtime — ProjectionManager, ProjectionHandler, ProjectionMethodInvoker, ProjectionWorker, and ProjectionReplayWorker — and binds ProjectionOptions from configuration |
 | `AddProjectionsFromAssemblyContaining<T>()` | Stratara.Projections | Scans the assembly containing T and registers every concrete IProjection implementation it finds as a scoped service |
 | `AddQueryHandlersFromAssemblyContaining<T>()` | Stratara.Mediator | Scan the assembly containing T and register every concrete IQueryHandler`2 implementation as a scoped service |

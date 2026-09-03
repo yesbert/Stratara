@@ -67,4 +67,15 @@ public static partial class LoggerOutboxExtensions
         Level = LogLevel.Warning,
         Message = "Failed to release outbox distributed lock. The lease will expire automatically.")]
     public static partial void LogOutboxLockReleaseFailed(this ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logs, once at start-up, that no shared coordination store is registered and replay
+    /// coordination is therefore confined to this process.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayCoordinationInProcess,
+        Level = LogLevel.Warning,
+        Message = "No Redis connection is registered, so projection-replay coordination is confined to this process: a replay requested here suppresses publication here only. Call AddCaching() for a replay to span hosts.")]
+    public static partial void LogProjectionReplayCoordinationInProcess(this ILogger logger);
 }

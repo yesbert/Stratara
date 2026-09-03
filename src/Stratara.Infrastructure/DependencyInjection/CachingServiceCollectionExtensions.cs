@@ -17,12 +17,14 @@ public static class CachingServiceCollectionExtensions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Two framework components depend on this being called.</strong> Neither is registered
-    /// by a composite, so the coupling is invisible until one of them fails to resolve:
-    /// <c>AddRedisOutboxLock()</c> in <c>Stratara.Outbox.RabbitMQ</c>, which is what makes a
-    /// multi-instance outbox worker safe, and the projection replay state, which is how a replay is
-    /// coordinated across hosts. Both take <see cref="IConnectionMultiplexer"/> directly. If you use
-    /// either, call this first.
+    /// <strong>Two framework components change what they can do when this is called.</strong> A
+    /// single host needs neither: <c>AddRedisOutboxLock()</c> in <c>Stratara.Outbox.RabbitMQ</c>
+    /// replaces the in-process outbox lock with a Redis-leased one, which is what makes a
+    /// multi-replica outbox worker safe; and the projection replay state, which every dispatching
+    /// composite registers, is held in Redis when this connection exists and in process when it
+    /// does not — only the Redis-backed one lets a replay requested in one host suppress publication
+    /// in the others. Both take <see cref="IConnectionMultiplexer"/> and pick it up in whatever order
+    /// the calls are made.
     /// </para>
     /// <para>
     /// Before Stratara 1.x cleanup this method delegated to
