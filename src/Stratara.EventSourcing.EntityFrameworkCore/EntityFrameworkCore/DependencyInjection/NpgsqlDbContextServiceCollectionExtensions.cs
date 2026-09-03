@@ -30,23 +30,25 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is all the write store needs from the host: the <see cref="IWriteUnitOfWork"/> that the
-    /// event source, the outbox dispatcher and the command worker depend on is registered here,
-    /// scoped, as <c>WriteUnitOfWork&lt;TDbContext&gt;</c>. A host that registers its own
+    /// This binds the write store to the host: the <see cref="IWriteUnitOfWork"/> that the event
+    /// source, the outbox dispatcher and the command worker depend on is registered here, scoped,
+    /// as <c>WriteUnitOfWork&lt;TDbContext&gt;</c> over this context. A host that registers its own
     /// <see cref="IWriteUnitOfWork"/> — before or after this call — keeps it.
     /// </para>
     /// <para>
     /// The unit of work also takes the ambient <see cref="ISessionContextProvider"/> and the
-    /// <see cref="ISecureJsonSerializer"/>; both come from the session and security composites,
-    /// which every worker composite applies. They are resolved when the unit of work is first used,
-    /// so the order of the <c>Add*</c> calls does not matter.
+    /// <see cref="ISecureJsonSerializer"/>, which come from <c>AddSessionContext()</c> and
+    /// <c>AddSecurity()</c> — applied by every worker composite, and to be called explicitly by a
+    /// host that composes its own role. They are resolved when the unit of work is first used, so
+    /// the order of the <c>Add*</c> calls does not matter.
     /// </para>
     /// </remarks>
     /// <typeparam name="TDbContext">The concrete write-store DbContext type.</typeparam>
     /// <param name="services">The service collection to add registrations to.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     /// <example>
-    /// Reads the connection string named <c>defaultdb</c>; nothing else is needed for the store:
+    /// Reads the connection string named <c>defaultdb</c>; with the session and security composites
+    /// in place, nothing else is needed for the store:
     /// <code>
     /// services.AddNpgsqlWriteDbContextFactory&lt;AppWriteDbContext&gt;();
     /// </code>

@@ -101,6 +101,23 @@ public class NpgsqlDbContextServiceCollectionExtensionsTests
 
         Assert.IsType<ProjectionsUnitOfWork<TestReadDbContext>>(projections);
         Assert.Same(projections, read);
+        Assert.Equal(ServiceLifetime.Scoped, services.Single(d => d.ServiceType == typeof(IProjectionsUnitOfWork)).Lifetime);
+        Assert.Equal(ServiceLifetime.Scoped, services.Single(d => d.ServiceType == typeof(IReadUnitOfWork)).Lifetime);
+    }
+
+    [Fact]
+    public void AddNpgsqlReadDbContextFactory_Alone_YieldsADifferentInstancePerScope()
+    {
+        var services = CreateServices();
+        services.AddNpgsqlReadDbContextFactory<TestReadDbContext>();
+        var sp = services.BuildServiceProvider();
+
+        using var first = sp.CreateScope();
+        using var second = sp.CreateScope();
+
+        Assert.NotSame(
+            first.ServiceProvider.GetRequiredService<IProjectionsUnitOfWork>(),
+            second.ServiceProvider.GetRequiredService<IProjectionsUnitOfWork>());
     }
 
     [Fact]
@@ -130,5 +147,6 @@ public class NpgsqlDbContextServiceCollectionExtensionsTests
         using var scope = sp.CreateScope();
 
         Assert.Same(own, scope.ServiceProvider.GetRequiredService<IProjectionsUnitOfWork>());
+        Assert.Equal(ServiceLifetime.Scoped, services.Single(d => d.ServiceType == typeof(IReadUnitOfWork)).Lifetime);
     }
 }

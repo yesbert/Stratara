@@ -39,8 +39,10 @@ public sealed class MyAppReadDbContext(DbContextOptions<MyAppReadDbContext> opti
 
 Then register the Npgsql context factories and the write store. Each factory registration also
 registers the unit of work over its context — `IWriteUnitOfWork` for the write side,
-`IProjectionsUnitOfWork` / `IReadUnitOfWork` for the read side — unless the host registered its own,
-so this is all the store needs from the host:
+`IProjectionsUnitOfWork` / `IReadUnitOfWork` for the read side — unless the host registered its own.
+The write-side unit of work also draws on `ISessionContextProvider` and `ISecureJsonSerializer`,
+which `AddSessionContext()` and `AddSecurity()` provide (every worker composite applies both); with
+those in place, this is all the store needs from the host:
 
 ```csharp
 // In your AppHost / Worker / Web project:
