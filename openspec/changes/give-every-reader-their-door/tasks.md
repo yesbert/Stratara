@@ -26,6 +26,6 @@
 
 ## 3. Gate and follow-ups
 
-- [ ] 3.1 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` clean.
-- [ ] 3.2 Record as follow-ups, not done here: terminal recording of the TamperProof sample; GitHub
+- [x] 3.1 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` clean.
+- [x] 3.2 Recorded as follow-ups in the private roadmap state, not done here: terminal recording of the TamperProof sample; GitHub
       social-preview image; CNAME move to `stratara.tech` with a redirect from `docs.stratara.tech`.
