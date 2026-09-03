@@ -1,5 +1,7 @@
-Ordered per design.md → *Migration Plan*. Nothing before group 5 changes what a visitor sees, and
-`docs.stratara.tech` stays served by GitHub Pages until group 5, so there is always a working host.
+Ordered per design.md → *Migration Plan*. The guarantee is not that nothing changes — group 2
+replaces the placeholder on the apex with the documentation — but that **a working host exists at
+every point**: `docs.stratara.tech` stays served by GitHub Pages until group 3 moves it, and Pages
+stays published as a rollback path until group 4.
 
 Tasks marked **owner** cannot be done from a pull request: they are Plesk, DNS, GitHub secrets or
 Umami. Each one names how to prove it worked.
@@ -32,15 +34,25 @@ Umami. Each one names how to prove it worked.
 - [ ] 2.2 **owner** Create the `production` environment with a required reviewer, and reference it
       from the job. Proof: the first run stops and waits, exactly as `release.yml` does at
       `nuget-org`.
-- [ ] 2.3 Build step: `docfx metadata docs/docfx.json` then `docfx build docs/docfx.json
-      --warningsAsErrors`, the same two commands `docs.yml` runs today — the build is unchanged by
-      this arc.
+- [ ] 2.3 Build step — the same two commands `docs.yml` runs today, so the build is unchanged by
+      this arc:
+
+      ```bash
+      docfx metadata docs/docfx.json
+      docfx build docs/docfx.json --warningsAsErrors
+      ```
+
 - [ ] 2.4 Write `docs/_site/.htaccess` with cache headers before uploading: HTML, JSON, TXT and XML
       `no-cache`; hashed assets under `public/` `immutable, max-age=31536000`. `.htaccess` is the
       right mechanism because Plesk's nginx proxies to Apache (design.md → *Context*).
-- [ ] 2.5 Deploy step: `rsync -az --delete --exclude='.well-known' -e 'ssh -i <key>'
-      docs/_site/ "${DEPLOY_USER}@${DEPLOY_HOST}:httpdocs/"`. The exclusion is decision 2 — without
-      it the ACME challenge directory is deleted on every deploy.
+- [ ] 2.5 Deploy step. The exclusion is decision 2 — without it the ACME challenge directory is
+      deleted on every deploy:
+
+      ```bash
+      rsync -az --delete --exclude='.well-known' -e 'ssh -i ~/.ssh/stratara_deploy' \
+        docs/_site/ "${DEPLOY_USER}@${DEPLOY_HOST}:httpdocs/"
+      ```
+
 - [ ] 2.6 Post-deploy check that asks the live domain and fails the run otherwise: `https://stratara.tech/`
       contains the landing hero string; a deep page such as `/concepts/why-event-sourcing.html`
       returns 200; `/legal/imprint.html` returns 200; `/assets/badges/nuget.svg` returns 200 and is
@@ -56,9 +68,13 @@ Umami. Each one names how to prove it worked.
       path — a bare redirect to the root would turn every deep link in the published package
       READMEs into a homepage visit.
 - [ ] 3.2 Verify the redirect **before** any DNS moves, by asking the server directly with the
-      right `Host`: `curl -sI --resolve docs.stratara.tech:443:217.154.79.173
-      https://docs.stratara.tech/concepts/why-event-sourcing.html` returns `301` with a `Location`
-      of the same path on the apex.
+      right `Host`. It must return `301` with a `Location` of the same path on the apex:
+
+      ```bash
+      curl -sI --resolve docs.stratara.tech:443:217.154.79.173 \
+        https://docs.stratara.tech/concepts/why-event-sourcing.html
+      ```
+
 - [ ] 3.3 **owner** Ensure Plesk's Let's Encrypt certificate covers `docs.stratara.tech` as well as
       `stratara.tech`. Without it, step 3.4 makes every link to the old host a TLS error rather
       than a redirect.

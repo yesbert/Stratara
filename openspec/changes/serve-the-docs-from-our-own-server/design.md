@@ -112,7 +112,7 @@ things.** With the Actions-based deployment (`build_type: workflow`), the `CNAME
 uploaded artifact does **not** set the repository's custom domain — that was the behaviour of the
 old branch publishing. Setting `docs/CNAME` to `stratara.tech` and deploying left the setting on
 `docs.stratara.tech`; the domain had to be set through
-`gh api -X PUT repos/yesbert/Stratara/pages -f cname=…`.
+`gh api -X PUT repos/yesbert/Stratara/pages -f cname=stratara.tech`.
 
 But the same file **does** decide which hostname Pages answers for. Rolling the setting back to
 `docs.stratara.tech` was not enough: with `stratara.tech` still inside the deployed artifact,
@@ -154,7 +154,8 @@ deploy thereafter, so a regression fails a run rather than silently rotting.
 
 ## Migration Plan
 
-Ordered so that a working host always exists. Nothing before step 5 changes what a visitor sees.
+Ordered so that a working host always exists at every point. Step 3 already replaces the placeholder
+on the apex with the documentation; what it does not do is take anything away.
 
 1. **Enable SSH** for the `stratara.tech` subscription in Plesk (`/bin/bash`, as `loomweaver.dev`
    has). Nothing else can start.
