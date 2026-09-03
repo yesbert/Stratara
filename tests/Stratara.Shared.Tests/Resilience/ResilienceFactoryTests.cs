@@ -115,4 +115,61 @@ public class ResilienceFactoryTests
 
         Assert.NotSame(pipelines.GetPipeline(ResilienceNames.PrecedingFact), pipelines.GetPipeline(ResilienceNames.ConcurrencyConflict));
     }
+
+    [Fact]
+    public async Task CreateProjectionReplayBatchPipeline_RetriesAnyExceptionAndReturnsTheEventualResult()
+    {
+        var builder = new ResiliencePipelineBuilder();
+        ResilienceFactory.CreateProjectionReplayBatchPipeline(builder);
+        var pipeline = builder.Build();
+
+        var attempts = 0;
+        var result = await pipeline.ExecuteAsync(_ =>
+        {
+            attempts++;
+            return attempts < 3
+                ? throw new TimeoutException("read store busy")
+                : ValueTask.FromResult(42);
+        });
+
+        Assert.Equal(42, result);
+        Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public async Task CreateProjectionReplayBatchPipeline_StopsAfterItsBoundAndSurfacesTheLastException()
+    {
+        var builder = new ResiliencePipelineBuilder();
+        ResilienceFactory.CreateProjectionReplayBatchPipeline(builder);
+        var pipeline = builder.Build();
+
+        var attempts = 0;
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await pipeline.ExecuteAsync(_ =>
+            {
+                attempts++;
+                throw new InvalidOperationException($"attempt {attempts}");
+            }));
+
+        Assert.Equal(6, attempts);
+        Assert.Equal("attempt 6", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateProjectionReplayBatchPipeline_DoesNotRetryCancellation()
+    {
+        var builder = new ResiliencePipelineBuilder();
+        ResilienceFactory.CreateProjectionReplayBatchPipeline(builder);
+        var pipeline = builder.Build();
+
+        var attempts = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await pipeline.ExecuteAsync(_ =>
+            {
+                attempts++;
+                throw new OperationCanceledException();
+            }));
+
+        Assert.Equal(1, attempts);
+    }
 }

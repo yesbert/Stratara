@@ -19,6 +19,9 @@ public class ResilienceServiceCollectionExtensionsTests
         Assert.NotNull(provider.GetPipeline(ResilienceNames.MessageBus));
         Assert.NotNull(provider.GetPipeline(ResilienceNames.CommandDispatcher));
         Assert.NotNull(provider.GetPipeline(ResilienceNames.EventBundleDispatcher));
+        Assert.NotNull(provider.GetPipeline(ResilienceNames.ConcurrencyConflict));
+        Assert.NotNull(provider.GetPipeline(ResilienceNames.PrecedingFact));
+        Assert.NotNull(provider.GetPipeline(ResilienceNames.ProjectionReplayBatch));
     }
 
     [Fact]
@@ -50,11 +53,13 @@ public class ResilienceServiceCollectionExtensionsTests
         var provider = sp.GetRequiredService<ResiliencePipelineProvider<string>>();
 
         Assert.NotNull(provider.GetPipeline(ResilienceNames.MessageBus));
+        Assert.NotNull(provider.GetPipeline(ResilienceNames.ProjectionReplayBatch));
     }
 
     [Fact]
     public void ResilienceNames_ConstantsAreStable()
     {
+        Assert.Equal("ProjectionReplayBatchPipeline", ResilienceNames.ProjectionReplayBatch);
         Assert.Equal("MessageBusPipeline", ResilienceNames.MessageBus);
         Assert.Equal("CommandDispatcherPipeline", ResilienceNames.CommandDispatcher);
         Assert.Equal("EventBundleDispatcherPipeline", ResilienceNames.EventBundleDispatcher);

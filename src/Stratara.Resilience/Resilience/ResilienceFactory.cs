@@ -20,6 +20,13 @@ internal static class ResilienceFactory
     private const int PrecedingFactRetryAttempts = 5;
     private static readonly TimeSpan PrecedingFactRetryDelay = TimeSpan.FromMilliseconds(100);
 
+    // Five attempts from one second, doubling: about thirty seconds in the worst case. What it waits
+    // for is a read store under load recovering — a timeout that resolves in seconds — not a broker
+    // accepting a message, which is why it is slower than the dispatcher policies. It is bounded
+    // because a replay that retried indefinitely could not be told apart from one that is hung.
+    private const int ProjectionReplayBatchRetryAttempts = 5;
+    private static readonly TimeSpan ProjectionReplayBatchRetryDelay = TimeSpan.FromSeconds(1);
+
     internal static readonly TimeSpan MessageBusBaseDelay = TimeSpan.FromSeconds(10);
     internal static readonly TimeSpan MessageBusMaxDelay = TimeSpan.FromSeconds(60);
     internal const int MessageBusMinimumThroughput = 5;
@@ -97,6 +104,21 @@ internal static class ResilienceFactory
             ShouldHandle = new PredicateBuilder().Handle<PrecedingFactMissingException>(),
             MaxRetryAttempts = PrecedingFactRetryAttempts,
             Delay = PrecedingFactRetryDelay,
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true
+        });
+
+    /// <remarks>
+    /// Retries any exception except cancellation, because the framework cannot classify the read-store
+    /// provider's exceptions and the attempt bound is what keeps a deterministic failure from looping.
+    /// Polly's default predicate already excludes <see cref="OperationCanceledException"/>, so host
+    /// shutdown mid-retry surfaces as cancellation rather than as a failed replay.
+    /// </remarks>
+    public static void CreateProjectionReplayBatchPipeline(ResiliencePipelineBuilder pipelineBuilder) =>
+        pipelineBuilder.AddRetry(new RetryStrategyOptions
+        {
+            MaxRetryAttempts = ProjectionReplayBatchRetryAttempts,
+            Delay = ProjectionReplayBatchRetryDelay,
             BackoffType = DelayBackoffType.Exponential,
             UseJitter = true
         });

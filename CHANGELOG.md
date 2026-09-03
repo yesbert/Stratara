@@ -16,6 +16,20 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **A projection replay retries a failing batch before it gives up.** Each batch — the read from
+  the event store and the application of its entries — now runs under a new named policy,
+  `ResilienceNames.ProjectionReplayBatch`: five attempts, exponential backoff from one second with
+  jitter, about thirty seconds in all, any exception except cancellation. A read-store timeout or a
+  dropped connection mid-rebuild no longer ends the replay; a failure that persists through every
+  attempt ends it exactly as before, with the same failure record. A retried batch is applied
+  again from its first entry in a fresh scope, which relies on the guarantee projections already
+  give under at-least-once delivery: a second application converges (see *Write handlers that
+  converge rather than accumulate* in the projection guide). Each failed attempt logs a new
+  warning, `104_011`. `AddResiliencePipelines` registers six policies rather than five. Nothing
+  about truncation, ordering, progress, the failure record or the lease changes.
+
 ### Changed
 
 - **An integrity failure now says whether the signature was absent or wrong, and the existing
