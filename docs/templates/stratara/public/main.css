@@ -4,7 +4,7 @@
   margin-right: 0.5rem;
 }
 
-/* ---------- Landing page (docs/index.md, _layout: landing) ---------- */
+/* ---------- Brand colours (whole site) and the landing page ---------- */
 
 :root {
   --st-brand-rgb: 6, 115, 203;         /* the wordmark blue from the logo; never themed */
@@ -24,8 +24,16 @@
   --st-border: rgba(255, 255, 255, 0.12);
 }
 
-/* Both themes read the accent variables, so dark mode needs no second rule. */
-body[data-layout="landing"] {
+/* The whole site, not only the landing page. DocFX's template hangs every blue it
+   draws on Bootstrap's --bs-primary and --bs-link-*, which default to #0d6efd — a
+   visibly different blue from the wordmark. Redirecting the variables recolours
+   links, focus rings and anything else derived from them in one place. Both themes
+   read the accent variables, so dark mode needs no second rule. */
+:root,
+[data-bs-theme="light"],
+[data-bs-theme="dark"] {
+  --bs-primary: var(--st-accent);
+  --bs-primary-rgb: var(--st-accent-rgb);
   --bs-link-color: var(--st-accent);
   --bs-link-hover-color: var(--st-accent-deep);
   --bs-link-color-rgb: var(--st-accent-rgb);
