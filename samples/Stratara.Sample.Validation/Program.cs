@@ -1,7 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpenTelemetry.Trace;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Validation;
 using Stratara.Sample.Validation;
@@ -9,8 +8,6 @@ using Stratara.Sample.Validation;
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("en-US");
 
 var builder = Host.CreateApplicationBuilder(args);
-
-builder.Services.AddSingleton(TracerProvider.Default.GetTracer("Stratara.Sample.Validation"));
 
 builder.Services
     .AddMediator()

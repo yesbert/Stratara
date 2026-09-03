@@ -10,10 +10,6 @@ In-process mediator with DI-resolved handlers and pipeline behaviors. Drop-in re
 ## Quick start
 
 ```csharp
-// The mediator traces every dispatch, so an OpenTelemetry Tracer must be resolvable.
-// AddMediator() does not register one — pick your own instrumentation name:
-services.AddSingleton(TracerProvider.Default.GetTracer("Your.App"));
-
 services.AddMediator()
     .AddCommandHandlersFromAssemblyContaining<Program>()
     .AddQueryHandlersFromAssemblyContaining<Program>()
@@ -23,6 +19,11 @@ services.AddMediator()
 // Optional: wrap in authorization decorator
 services.AddAuthorizingMediator<MyAuthorizationProvider>();
 ```
+
+Every dispatch is traced as a span named `Handle <RequestType>`. The spans come from the
+`Stratara.Application` activity source — subscribe to it and they appear; register your own
+OpenTelemetry `Tracer` and the mediator uses that instead. Nothing has to be registered for the
+mediator to start.
 
 `IMediator` is registered **scoped**. Resolve it from a scope (a request scope in ASP.NET Core, or
 an explicit `IServiceProvider.CreateScope()` in a console host) — resolving it from the root

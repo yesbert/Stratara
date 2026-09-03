@@ -36,6 +36,11 @@ public static class AuthorizationServiceCollectionExtensions
     /// accepts the configuration. If you further wrap this mediator with a custom decorator,
     /// have the outermost decorator also implement <see cref="IAuthorizingMediator"/>.
     /// </para>
+    /// <para>
+    /// As with <see cref="MediatorServiceCollectionExtensions.AddMediator"/>, no telemetry
+    /// registration is required: a host-supplied <c>Tracer</c> is used where present, and the
+    /// framework's activity source carries the dispatch spans otherwise.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TAuthorizationProvider">The concrete provider, e.g. a service that reads roles from <c>HttpContext.User</c>.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
@@ -52,6 +57,7 @@ public static class AuthorizationServiceCollectionExtensions
         where TAuthorizationProvider : class, IAuthorizationProvider
     {
         services.AddScoped<IAuthorizationProvider, TAuthorizationProvider>();
+        services.AddDispatchTracer();
         services.AddScoped<Mediator>();
         services.AddScoped<IMediator>(sp =>
             new AuthorizingMediator(

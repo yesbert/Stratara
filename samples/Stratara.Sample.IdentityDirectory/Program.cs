@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OpenTelemetry.Trace;
 using Stratara.Abstractions.Authorization;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Multitenancy;
@@ -24,7 +23,6 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
-builder.Services.AddSingleton(TracerProvider.Default.GetTracer("Stratara.Sample.IdentityDirectory"));
 builder.Services.AddDbContext<DirectoryDbContext>(o => o.UseSqlite(connection));
 
 builder.Services.AddSingleton<SampleSessionContextProvider>();

@@ -1,7 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpenTelemetry.Trace;
 using Stratara.Sample.OutboxWorker.Commands;
 using Stratara.Sample.OutboxWorker.Infrastructure;
 using Stratara.Sample.OutboxWorker.Messaging;
@@ -20,7 +19,6 @@ builder.Services.AddSingleton<InMemoryOutbox>();
 builder.Services.AddSingleton<IMessageBus, InMemoryMessageBus>();
 builder.Services.AddSingleton<CommandOutboxDispatcher>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(TracerProvider.Default.GetTracer("Stratara.Sample.OutboxWorker"));
 
 builder.Services
     .AddMediator()

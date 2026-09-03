@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using OpenTelemetry.Trace;
+using Stratara.Diagnostics;
 using Stratara.Mediator;
 using Stratara.Mediator.Authorization;
 using Stratara.Abstractions.Mediator;
@@ -22,6 +24,14 @@ public static class MediatorServiceCollectionExtensions
     /// Idempotent — calling multiple times appends duplicate registrations; DI resolves the last
     /// one. Use <see cref="AuthorizationServiceCollectionExtensions.AddAuthorizingMediator{T}"/>
     /// instead if you want the authorizing decorator chain.
+    /// </para>
+    /// <para>
+    /// Every dispatch is traced. A <see cref="Tracer"/> the host has registered — before or after
+    /// this call — is the one the mediator uses. Where the host registers none, a fallback is
+    /// registered that emits the dispatch spans from the framework's own activity source,
+    /// <see cref="ApplicationDiagnostics.Activity.SourceName"/>, so a host that subscribes to
+    /// framework telemetry sees them and a host that subscribes to nothing pays for nothing. No
+    /// telemetry registration is required for the mediator to start.
     /// </para>
     /// <para>
     /// This method also wires a startup-time validator that fails fast if the host registers
@@ -47,9 +57,22 @@ public static class MediatorServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddMediator(this IServiceCollection services)
     {
+        services.AddDispatchTracer();
         services.AddScoped<IMediator, Mediator>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AuthorizationStartupValidator>());
         return services;
+    }
+
+    internal static IServiceCollection AddDispatchTracer(this IServiceCollection services)
+    {
+        services.TryAddSingleton(ResolveDispatchTracer);
+        return services;
+    }
+
+    private static Tracer ResolveDispatchTracer(IServiceProvider serviceProvider)
+    {
+        var provider = serviceProvider.GetService<TracerProvider>() ?? TracerProvider.Default;
+        return provider.GetTracer(ApplicationDiagnostics.Activity.SourceName);
     }
 
     /// <summary>

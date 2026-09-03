@@ -75,3 +75,12 @@ logger.LogDepositApplied(cmd.Amount, cmd.AccountId);
 ```
 
 Never call `logger.LogInformation(...)` directly. If you need expensive arguments (string-join, LINQ projection), wrap them in a small struct with `ToString()` — the source-gen formatter will defer evaluation until the channel is enabled. See `Stratara.Shared.Diagnostics.Extensions.DistinctEventTypeNames` for the canonical pattern.
+
+## Tracing
+
+Every dispatch is wrapped in a span named `Handle <RequestType>` — you never emit one yourself. The
+spans come from the `Stratara.Application` activity source, the same one every other framework
+trace uses, so a host that subscribes to that source sees each command and query as it passes
+through the pipeline. Nothing has to be registered for this: `AddMediator()` and
+`AddAuthorizingMediator<T>()` work on their own. A host that registers its own OpenTelemetry
+`Tracer` keeps it, and the mediator emits through that instead.

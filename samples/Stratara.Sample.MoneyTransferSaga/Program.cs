@@ -1,7 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpenTelemetry.Trace;
 using Stratara.Sample.MoneyTransferSaga.Commands;
 using Stratara.Sample.MoneyTransferSaga.Infrastructure;
 using Stratara.Sample.MoneyTransferSaga.Messaging;
@@ -21,7 +20,6 @@ builder.Services.AddSingleton<InMemoryOutbox>();
 builder.Services.AddSingleton<IMessageBus, InMemoryMessageBus>();
 builder.Services.AddSingleton<CommandOutboxDispatcher>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(TracerProvider.Default.GetTracer("Stratara.Sample.MoneyTransferSaga"));
 
 builder.Services
     .AddMediator()
