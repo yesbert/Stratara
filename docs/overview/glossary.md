@@ -1,8 +1,9 @@
 # Glossary
 
-> **Derived page.** The behaviour described here is specified by the `session-context` capability
-> under `openspec/specs/`. That specification is the source; this page explains and
-> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+> **Derived page.** The behaviour these terms describe is specified across the capabilities under
+> `openspec/specs/` — each entry belongs to the capability that governs it. Those specifications are
+> the source; this page explains and illustrates them. Where the two disagree, the specification is
+> right and this page is a bug.
 
 How Stratara uses common CQRS / Event-Sourcing terms. These definitions are operative — they shape how the framework behaves, not just how we talk. The first three name the ideas the rest of the page assumes.
 
