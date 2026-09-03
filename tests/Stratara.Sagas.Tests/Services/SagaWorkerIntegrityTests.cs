@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using Stratara.Diagnostics;
 using Microsoft.Extensions.Options;
 using Polly;
@@ -54,8 +55,8 @@ public class SagaWorkerIntegrityTests
         Assert.Contains("carries no signature", ex.Message);
         Assert.DoesNotContain("does not verify", ex.Message);
         harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Never);
-        var entry = Assert.Single(harness.Logger.Entries);
-        Assert.Equal(LogEvents.EventBundleIntegrity.UnsignedRejected, entry.EventId);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.UnsignedRejected, entry.Id.Id);
         Assert.Equal(LogLevel.Error, entry.Level);
     }
 
@@ -77,8 +78,8 @@ public class SagaWorkerIntegrityTests
         Assert.Contains("does not verify", ex.Message);
         Assert.DoesNotContain("carries no signature", ex.Message);
         harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Never);
-        var entry = Assert.Single(harness.Logger.Entries);
-        Assert.Equal(LogEvents.EventBundleIntegrity.IntegrityRejected, entry.EventId);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.IntegrityRejected, entry.Id.Id);
         Assert.Equal(LogLevel.Error, entry.Level);
     }
 
@@ -92,11 +93,11 @@ public class SagaWorkerIntegrityTests
         await harness.Sut.HandleEventBundleAsync(bundle, CancellationToken.None);
 
         harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Once);
-        var entry = Assert.Single(harness.Logger.Entries);
-        Assert.Equal(LogEvents.EventBundleIntegrity.UnsignedWarning, entry.EventId);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.UnsignedWarning, entry.Id.Id);
         Assert.Equal(LogLevel.Warning, entry.Level);
         Assert.Contains("carries no signature", entry.Message);
-        Assert.DoesNotContain(harness.Logger.Entries, e => e.EventId == LogEvents.EventBundleIntegrity.IntegrityWarning);
+        Assert.DoesNotContain(harness.Logger.Collector.GetSnapshot(), e => e.Id.Id == LogEvents.EventBundleIntegrity.IntegrityWarning);
     }
 
     [Fact]
@@ -109,11 +110,11 @@ public class SagaWorkerIntegrityTests
         await harness.Sut.HandleEventBundleAsync(bundle, CancellationToken.None);
 
         harness.SagaManager.Verify(s => s.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()), Times.Once);
-        var entry = Assert.Single(harness.Logger.Entries);
-        Assert.Equal(LogEvents.EventBundleIntegrity.IntegrityWarning, entry.EventId);
+        var entry = Assert.Single(harness.Logger.Collector.GetSnapshot());
+        Assert.Equal(LogEvents.EventBundleIntegrity.IntegrityWarning, entry.Id.Id);
         Assert.Equal(LogLevel.Warning, entry.Level);
         Assert.Contains("does not verify", entry.Message);
-        Assert.DoesNotContain(harness.Logger.Entries, e => e.EventId == LogEvents.EventBundleIntegrity.UnsignedWarning);
+        Assert.DoesNotContain(harness.Logger.Collector.GetSnapshot(), e => e.Id.Id == LogEvents.EventBundleIntegrity.UnsignedWarning);
     }
 
     [Fact]
@@ -163,7 +164,7 @@ public class SagaWorkerIntegrityTests
         public Mock<ResiliencePipelineProvider<string>> PipelineProvider { get; } = new();
         public Mock<ISessionContextProvider> SessionContextProvider { get; } = new();
         public Mock<ISagaManager> SagaManager { get; } = new();
-        public RecordingLogger<SagaWorker> Logger { get; } = new();
+        public FakeLogger<SagaWorker> Logger { get; } = new();
 
         public SagaWorker Sut { get; }
 
@@ -191,16 +192,5 @@ public class SagaWorkerIntegrityTests
                 Options.Create(new SagaOptions()),
                 signer);
         }
-    }
-
-    private sealed class RecordingLogger<T> : ILogger<T>
-    {
-        public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
     }
 }
