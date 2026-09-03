@@ -14,18 +14,25 @@ dotnet add package Stratara.Outbox.RabbitMQ
 
 ## Configure
 
+The bus reads its connection from one of two places, and there is no `RabbitMq` section — a
+section by that name is silently ignored. Either a connection string named `rabbitmq`:
+
 ```jsonc
 // appsettings.json
 {
-  "RabbitMq": {
-    "HostName": "localhost",
-    "Port": 5672,
-    "VirtualHost": "/"
-    // Username + Password come from env vars in production:
-    //   RABBITMQ_USERNAME, RABBITMQ_PASSWORD
-    // In Development only, the broker's default `guest/guest` is used.
+  "ConnectionStrings": {
+    "rabbitmq": "amqp://guest:guest@localhost:5672/"
   }
 }
+```
+
+or four flat configuration keys, Kubernetes-style, which take precedence when `RABBITMQ_HOST` is set:
+
+```bash
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_PORT=5672            # default 5672
+RABBITMQ_USERNAME=app         # outside Development both credentials are mandatory
+RABBITMQ_PASSWORD=…           # in Development only, guest/guest is the fallback
 ```
 
 **Fail-fast outside Development** (v3.4.0; v3.0.14+ for Production only): if `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` are missing on any host that is not in Development, publishing throws `InvalidOperationException` naming the environment. The `guest/guest` fallback is Development-only — same pattern as the key-store guard.
