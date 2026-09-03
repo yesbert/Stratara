@@ -23,6 +23,25 @@ title: Stratara — CQRS and Event Sourcing for .NET
   </div>
 </section>
 
+<section class="st-section st-basics">
+  <p class="st-basics-lead">New to the terms? Thirty seconds, then pick a door.</p>
+  <div class="row g-4">
+    <div class="col-md-4"><div class="st-basic">
+      <h3>Mediator</h3>
+      <p>A controller that knows ten services is hard to test and harder to change. With a mediator it hands over one object &mdash; <code>OpenAccount</code> &mdash; and a dispatcher finds the single handler that answers it. One request, one handler, and no web server needed to test it.</p>
+    </div></div>
+    <div class="col-md-4"><div class="st-basic">
+      <h3>CQRS</h3>
+      <p><strong>Command Query Responsibility Segregation.</strong> A command changes something and returns little; a query reads and changes nothing. Keeping them apart lets each side take the shape and the scaling its own job needs. It is a routing decision first, not a second database.</p>
+    </div></div>
+    <div class="col-md-4"><div class="st-basic">
+      <h3>Event sourcing</h3>
+      <p>Store the facts that happened &mdash; <code>AccountOpened</code>, <code>MoneyDeposited</code> &mdash; instead of the state they produced. Current state is a fold over those facts, so the history <em>is</em> the source of truth rather than an audit log kept beside it.</p>
+    </div></div>
+  </div>
+  <p class="st-sub" style="margin-top:1.5rem"><a href="overview/glossary.md">Full glossary &rarr;</a> &nbsp;&middot;&nbsp; <a href="concepts/why-event-sourcing.md">Why event sourcing &rarr;</a></p>
+</section>
+
 <section class="st-section">
   <h2>Pick your door</h2>
   <p class="st-sub">Three reasons people arrive here. Each one is a real entry point, not a teaser for the whole stack.</p>

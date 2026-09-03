@@ -69,6 +69,12 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
 .st-badges img { width: auto; height: 20px; }
 
 .st-section { padding: 2.5rem 0 1rem; }
+.st-basics { padding-bottom: 0; }
+.st-basics .st-basics-lead { text-align: center; font-weight: 600; opacity: 0.75; margin-bottom: 1.75rem; }
+.st-basic { border-left: 3px solid var(--st-accent); padding-left: 1rem; height: 100%; }
+.st-basic h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.4rem; }
+.st-basic p { font-size: 0.95rem; opacity: 0.85; margin: 0; }
+
 .st-section > h2 {
   text-align: center;
   font-size: 1.6rem;

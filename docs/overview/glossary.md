@@ -4,11 +4,19 @@
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
-How Stratara uses common CQRS / Event-Sourcing terms. These definitions are operative — they shape how the framework behaves, not just how we talk.
+How Stratara uses common CQRS / Event-Sourcing terms. These definitions are operative — they shape how the framework behaves, not just how we talk. The first three name the ideas the rest of the page assumes.
+
+## CQRS
+
+**Command Query Responsibility Segregation.** A command changes something and returns little; a query reads and changes nothing. Separating the two lets each side take the shape and the scaling its own job needs — a write model shaped for consistency, a read model shaped for the screen that reads it. In Stratara the separation is a routing decision first: see **Command vs Query** below. It does not oblige you to a second database, and plenty of applications never need one.
+
+## Event Sourcing
+
+Store the facts that happened — `AccountOpened`, `MoneyDeposited` — instead of the state they produced. Current state is a fold over those facts (`current state = fold(events)`), so the full history is the source of truth rather than an audit log maintained beside it. Costs and pay-offs: **[Why Event Sourcing](../concepts/why-event-sourcing.md)**.
 
 ## Mediator
 
-The in-process dispatcher (`IMediator`) that routes a `ICommand`/`ICommand<T>`/`IQuery<T>` to its handler. Resolved from DI per scope. Wrapped in `AuthorizingMediator` when `[RequireRole]` semantics are active.
+The pattern that keeps a controller from knowing every service it might need: it hands over one object describing the request, and a dispatcher finds the single handler that answers it. Here that dispatcher is the in-process `IMediator`, which routes a `ICommand`/`ICommand<T>`/`IQuery<T>` to its handler. Resolved from DI per scope. Wrapped in `AuthorizingMediator` when `[RequireRole]` semantics are active.
 
 ## Command vs Query
 
