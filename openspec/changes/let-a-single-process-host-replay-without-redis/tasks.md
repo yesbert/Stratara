@@ -6,7 +6,9 @@
       `SetProgress` updates the counters and renews the lease; `IsReplayActive` and `GetProgress`
       treat an expired lease as inactive; `SetFailed` clears the marking and keeps the message;
       `Deactivate` clears all four; `RequestReplay` invokes every callback registered through
-      `SubscribeToReplayRequestAsync`. Takes `IOptions<ProjectionReplayOptions>` and `TimeProvider`.
+      `SubscribeToReplayRequestAsync`, and a callback that throws or faults is logged (`104_013`)
+      without stopping the others. Takes `IOptions<ProjectionReplayOptions>`, `TimeProvider` and an
+      optional logger.
 - [x] 1.2 Tests in `tests/Stratara.Outbox.RabbitMQ.Tests/Projections/InProcessProjectionReplayStateTests.cs`
       (new): inactive by default; activate → active with zero progress; progress and percentage,
       including total zero → 0 %; `SetFailed` → inactive with the message; `Deactivate` → clean;

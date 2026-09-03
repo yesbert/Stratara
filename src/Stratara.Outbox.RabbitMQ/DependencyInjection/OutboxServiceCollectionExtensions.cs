@@ -87,11 +87,10 @@ public static class OutboxServiceCollectionExtensions
             return new ProjectionReplayState(redis, options);
         }
 
-        serviceProvider.GetService<ILoggerFactory>()
-            ?.CreateLogger<InProcessProjectionReplayState>()
-            .LogProjectionReplayCoordinationInProcess();
+        var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<InProcessProjectionReplayState>();
+        logger?.LogProjectionReplayCoordinationInProcess();
 
-        return new InProcessProjectionReplayState(options, serviceProvider.GetRequiredService<TimeProvider>());
+        return new InProcessProjectionReplayState(options, serviceProvider.GetRequiredService<TimeProvider>(), logger);
     }
 
     /// <summary>Registers the <see cref="OutboxWorker"/> hosted service and binds <see cref="OutboxOptions"/> from configuration.</summary>

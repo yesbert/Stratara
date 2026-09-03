@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Projections;
+using Stratara.Shared.Diagnostics.Extensions;
 
 namespace Stratara.Outbox.RabbitMQ.Projections;
 
@@ -14,8 +16,13 @@ namespace Stratara.Outbox.RabbitMQ.Projections;
 /// <see cref="SetProgress"/> stamp an expiry <see cref="ProjectionReplayOptions.LeaseSeconds"/>
 /// ahead, and an expired marking reads as inactive with its counters cleared. The recorded error is
 /// not leased; it describes a replay that has ended and is cleared by the next <see cref="Activate"/>.
+/// A subscriber that fails when a replay is requested is logged and does not stop the remaining
+/// subscribers from being notified, as a pub/sub handler's failure never reaches the publisher.
 /// </remarks>
-internal sealed class InProcessProjectionReplayState(IOptions<ProjectionReplayOptions> options, TimeProvider timeProvider)
+internal sealed class InProcessProjectionReplayState(
+    IOptions<ProjectionReplayOptions> options,
+    TimeProvider timeProvider,
+    ILogger<InProcessProjectionReplayState>? logger = null)
     : IProjectionReplayState
 {
     private readonly TimeSpan _lease = TimeSpan.FromSeconds(options.Value.LeaseSeconds);
@@ -120,7 +127,22 @@ internal sealed class InProcessProjectionReplayState(IOptions<ProjectionReplayOp
 
         foreach (var subscriber in subscribers)
         {
-            _ = subscriber();
+            _ = NotifyAsync(subscriber);
+        }
+    }
+
+    private async Task NotifyAsync(Func<Task> subscriber)
+    {
+        try
+        {
+            await subscriber();
+        }
+        catch (Exception exception) when (logger is not null)
+        {
+            logger.LogProjectionReplayRequestSubscriberFailed(exception);
+        }
+        catch (Exception)
+        {
         }
     }
 

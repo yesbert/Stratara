@@ -81,6 +81,8 @@ public static class LogEvents
         public const int ProjectionReplayBatchFailed = 104_011;
         /// <summary>No shared coordination store is registered, so replay coordination is confined to this process (warning, once at start-up).</summary>
         public const int ProjectionReplayCoordinationInProcess = 104_012;
+        /// <summary>A subscriber to the in-process replay-request channel failed; the other subscribers were still notified (warning).</summary>
+        public const int ProjectionReplayRequestSubscriberFailed = 104_013;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>

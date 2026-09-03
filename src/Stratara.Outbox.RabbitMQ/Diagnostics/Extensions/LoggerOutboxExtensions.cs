@@ -78,4 +78,16 @@ public static partial class LoggerOutboxExtensions
         Level = LogLevel.Warning,
         Message = "No Redis connection is registered, so projection-replay coordination is confined to this process: a replay requested here suppresses publication here only. Call AddCaching() for a replay to span hosts.")]
     public static partial void LogProjectionReplayCoordinationInProcess(this ILogger logger);
+
+    /// <summary>
+    /// Logs that a subscriber to the in-process replay-request channel failed. The failure does not
+    /// reach the caller of <c>RequestReplay</c> and the remaining subscribers are still notified.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">The exception the subscriber raised.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayRequestSubscriberFailed,
+        Level = LogLevel.Warning,
+        Message = "A projection-replay request subscriber failed. The other subscribers were notified.")]
+    public static partial void LogProjectionReplayRequestSubscriberFailed(this ILogger logger, Exception exception);
 }

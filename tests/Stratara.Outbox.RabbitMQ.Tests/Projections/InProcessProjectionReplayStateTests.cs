@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Stratara.Diagnostics;
 using Stratara.Outbox.RabbitMQ.Projections;
 
 namespace Stratara.Outbox.RabbitMQ.Tests.Projections;
@@ -119,6 +121,52 @@ public class InProcessProjectionReplayStateTests
         state.RequestReplay();
 
         Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task RequestReplay_ASubscriberThatThrowsSynchronously_DoesNotStopTheOthers()
+    {
+        var (state, _) = Create();
+        var reached = false;
+        await state.SubscribeToReplayRequestAsync(() => throw new InvalidOperationException("sync"));
+        await state.SubscribeToReplayRequestAsync(() => { reached = true; return Task.CompletedTask; });
+
+        state.RequestReplay();
+
+        Assert.True(reached);
+    }
+
+    [Fact]
+    public async Task RequestReplay_ASubscriberThatFaults_IsLoggedAndDoesNotStopTheOthers()
+    {
+        var logs = new List<EventId>();
+        var clock = new ManualTimeProvider();
+        var state = new InProcessProjectionReplayState(
+            Options.Create(new ProjectionReplayOptions()),
+            clock,
+            new CapturingLogger<InProcessProjectionReplayState>(logs));
+        var reached = new TaskCompletionSource();
+        await state.SubscribeToReplayRequestAsync(async () => { await Task.Yield(); throw new InvalidOperationException("async"); });
+        await state.SubscribeToReplayRequestAsync(() => { reached.SetResult(); return Task.CompletedTask; });
+
+        state.RequestReplay();
+        await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(50);
+
+        Assert.Contains(logs, id => id.Id == LogEvents.Projection.ProjectionReplayRequestSubscriberFailed);
+    }
+
+    private sealed class CapturingLogger<T>(List<EventId> sink) : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (sink)
+            {
+                sink.Add(eventId);
+            }
+        }
     }
 
     private sealed record ReplayProgressShape(bool IsActive, long Processed, long Total, int Percentage, string? Error)
