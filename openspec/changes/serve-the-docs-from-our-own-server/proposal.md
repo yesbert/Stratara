@@ -1,6 +1,6 @@
 # Serve the documentation site from our own server
 
-> **Status:** proposed
+> **Status:** approved — 2026-09-04, owner
 
 ## Why
 
