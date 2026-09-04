@@ -75,10 +75,10 @@ Umami. Each one names how to prove it worked.
         https://docs.stratara.tech/concepts/why-event-sourcing.html
       ```
 
-- [ ] 3.3 **owner** Ensure Plesk's Let's Encrypt certificate covers `docs.stratara.tech` as well as
+- [x] 3.3 **owner** Ensure Plesk's Let's Encrypt certificate covers `docs.stratara.tech` as well as
       `stratara.tech`. Without it, step 3.4 makes every link to the old host a TLS error rather
       than a redirect.
-- [ ] 3.4 **owner** Move the DNS: `docs.stratara.tech` from its `yesbert.github.io` CNAME to the
+- [x] 3.4 **owner** Move the DNS: `docs.stratara.tech` from its `yesbert.github.io` CNAME to the
       server. Proof: `dig +short @ns1.antagus.de docs.stratara.tech` returns `217.154.79.173`, and
       `curl -sIL https://docs.stratara.tech/` lands on the apex with 200.
 
@@ -126,6 +126,6 @@ Umami. Each one names how to prove it worked.
 - [x] 8.2 `NoDocumentationPage_LoadsAnImageFromAnotherHost` in
       `tests/Stratara.Documentation.Tests/LandingBadgeTests.cs` still passes — the move must not
       reintroduce a third-party request.
-- [ ] 8.3 Open the pull request through the `/pr` skill, and record in `.claude/roadmap/STATE.md`
+- [x] 8.3 Open the pull request through the `/pr` skill, and record in `.claude/roadmap/STATE.md`
       that the site is no longer on GitHub Pages, including the two traps from design.md → decision
       6 so the next session does not rediscover them.
