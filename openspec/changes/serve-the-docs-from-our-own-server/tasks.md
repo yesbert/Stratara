@@ -8,21 +8,21 @@ Umami. Each one names how to prove it worked.
 
 ## 1. Open the door on the server
 
-- [ ] 1.1 **owner** In Plesk, enable SSH access for the `stratara.tech` subscription's system user
+- [x] 1.1 **owner** In Plesk, enable SSH access for the `stratara.tech` subscription's system user
       `stratara.tech_d4hk78khxi` (shell `/bin/bash`, as `loomweaver.dev_1kv2wmu3zbc` already has).
       Proof: `ssh stratara-server 'grep stratara.tech_d4hk78khxi /etc/passwd'` no longer ends in
       `/bin/false`.
-- [ ] 1.2 Generate an ed25519 deploy key pair named for this purpose. The private half must never
+- [x] 1.2 Generate an ed25519 deploy key pair named for this purpose. The private half must never
       be written to the repository or to a file that survives the session.
-- [ ] 1.3 Install the public half in `/var/www/vhosts/stratara.tech/.ssh/authorized_keys`, owned by
+- [x] 1.3 Install the public half in `/var/www/vhosts/stratara.tech/.ssh/authorized_keys`, owned by
       the vhost user, `700` on `.ssh` and `600` on the file — the layout
       `/var/www/vhosts/loomweaver.dev/.ssh/` already has. Proof: `ssh -i <key> <user>@<host> true`
       succeeds.
-- [ ] 1.4 **owner** Register the repository secrets `DEPLOY_SSH_KEY_B64` (base64 of the private
+- [x] 1.4 **owner** Register the repository secrets `DEPLOY_SSH_KEY_B64` (base64 of the private
       half), `DEPLOY_USER`, `DEPLOY_HOST`, and the variable `DEPLOY_KNOWN_HOSTS`
       (`ssh-keyscan` output for the host). Proof: `gh secret list` and `gh variable list` show all
       four.
-- [ ] 1.5 Prove the path end to end before any workflow exists: `rsync -n -az` a throwaway file to
+- [x] 1.5 Prove the path end to end before any workflow exists: `rsync -n -az` a throwaway file to
       `<user>@<host>:httpdocs/` and confirm it is listed but, being a dry run, not written.
 
 ## 2. The deploy workflow
@@ -31,7 +31,7 @@ Umami. Each one names how to prove it worked.
       trigger on push to `main` filtered to `docs/**`, `llms.txt`, `llms-full.txt` and the workflow
       itself, plus `workflow_dispatch`; **never** on `pull_request`, so a fork's run gets no
       secrets; `concurrency` group so two deploys cannot interleave; `permissions: contents: read`.
-- [ ] 2.2 **owner** Create the `production` environment with a required reviewer, and reference it
+- [x] 2.2 **owner** Create the `production` environment with a required reviewer, and reference it
       from the job. Proof: the first run stops and waits, exactly as `release.yml` does at
       `nuget-org`.
 - [x] 2.3 Build step — the same two commands `docs.yml` runs today, so the build is unchanged by
