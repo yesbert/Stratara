@@ -115,7 +115,7 @@ Umami. Each one names how to prove it worked.
 
 ## 7. Analytics
 
-- [ ] 7.1 **owner** In Umami Cloud, set the website's domain to `stratara.tech`. Proof: a visit to
+- [x] 7.1 **owner** In Umami Cloud, set the website's domain to `stratara.tech`. Proof: a visit to
       the apex appears in the dashboard after accepting the notice. Until this is done nothing is
       counted, whatever the banner says.
 
