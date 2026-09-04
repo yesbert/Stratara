@@ -87,8 +87,12 @@ Umami. Each one names how to prove it worked.
 - [x] 4.1 Delete `.github/workflows/docs.yml` and `docs/CNAME`.
 - [x] 4.2 Update the workflow table in `.claude/CLAUDE.md` — it lists `docs.yml` as the deployment
       of this site.
-- [ ] 4.3 **owner** Unpublish the repository's GitHub Pages site in the repository settings. Do this
-      last: while it is published, it remains a rollback path (design.md → *Rollback*).
+- [ ] 4.3 Unpublish the repository's GitHub Pages site: `gh api -X DELETE repos/yesbert/Stratara/pages`.
+      Do this last: while it is published, it remains a rollback path (design.md → *Rollback*).
+      **Not before 2026-09-05, 14:00 CEST.** The old `docs` CNAME had a TTL of 86400 and was replaced
+      on 2026-09-04 around 14:00 CEST; a resolver that cached it may send visitors to Pages until then.
+      Proof: `curl -sIL https://docs.stratara.tech/guides/scoped-settings.html` lands on the apex with
+      200, and `gh api repos/yesbert/Stratara/pages` returns 404. Then `/opsx:archive`.
 
 ## 5. Move the repository's references
 
