@@ -137,12 +137,11 @@ internal sealed class InProcessProjectionReplayState(
         {
             await subscriber();
         }
-        catch (Exception exception) when (logger is not null)
+        catch (Exception exception)
         {
-            logger.LogProjectionReplayRequestSubscriberFailed(exception);
-        }
-        catch (Exception)
-        {
+            // A subscriber's failure never reaches the publisher, as with a pub/sub handler; it is
+            // logged where a logger exists and swallowed otherwise so the remaining subscribers run.
+            logger?.LogProjectionReplayRequestSubscriberFailed(exception);
         }
     }
 
