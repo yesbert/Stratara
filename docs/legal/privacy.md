@@ -1,6 +1,6 @@
 ---
 title: Privacy policy
-description: What docs.stratara.tech processes, on what legal basis, and which rights you have.
+description: What stratara.tech processes, on what legal basis, and which rights you have.
 ---
 
 # Privacy policy
@@ -34,18 +34,18 @@ processing of your personal data (Art. 77 GDPR).
 
 ## Hosting and server log files
 
-This website is hosted on GitHub Pages, a service of GitHub, Inc., 88 Colin P. Kelly Jr. Street,
-San Francisco, CA 94107, USA — a subsidiary of Microsoft Corporation. When you visit the site,
-GitHub automatically collects data that your browser transmits: the IP address, date and time of
+This website is served from a server that we operate ourselves. The machine is rented from IONOS SE,
+Elgendorfer Str. 57, 56410 Montabaur, Germany, and stands in a data centre in Germany; IONOS provides
+the infrastructure as a processor within the meaning of Art. 28 GDPR. When you visit the site, the web
+server automatically records data that your browser transmits: the IP address, date and time of
 access, the requested resource, the referring page, and the browser and operating system used.
 
 This data serves the technical delivery of the site, the assurance of stable and secure operation,
 and the prevention of abuse. The legal basis is our legitimate interest in a secure and functional
-service (Art. 6 (1) (f) GDPR). We have no access to these logs. Processing takes place on servers
-that may be located outside the European Union. What GitHub does with the data, and on what basis
-it transfers it, is described in the
-[GitHub Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement)
-and in the [GitHub Pages data collection notice](https://docs.github.com/pages/getting-started-with-github-pages/about-github-pages#data-collection).
+service (Art. 6 (1) (f) GDPR). The log files remain on that server under our control. They are not
+merged with other data, are not evaluated unless a fault or a security incident requires it, and are
+deleted automatically by log rotation. No data is transferred to a country outside the European
+Union.
 
 ## Email contact
 

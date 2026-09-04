@@ -7,7 +7,7 @@ stage. Here is how to find help.
 
 The full documentation site is the canonical reference:
 
-**<https://docs.stratara.tech>**
+**<https://stratara.tech>**
 
 It covers:
 
