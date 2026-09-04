@@ -57,17 +57,17 @@ Umami. Each one names how to prove it worked.
       contains the landing hero string; a deep page such as `/concepts/why-event-sourcing.html`
       returns 200; `/legal/imprint.html` returns 200; `/assets/badges/nuget.svg` returns 200 and is
       served from our own host.
-- [ ] 2.7 Run it once by `workflow_dispatch`, approve the gate, and confirm `stratara.tech` serves
+- [x] 2.7 Run it once by `workflow_dispatch`, approve the gate, and confirm `stratara.tech` serves
       the documentation while `docs.stratara.tech` is still served by GitHub Pages. Proof: both
       hosts return 200 and the same landing content.
 
 ## 3. Keep the old host alive
 
-- [ ] 3.1 **owner** In Plesk, add `docs.stratara.tech` to the server (subdomain or domain alias of
+- [x] 3.1 **owner** In Plesk, add `docs.stratara.tech` to the server (subdomain or domain alias of
       `stratara.tech`) and configure a permanent redirect to `https://stratara.tech`, preserving the
       path — a bare redirect to the root would turn every deep link in the published package
       READMEs into a homepage visit.
-- [ ] 3.2 Verify the redirect **before** any DNS moves, by asking the server directly with the
+- [x] 3.2 Verify the redirect **before** any DNS moves, by asking the server directly with the
       right `Host`. It must return `301` with a `Location` of the same path on the apex:
 
       ```bash
@@ -84,32 +84,32 @@ Umami. Each one names how to prove it worked.
 
 ## 4. Retire GitHub Pages
 
-- [ ] 4.1 Delete `.github/workflows/docs.yml` and `docs/CNAME`.
-- [ ] 4.2 Update the workflow table in `.claude/CLAUDE.md` — it lists `docs.yml` as the deployment
+- [x] 4.1 Delete `.github/workflows/docs.yml` and `docs/CNAME`.
+- [x] 4.2 Update the workflow table in `.claude/CLAUDE.md` — it lists `docs.yml` as the deployment
       of this site.
 - [ ] 4.3 **owner** Unpublish the repository's GitHub Pages site in the repository settings. Do this
       last: while it is published, it remains a rollback path (design.md → *Rollback*).
 
 ## 5. Move the repository's references
 
-- [ ] 5.1 Re-apply what PR #55 did and PR #56 reverted: `stratara.tech` in `README.md`, `llms.txt`,
+- [x] 5.1 Re-apply what PR #55 did and PR #56 reverted: `stratara.tech` in `README.md`, `llms.txt`,
       `SUPPORT.md`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/config.yml`,
       `.github/ISSUE_TEMPLATE/question.md`, both hero-sample READMEs, and `_appBaseUrl` in
       `docs/docfx.json`. Leave `CHANGELOG.md` and the archived
       `2026-09-03-give-every-reader-their-door` alone — dated records are not rewritten, and the
       redirect keeps their links working.
-- [ ] 5.2 Set the README docs badge back to `docs-stratara.tech` so its label names the host it
+- [x] 5.2 Set the README docs badge back to `docs-stratara.tech` so its label names the host it
       links to (the reason it was changed in #56).
-- [ ] 5.3 Confirm no live reference to the old host remains: `grep -rn 'docs\.stratara\.tech'`
+- [x] 5.3 Confirm no live reference to the old host remains: `grep -rn 'docs\.stratara\.tech'`
       returns only `CHANGELOG.md` and the archived change.
 
 ## 6. Say where the site is hosted
 
-- [ ] 6.1 Rewrite *Hosting and server log files* in `docs/legal/privacy.md`: the controller's own
+- [x] 6.1 Rewrite *Hosting and server log files* in `docs/legal/privacy.md`: the controller's own
       server, his own logs, a German location, and no transfer to the United States. Remove the
       GitHub, Inc. paragraph and its two links.
-- [ ] 6.2 Update the front-matter `description` in the same file, which names the host.
-- [ ] 6.3 Confirm the rest of the policy is still true after the move: the *No third-party requests
+- [x] 6.2 Update the front-matter `description` in the same file, which names the host.
+- [x] 6.3 Confirm the rest of the policy is still true after the move: the *No third-party requests
       before you agree* section, the localStorage keys, and the Umami paragraph. Only the host
       changed.
 
@@ -121,9 +121,9 @@ Umami. Each one names how to prove it worked.
 
 ## 8. Close it out
 
-- [ ] 8.1 `./scripts/local-gauntlet.sh` green, and `docfx build docs/docfx.json --warningsAsErrors`
+- [x] 8.1 `./scripts/local-gauntlet.sh` green, and `docfx build docs/docfx.json --warningsAsErrors`
       with 0 warnings.
-- [ ] 8.2 `NoDocumentationPage_LoadsAnImageFromAnotherHost` in
+- [x] 8.2 `NoDocumentationPage_LoadsAnImageFromAnotherHost` in
       `tests/Stratara.Documentation.Tests/LandingBadgeTests.cs` still passes — the move must not
       reintroduce a third-party request.
 - [ ] 8.3 Open the pull request through the `/pr` skill, and record in `.claude/roadmap/STATE.md`

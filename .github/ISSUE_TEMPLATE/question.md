@@ -7,7 +7,7 @@ labels: ["question"]
 
 ## Before you file
 
-- [ ] I checked the documentation at <https://docs.stratara.tech>.
+- [ ] I checked the documentation at <https://stratara.tech>.
 - [ ] I searched existing issues (open + closed).
 
 ## My question

@@ -6,13 +6,13 @@
 
 **CQRS and Event Sourcing for .NET 10. Start with a mediator, grow into the full stack, keep the receipts.**
 
-[![CI](https://github.com/yesbert/Stratara/actions/workflows/ci.yml/badge.svg)](https://github.com/yesbert/Stratara/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-docs.stratara.tech-2ea44f.svg)](https://docs.stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/)
+[![CI](https://github.com/yesbert/Stratara/actions/workflows/ci.yml/badge.svg)](https://github.com/yesbert/Stratara/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/)
 
 </div>
 
 ---
 
-**New to the terms?** *Mediator* — your controller hands over one object (`OpenAccount`) and a dispatcher finds the single handler that answers it. *CQRS* — **C**ommand **Q**uery **R**esponsibility **S**egregation: a command changes something and returns little, a query reads and changes nothing, and keeping them apart lets each side take the shape its own job needs. *Event sourcing* — store the facts that happened (`AccountOpened`, `MoneyDeposited`) instead of the state they produced, and fold them to get the current value. Longer: the [glossary](https://docs.stratara.tech/overview/glossary.html).
+**New to the terms?** *Mediator* — your controller hands over one object (`OpenAccount`) and a dispatcher finds the single handler that answers it. *CQRS* — **C**ommand **Q**uery **R**esponsibility **S**egregation: a command changes something and returns little, a query reads and changes nothing, and keeping them apart lets each side take the shape its own job needs. *Event sourcing* — store the facts that happened (`AccountOpened`, `MoneyDeposited`) instead of the state they produced, and fold them to get the current value. Longer: the [glossary](https://stratara.tech/overview/glossary.html).
 
 Stratara is one MIT-licensed family of 25 NuGet packages, versioned together: mediator, event store on PostgreSQL, outbox over RabbitMQ or Azure Service Bus, projections, sagas, identity — and, as defaults rather than add-ons, hash-chained tamper-evident event streams and tenant-bound field encryption with GDPR-grade crypto-shredding. Take one package or take all of them; they never disagree about each other's version.
 
@@ -47,7 +47,7 @@ var id = await scope.ServiceProvider.GetRequiredService<IMediator>()
     .HandleAsync(new OpenAccount("Alice", 100m));
 ```
 
-→ [First Stratara app](https://docs.stratara.tech/getting-started/first-stratara-app.html) · [`samples/Stratara.Sample.CqrsBasics`](samples/Stratara.Sample.CqrsBasics)
+→ [First Stratara app](https://stratara.tech/getting-started/first-stratara-app.html) · [`samples/Stratara.Sample.CqrsBasics`](samples/Stratara.Sample.CqrsBasics)
 
 ### 🚪 I want event sourcing without the plumbing
 
@@ -74,7 +74,7 @@ await events.CreateAsync<Invoice>(id, new InvoiceIssued(id, tenantId, 120m), ct)
 await events.SaveChangesAsync(ct);   // one transaction, snapshot by policy, one bundle to the outbox
 ```
 
-→ [Write a command handler](https://docs.stratara.tech/guides/write-a-command-handler.html) · [Write a projection](https://docs.stratara.tech/guides/write-a-projection.html) · [Event-sourced walkthrough](https://docs.stratara.tech/samples/02-event-sourced.html)
+→ [Write a command handler](https://stratara.tech/guides/write-a-command-handler.html) · [Write a projection](https://stratara.tech/guides/write-a-projection.html) · [Event-sourced walkthrough](https://stratara.tech/samples/02-event-sourced.html)
 
 ### 🚪 I run a multi-tenant SaaS and get audited
 
@@ -90,7 +90,7 @@ public sealed record CustomerRegistered(
 await keyStore.EraseScopeAsync(scope, ct);
 ```
 
-→ [Tamper-evident streams](https://docs.stratara.tech/concepts/tamper-evident-streams.html) · [Tenant-aware encryption](https://docs.stratara.tech/concepts/tenant-aware-encryption.html) · hero samples [`TamperProof`](samples/Stratara.Sample.TamperProof) and [`Encryption`](samples/Stratara.Sample.Encryption)
+→ [Tamper-evident streams](https://stratara.tech/concepts/tamper-evident-streams.html) · [Tenant-aware encryption](https://stratara.tech/concepts/tenant-aware-encryption.html) · hero samples [`TamperProof`](samples/Stratara.Sample.TamperProof) and [`Encryption`](samples/Stratara.Sample.Encryption)
 
 ## It grows with you
 
@@ -133,17 +133,17 @@ Measured with [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet) on a 
 | Property write, compiled delegate vs reflection | 0.47 ns vs 6.04 ns, **~13× faster**, allocation-free |
 | Tamper-evident chain hashing | sub-microsecond per event |
 
-Methodology and caveats: [Performance & scaling](https://docs.stratara.tech/concepts/performance-and-scaling.html).
+Methodology and caveats: [Performance & scaling](https://stratara.tech/concepts/performance-and-scaling.html).
 
 ## Documentation
 
-**[docs.stratara.tech](https://docs.stratara.tech)** — concepts, getting started, guides, sample walkthroughs, the [package map](https://docs.stratara.tech/overview/packages.html) and the generated API reference. Every guarantee is written down as a specification under [`openspec/specs/`](openspec/specs/) and tested in CI; the docs are derived from those specs.
+**[stratara.tech](https://stratara.tech)** — concepts, getting started, guides, sample walkthroughs, the [package map](https://stratara.tech/overview/packages.html) and the generated API reference. Every guarantee is written down as a specification under [`openspec/specs/`](openspec/specs/) and tested in CI; the docs are derived from those specs.
 
 **Using an AI assistant?** Point it at [`llms.txt`](llms.txt) (orientation) and [`llms-full.txt`](llms-full.txt) (every registration, option and exception, generated from the assemblies), or connect any MCP-capable client to `gitmcp.io/yesbert/Stratara`.
 
 ## Samples
 
-Self-contained concept samples, each running in under a second: a five-step learning path on one bank-account domain (`CqrsBasics` → `EventSourced` → `OutboxWorker` → `MoneyTransferSaga` → `AspNetCoreApi`), two hero samples (`TamperProof`, `Encryption`), plus `Validation`, `Identity` and `IdentityDirectory`. See [`samples/`](samples/) and the [walkthroughs](https://docs.stratara.tech/samples/).
+Self-contained concept samples, each running in under a second: a five-step learning path on one bank-account domain (`CqrsBasics` → `EventSourced` → `OutboxWorker` → `MoneyTransferSaga` → `AspNetCoreApi`), two hero samples (`TamperProof`, `Encryption`), plus `Validation`, `Identity` and `IdentityDirectory`. See [`samples/`](samples/) and the [walkthroughs](https://stratara.tech/samples/).
 
 ```bash
 dotnet run --project samples/Stratara.Sample.TamperProof
