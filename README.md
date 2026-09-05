@@ -78,7 +78,7 @@ await events.SaveChangesAsync(ct);   // one transaction, snapshot by policy, one
 
 ### 🚪 I run a multi-tenant SaaS and get audited
 
-Every event stream is hash-chained and anchored outside your database. `[EncryptData]` fields are sealed with the tenant as associated data, so a row leaked from one tenant cannot be read in another, even with the master key. Erasure is a key you destroy, not history you rewrite.
+Every event stream is hash-chained, with periodic anchors you can commit outside your database. `[EncryptData]` fields are sealed with the tenant as associated data, so a row leaked from one tenant cannot be read in another, even with the master key. Erasure is a key you destroy, not history you rewrite.
 
 ```csharp
 public sealed record CustomerRegistered(
@@ -117,7 +117,7 @@ flowchart LR
 ## Why Stratara
 
 - **Integrated, not assembled.** Mediator, outbox, event store, sagas, projections and identity are one family at one version. No composition tax, no version-skew puzzles.
-- **Audit-grade by default.** Hash-chained streams with external anchors; a direct edit in the database no longer recomputes, and a verification pass names the sequence where it broke.
+- **Audit-grade by default.** Hash-chained streams with periodic anchors ready for external commitment; a direct edit in the database no longer recomputes, and a verification pass names the sequence where it broke.
 - **Tenant isolation you can prove.** Cryptographic binding of encrypted fields to their tenant, plus a mediator-entrance guard that rejects a request naming another tenant before your handler runs.
 - **Erasure without rewriting history.** Per-subject keys; `EraseScopeAsync` makes every copy undecryptable, including the backups you cannot reach.
 - **Fast and horizontal.** Reflection-free hot paths, push-driven projections, deterministic stream buckets so workers scale out as competing consumers.
