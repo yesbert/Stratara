@@ -28,7 +28,7 @@ this arc, because the artefact under test is generated HTML.
 
 ## 3. The forked layout
 
-- [ ] 3.1 Copy `layout/_master.tmpl` from DocFX 2.78.5's `modern` template to
+- [x] 3.1 Copy `layout/_master.tmpl` from DocFX 2.78.5's `modern` template to
       `docs/templates/stratara/layout/_master.tmpl`, unmodified, and commit that copy on its own so
       the next commit's diff shows exactly what we added.
 - [x] 3.2 Give the file a header comment naming the upstream version (`2.78.5`), the upstream path,
@@ -144,16 +144,24 @@ Front matter gains `title` and `description`; nothing else about the page change
       an outline in `--bs-body-color`, and the heading changes carry no colour — but that is
       reasoning, not looking. `STATE.md` already carries "Handy-Ansicht und Dark Mode am Gerät
       prüfen" as a standing follow-up; this does not discharge it.
-- [ ] 9.3 Open the pull request through the `/pr` skill. Merge once CI is green and every review
+- [x] 9.3 Open the pull request through the `/pr` skill. Merge once CI is green and every review
       thread is resolved — the owner agreed on 2026-09-06 that this arc may go to `main` without a
       second stop, while the change's approval and the deploy's approval stay his.
-- [ ] 9.4 After the merge, approve the `deploy-site.yml` run — that gate is the owner's — and verify
+- [x] 9.4 After the merge, approve the `deploy-site.yml` run — that gate is the owner's — and verify
       against the live host: `https://stratara.tech/sitemap.xml` and `/robots.txt` return 200, the
       canonical on a deep page names the apex, and `curl -s https://stratara.tech/ | grep 'og:image'`
       shows the absolute cover URL.
-- [ ] 9.5 Record in `.claude/roadmap/STATE.md` that the site now carries a sitemap, canonical URLs,
+- [x] 9.5 Record in `.claude/roadmap/STATE.md` that the site now carries a sitemap, canonical URLs,
       Open Graph and structured data, that `_master.tmpl` is forked from DocFX 2.78.5, and that the
       workflow pins that version — so the next session that bumps DocFX knows a file is waiting.
-- [ ] 9.6 Set the generated cover as the repository's social preview image in the GitHub settings.
-      **owner** — it is a repository setting, not a file. This closes the "GitHub-Social-Preview-Bild"
-      follow-up that STATE.md has carried since 2026-09-05.
+- [x] 9.6 Set the generated cover as the repository's social preview image in the GitHub settings.
+      **owner** — it is a repository setting, not a file. Done 2026-09-06; verified through GraphQL
+      (`usesCustomOpenGraphImage: true`) and by fetching the served image, which is `og-cover.png`
+      at 1200x630. This closes the "GitHub-Social-Preview-Bild" follow-up that STATE.md carried
+      since 2026-09-05.
+      **Found while verifying:** the preview that stood there before was
+      `marketing/launch/images/social-card.png`, a better-designed card whose meta line still read
+      `docs.stratara.tech` — the host retired the same day. Its source was corrected and re-rendered,
+      and seven further references to that host were found and fixed across the unpublished launch
+      drafts. Which of the two cards the repository should carry is a separate decision; both are
+      correct, and only this one has its source in the public repository.
