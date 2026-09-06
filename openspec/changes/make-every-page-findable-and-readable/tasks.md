@@ -37,8 +37,13 @@ this arc, because the artefact under test is generated HTML.
       `{{description}}` when the page has one, `{{_description}}` otherwise. Proof:
       `grep -c 'name="description"' docs/_site/legal/privacy.html` reports 1, not 2.
 - [x] 3.4 Add `<link rel="canonical" href="{{_appBaseUrl}}/{{_path}}">`. Proof: the canonical on
-      `docs/_site/guides/write-a-saga.html` reads `https://stratara.tech/guides/write-a-saga.html`,
-      and on `docs/_site/index.html` it reads `https://stratara.tech/index.html`.
+      `docs/_site/guides/write-a-saga.html` reads `https://stratara.tech/guides/write-a-saga.html`.
+      **Changed during apply:** the task expected the landing to read `.../index.html`, and the
+      hand check in 9.2 showed that would be wrong. The site links `index.html` internally, so that
+      is right for a section index — but the homepage is published as the bare apex by `llms.txt`,
+      the README, the package READMEs already on nuget.org and the repository's About box, and a
+      canonical naming `/index.html` would argue against all of them. The landing and its `og:url`
+      now read `https://stratara.tech/`; every other page is unchanged.
 - [x] 3.5 Add Open Graph (`og:type`, `og:site_name`, `og:title`, `og:description`, `og:url`,
       `og:image`) and Twitter (`twitter:card` as `summary_large_image`, `twitter:title`,
       `twitter:description`, `twitter:image`) tags, all from the same values the title, description
@@ -130,9 +135,9 @@ Front matter gains `title` and `description`; nothing else about the page change
 
 ## 9. Close it out
 
-- [ ] 9.1 `./scripts/local-gauntlet.sh` green, and `docfx build docs/docfx.json --warningsAsErrors`
+- [x] 9.1 `./scripts/local-gauntlet.sh` green, and `docfx build docs/docfx.json --warningsAsErrors`
       with 0 warnings.
-- [ ] 9.2 Check the built site by hand for the things a test cannot: tab from the top of
+- [x] 9.2 Check the built site by hand for the things a test cannot: tab from the top of
       `index.html` and confirm the skip link appears and works; open the page in dark mode; confirm
       the cover image renders as intended at 1200×630.
 - [ ] 9.3 Open the pull request through the `/pr` skill. Merge once CI is green and every review

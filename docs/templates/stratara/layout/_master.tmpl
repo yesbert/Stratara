@@ -38,8 +38,14 @@
       {{^description}}{{#_description}}<meta name="description" content="{{_description}}">{{/_description}}{{/description}}
 
       {{!STRATARA: one canonical per page. The site answers on more than one URL — docs.stratara.tech
-         301s here permanently, and /samples/ is the same page as /samples/index.html.}}
-      <link rel="canonical" href="{{_appBaseUrl}}/{{_path}}">
+         301s here permanently, and /samples/ is the same page as /samples/index.html.
+
+         The landing page is the exception and points at the bare apex. Internally the site links
+         index.html everywhere, so that is the right canonical for a section index; but the
+         homepage is what llms.txt, the README, the package READMEs on nuget.org and the
+         repository's About box all publish as https://stratara.tech, and a canonical naming
+         /index.html would argue against every one of them.}}
+      <link rel="canonical" href="{{_appBaseUrl}}/{{^_isLanding}}{{_path}}{{/_isLanding}}">
 
       {{!STRATARA: Open Graph and Twitter, so a shared link is a card rather than a bare URL.}}
       <meta property="og:type" content="{{#_isLanding}}website{{/_isLanding}}{{^_isLanding}}article{{/_isLanding}}">
@@ -47,7 +53,7 @@
       <meta property="og:title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}}">
       {{#description}}<meta property="og:description" content="{{description}}">{{/description}}
       {{^description}}{{#_description}}<meta property="og:description" content="{{_description}}">{{/_description}}{{/description}}
-      <meta property="og:url" content="{{_appBaseUrl}}/{{_path}}">
+      <meta property="og:url" content="{{_appBaseUrl}}/{{^_isLanding}}{{_path}}{{/_isLanding}}">
       <meta property="og:image" content="{{_appBaseUrl}}/assets/og-cover.png">
       <meta name="twitter:card" content="summary_large_image">
       <meta name="twitter:title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}}">
