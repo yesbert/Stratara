@@ -100,11 +100,16 @@
       </script>
       {{/_googleAnalyticsTagId}}
 
-      {{!STRATARA: structured data. SoftwareApplication on the landing page, TechArticle on a page
-         that carries a hand-written description — which is every page except the generated API
-         reference, where a headline would have to be invented rather than written. No
-         BreadcrumbList: docfx fills the breadcrumb in the browser from toc.json, so the ancestor
-         titles it needs do not exist here.}}
+      {{!STRATARA: structured data. SoftwareApplication on the landing page, TechArticle on a
+         hand-written one. No BreadcrumbList: docfx fills the breadcrumb in the browser from
+         toc.json, so the ancestor titles it needs do not exist here.
+
+         The gate is the front-matter *title*, and that is deliberate. Gating on the description
+         looked equivalent and was not: docfx gives an API reference page a description of its own,
+         taken from the type's XML summary, but no title — so that gate emitted a TechArticle with
+         an empty headline on 421 generated pages. A title only ever comes from front matter, which
+         only a hand-written page has. The description is required as well, so a page that gains a
+         title without one cannot produce an empty description either.}}
       {{#_isLanding}}
       <script type="application/ld+json">
       {
@@ -123,7 +128,7 @@
       }
       </script>
       {{/_isLanding}}
-      {{^_isLanding}}{{#description}}
+      {{^_isLanding}}{{#title}}{{#description}}
       <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -137,7 +142,7 @@
         "isPartOf": { "@type": "WebSite", "name": "{{_appName}}", "url": "{{_appBaseUrl}}/" }
       }
       </script>
-      {{/description}}{{/_isLanding}}
+      {{/description}}{{/title}}{{/_isLanding}}
     {{/redirect_url}}
   </head>
 

@@ -64,6 +64,21 @@ public partial class SiteMetadataTests
     }
 
     [Fact]
+    public void TheTechArticleBlock_IsGatedOnTheFrontMatterTitle()
+    {
+        var layout = File.ReadAllText(Path.Combine(RepositoryRoot.Locate(), ForkedLayout));
+
+        // Gating on the description looks equivalent and is not. DocFX gives an API reference page
+        // a description of its own, taken from the type's XML summary, but never a title — so the
+        // description gate emitted a TechArticle with an empty headline on 421 generated pages.
+        // A title only ever comes from front matter, which only a hand-written page has.
+        Assert.Contains(
+            """{{^_isLanding}}{{#title}}{{#description}}""",
+            layout,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RobotsTxt_NamesTheSitemapAndBlocksNothing()
     {
         var robots = File.ReadAllText(Path.Combine(RepositoryRoot.Locate(), "docs", "robots.txt"));
