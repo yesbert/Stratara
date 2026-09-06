@@ -1,0 +1,81 @@
+<!doctype html>
+<!--
+  The Stratara link card: one image for two places. It is the site's og:image, so a
+  stratara.tech link shared into Slack, LinkedIn or Bluesky renders as a card rather than a
+  bare URL, and it is the repository's social preview, which GitHub shows for the same reason.
+  Two cards for one job is how one of them goes stale, which is what happened: the earlier
+  copy of this file still advertised docs.stratara.tech hours after that host was retired.
+
+  Render with ./scripts/refresh-social-card.sh to exactly 1280x640, the size GitHub asks for.
+  The PNG is committed rather than built in CI, for the reason docs/assets/badges/ is: DocFX
+  copies resources, it does not run headless Chrome.
+
+  The host in the meta line below is checked against _appBaseUrl in docs/docfx.json by
+  SocialCardTests, so it cannot fall behind the site again. Source logo: social-logo-src.png.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background:
+      radial-gradient(120% 140% at 12% 8%, #ffffff 0%, #eaf2fc 42%, #d7e7fb 100%);
+    display: flex;
+    align-items: center;
+    gap: 60px;
+    padding: 0 92px;
+    overflow: hidden;
+    position: relative;
+  }
+  /* faint strata motif bleeding off the right edge for depth */
+  body::after {
+    content: "";
+    position: absolute;
+    right: -160px; top: 50%;
+    width: 520px; height: 520px;
+    transform: translateY(-50%) skewX(-12deg);
+    background: linear-gradient(135deg, rgba(79,195,247,0.10), rgba(13,71,161,0.06));
+    border-left: 6px solid rgba(21,101,192,0.10);
+    z-index: 0;
+  }
+  .logo { width: 430px; flex: none; z-index: 1; }
+  .logo img { width: 100%; height: auto; display: block; }
+  .copy { z-index: 1; }
+  .headline {
+    font-size: 62px;
+    line-height: 1.06;
+    font-weight: 800;
+    color: #0d2b4d;
+    letter-spacing: -0.5px;
+  }
+  .headline .accent { color: #1565C0; }
+  .sub {
+    margin-top: 26px;
+    font-size: 28px;
+    line-height: 1.4;
+    font-weight: 500;
+    color: #2b4a6b;
+  }
+  .sub b { color: #0d47a1; font-weight: 700; }
+  .meta {
+    margin-top: 40px;
+    font-size: 26px;
+    font-weight: 600;
+    color: #1565C0;
+    letter-spacing: 0.3px;
+  }
+  .meta .dot { color: #9db8d6; padding: 0 12px; }
+</style>
+</head>
+<body>
+  <div class="logo"><img src="social-logo-src.png" alt="Stratara" /></div>
+  <div class="copy">
+    <div class="headline">CQRS &amp; Event&nbsp;Sourcing<br/><span class="accent">for .NET&nbsp;10</span></div>
+    <div class="sub"><b>Tamper-evident</b> streams.<br/><b>Tenant-aware</b> encryption.<br/><b>GDPR-ready</b> erasure. Built&nbsp;in.</div>
+    <div class="meta">Fast<span class="dot">•</span>Secure<span class="dot">•</span>stratara.tech</div>
+  </div>
+</body>
+</html>

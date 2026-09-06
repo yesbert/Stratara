@@ -47,19 +47,26 @@
          /index.html would argue against every one of them.}}
       <link rel="canonical" href="{{_appBaseUrl}}/{{^_isLanding}}{{_path}}{{/_isLanding}}">
 
-      {{!STRATARA: Open Graph and Twitter, so a shared link is a card rather than a bare URL.}}
+      {{!STRATARA: Open Graph and Twitter, so a shared link is a card rather than a bare URL.
+         The image is docs/assets/social-card.png, which is also the repository's social
+         preview — one card for both, rendered from build/social-card/ by
+         scripts/refresh-social-card.sh. There were two until 2026-09-06, which is how one of
+         them came to advertise a host that had been retired hours earlier.}}
       <meta property="og:type" content="{{#_isLanding}}website{{/_isLanding}}{{^_isLanding}}article{{/_isLanding}}">
       <meta property="og:site_name" content="{{_appName}}">
       <meta property="og:title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}}">
       {{#description}}<meta property="og:description" content="{{description}}">{{/description}}
       {{^description}}{{#_description}}<meta property="og:description" content="{{_description}}">{{/_description}}{{/description}}
       <meta property="og:url" content="{{_appBaseUrl}}/{{^_isLanding}}{{_path}}{{/_isLanding}}">
-      <meta property="og:image" content="{{_appBaseUrl}}/assets/og-cover.png">
+      <meta property="og:image" content="{{_appBaseUrl}}/assets/social-card.png">
+      <meta property="og:image:width" content="1280">
+      <meta property="og:image:height" content="640">
+      <meta property="og:image:alt" content="Stratara — CQRS and event sourcing for .NET 10, with tamper-evident streams, tenant-aware encryption and GDPR-ready erasure.">
       <meta name="twitter:card" content="summary_large_image">
       <meta name="twitter:title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}}">
       {{#description}}<meta name="twitter:description" content="{{description}}">{{/description}}
       {{^description}}{{#_description}}<meta name="twitter:description" content="{{_description}}">{{/_description}}{{/description}}
-      <meta name="twitter:image" content="{{_appBaseUrl}}/assets/og-cover.png">
+      <meta name="twitter:image" content="{{_appBaseUrl}}/assets/social-card.png">
       <link rel="icon" href="{{_rel}}{{{_appFaviconPath}}}{{^_appFaviconPath}}favicon.ico{{/_appFaviconPath}}">
       <link rel="stylesheet" href="{{_rel}}public/docfx.min.css">
       <link rel="stylesheet" href="{{_rel}}public/main.css">
