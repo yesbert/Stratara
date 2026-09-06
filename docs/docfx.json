@@ -96,6 +96,9 @@
       "_disableContribution": {
         "reference/api/**": true,
         "legal/**": true
+      },
+      "_isLanding": {
+        "index.md": true
       }
     },
     "dest": "_site",

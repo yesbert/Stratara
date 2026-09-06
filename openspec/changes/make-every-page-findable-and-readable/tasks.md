@@ -31,30 +31,31 @@ this arc, because the artefact under test is generated HTML.
 - [ ] 3.1 Copy `layout/_master.tmpl` from DocFX 2.78.5's `modern` template to
       `docs/templates/stratara/layout/_master.tmpl`, unmodified, and commit that copy on its own so
       the next commit's diff shows exactly what we added.
-- [ ] 3.2 Give the file a header comment naming the upstream version (`2.78.5`), the upstream path,
+- [x] 3.2 Give the file a header comment naming the upstream version (`2.78.5`), the upstream path,
       and the rule that every added block is marked. Proof: task 8.3's test reads this comment.
-- [ ] 3.3 Replace the two independent description sections (upstream lines 16–17) with one choice:
+- [x] 3.3 Replace the two independent description sections (upstream lines 16–17) with one choice:
       `{{description}}` when the page has one, `{{_description}}` otherwise. Proof:
       `grep -c 'name="description"' docs/_site/legal/privacy.html` reports 1, not 2.
-- [ ] 3.4 Add `<link rel="canonical" href="{{_appBaseUrl}}/{{_path}}">`. Proof: the canonical on
+- [x] 3.4 Add `<link rel="canonical" href="{{_appBaseUrl}}/{{_path}}">`. Proof: the canonical on
       `docs/_site/guides/write-a-saga.html` reads `https://stratara.tech/guides/write-a-saga.html`,
       and on `docs/_site/index.html` it reads `https://stratara.tech/index.html`.
-- [ ] 3.5 Add Open Graph (`og:type`, `og:site_name`, `og:title`, `og:description`, `og:url`,
+- [x] 3.5 Add Open Graph (`og:type`, `og:site_name`, `og:title`, `og:description`, `og:url`,
       `og:image`) and Twitter (`twitter:card` as `summary_large_image`, `twitter:title`,
       `twitter:description`, `twitter:image`) tags, all from the same values the title, description
       and canonical already use. Proof: `grep -c 'property="og:' docs/_site/index.html` reports 6.
-- [ ] 3.6 Add the skip link as the first element inside `<body>`, pointing at `#main`, and give
+- [x] 3.6 Add the skip link as the first element inside `<body>`, pointing at `#main`, and give
       `<main>` that id. Proof: the first `<a>` in `docs/_site/index.html` targets `#main`, and
       `id="main"` appears once.
-- [ ] 3.7 Give the three unlabelled `<nav>` landmarks an `aria-label` — the navbar, the table of
-      contents and the affix ("Main", "Table of contents", "On this page"). Proof: every `<nav>` in
+- [x] 3.7 Give the unlabelled `<nav>` landmarks an `aria-label`. There are **four**, not the three
+      the audit first reported: the navbar, the table of contents, the breadcrumb and the affix
+      ("Main", "Table of contents", "Breadcrumb", "On this page"). Proof: every `<nav>` in
       `docs/_site/concepts/why-event-sourcing.html` carries either `aria-label` or `aria-labelledby`.
 - [ ] 3.8 Add the JSON-LD block: `SoftwareApplication` when `_layout` is `landing`, `TechArticle`
       otherwise, per design.md → decision 6. Author `Norbert Rosenwinkel`, licence
       `https://opensource.org/license/mit`, `operatingSystem` `.NET 10`. Proof: both
       `docs/_site/index.html` and `docs/_site/guides/write-a-saga.html` contain exactly one
       `application/ld+json` script and both parse as JSON.
-- [ ] 3.9 Pin the tool in `.github/workflows/deploy-site.yml`:
+- [x] 3.9 Pin the tool in `.github/workflows/deploy-site.yml`:
       `dotnet tool install -g docfx --version 2.78.5`. Proof: the workflow file names the same
       version as the header comment from 3.2.
 

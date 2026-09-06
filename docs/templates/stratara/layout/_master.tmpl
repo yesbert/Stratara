@@ -1,4 +1,18 @@
 {{!Licensed to the .NET Foundation under one or more agreements. The .NET Foundation licenses this file to you under the MIT license.}}
+{{!
+  STRATARA FORK — do not edit as if this were ours alone.
+
+  docfx-template-version: 2.78.5
+  upstream: templates/modern/layout/_master.tmpl, shipped inside the docfx tool
+
+  This is a copy. It does not inherit anything docfx improves upstream, which is why
+  .github/workflows/deploy-site.yml pins that exact version and a test fails when the pin and the
+  line above disagree. Upgrading docfx means re-taking this copy and re-applying the marked blocks.
+
+  Every deviation from upstream is wrapped in a STRATARA comment saying what it is for. Upstream
+  emitted the global and the page description unconditionally, both, so a page with front matter
+  served two description tags; that one is a repair rather than an addition.
+}}
 {{!include(/^public/.*/)}}
 {{!include(favicon.ico)}}
 {{!include(logo.svg)}}
@@ -13,8 +27,28 @@
       <title>{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}} {{#_appTitle}}| {{_appTitle}} {{/_appTitle}}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <meta name="title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}} {{#_appTitle}}| {{_appTitle}} {{/_appTitle}}">
-      {{#_description}}<meta name="description" content="{{_description}}">{{/_description}}
+      {{!STRATARA repair: the page description wins and the global one is the fallback. Upstream had
+         these as two independent sections, so a page carrying front matter served both.}}
       {{#description}}<meta name="description" content="{{description}}">{{/description}}
+      {{^description}}{{#_description}}<meta name="description" content="{{_description}}">{{/_description}}{{/description}}
+
+      {{!STRATARA: one canonical per page. The site answers on more than one URL — docs.stratara.tech
+         301s here permanently, and /samples/ is the same page as /samples/index.html.}}
+      <link rel="canonical" href="{{_appBaseUrl}}/{{_path}}">
+
+      {{!STRATARA: Open Graph and Twitter, so a shared link is a card rather than a bare URL.}}
+      <meta property="og:type" content="{{#_isLanding}}website{{/_isLanding}}{{^_isLanding}}article{{/_isLanding}}">
+      <meta property="og:site_name" content="{{_appName}}">
+      <meta property="og:title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}}">
+      {{#description}}<meta property="og:description" content="{{description}}">{{/description}}
+      {{^description}}{{#_description}}<meta property="og:description" content="{{_description}}">{{/_description}}{{/description}}
+      <meta property="og:url" content="{{_appBaseUrl}}/{{_path}}">
+      <meta property="og:image" content="{{_appBaseUrl}}/assets/og-cover.png">
+      <meta name="twitter:card" content="summary_large_image">
+      <meta name="twitter:title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}}">
+      {{#description}}<meta name="twitter:description" content="{{description}}">{{/description}}
+      {{^description}}{{#_description}}<meta name="twitter:description" content="{{_description}}">{{/_description}}{{/description}}
+      <meta name="twitter:image" content="{{_appBaseUrl}}/assets/og-cover.png">
       <link rel="icon" href="{{_rel}}{{{_appFaviconPath}}}{{^_appFaviconPath}}favicon.ico{{/_appFaviconPath}}">
       <link rel="stylesheet" href="{{_rel}}public/docfx.min.css">
       <link rel="stylesheet" href="{{_rel}}public/main.css">
@@ -54,14 +88,59 @@
         gtag('config', '{{_googleAnalyticsTagId}}');
       </script>
       {{/_googleAnalyticsTagId}}
+
+      {{!STRATARA: structured data. SoftwareApplication on the landing page, TechArticle on a page
+         that carries a hand-written description — which is every page except the generated API
+         reference, where a headline would have to be invented rather than written. No
+         BreadcrumbList: docfx fills the breadcrumb in the browser from toc.json, so the ancestor
+         titles it needs do not exist here.}}
+      {{#_isLanding}}
+      <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "{{_appName}}",
+        "url": "{{_appBaseUrl}}/",
+        "description": "{{_description}}",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": ".NET 10",
+        "license": "https://opensource.org/license/mit",
+        "sameAs": "https://github.com/yesbert/Stratara",
+        "downloadUrl": "https://www.nuget.org/packages?q=Stratara",
+        "author": { "@type": "Person", "name": "Norbert Rosenwinkel" },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" }
+      }
+      </script>
+      {{/_isLanding}}
+      {{^_isLanding}}{{#description}}
+      <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "{{title}}",
+        "description": "{{description}}",
+        "url": "{{_appBaseUrl}}/{{_path}}",
+        "inLanguage": "{{_lang}}",
+        "license": "https://opensource.org/license/mit",
+        "author": { "@type": "Person", "name": "Norbert Rosenwinkel" },
+        "isPartOf": { "@type": "WebSite", "name": "{{_appName}}", "url": "{{_appBaseUrl}}/" }
+      }
+      </script>
+      {{/description}}{{/_isLanding}}
     {{/redirect_url}}
   </head>
 
   {{^redirect_url}}
   <body class="tex2jax_ignore" data-layout="{{_layout}}{{layout}}" data-yaml-mime="{{yamlmime}}">
+    {{!STRATARA: WCAG 2.2 SC 2.4.1. The first focusable element skips the navbar and the search box.
+       It is off-screen until focused, never display:none, which would take it out of the tab order
+       and defeat the point. Style in templates/stratara/public/main.css.}}
+    <a class="st-skip-link" href="#main">Skip to main content</a>
     <header class="bg-body border-bottom">
       {{^_disableNavbar}}
-      <nav id="autocollapse" class="navbar navbar-expand-md" role="navigation">
+      {{!STRATARA: aria-label — four nav landmarks on a page, and a screen reader announces each of
+         them as "navigation" without one.}}
+      <nav id="autocollapse" class="navbar navbar-expand-md" role="navigation" aria-label="Main">
         <div class="container-xxl flex-nowrap">
           <a class="navbar-brand" href="{{_appLogoUrl}}{{^_appLogoUrl}}{{_rel}}index.html{{/_appLogoUrl}}">
             <img id="logo" class="svg" src="{{_rel}}{{{_appLogoPath}}}{{^_appLogoPath}}logo.svg{{/_appLogoPath}}" alt="{{_appName}}" >
@@ -85,7 +164,8 @@
       {{/_disableNavbar}}
     </header>
 
-    <main class="container-xxl">
+    {{!STRATARA: the skip link's target.}}
+    <main class="container-xxl" id="main">
       {{^_disableToc}}
       <div class="toc-offcanvas">
         <div class="offcanvas-md offcanvas-start" tabindex="-1" id="tocOffcanvas" aria-labelledby="tocOffcanvasLabel">
@@ -94,7 +174,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#tocOffcanvas" aria-label="Close"></button>
           </div>
           <div class="offcanvas-body">
-            <nav class="toc" id="toc"></nav>
+            <nav class="toc" id="toc" aria-label="Table of contents"></nav>
           </div>
         </div>
       </div>
@@ -111,7 +191,7 @@
           {{/_disableToc}}
 
           {{^_disableBreadcrumb}}
-          <nav id="breadcrumb"></nav>
+          <nav id="breadcrumb" aria-label="Breadcrumb"></nav>
           {{/_disableBreadcrumb}}
         </div>
 
@@ -138,7 +218,7 @@
 
       {{^_disableAffix}}
       <div class="affix">
-        <nav id="affix"></nav>
+        <nav id="affix" aria-label="On this page"></nav>
       </div>
       {{/_disableAffix}}
     </main>
