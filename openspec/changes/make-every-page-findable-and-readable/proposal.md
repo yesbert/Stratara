@@ -7,8 +7,9 @@
 Since `serve-the-docs-from-our-own-server` the documentation site *is* the public homepage at
 `stratara.tech`, and an audit of the built output on 2026-09-06 found that the site is well written
 and badly announced. The content is in order — 502 documentation tests pass, `docfx build
---warningsAsErrors` reports nothing, all 50 external links answer, the package list matches the 25
-packable projects, and the benchmark figures on the landing page match the methodology page. What is
+--warningsAsErrors` reports nothing, all 41 distinct external links answer with 200, the package list
+matches the 25 packable projects, and the benchmark figures on the landing page match the methodology
+page. What is
 missing is everything a machine reads: there is no `sitemap.xml`, no `robots.txt`, no canonical URL
 on any of the 525 pages, no Open Graph or Twitter card, no structured data, and 53 of the 60
 hand-written pages ship the same global meta description.
