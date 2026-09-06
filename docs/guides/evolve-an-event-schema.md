@@ -1,3 +1,8 @@
+---
+title: "Evolve an Event Schema"
+description: "Events are facts you already wrote down: how to change the shape you need without rewriting them, using upcasting rather than migration."
+---
+
 # Evolve an Event Schema
 
 > **Derived page.** The behaviour described here is specified by the `event-schema-evolution`

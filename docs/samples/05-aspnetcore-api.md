@@ -1,3 +1,8 @@
+---
+title: "Sample 5: ASP.NET Core API"
+description: "Minimal-API endpoints wired straight to the mediator — the same ground as sample 1, with an HTTP front instead of a console."
+---
+
 # Sample 5 — ASP.NET Core API
 
 > **Derived page.** The behaviour described here is specified by the `host-composition` capability

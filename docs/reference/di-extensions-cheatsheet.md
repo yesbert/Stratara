@@ -1,3 +1,8 @@
+---
+title: "DI Extensions Cheatsheet"
+description: "Every Add*Services extension Stratara exposes, by package, with what each one registers and which of them are meant to be picked one per host."
+---
+
 # DI Extensions Cheatsheet
 
 > **Derived page.** The behaviour described here is specified by the `host-composition` capability

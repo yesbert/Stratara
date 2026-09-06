@@ -1,3 +1,8 @@
+---
+title: "Why Event Sourcing"
+description: "Why storing the facts that happened beats storing the state they produced, what that buys in audit and debugging, and when CRUD is still the right answer."
+---
+
 # Why Event Sourcing
 
 > **Derived page.** The behaviour described here is specified by the `event-sourcing-store` capability

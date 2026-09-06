@@ -1,3 +1,8 @@
+---
+title: "Tenant-Aware Encryption"
+description: "AES-GCM with the tenant as associated data, so a row leaked from one tenant cannot be read in another — and GDPR erasure becomes a key you destroy."
+---
+
 # Tenant-Aware Encryption
 
 > **Derived page.** The behaviour described here is specified by the `data-encryption` capability

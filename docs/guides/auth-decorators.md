@@ -1,3 +1,8 @@
+---
+title: "Authorization Decorators"
+description: "Role-based authorization at the mediator boundary with [RequireRole], and how a refusal reaches the caller as a status code with a body."
+---
+
 # Authorization Decorators
 
 > **Derived page.** The behaviour described here is specified by the `authorization` capability

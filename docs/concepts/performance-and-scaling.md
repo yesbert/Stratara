@@ -1,3 +1,8 @@
+---
+title: "Performance and Scaling"
+description: "Measured numbers for replay, property writes, chain hashing and field encryption, with the method and the caveats — and how the workers scale out."
+---
+
 # Performance and Scaling
 
 > **Derived page.** The behaviour described here is specified by the `event-sourcing-store` capability

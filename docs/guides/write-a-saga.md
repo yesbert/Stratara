@@ -1,3 +1,8 @@
+---
+title: "Write a Saga"
+description: "How to react to events by issuing more commands: registering a saga, the orchestration worker, and what happens when a fact arrives before its beginning."
+---
+
 # Write a Saga
 
 > **Derived page.** The behaviour described here is specified by the `sagas` capability

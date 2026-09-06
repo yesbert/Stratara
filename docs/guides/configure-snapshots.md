@@ -1,3 +1,8 @@
+---
+title: "Configure Snapshots"
+description: "When replaying a stream from the start stops being free, how snapshots shorten it, and the policy that decides when one is written."
+---
+
 # Configure Snapshots
 
 > **Derived page.** The behaviour described here is specified by the `aggregate-rehydration` capability

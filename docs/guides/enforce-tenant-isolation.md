@@ -1,3 +1,8 @@
+---
+title: "Enforce Tenant Isolation"
+description: "The mediator-entrance guard that rejects a request naming another tenant before your handler runs, and the modes it can run in."
+---
+
 # Enforce Tenant Isolation
 
 > **Derived page.** The behaviour described here is specified by the `tenant-isolation` capability

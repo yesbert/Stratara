@@ -1,3 +1,8 @@
+---
+title: "Encrypt Data Setup"
+description: "Turning on AES-GCM field encryption with [EncryptData], choosing a key scope, and why a scope that cannot isolate is refused outside development."
+---
+
 # Encrypt Sensitive Data
 
 > **Derived page.** The behaviour described here is specified by the `data-encryption` capability

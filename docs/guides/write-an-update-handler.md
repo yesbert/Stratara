@@ -1,3 +1,8 @@
+---
+title: "Write an Update Handler"
+description: "Why an edit compares current aggregate state and emits one event per changed field, rather than writing a single event carrying whatever was submitted."
+---
+
 # Write an Update Handler
 
 > **Derived page.** The behaviour described here is specified by the `update-change-tracking`

@@ -1,3 +1,8 @@
+---
+title: "Sample 3: Outbox Worker"
+description: "What changes when commands stop running in the caller's thread: the outbox, a message bus and two background workers."
+---
+
 # Sample 3 — Outbox + Worker
 
 > **Derived page.** The behaviour described here is specified by the `outbox-and-messaging` capability

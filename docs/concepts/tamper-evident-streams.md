@@ -1,3 +1,8 @@
+---
+title: "Tamper-Evident Streams"
+description: "Hash-chained event streams: how a row edited directly in the database stops recomputing, and how an anchor committed outside your database defeats a re-chain."
+---
+
 # Tamper-Evident Streams
 
 > **Derived page.** The behaviour described here is specified by the `tamper-evident-streams` capability

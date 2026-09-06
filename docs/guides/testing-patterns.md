@@ -1,3 +1,8 @@
+---
+title: "Testing Patterns"
+description: "The xUnit v3 and Microsoft Testing Platform conventions the framework and its consumers share, and the test-support packages that make them short."
+---
+
 # Testing Patterns
 
 > **Derived page.** The behaviour described here is specified by the `test-support` capability

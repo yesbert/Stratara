@@ -1,3 +1,8 @@
+---
+title: "Write a Projection"
+description: "How to turn an event stream into a read model, how Stratara discovers projection handlers, and what per-aggregate ordering does and does not promise."
+---
+
 # Write a Projection
 
 > **Derived page.** The behaviour described here is specified by the `projections` capability

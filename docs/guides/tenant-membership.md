@@ -1,3 +1,8 @@
+---
+title: "Tenant Membership"
+description: "The identity directory: which tenants a user belongs to, the role each membership carries, and how a membership is created, suspended and removed."
+---
+
 # Tenant Membership and the Sign-In Tenant Claim
 
 > **Derived page.** The behaviour described here is specified by the `tenant-directory` capability

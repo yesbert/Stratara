@@ -1,3 +1,8 @@
+---
+title: "Write a Command Handler"
+description: "How to implement ICommandHandler and IQueryHandler, how Stratara discovers them, and which of the two a command with a result belongs to."
+---
+
 # Write a Command Handler
 
 > **Derived page.** The behaviour described here is specified by the `mediator-dispatch` capability

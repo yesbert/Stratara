@@ -1,6 +1,6 @@
 ---
-title: Imprint
-description: Provider identification for stratara.tech pursuant to § 5 DDG and § 18 (2) MStV.
+title: "Imprint"
+description: "Provider identification for stratara.tech pursuant to § 5 DDG and § 18 (2) MStV."
 ---
 
 # Imprint

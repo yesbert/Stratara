@@ -1,3 +1,8 @@
+---
+title: "Sample 8: Identity Directory"
+description: "Who belongs to which tenant and what they may do there — memberships, roles and a code-first permission catalog, backed by EF Core."
+---
+
 # Sample 8 — Identity Directory (membership, permissions, settings)
 
 > **Derived page.** The behaviour described here is specified by the `tenant-directory` capability

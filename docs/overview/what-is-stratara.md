@@ -1,3 +1,8 @@
+---
+title: "What is Stratara"
+description: "A family of 25 lockstep-versioned NuGet packages for .NET 10 — mediator, event store, outbox, projections, sagas and identity, adopted a la carte."
+---
+
 # What is Stratara
 
 > **Derived page.** The behaviour described here is specified by the `package-distribution` capability

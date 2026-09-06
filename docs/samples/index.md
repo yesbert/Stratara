@@ -1,3 +1,8 @@
+---
+title: "Samples"
+description: "Runnable demos: two hero samples with no dependencies at all, and a numbered series that adds one concept per step from a console app to identity."
+---
+
 # Samples
 
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those

@@ -1,3 +1,8 @@
+---
+title: "Sample 7: Identity"
+description: "How callers get into a Stratara app: external OpenID Connect sign-in, hardened defaults, and the session context that follows the request."
+---
+
 # Sample 7 — Identity (external login + API keys)
 
 > **Derived page.** The behaviour described here is specified by the `external-identity` capability

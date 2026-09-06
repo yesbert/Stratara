@@ -1,3 +1,8 @@
+---
+title: "Outbox Setup: RabbitMQ"
+description: "Wiring the RabbitMQ message bus with publisher confirms, automatic reconnect and mandatory routing, and what happens to a message that cannot be delivered."
+---
+
 # Outbox + RabbitMQ Setup
 
 > **Derived page.** The behaviour described here is specified by the `outbox-and-messaging` capability

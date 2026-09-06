@@ -24,9 +24,14 @@
       <meta http-equiv="refresh" content="0;URL='{{redirect_url}}'">
     {{/redirect_url}}
     {{^redirect_url}}
-      <title>{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}} {{#_appTitle}}| {{_appTitle}} {{/_appTitle}}</title>
+      {{!STRATARA: the landing page carries the app title alone. Upstream appends _appTitle to every
+         page, and on the landing that produced the same sentence twice in one <title> — 90-odd
+         characters of which a search result shows sixty. Elsewhere the suffix is what tells a
+         reader which site a result belongs to, so it stays. The trailing space upstream leaves
+         before </title> goes with it, and so does upstream's <meta name="title">: it repeated the
+         same string a third time, is in no specification, and no search engine reads it.}}
+      <title>{{#_isLanding}}{{_appTitle}}{{/_isLanding}}{{^_isLanding}}{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}}{{#_appTitle}} | {{_appTitle}}{{/_appTitle}}{{/_isLanding}}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <meta name="title" content="{{#title}}{{title}}{{/title}}{{^title}}{{>partials/title}}{{/title}} {{#_appTitle}}| {{_appTitle}} {{/_appTitle}}">
       {{!STRATARA repair: the page description wins and the global one is the fallback. Upstream had
          these as two independent sections, so a page carrying front matter served both.}}
       {{#description}}<meta name="description" content="{{description}}">{{/description}}

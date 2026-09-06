@@ -1,6 +1,7 @@
 ---
-_layout: landing
-title: Stratara — CQRS and Event Sourcing for .NET
+_layout: "landing"
+title: "Stratara — CQRS and Event Sourcing for .NET"
+description: "Start with a lean mediator and grow into event sourcing, an outbox, projections and sagas. Tamper-evident streams and tenant-bound encryption are already inside. MIT, .NET 10."
 ---
 
 <section class="st-hero">

@@ -1,3 +1,8 @@
+---
+title: "Routing Conventions"
+description: "The decision matrix for which marker a command or query implements and which dispatcher to invoke — mediator or outbox, with a result or without."
+---
+
 # Routing Conventions
 
 > **Derived page.** The behaviour described here is specified by the `mediator-dispatch` capability

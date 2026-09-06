@@ -50,7 +50,7 @@ this arc, because the artefact under test is generated HTML.
       the audit first reported: the navbar, the table of contents, the breadcrumb and the affix
       ("Main", "Table of contents", "Breadcrumb", "On this page"). Proof: every `<nav>` in
       `docs/_site/concepts/why-event-sourcing.html` carries either `aria-label` or `aria-labelledby`.
-- [ ] 3.8 Add the JSON-LD block: `SoftwareApplication` when `_layout` is `landing`, `TechArticle`
+- [x] 3.8 Add the JSON-LD block: `SoftwareApplication` when `_layout` is `landing`, `TechArticle`
       otherwise, per design.md → decision 6. Author `Norbert Rosenwinkel`, licence
       `https://opensource.org/license/mit`, `operatingSystem` `.NET 10`. Proof: both
       `docs/_site/index.html` and `docs/_site/guides/write-a-saga.html` contain exactly one
@@ -80,20 +80,20 @@ this arc, because the artefact under test is generated HTML.
 Written by hand, one sentence each, naming what the page answers rather than repeating its title.
 Front matter gains `title` and `description`; nothing else about the page changes.
 
-- [ ] 5.1 `docs/index.md` — add `description`, and shorten `title` so it no longer repeats
+- [x] 5.1 `docs/index.md` — add `description`, and shorten `title` so it no longer repeats
       `_appTitle` almost verbatim (today the landing `<title>` says the same sentence twice).
-- [ ] 5.2 `docs/overview/` — 5 pages: `index`, `what-is-stratara`, `architecture-at-a-glance`,
+- [x] 5.2 `docs/overview/` — 5 pages: `index`, `what-is-stratara`, `architecture-at-a-glance`,
       `packages`, `glossary`.
-- [ ] 5.3 `docs/concepts/` — 5 pages: `index`, `why-event-sourcing`, `tamper-evident-streams`,
+- [x] 5.3 `docs/concepts/` — 5 pages: `index`, `why-event-sourcing`, `tamper-evident-streams`,
       `tenant-aware-encryption`, `performance-and-scaling`.
-- [ ] 5.4 `docs/getting-started/` — 4 pages: `index`, `prerequisites`, `first-stratara-app`,
+- [x] 5.4 `docs/getting-started/` — 4 pages: `index`, `prerequisites`, `first-stratara-app`,
       `di-composition`.
-- [ ] 5.5 `docs/guides/` — 21 pages, the whole directory.
-- [ ] 5.6 `docs/samples/` — 11 pages: `index`, `01` through `08`, `hero-encryption`,
+- [x] 5.5 `docs/guides/` — 21 pages, the whole directory.
+- [x] 5.6 `docs/samples/` — 11 pages: `index`, `01` through `08`, `hero-encryption`,
       `hero-tamper-proof`.
-- [ ] 5.7 `docs/reference/` — 4 pages: `index`, `di-extensions-cheatsheet`, `routing-conventions`,
+- [x] 5.7 `docs/reference/` — 4 pages: `index`, `di-extensions-cheatsheet`, `routing-conventions`,
       `log-events-schema`.
-- [ ] 5.8 Confirm the sweep is complete: no `.md` under `docs/` outside `reference/api/` lacks front
+- [x] 5.8 Confirm the sweep is complete: no `.md` under `docs/` outside `reference/api/` lacks front
       matter with a `description`. Proof: task 8.1's test.
 
 ## 6. The landing page's own markup
@@ -108,7 +108,7 @@ Front matter gains `title` and `description`; nothing else about the page change
 
 ## 7. Style for the skip link
 
-- [ ] 7.1 Add the skip-link rule to `docs/templates/stratara/public/main.css`: off-screen until
+- [x] 7.1 Add the skip-link rule to `docs/templates/stratara/public/main.css`: off-screen until
       focused, then visible against the body background with the brand blue. Proof: the rule uses
       `:focus`, not `display: none`, which would take it out of the tab order and defeat the point.
 

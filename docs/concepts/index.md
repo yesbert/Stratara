@@ -1,3 +1,8 @@
+---
+title: "Concepts"
+description: "The load-bearing ideas: why event sourcing, what tamper-evident streams buy you, how tenant-bound encryption works, and what all of it costs."
+---
+
 # Concepts
 
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
