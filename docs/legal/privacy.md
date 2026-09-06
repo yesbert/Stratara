@@ -1,6 +1,6 @@
 ---
-title: Privacy policy
-description: What stratara.tech processes, on what legal basis, and which rights you have.
+title: "Privacy policy"
+description: "What stratara.tech processes, on what legal basis, and which rights you have."
 ---
 
 # Privacy policy

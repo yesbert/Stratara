@@ -1,3 +1,8 @@
+---
+title: "Write a Validator"
+description: "Request validation as a mediator pipeline behaviour, how an invalid request is refused before the handler runs, and the RFC 7807 body it produces."
+---
+
 # Write a Validator
 
 > **Derived page.** The behaviour described here is specified by the `request-validation` capability

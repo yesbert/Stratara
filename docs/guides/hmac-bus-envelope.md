@@ -1,3 +1,8 @@
+---
+title: "HMAC Bus Envelope"
+description: "The opt-in HMAC signature on every envelope and bundle that travels the bus, verified before the body is deserialized, and how to roll the key."
+---
+
 # Bus-Envelope Integrity (HMAC)
 
 > **Derived page.** The behaviour described here is specified by the `bus-envelope-integrity` capability

@@ -1,3 +1,8 @@
+---
+title: "Reference"
+description: "Hand-written cheatsheets, conventions and schemas, plus the API reference generated from the assemblies."
+---
+
 # Reference
 
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those

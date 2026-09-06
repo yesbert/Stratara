@@ -1,3 +1,8 @@
+---
+title: "DI Composition"
+description: "Which Add*Services call a host needs, chosen by the shape of work the host does rather than by the packages it happens to reference."
+---
+
 # DI Composition
 
 > **Derived page.** The behaviour described here is specified by the `host-composition` capability

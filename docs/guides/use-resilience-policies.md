@@ -1,3 +1,8 @@
+---
+title: "Use Resilience Policies"
+description: "The named Polly pipelines Stratara ships, and the thing to understand first: a retry re-runs your handler from the beginning, not from where it failed."
+---
+
 # Use Resilience Policies
 
 > **Derived page.** The behaviour described here is specified by the `resilience` capability under

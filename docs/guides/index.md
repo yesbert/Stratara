@@ -1,3 +1,8 @@
+---
+title: "Guides"
+description: "Task-oriented how-tos for the common Stratara operations, each assuming you have worked through Getting Started and at least the first sample."
+---
+
 # Guides
 
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those

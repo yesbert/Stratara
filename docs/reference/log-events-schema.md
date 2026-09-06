@@ -1,3 +1,8 @@
+---
+title: "LogEvents Schema"
+description: "The stable EventId ranges Stratara logs under, who owns each range, and the source-generated LoggerMessage rule that keeps the ids from drifting."
+---
+
 # LogEvents Schema
 
 > **Derived page.** The behaviour described here is specified by the `observability` capability

@@ -1,3 +1,8 @@
+---
+title: "External Login with OIDC"
+description: "Wiring log in with Microsoft, Google or any other OpenID Connect provider, and what Stratara stores about an externally authenticated user."
+---
+
 # External Login (OpenID Connect) + JIT Provisioning
 
 > **Derived page.** The behaviour described here is specified by the `external-identity` capability

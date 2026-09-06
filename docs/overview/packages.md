@@ -1,3 +1,8 @@
+---
+title: "Packages"
+description: "Every Stratara package with what it does and what it pulls in, plus the combinations that cover the common hosts. One lockstep version across the family."
+---
+
 # Packages
 
 > **Derived page.** The behaviour described here is specified by the `package-distribution` capability

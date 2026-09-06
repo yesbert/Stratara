@@ -1,3 +1,8 @@
+---
+title: "Hero Sample: Encryption"
+description: "Cross-tenant decryption failing by cryptography rather than by a query filter, because the AES-GCM tag is bound to the tenant id. No database, no DI."
+---
+
 # Hero Sample — Encryption
 
 > **Derived page.** The behaviour described here is specified by the `data-encryption` capability

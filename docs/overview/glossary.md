@@ -1,3 +1,8 @@
+---
+title: "Glossary"
+description: "How Stratara uses the CQRS and event-sourcing vocabulary — command, query, aggregate, projection, saga, tenant — where each definition shapes behaviour."
+---
+
 # Glossary
 
 > **Derived page.** The behaviour these terms describe is specified across the capabilities under

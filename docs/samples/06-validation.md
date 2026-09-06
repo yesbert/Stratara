@@ -1,3 +1,8 @@
+---
+title: "Sample 6: Validation"
+description: "Request validation as a mediator pipeline behaviour, and what an invalid request looks like by the time it reaches the caller."
+---
+
 # Sample 6 — Validation
 
 > **Derived page.** The behaviour described here is specified by the `request-validation` capability

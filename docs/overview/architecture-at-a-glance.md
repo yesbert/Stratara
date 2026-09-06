@@ -1,3 +1,8 @@
+---
+title: "Architecture at a glance"
+description: "How the 25 packages are cut into three tiers, which tier may reference which, and why the contracts stay adoptable without the infrastructure."
+---
+
 # Architecture at a glance
 
 > **Derived page.** The behaviour described here is specified by the `package-distribution` capability

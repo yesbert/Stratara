@@ -1,3 +1,8 @@
+---
+title: "Sample 1: CQRS Basics"
+description: "The minimum viable Stratara app — IMediator, ICommand and IQuery, and handler discovery, with no database and no broker."
+---
+
 # Sample 1 — CQRS Basics
 
 > **Derived page.** The behaviour described here is specified by the `mediator-dispatch` capability

@@ -1,3 +1,8 @@
+---
+title: "Prerequisites"
+description: "What you need before the first line — .NET SDK 10 and nothing else for the mediator — and what each further step of the stack adds."
+---
+
 # Prerequisites
 
 > **Derived page.** The behaviour described here is specified by the `host-composition` capability

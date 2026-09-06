@@ -1,3 +1,8 @@
+---
+title: "Getting Started"
+description: "A ten-minute path from never having touched Stratara to a host that wires it and runs a command."
+---
+
 # Getting Started
 
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those

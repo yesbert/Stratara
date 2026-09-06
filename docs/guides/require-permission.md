@@ -1,3 +1,8 @@
+---
+title: "Require a Permission"
+description: "Fine-grained permissions layered over coarse roles: declaring a permission catalog in code and requiring one at the mediator boundary."
+---
+
 # Permission-Based Authorization
 
 > **Derived page.** The behaviour described here is specified by the `authorization` capability

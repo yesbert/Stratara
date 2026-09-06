@@ -4,6 +4,28 @@
   margin-right: 0.5rem;
 }
 
+/* The skip link is the first focusable element on every page (WCAG 2.2 SC 2.4.1). It is moved out
+   of sight rather than hidden: display:none or visibility:hidden would take it out of the tab
+   order, which is the one thing it exists to be in. */
+.st-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1090;
+  padding: 0.65rem 1.1rem;
+  border-radius: 0 0 8px 0;
+  background: rgb(var(--st-brand-rgb));
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.st-skip-link:focus {
+  left: 0;
+  color: #fff;
+  outline: 3px solid var(--bs-body-color);
+  outline-offset: 2px;
+}
+
 /* ---------- Brand colours (whole site) and the landing page ---------- */
 
 :root {
@@ -78,7 +100,10 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
 
 .st-section { padding: 2.5rem 0 1rem; }
 .st-basics { padding-bottom: 0; }
-.st-basics .st-basics-lead { text-align: center; font-weight: 600; opacity: 0.75; margin-bottom: 1.75rem; }
+.st-basics h2.st-basics-lead {
+  text-align: center; font-weight: 600; opacity: 0.75; margin-bottom: 1.75rem;
+  font-size: 1.05rem; border: 0;
+}
 .st-basic { border-left: 3px solid var(--st-accent); padding-left: 1rem; height: 100%; }
 .st-basic h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.4rem; }
 .st-basic p { font-size: 0.95rem; opacity: 0.85; margin: 0; }
@@ -126,7 +151,7 @@ body[data-layout="landing"] .st-section .row > [class*="col-"] { min-width: 0; }
   padding: 0.25rem 0 0.25rem 1rem;
   height: 100%;
 }
-.st-feature h4 { font-size: 1rem; font-weight: 700; margin: 0 0 0.25rem; }
+.st-feature h3 { font-size: 1rem; font-weight: 700; margin: 0 0 0.25rem; }
 .st-feature p { font-size: 0.92rem; margin: 0; opacity: 0.85; }
 
 .st-numbers { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; }

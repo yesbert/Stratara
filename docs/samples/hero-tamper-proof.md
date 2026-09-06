@@ -1,3 +1,8 @@
+---
+title: "Hero Sample: Tamper-Proof"
+description: "A direct database edit caught at the next verification pass, with the chain naming the sequence where it broke. No database, no DI container."
+---
+
 # Hero Sample — TamperProof
 
 > **Derived page.** The behaviour described here is specified by the `tamper-evident-streams` capability

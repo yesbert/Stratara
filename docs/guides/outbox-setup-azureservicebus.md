@@ -1,3 +1,8 @@
+---
+title: "Outbox Setup: Azure Service Bus"
+description: "Wiring the Azure Service Bus message bus with managed identity, and how its administratively provisioned subscriptions differ from RabbitMQ's."
+---
+
 # Outbox + Azure Service Bus Setup
 
 > **Derived page.** The behaviour described here is specified by the `outbox-and-messaging` capability

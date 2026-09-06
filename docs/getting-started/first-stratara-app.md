@@ -1,3 +1,8 @@
+---
+title: "First Stratara App"
+description: "A 30-line console app that wires the mediator, dispatches a command and queries the result — no event store, no broker, explained block by block."
+---
+
 # First Stratara App
 
 > **Derived page.** The behaviour described here is specified by the `host-composition` capability

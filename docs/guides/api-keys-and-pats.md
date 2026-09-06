@@ -1,3 +1,8 @@
+---
+title: "API Keys and Personal Access Tokens"
+description: "The machine-to-machine authentication plane: issuing, scoping, rotating and revoking keys that share the same authorization plane as a signed-in user."
+---
+
 # API Keys and Personal Access Tokens
 
 > **Derived page.** The behaviour described here is specified by the `api-keys` capability

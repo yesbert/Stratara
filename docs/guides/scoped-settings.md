@@ -1,3 +1,8 @@
+---
+title: "Scoped Settings"
+description: "The settings plane: named values resolved per tenant, per user or globally, with the precedence between the scopes spelled out."
+---
+
 # Scoped Settings
 
 > **Derived page.** The behaviour described here is specified by the `scoped-settings` capability

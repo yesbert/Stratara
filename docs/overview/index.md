@@ -1,3 +1,8 @@
+---
+title: "Overview"
+description: "The conceptual map: what Stratara is, how its 25 packages are tiered, and the vocabulary the rest of the documentation assumes."
+---
+
 # Overview
 
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those

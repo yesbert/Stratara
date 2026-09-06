@@ -1,3 +1,8 @@
+---
+title: "Sample 2: Event Sourced"
+description: "What changes when the in-memory repository becomes an event store: an event-sourced aggregate, a projection, and read and write pulling apart."
+---
+
 # Sample 2 — Event Sourced
 
 > **Derived page.** The behaviour described here is specified by the `event-sourcing-store` capability
