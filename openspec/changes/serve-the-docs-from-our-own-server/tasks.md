@@ -75,10 +75,10 @@ Umami. Each one names how to prove it worked.
         https://docs.stratara.tech/concepts/why-event-sourcing.html
       ```
 
-- [ ] 3.3 **owner** Ensure Plesk's Let's Encrypt certificate covers `docs.stratara.tech` as well as
+- [x] 3.3 **owner** Ensure Plesk's Let's Encrypt certificate covers `docs.stratara.tech` as well as
       `stratara.tech`. Without it, step 3.4 makes every link to the old host a TLS error rather
       than a redirect.
-- [ ] 3.4 **owner** Move the DNS: `docs.stratara.tech` from its `yesbert.github.io` CNAME to the
+- [x] 3.4 **owner** Move the DNS: `docs.stratara.tech` from its `yesbert.github.io` CNAME to the
       server. Proof: `dig +short @ns1.antagus.de docs.stratara.tech` returns `217.154.79.173`, and
       `curl -sIL https://docs.stratara.tech/` lands on the apex with 200.
 
@@ -87,8 +87,16 @@ Umami. Each one names how to prove it worked.
 - [x] 4.1 Delete `.github/workflows/docs.yml` and `docs/CNAME`.
 - [x] 4.2 Update the workflow table in `.claude/CLAUDE.md` — it lists `docs.yml` as the deployment
       of this site.
-- [ ] 4.3 **owner** Unpublish the repository's GitHub Pages site in the repository settings. Do this
-      last: while it is published, it remains a rollback path (design.md → *Rollback*).
+- [x] 4.3 Unpublish the repository's GitHub Pages site: `gh api -X DELETE repos/yesbert/Stratara/pages`.
+      Do this last: while it is published, it remains a rollback path (design.md → *Rollback*).
+      **Not before 2026-09-05, 14:00 CEST.** The old `docs` CNAME had a TTL of 86400 and was replaced
+      on 2026-09-04 around 14:00 CEST; a resolver that cached it may send visitors to Pages until then.
+      Proof: `curl -sIL https://docs.stratara.tech/guides/scoped-settings.html` lands on the apex with
+      200, and `gh api repos/yesbert/Stratara/pages` returns 404. Both verified 2026-09-06. Then
+      `/opsx:archive`.
+      **Note for the next session:** the command is refused by the auto-mode classifier even though
+      `permissions.allow` already carries `Bash(gh api*)` — the classifier is a second, independent
+      layer, and a `Bash(...)` allow rule does not clear it. The owner ran the line himself.
 
 ## 5. Move the repository's references
 
@@ -115,7 +123,7 @@ Umami. Each one names how to prove it worked.
 
 ## 7. Analytics
 
-- [ ] 7.1 **owner** In Umami Cloud, set the website's domain to `stratara.tech`. Proof: a visit to
+- [x] 7.1 **owner** In Umami Cloud, set the website's domain to `stratara.tech`. Proof: a visit to
       the apex appears in the dashboard after accepting the notice. Until this is done nothing is
       counted, whatever the banner says.
 
@@ -126,6 +134,6 @@ Umami. Each one names how to prove it worked.
 - [x] 8.2 `NoDocumentationPage_LoadsAnImageFromAnotherHost` in
       `tests/Stratara.Documentation.Tests/LandingBadgeTests.cs` still passes — the move must not
       reintroduce a third-party request.
-- [ ] 8.3 Open the pull request through the `/pr` skill, and record in `.claude/roadmap/STATE.md`
+- [x] 8.3 Open the pull request through the `/pr` skill, and record in `.claude/roadmap/STATE.md`
       that the site is no longer on GitHub Pages, including the two traps from design.md → decision
       6 so the next session does not rediscover them.
