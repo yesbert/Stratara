@@ -72,11 +72,13 @@
       },
       {
         "files": [
-          "assets/**"
+          "assets/**",
+          "robots.txt"
         ]
       }
     ],
     "globalMetadata": {
+      "_lang": "en",
       "_appName": "Stratara",
       "_appTitle": "Stratara — CQRS and Event Sourcing for .NET, MIT",
       "_appLogoPath": "assets/icon.png",
@@ -104,6 +106,11 @@
     ],
     "xref": [
       "https://learn.microsoft.com/en-us/dotnet/.xrefmap.json"
-    ]
+    ],
+    "sitemap": {
+      "baseUrl": "https://stratara.tech",
+      "changefreq": "weekly",
+      "priority": 0.5
+    }
   }
 }

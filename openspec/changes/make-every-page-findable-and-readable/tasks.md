@@ -8,22 +8,22 @@ this arc, because the artefact under test is generated HTML.
 
 ## 1. The two configuration switches
 
-- [ ] 1.1 Add `"_lang": "en"` to `globalMetadata` in `docs/docfx.json`. Proof:
+- [x] 1.1 Add `"_lang": "en"` to `globalMetadata` in `docs/docfx.json`. Proof:
       `grep -L 'html lang="en"' docs/_site/**/*.html` lists nothing after a build.
-- [ ] 1.2 Add a `build.sitemap` block to `docs/docfx.json` with `baseUrl` `https://stratara.tech`,
+- [x] 1.2 Add a `build.sitemap` block to `docs/docfx.json` with `baseUrl` `https://stratara.tech`,
       `changefreq` `weekly` and the default `priority`. Proof: `docs/_site/sitemap.xml` exists and
       `grep -c '<url>' docs/_site/sitemap.xml` reports 517 or more, every `<loc>` absolute.
-- [ ] 1.3 Confirm the build is still clean: `docfx build docs/docfx.json --warningsAsErrors` reports
+- [x] 1.3 Confirm the build is still clean: `docfx build docs/docfx.json --warningsAsErrors` reports
       0 warnings and 0 errors. Locally this needs
       `RestoreSources=https://api.nuget.org/v3/index.json` on the metadata step — a second source in
       the user's NuGet.Config makes NU1507 an error otherwise.
 
 ## 2. robots.txt
 
-- [ ] 2.1 Write `docs/robots.txt`: `User-agent: *`, `Allow: /`, and
+- [x] 2.1 Write `docs/robots.txt`: `User-agent: *`, `Allow: /`, and
       `Sitemap: https://stratara.tech/sitemap.xml`. It must not contain `Disallow: /` — design.md →
       *Migration Plan* names that as the one-way door.
-- [ ] 2.2 Add `robots.txt` to the `build.resource` list in `docs/docfx.json`, beside `assets/**`.
+- [x] 2.2 Add `robots.txt` to the `build.resource` list in `docs/docfx.json`, beside `assets/**`.
       Proof: `docs/_site/robots.txt` exists after a local build, without a workflow step.
 
 ## 3. The forked layout
