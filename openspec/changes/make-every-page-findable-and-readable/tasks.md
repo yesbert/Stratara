@@ -61,17 +61,17 @@ this arc, because the artefact under test is generated HTML.
 
 ## 4. The cover image
 
-- [ ] 4.1 Write `docs/assets/og-cover.svg` at 1200×630 — wordmark, brand blue `#0673cb` taken from
+- [x] 4.1 Write `docs/assets/og-cover.svg` at 1200×630 — wordmark, brand blue `#0673cb` taken from
       `docs/templates/stratara/public/main.css`, and the line *CQRS and Event Sourcing for .NET*.
-- [ ] 4.2 Write `scripts/refresh-og-cover.sh` in the shape of `scripts/refresh-badges.sh`:
+- [x] 4.2 Write `scripts/refresh-og-cover.sh` in the shape of `scripts/refresh-badges.sh`:
       `set -euo pipefail`, `ROOT_DIR` from `BASH_SOURCE`, a header comment saying why the PNG is
       committed rather than built, and a check for `rsvg-convert` that fails with
       `brew install librsvg` when it is absent. Proof: running it produces
       `docs/assets/og-cover.png`, and `sips -g pixelWidth -g pixelHeight` on it reports 1200×630.
-- [ ] 4.3 Point `og:image` and `twitter:image` at the absolute URL
+- [x] 4.3 Point `og:image` and `twitter:image` at the absolute URL
       `https://stratara.tech/assets/og-cover.png` — a relative path is not resolved by most Open
       Graph consumers. Proof: the tag in `docs/_site/index.html` is absolute.
-- [ ] 4.4 Confirm the cover does not reintroduce a third-party request:
+- [x] 4.4 Confirm the cover does not reintroduce a third-party request:
       `NoDocumentationPage_LoadsAnImageFromAnotherHost` in
       `tests/Stratara.Documentation.Tests/LandingBadgeTests.cs` still passes.
 
@@ -98,13 +98,13 @@ Front matter gains `title` and `description`; nothing else about the page change
 
 ## 6. The landing page's own markup
 
-- [ ] 6.1 Repair the heading order: the three `<h3>` in the "New to the terms?" section follow an
+- [x] 6.1 Repair the heading order: the three `<h3>` in the "New to the terms?" section follow an
       `<h1>` with no `<h2>` between, and the eight `<h4>` under "What is in the box" follow an
       `<h2>`. Proof: the heading sequence in `docs/_site/index.html` never skips a level.
-- [ ] 6.2 Add `aria-hidden="true"` to the three decorative Bootstrap icons in the door cards
+- [x] 6.2 Add `aria-hidden="true"` to the three decorative Bootstrap icons in the door cards
       (`bi-lightning-charge`, `bi-layers`, `bi-shield-lock`). The navbar's search and menu icons are
       inside labelled controls and are left alone.
-- [ ] 6.3 Add `scope="col"` to the header cells of the "Where it sits" comparison table.
+- [x] 6.3 Add `scope="col"` to the header cells of the "Where it sits" comparison table.
 
 ## 7. Style for the skip link
 
@@ -114,16 +114,19 @@ Front matter gains `title` and `description`; nothing else about the page change
 
 ## 8. Lock it down
 
-- [ ] 8.1 Add a test in `tests/Stratara.Documentation.Tests/` asserting every hand-written page under
+- [x] 8.1 Add a test in `tests/Stratara.Documentation.Tests/` asserting every hand-written page under
       `docs/` (excluding `reference/api/`) carries front matter with a non-empty `description`. Use
       the existing `DocumentationFiles` enumerator, which already excludes generated output.
-- [ ] 8.2 Add a test asserting no built page emits two `<meta name="description">` tags. It needs a
-      built site, so follow whatever `LandingBadgeTests` does about that rather than inventing a
-      second mechanism.
-- [ ] 8.3 Add a test reading the DocFX version from the forked layout's header comment and from the
+- [x] 8.2 Add a test asserting a page cannot emit two `<meta name="description">` tags. **Changed
+      during apply:** the task assumed `LandingBadgeTests` had a way to assert against a built site.
+      It has not — it reads the Markdown sources — and building the site inside a unit test to check
+      one tag is the wrong trade. The test asserts the guarantee where it lives instead: the forked
+      layout holds exactly two description tags and the global one sits inside `{{^description}}`,
+      so the two exclude each other. `SiteMetadataTests`.
+- [x] 8.3 Add a test reading the DocFX version from the forked layout's header comment and from the
       `--version` flag in `.github/workflows/deploy-site.yml`, failing when they disagree
       (design.md → decision 2).
-- [ ] 8.4 Add a test asserting `docs/robots.txt` names the sitemap and contains no `Disallow: /`.
+- [x] 8.4 Add a test asserting `docs/robots.txt` names the sitemap and contains no `Disallow: /`.
 
 ## 9. Close it out
 

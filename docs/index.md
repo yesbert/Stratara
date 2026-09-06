@@ -14,7 +14,7 @@ description: "Start with a lean mediator and grow into event sourcing, an outbox
   </p>
   <div class="st-cta">
     <a class="btn btn-primary" href="getting-started/first-stratara-app.md">Get started in 5 minutes</a>
-    <a class="btn btn-outline-secondary" href="https://github.com/yesbert/Stratara"><i class="bi bi-github"></i>&nbsp;GitHub</a>
+    <a class="btn btn-outline-secondary" href="https://github.com/yesbert/Stratara"><i class="bi bi-github" aria-hidden="true"></i>&nbsp;GitHub</a>
   </div>
   <div class="st-badges">
     <a href="https://www.nuget.org/packages?q=Stratara"><img src="assets/badges/nuget.svg" alt="Latest release on NuGet"></a>
@@ -24,7 +24,7 @@ description: "Start with a lean mediator and grow into event sourcing, an outbox
 </section>
 
 <section class="st-section st-basics">
-  <p class="st-basics-lead">New to the terms? Thirty seconds, then pick a door.</p>
+  <h2 class="st-basics-lead">New to the terms? Thirty seconds, then pick a door.</h2>
   <div class="row g-4">
     <div class="col-md-4"><div class="st-basic">
       <h3>Mediator</h3>
@@ -49,7 +49,7 @@ description: "Start with a lean mediator and grow into event sourcing, an outbox
 
 <div class="col-md-4">
 <div class="st-door">
-<div class="st-icon"><i class="bi bi-lightning-charge"></i></div>
+<div class="st-icon"><i class="bi bi-lightning-charge" aria-hidden="true"></i></div>
 <h3>I need a mediator</h3>
 <p class="st-who">Commands, queries and pipeline behaviors, in process, MIT. Nothing else comes along.</p>
 
@@ -82,7 +82,7 @@ builder.Services
 
 <div class="col-md-4">
 <div class="st-door">
-<div class="st-icon"><i class="bi bi-layers"></i></div>
+<div class="st-icon"><i class="bi bi-layers" aria-hidden="true"></i></div>
 <h3>I want event sourcing without the plumbing</h3>
 <p class="st-who">Aggregates and events on PostgreSQL, snapshots, outbox, projections, replay — shipped, not sketched.</p>
 
@@ -120,7 +120,7 @@ await events.SaveChangesAsync(ct);
 
 <div class="col-md-4">
 <div class="st-door">
-<div class="st-icon"><i class="bi bi-shield-lock"></i></div>
+<div class="st-icon"><i class="bi bi-shield-lock" aria-hidden="true"></i></div>
 <h3>I run a multi-tenant SaaS and get audited</h3>
 <p class="st-who">Hash-chained streams, fields sealed to their tenant, and GDPR erasure by destroying a key.</p>
 
@@ -163,14 +163,14 @@ await keyStore.EraseScopeAsync(scope, ct);
   <h2>What is in the box</h2>
   <p class="st-sub">Integrated, not assembled. Every part below is versioned together and tested against the others.</p>
   <div class="row g-4">
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Mediator and pipeline</h4><p>Commands, queries, open-generic behaviors in registration order, authorization and tenant isolation at the entrance.</p></div></div>
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Event store on PostgreSQL</h4><p>Streams, snapshots, optimistic concurrency, event upcasting, command audit — through EF Core you already run.</p></div></div>
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Outbox and messaging</h4><p>At-least-once dispatch over RabbitMQ or Azure Service Bus, publisher confirms, a heavy-command lane.</p></div></div>
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Projections and sagas</h4><p>Push-driven from the event bus, per-aggregate ordering, retry for facts that arrive before their beginning.</p></div></div>
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Tamper-evident streams</h4><p>Every event hash-chained, with anchors you can pin outside your database. Edit a row and the chain names the sequence.</p></div></div>
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Tenant-bound encryption</h4><p>AES-GCM with the tenant as associated data; a row leaked from one tenant cannot be read in another.</p></div></div>
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Identity and membership</h4><p>Users in many tenants with per-membership roles, a code-first permission catalog, API keys that share the same plane.</p></div></div>
-    <div class="col-md-6 col-lg-3"><div class="st-feature"><h4>Observability defaults</h4><p>One activity source, one meter, stable log-event ids, OpenTelemetry and Serilog wired in a line.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Mediator and pipeline</h3><p>Commands, queries, open-generic behaviors in registration order, authorization and tenant isolation at the entrance.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Event store on PostgreSQL</h3><p>Streams, snapshots, optimistic concurrency, event upcasting, command audit — through EF Core you already run.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Outbox and messaging</h3><p>At-least-once dispatch over RabbitMQ or Azure Service Bus, publisher confirms, a heavy-command lane.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Projections and sagas</h3><p>Push-driven from the event bus, per-aggregate ordering, retry for facts that arrive before their beginning.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Tamper-evident streams</h3><p>Every event hash-chained, with anchors you can pin outside your database. Edit a row and the chain names the sequence.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Tenant-bound encryption</h3><p>AES-GCM with the tenant as associated data; a row leaked from one tenant cannot be read in another.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Identity and membership</h3><p>Users in many tenants with per-membership roles, a code-first permission catalog, API keys that share the same plane.</p></div></div>
+    <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Observability defaults</h3><p>One activity source, one meter, stable log-event ids, OpenTelemetry and Serilog wired in a line.</p></div></div>
   </div>
 </section>
 
@@ -191,7 +191,7 @@ await keyStore.EraseScopeAsync(scope, ct);
   <p class="st-sub">An honest map. Each project below is good at what it does; this is about scope and license, not ranking.</p>
   <div class="table-responsive">
   <table class="table">
-    <thead><tr><th>Project</th><th>Scope</th><th>License</th><th>Approach</th></tr></thead>
+    <thead><tr><th scope="col">Project</th><th scope="col">Scope</th><th scope="col">License</th><th scope="col">Approach</th></tr></thead>
     <tbody>
       <tr><td>Stratara</td><td>Mediator, event store, outbox, projections, sagas, identity, encryption</td><td>MIT</td><td>One lockstep family; opt in per package; audit properties are defaults, not add-ons</td></tr>
       <tr><td>MediatR</td><td>In-process mediator</td><td>RPL-1.5 or commercial from v13; free Community edition below 5 M USD revenue</td><td>The reference mediator; bring your own everything else</td></tr>
