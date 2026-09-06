@@ -137,9 +137,13 @@ Front matter gains `title` and `description`; nothing else about the page change
 
 - [x] 9.1 `./scripts/local-gauntlet.sh` green, and `docfx build docs/docfx.json --warningsAsErrors`
       with 0 warnings.
-- [x] 9.2 Check the built site by hand for the things a test cannot: tab from the top of
-      `index.html` and confirm the skip link appears and works; open the page in dark mode; confirm
-      the cover image renders as intended at 1200×630.
+- [x] 9.2 Check the built site by hand for the things a test cannot. **Done:** the skip link is the
+      first focusable element inside `<body>` and targets `#main`, which exists once; the cover
+      renders at 1200×630 and was looked at. **Not done in a browser:** dark mode. Every change here
+      is theme-neutral — the skip link takes the brand blue with white text (4.86:1, measured) and
+      an outline in `--bs-body-color`, and the heading changes carry no colour — but that is
+      reasoning, not looking. `STATE.md` already carries "Handy-Ansicht und Dark Mode am Gerät
+      prüfen" as a standing follow-up; this does not discharge it.
 - [ ] 9.3 Open the pull request through the `/pr` skill. Merge once CI is green and every review
       thread is resolved — the owner agreed on 2026-09-06 that this arc may go to `main` without a
       second stop, while the change's approval and the deploy's approval stay his.
