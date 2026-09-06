@@ -66,10 +66,19 @@ jobs:
         run: cp llms.txt llms-full.txt docs/_site/
 
       # Plesk's nginx proxies to Apache, so cache headers are an .htaccess file rather than server
-      # configuration. Only the fingerprinted files under public/ are immutable: DocFX also writes
-      # unfingerprinted main.css, main.js and docfx.min.* there, and those must revalidate or a
-      # template change is never seen. Everything the browser navigates to or the search reads
-      # (HTML, JSON, TXT, XML, YML) revalidates on every request.
+      # configuration. Everything the browser navigates to or the search reads (HTML, JSON, TXT,
+      # XML, YML) revalidates on every request.
+      #
+      # Under public/ the default is also revalidate, and only the fingerprinted files opt out of
+      # it. That order matters, and getting it wrong is not theoretical: until 2026-09-06 this file
+      # named the fingerprinted files alone, so DocFX's unfingerprinted main.css, main.js,
+      # docfx.min.css, docfx.min.js and search-worker.min.js were served with no Cache-Control at
+      # all. A browser then caches them heuristically — and a visitor who had the site open before
+      # a deploy got the new HTML, which does revalidate, against the old stylesheet, which did
+      # not. That is how the skip link this template added shipped unstyled and visible.
+      #
+      # Apache applies these two sections in order and the later Header set wins, so the blanket
+      # rule has to come first.
       - name: Add cache headers
         run: |
           set -euo pipefail
@@ -82,6 +91,9 @@ jobs:
           HTACCESS
           cat > docs/_site/public/.htaccess <<'HTACCESS'
           <IfModule mod_headers.c>
+            <FilesMatch "\.(js|css|woff2?)$">
+              Header set Cache-Control "no-cache"
+            </FilesMatch>
             <FilesMatch "-[A-Z0-9]{8}(\.min)?\.(js|css|woff2?)$">
               Header set Cache-Control "public, max-age=31536000, immutable"
             </FilesMatch>
@@ -144,4 +156,17 @@ jobs:
           status_is https://stratara.tech/assets/badges/nuget.svg 200 "the badges are not served from our own host"
           status_is https://stratara.tech/llms.txt 200 "llms.txt is not served"
           header_has https://stratara.tech/ 'cache-control: no-cache' "the no-cache header is missing on the landing page"
+          # The stylesheet is unfingerprinted, so a browser that does not revalidate it will pair a
+          # fresh page with a stale one. Asserting it here is what stops that regressing quietly.
+          header_has https://stratara.tech/public/main.css 'cache-control: no-cache' \
+            "main.css is served without no-cache — a visitor keeps the old stylesheet against the new HTML"
+          header_has https://stratara.tech/public/main.js 'cache-control: no-cache' \
+            "main.js is served without no-cache"
+          # And the fingerprinted files must still be immutable: the blanket rule above them must
+          # not have swallowed the exception.
+          fingerprinted=$(curl -fsS https://stratara.tech/public/docfx.min.js \
+            | grep -oE '[a-zA-Z0-9]+-[A-Z0-9]{8}\.min\.js' | head -1)
+          [ -n "$fingerprinted" ] || { echo "no fingerprinted asset found to check"; exit 1; }
+          header_has "https://stratara.tech/public/$fingerprinted" 'immutable' \
+            "the fingerprinted assets lost their immutable header"
           echo "stratara.tech answers, deep links resolve, and the pages that must not go stale revalidate."
