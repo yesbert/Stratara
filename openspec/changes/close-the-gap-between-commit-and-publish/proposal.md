@@ -1,6 +1,6 @@
 # Close the gap between commit and publish
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 

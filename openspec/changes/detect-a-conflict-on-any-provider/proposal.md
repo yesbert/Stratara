@@ -1,6 +1,6 @@
 # Detect a conflict on any provider
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 
