@@ -81,7 +81,11 @@ state on its own path: `projections`, `sagas`, `outbox-and-messaging`, `mediator
   archive with the decision.
 - **Dependencies:** `Directory.Packages.props` gains the Orleans packages the proof of concept needs,
   pinned to one version (10.3.1 at the time of writing). No packable project references them.
-- **Not touched:** `Stratara.Publish.slnf`, `<VersionPrefix>`, `CHANGELOG.md`, every existing composite.
+- **Test projects touched:** `Stratara.Publish.slnf` lists `tests/Stratara.Orleans.Tests` (a test
+  project, no packable one); `tests/Stratara.Infrastructure.Tests` gains
+  `EventSourcing/EventSourceSqliteConcurrencyTests.cs`, the pin of SF-003, and a reference to
+  `Stratara.Testing.EntityFrameworkCore`.
+- **Not touched:** `<VersionPrefix>`, `CHANGELOG.md`, every existing composite, every packable project.
 - **Findings recorded:** SF-001 (RabbitMQ discards a failed message), SF-002 (commit and publish are two
   transactions), SF-003 (concurrency detection depends on a PostgreSQL exception). They reached the
   project as a hand-off from a consumer team together with the briefing for this proof of concept;
