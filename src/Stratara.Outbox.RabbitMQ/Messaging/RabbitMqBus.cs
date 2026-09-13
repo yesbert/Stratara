@@ -8,6 +8,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
+using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 
 namespace Stratara.Outbox.RabbitMQ.Messaging;
@@ -23,8 +24,24 @@ namespace Stratara.Outbox.RabbitMQ.Messaging;
 /// <c>RABBITMQ_USERNAME</c> / <c>RABBITMQ_PASSWORD</c> variables (Kubernetes-style) or the
 /// <c>rabbitmq</c> connection string (Aspire / appsettings-style). The publisher uses
 /// publisher-confirms via <c>ThrottlingRateLimiter</c> with up to 50 000 outstanding confirms.
-/// Concurrency conflicts on the consumer side are NACKed with <c>requeue=true</c>; all other
-/// handler exceptions are NACKed with <c>requeue=false</c>.
+/// </para>
+/// <para>
+/// A worker subscription is a quorum queue named <c>&lt;subscription&gt;.v2</c> that dead-letters,
+/// through the default exchange, to the quorum queue <c>&lt;subscription&gt;.dead-letter</c>. A
+/// message whose handler throws is redelivered until the bound in <see cref="MessageRetryOptions"/>
+/// for its failure kind is reached — read from the delivery count the broker stamps on every
+/// redelivery (<c>x-acquired-count</c> from RabbitMQ 4.3, <c>x-delivery-count</c> before) — and
+/// then rejected without requeue, which moves it to the dead-letter queue. The broker's own
+/// <c>x-delivery-limit</c> sits one above the larger bound as a backstop for redeliveries the
+/// consumer did not ask for, such as a consumer that died mid-message. The <c>.v2</c> suffix
+/// exists because a classic queue of the old name cannot be redeclared as a quorum queue: old and
+/// new consumers coexist on the same exchange during a rollout, and the operator deletes the old
+/// queue once it is drained.
+/// </para>
+/// <para>
+/// A client subscription keeps the classic behaviour: a concurrency conflict is requeued, any other
+/// failure is rejected and dropped, because its queue is exclusive and auto-deleting and there is
+/// nobody to return a dead-lettered message to.
 /// </para>
 /// <para>
 /// Publishes set <c>mandatory=true</c>: if no queue is bound to the target exchange at publish
@@ -42,8 +59,18 @@ namespace Stratara.Outbox.RabbitMQ.Messaging;
 /// (deprecated <c>transient_nonexcl_queues</c> feature).
 /// </para>
 /// </remarks>
-internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration configuration, IHostEnvironment hostEnvironment, IOptions<BusEnvelopeJsonOptions> envelopeOptions) : IMessageBus, IAsyncDisposable
+internal sealed class RabbitMqBus(
+    ILogger<RabbitMqBus> logger,
+    IConfiguration configuration,
+    IHostEnvironment hostEnvironment,
+    IOptions<BusEnvelopeJsonOptions> envelopeOptions,
+    IOptions<MessageRetryOptions> retryOptions) : IMessageBus, IAsyncDisposable
 {
+    internal const string WorkerQueueSuffix = ".v2";
+    internal const string DeadLetterSuffix = ".dead-letter";
+    private const string AcquiredCountHeader = "x-acquired-count";
+    private const string DeliveryCountHeader = "x-delivery-count";
+    private const string QuorumQueueType = "quorum";
     private const int MaxOutstandingConfirms = 50_000;
     private static readonly TimeSpan NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
 
@@ -62,6 +89,7 @@ internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration co
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private readonly HashSet<string> _declaredExchanges = new(StringComparer.Ordinal);
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
+    private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly System.Collections.Concurrent.ConcurrentBag<Task> _cleanupTasks = new();
     private IConnection? _publishConnection;
@@ -202,17 +230,111 @@ internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration co
     private static bool IsClientSubscription(string subscription) =>
         subscription.StartsWith("default-", StringComparison.Ordinal);
 
+    /// <summary>The queue a worker subscription consumes from.</summary>
+    internal static string WorkerQueueName(string subscription) => subscription + WorkerQueueSuffix;
+
+    /// <summary>The queue a worker subscription's dead-lettered messages end on.</summary>
+    internal static string DeadLetterQueueName(string subscription) => subscription + DeadLetterSuffix;
+
+    private static string QueueName(string subscription) =>
+        IsClientSubscription(subscription) ? subscription : WorkerQueueName(subscription);
+
     // Establishing and subscribing must declare the same queue with the same arguments: RabbitMQ
     // rejects a redeclaration whose properties differ, so a drift here would surface as a channel
     // error on whichever path ran second.
-    private static async Task DeclareAndBindAsync(IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
+    private async Task DeclareAndBindAsync(IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
     {
         await channel.ExchangeDeclareAsync(topic, ExchangeType.Fanout, cancellationToken: cancellationToken);
 
-        var isClientSubscription = IsClientSubscription(subscription);
-        await channel.QueueDeclareAsync(subscription, durable: !isClientSubscription, exclusive: isClientSubscription,
-            autoDelete: isClientSubscription, cancellationToken: cancellationToken);
-        await channel.QueueBindAsync(subscription, topic, string.Empty, cancellationToken: cancellationToken);
+        if (IsClientSubscription(subscription))
+        {
+            await channel.QueueDeclareAsync(subscription, durable: false, exclusive: true, autoDelete: true, cancellationToken: cancellationToken);
+            await channel.QueueBindAsync(subscription, topic, string.Empty, cancellationToken: cancellationToken);
+            return;
+        }
+
+        var deadLetterQueue = DeadLetterQueueName(subscription);
+        await channel.QueueDeclareAsync(deadLetterQueue, durable: true, exclusive: false, autoDelete: false,
+            arguments: QuorumQueueArguments(), cancellationToken: cancellationToken);
+
+        var queue = WorkerQueueName(subscription);
+        await channel.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false,
+            arguments: WorkerQueueArguments(deadLetterQueue), cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(queue, topic, string.Empty, cancellationToken: cancellationToken);
+    }
+
+    private static Dictionary<string, object?> QuorumQueueArguments() => new(StringComparer.Ordinal)
+    {
+        ["x-queue-type"] = QuorumQueueType,
+    };
+
+    /// <summary>
+    /// The worker queue dead-letters through the default exchange straight to its dead-letter queue,
+    /// so the arguments depend on the subscription alone — a subscription bound to two topics would
+    /// otherwise fail its second declaration, because the dead-letter exchange is part of what the
+    /// broker compares. At-least-once dead-lettering keeps the message in the worker queue until the
+    /// dead-letter queue has confirmed it; that strategy requires <c>x-overflow: reject-publish</c>.
+    /// </summary>
+    private Dictionary<string, object?> WorkerQueueArguments(string deadLetterQueue) => new(StringComparer.Ordinal)
+    {
+        ["x-queue-type"] = QuorumQueueType,
+        ["x-dead-letter-exchange"] = string.Empty,
+        ["x-dead-letter-routing-key"] = deadLetterQueue,
+        ["x-dead-letter-strategy"] = "at-least-once",
+        ["x-overflow"] = "reject-publish",
+        ["x-delivery-limit"] = _retryPolicy.BrokerDeliveryLimit,
+    };
+
+    /// <summary>
+    /// How many times the message has been delivered, counting this one. RabbitMQ 4.3 and later
+    /// stamp <c>x-acquired-count</c> with the number of earlier deliveries on every redelivery and
+    /// increment <c>x-delivery-count</c> only for a redelivery the consumer did not ask for; earlier
+    /// versions have only the latter, which counts every requeue. The first present header wins.
+    /// A delivery the broker does not flag as redelivered is a first delivery whatever headers it
+    /// carries — a message an operator returned from the dead-letter queue arrives that way, with
+    /// the count of its earlier life still on it, and starts over.
+    /// </summary>
+    private static int DeliveryAttempt(BasicDeliverEventArgs args)
+    {
+        if (!args.Redelivered || args.BasicProperties.Headers is not { } headers)
+        {
+            return 1;
+        }
+
+        var earlier = headers.TryGetValue(AcquiredCountHeader, out var acquired) ? acquired
+            : headers.TryGetValue(DeliveryCountHeader, out var delivered) ? delivered
+            : null;
+
+        return earlier switch
+        {
+            long count => (int)count + 1,
+            int count => count + 1,
+            _ => 1,
+        };
+    }
+
+    private async Task SettleFailedAsync(IChannel channel, BasicDeliverEventArgs args, string topic, string subscription, MessageFailureKind kind, CancellationToken cancellationToken)
+    {
+        if (IsClientSubscription(subscription))
+        {
+            await channel.BasicNackAsync(args.DeliveryTag, false, kind == MessageFailureKind.Conflict, cancellationToken);
+            return;
+        }
+
+        var attempt = DeliveryAttempt(args);
+        if (_retryPolicy.Decide(attempt, kind) == MessageDisposition.Redeliver)
+        {
+            await channel.BasicNackAsync(args.DeliveryTag, false, true, cancellationToken);
+            return;
+        }
+
+        await channel.BasicNackAsync(args.DeliveryTag, false, false, cancellationToken);
+        var reason = MessageRetryPolicy.ReasonFor(kind);
+        logger.LogMessageDeadLettered(topic, subscription, reason, attempt);
+        ApplicationDiagnostics.Metrics.MessagesDeadLettered.Add(1,
+            new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.Topic, topic),
+            new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.Subscription, subscription),
+            new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.Reason, reason));
     }
 
     /// <inheritdoc/>
@@ -244,16 +366,16 @@ internal sealed class RabbitMqBus(ILogger<RabbitMqBus> logger, IConfiguration co
             catch (ConcurrencyException ce)
             {
                 logger.LogConcurrencyConflictRequeued(ce.StreamId, ce.AggregateTypeName);
-                await channel.BasicNackAsync(args.DeliveryTag, false, true, cancellationToken);
+                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, cancellationToken);
             }
             catch (Exception e)
             {
                 logger.LogMessageProcessingFailed(topic, e);
-                await channel.BasicNackAsync(args.DeliveryTag, false, false, cancellationToken);
+                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, cancellationToken);
             }
         };
 
-        await channel.BasicConsumeAsync(subscription, false, consumer, cancellationToken);
+        await channel.BasicConsumeAsync(QueueName(subscription), false, consumer, cancellationToken);
 
         cancellationToken.Register(() =>
         {

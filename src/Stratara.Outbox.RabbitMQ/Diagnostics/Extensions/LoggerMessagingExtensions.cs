@@ -99,6 +99,18 @@ public static partial class LoggerMessagingExtensions
         Message = "RABBITMQ_USERNAME / RABBITMQ_PASSWORD not set — falling back to default guest credentials for host {Host}. Production hosts must set both.")]
     public static partial void LogRabbitMqGuestFallback(this ILogger logger, string host);
 
+    /// <summary>Logs that a message exhausted its redelivery bound and was moved to the subscription's dead-letter destination.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="topic">The topic the message was published to.</param>
+    /// <param name="subscription">The subscription that could not take it.</param>
+    /// <param name="reason"><c>conflict</c> or <c>failure</c>.</param>
+    /// <param name="deliveryAttempt">How many times the message was delivered, counting the last.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Messaging.MessageDeadLettered,
+        Level = LogLevel.Warning,
+        Message = "Message on topic {Topic} dead-lettered for subscription {Subscription} after {DeliveryAttempt} deliveries ({Reason}).")]
+    public static partial void LogMessageDeadLettered(this ILogger logger, string topic, string subscription, string reason, int deliveryAttempt);
+
     /// <summary>Logs that disposing the publish channel / connection before a recreate failed; the recreate proceeds anyway.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="exception">The cleanup exception.</param>

@@ -41,6 +41,7 @@ public class ObservabilityMetricsTests
             "command.duration",
             "event_source.append.conflicts",
             "event_source.events.appended",
+            "messaging.dead_lettered",
             "outbox.published",
             "projection.bundle.duration",
             "projection.events.processed",

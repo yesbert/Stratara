@@ -30,6 +30,12 @@
             ]
           },
           {
+            "Name": "test-conflict-deadletter",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
             "Name": "test-durable",
             "Subscriptions": [
               { "Name": "worker" }

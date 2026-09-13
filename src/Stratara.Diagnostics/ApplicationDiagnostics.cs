@@ -75,6 +75,17 @@ public static class ApplicationDiagnostics
             description: "Number of outbox entries successfully published, by entry kind (command or event).");
 
         /// <summary>
+        /// Counter of messages moved to a subscription's dead-letter destination after exhausting
+        /// their redelivery bound. Tagged with <see cref="MetricTags.Topic"/>,
+        /// <see cref="MetricTags.Subscription"/> and <see cref="MetricTags.Reason"/>
+        /// (<c>conflict</c> or <c>failure</c>).
+        /// </summary>
+        public static readonly Counter<long> MessagesDeadLettered = Meter.CreateCounter<long>(
+            "messaging.dead_lettered",
+            unit: "{message}",
+            description: "Number of messages moved to a dead-letter destination, by topic, subscription and reason.");
+
+        /// <summary>
         /// Histogram of command-handling latency in milliseconds for commands dispatched **through the
         /// outbox worker**. Tagged with <see cref="MetricTags.RequestType"/> and
         /// <see cref="MetricTags.Outcome"/> (<c>success</c> or <c>failure</c>).
@@ -190,5 +201,14 @@ public static class ApplicationDiagnostics
 
         /// <summary>Tag name <c>outbox.kind</c> — <c>command</c> or <c>event</c>.</summary>
         public const string OutboxKind = "outbox.kind";
+
+        /// <summary>Tag name <c>messaging.topic</c> — the topic a message was published to.</summary>
+        public const string Topic = "messaging.topic";
+
+        /// <summary>Tag name <c>messaging.subscription</c> — the subscription a message was consumed under.</summary>
+        public const string Subscription = "messaging.subscription";
+
+        /// <summary>Tag name <c>reason</c> — why a message was dead-lettered: <c>conflict</c> or <c>failure</c>.</summary>
+        public const string Reason = "reason";
     }
 }

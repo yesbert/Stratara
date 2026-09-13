@@ -23,7 +23,7 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
     [Fact]
     public async Task PublishAsync_RoundtripsToSubscriber()
     {
-        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         var received = new TaskCompletionSource<TestMessage>();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -44,7 +44,7 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
     [Fact]
     public async Task SubscribeAsync_HandlerSucceeds_MessageIsCompleted()
     {
-        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         var processed = 0;
         var firstReceived = new TaskCompletionSource();
@@ -70,7 +70,7 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
     [Fact]
     public async Task SubscribeAsync_HandlerThrowsConcurrencyException_MessageIsAbandoned()
     {
-        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         var attempts = 0;
         var secondAttempt = new TaskCompletionSource();
@@ -94,43 +94,75 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
         Assert.True(attempts >= 2, $"Expected at least 2 delivery attempts, got {attempts}.");
     }
 
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → <em>A handler keeps failing</em>, on the Service Bus emulator:
+    /// the framework abandons the message until <c>MaxDeliveryAttempts</c> deliveries have failed
+    /// and then dead-letters it itself, with the reason the operator filters on and the exception in
+    /// the description.
+    /// </summary>
     [Fact]
-    public async Task SubscribeAsync_HandlerThrowsGenericException_MessageIsDeadLettered()
+    public async Task SubscribeAsync_HandlerKeepsFailing_MessageIsDeadLetteredAfterTheAttemptBound()
     {
-        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 3 }));
 
         var attempts = 0;
-        var firstAttempt = new TaskCompletionSource();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         await bus.SubscribeAsync<TestMessage>("test-deadletter", "worker", _ =>
         {
             Interlocked.Increment(ref attempts);
-            firstAttempt.TrySetResult();
             throw new InvalidOperationException("poison message");
         }, cts.Token);
 
         await Task.Delay(500, cts.Token);
         await bus.PublishAsync("test-deadletter", new TestMessage("poison"), cts.Token);
 
-        await firstAttempt.Task.WaitAsync(cts.Token);
-        await Task.Delay(2000, cts.Token);
-
-        Assert.Equal(1, attempts);
-
         await using var dlqReceiver = _client.CreateReceiver("test-deadletter", "worker", new ServiceBusReceiverOptions
         {
             SubQueue = SubQueue.DeadLetter,
         });
-        var dlqMessage = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(10), cts.Token);
+        var dlqMessage = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(30), cts.Token);
         Assert.NotNull(dlqMessage);
-        Assert.Equal(nameof(InvalidOperationException), dlqMessage.DeadLetterReason);
+        Assert.Equal("failure", dlqMessage.DeadLetterReason);
+        Assert.Contains(nameof(InvalidOperationException), dlqMessage.DeadLetterErrorDescription, StringComparison.Ordinal);
+        Assert.Equal(3, attempts);
+    }
+
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → <em>A handler keeps conflicting</em>: a conflict is abandoned
+    /// under <c>MaxConflictRequeues</c> and dead-lettered past it, as a conflict rather than a failure.
+    /// </summary>
+    [Fact]
+    public async Task SubscribeAsync_HandlerKeepsConflicting_MessageIsDeadLetteredPastTheRequeueBound()
+    {
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 1, MaxConflictRequeues = 2 }));
+
+        var attempts = 0;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        await bus.SubscribeAsync<TestMessage>("test-conflict-deadletter", "worker", _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new ConcurrencyException(Guid.NewGuid(), "TestAggregate");
+        }, cts.Token);
+
+        await Task.Delay(500, cts.Token);
+        await bus.PublishAsync("test-conflict-deadletter", new TestMessage("contended"), cts.Token);
+
+        await using var dlqReceiver = _client.CreateReceiver("test-conflict-deadletter", "worker", new ServiceBusReceiverOptions
+        {
+            SubQueue = SubQueue.DeadLetter,
+        });
+        var dlqMessage = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(30), cts.Token);
+        Assert.NotNull(dlqMessage);
+        Assert.Equal("conflict", dlqMessage.DeadLetterReason);
+        Assert.Equal(3, attempts);
     }
 
     [Fact]
     public async Task PublishAsync_PersistsMessageAcrossSubscribeOrder()
     {
-        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 

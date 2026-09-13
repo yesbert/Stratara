@@ -23,8 +23,10 @@ public enum BusEnvelopeIntegrityMode
     /// <summary>
     /// Publishers attach a signature and consumers reject any envelope whose signature is
     /// missing or invalid. The dispatch throws <see cref="System.InvalidOperationException"/>;
-    /// the message-bus implementation routes the rejection through its standard error path
-    /// (dead-letter on Azure Service Bus, NACK-discard on RabbitMQ).
+    /// the message-bus implementation routes the rejection through its standard failure path —
+    /// the bounded redelivery of <see cref="MessageRetryOptions"/>, then the subscription's
+    /// dead-letter destination, on both brokers. A transient client subscription on RabbitMQ has
+    /// no dead-letter destination and drops the envelope instead.
     /// </summary>
     Strict = 2,
 }

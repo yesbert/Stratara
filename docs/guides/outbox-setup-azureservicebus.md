@@ -77,7 +77,31 @@ a knob Stratara exposes.
 
 ## DLQ + retries
 
-Azure Service Bus has built-in dead-lettering. Stratara doesn't override it — when a message exceeds `MaxDeliveryCount` (default 10), it lands in the DLQ. Configure alerts on `Active Messages in DLQ` for your subscriptions.
+The framework decides when a message is dead-lettered, not the broker. A message whose handler throws
+is abandoned for redelivery until the bound for its failure kind is reached, then dead-lettered with a
+reason you can filter on — `failure` for a handler exception, `conflict` for a concurrency conflict
+that never resolved — and the exception in the description. The bounds are the same on RabbitMQ and
+come from one section:
+
+```jsonc
+{
+  "MessageRetry": {
+    "MaxDeliveryAttempts": 3,    // handler failures: delivered 3 times, then dead-lettered
+    "MaxConflictRequeues": 100   // concurrency conflicts: abandoned 100 times, then dead-lettered
+  }
+}
+```
+
+The framework reads the message's `DeliveryCount`. The subscription's own `MaxDeliveryCount` is a
+backstop and must be **at least one above the larger bound** (101 with the defaults), or the broker
+dead-letters first with its own reason and the framework's log and counter never fire. Where the
+host's credentials can read the subscription's definition, the bus logs a warning (`108_111`) at
+subscribe time when the limit is too low; a host with data-plane-only rights skips the check.
+
+Every dead-lettering is logged (`108_110`) and counted on `messaging.dead_lettered`, tagged with
+`messaging.topic`, `messaging.subscription` and `reason`. Alert on the counter or on the broker's
+`Active Messages in DLQ`; return a message with the portal, the CLI or a peek-and-resubmit, and it
+arrives as a fresh delivery.
 
 The Stratara `OutboxWorker` itself only sees the *outbox table*, not the Service Bus delivery counts. A persistent broker failure causes outbox rows to sit unpublished — they don't get dead-lettered, they just wait.
 

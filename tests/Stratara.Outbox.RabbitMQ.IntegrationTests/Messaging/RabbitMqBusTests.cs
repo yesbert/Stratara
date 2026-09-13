@@ -30,7 +30,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
     {
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var subscription = $"default-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         var received = new TaskCompletionSource<TestMessage>();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -61,7 +61,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var boundEarly = $"worker-early-{Guid.NewGuid():N}";
         var boundLate = $"worker-late-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var early = new TaskCompletionSource<TestMessage>();
@@ -103,7 +103,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var boundEarly = $"worker-early-{Guid.NewGuid():N}";
         var establishedEarly = $"worker-established-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var early = new TaskCompletionSource<TestMessage>();
@@ -143,7 +143,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
     {
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var clientSubscription = $"default-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
@@ -158,7 +158,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
     {
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var subscription = $"default-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         var processed = 0;
         var firstReceived = new TaskCompletionSource();
@@ -186,7 +186,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
     {
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var subscription = $"worker-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         var attempts = 0;
         var secondAttempt = new TaskCompletionSource();
@@ -210,31 +210,40 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         Assert.True(attempts >= 2);
     }
 
+    /// <summary>
+    /// With the defaults, a handler that keeps throwing sees the message exactly
+    /// <c>MaxDeliveryAttempts</c> times and then no more — it has gone to the dead-letter queue,
+    /// which <see cref="RabbitMqDeadLetterTests"/> inspects. Until this change the message was
+    /// dropped after the first delivery.
+    /// </summary>
     [Fact]
-    public async Task SubscribeAsync_HandlerThrowsGenericException_MessageIsNotRequeued()
+    public async Task SubscribeAsync_HandlerThrowsGenericException_MessageIsRedeliveredUpToTheDefaultBoundThenStops()
     {
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var subscription = $"worker-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         var attempts = 0;
-        var firstAttempt = new TaskCompletionSource();
+        var thirdAttempt = new TaskCompletionSource();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         await bus.SubscribeAsync<TestMessage>(topic, subscription, _ =>
         {
-            Interlocked.Increment(ref attempts);
-            firstAttempt.TrySetResult();
+            if (Interlocked.Increment(ref attempts) == 3)
+            {
+                thirdAttempt.TrySetResult();
+            }
+
             throw new InvalidOperationException("poison message");
         }, cts.Token);
 
         await Task.Delay(200, cts.Token);
         await bus.PublishAsync(topic, new TestMessage("poison"), cts.Token);
 
-        await firstAttempt.Task.WaitAsync(cts.Token);
+        await thirdAttempt.Task.WaitAsync(cts.Token);
         await Task.Delay(1000, cts.Token);
 
-        Assert.Equal(1, attempts);
+        Assert.Equal(new MessageRetryOptions().MaxDeliveryAttempts, attempts);
     }
 
     [Fact]
@@ -245,7 +254,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         // CommandOutboxDispatcher fall back to the outbox table instead of silently dropping the
         // message.
         var topic = $"test-topic-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
@@ -260,7 +269,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
     {
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var subscription = $"worker-{Guid.NewGuid():N}";
-        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()));
+        var bus = new RabbitMqBus(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 

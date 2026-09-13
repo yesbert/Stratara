@@ -157,6 +157,10 @@ public static class LogEvents
         public const int RabbitMqGuestFallback = 108_108;
         /// <summary>Publish-channel cleanup (recreation) raised an exception; the channel was re-created anyway (warning).</summary>
         public const int PublishChannelCleanupFailed = 108_109;
+        /// <summary>A message exhausted its redelivery bound and was moved to the subscription's dead-letter destination (warning).</summary>
+        public const int MessageDeadLettered = 108_110;
+        /// <summary>The broker's own delivery limit on a subscription is below the framework's bounds, so the broker may dead-letter first (warning).</summary>
+        public const int BrokerDeliveryLimitBelowBounds = 108_111;
     }
 
     /// <summary>Aggregate-update event-IDs (109_000s).</summary>

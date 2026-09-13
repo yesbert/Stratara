@@ -123,7 +123,8 @@ Three things worth knowing:
 
 - **Only the first time matters.** Worker queues are durable and are not auto-deleted, so once they
   exist they survive restarts of the app and of the broker. This is a cold-environment problem: a new
-  stage, a rebuilt host, a CI run against a fresh broker.
+  stage, a rebuilt host, a CI run against a fresh broker. (The queue behind a worker subscription is
+  named `<subscription>.v2` — see [When a handler cannot take a message](#when-a-handler-cannot-take-a-message).)
 - **Take the names from `IMessagingIdentifier`, not from strings.** A subscription you forget is a
   subscription that keeps losing messages, silently, and a typo produces a second queue nobody reads.
 - **Nothing calls this for you.** The framework cannot know your start-up order or which processes
@@ -160,6 +161,57 @@ somewhere you must clear is better than a fact silently gone.
 Client subscriptions (`default-*`) are refused: they are declared exclusive and auto-deleting, so a
 queue established ahead of its consumer would be removed the moment the declaring channel closed.
 Establishing one would look like it worked and retain nothing.
+
+## When a handler cannot take a message
+
+A worker subscription is a **quorum queue** with a dead-letter queue beside it. A message whose
+handler throws is redelivered a bounded number of times and then moved to
+`<subscription>.dead-letter`, where you can inspect it and return it once the cause is fixed. Nothing
+is dropped by the framework. The bounds are the same on Azure Service Bus and come from one
+section:
+
+```jsonc
+{
+  "MessageRetry": {
+    "MaxDeliveryAttempts": 3,    // handler failures: delivered 3 times, then dead-lettered
+    "MaxConflictRequeues": 100   // concurrency conflicts: requeued 100 times, then dead-lettered
+  }
+}
+```
+
+A concurrency conflict is a retry, not a failure — the next delivery usually sees the new aggregate
+version and passes — so it has the larger bound. Redelivery is immediate on both transports; there
+is no back-off. The framework reads the delivery count the broker stamps on every redelivery
+(`x-acquired-count` from RabbitMQ 4.3, `x-delivery-count` before) and decides itself; the queue's
+`x-delivery-limit` sits one above the larger bound as a backstop for redeliveries nobody asked
+for — a consumer that died mid-message — which is the only kind RabbitMQ 4.3+ counts against it.
+A message the broker dead-letters by that backstop is not in the framework's log or counter.
+The worker queue dead-letters through the default exchange straight to `<subscription>.dead-letter`
+with the at-least-once strategy, so the move itself cannot lose the message.
+
+Every dead-lettering is logged (`108_110`) and counted on `messaging.dead_lettered`, tagged with
+`messaging.topic`, `messaging.subscription` and `reason` (`conflict` or `failure`). A rising
+`conflict` count is contention to look at or a bound to raise; a rising `failure` count is a handler
+to fix and a queue to replay.
+
+**Returning a message.** Move it from `<subscription>.dead-letter` back to the worker queue with the
+shovel plugin or the management UI. It arrives as a fresh delivery, with its count starting over.
+
+**The queue names changed with this feature.** A worker subscription named `event-bundle-subscription`
+now consumes `event-bundle-subscription.v2`; the old classic queue cannot be redeclared as a quorum
+queue, and the broker refuses the attempt. The rollout is two steps:
+
+1. Deploy. New consumers bind `<subscription>.v2` to the same exchange; old consumers keep draining
+   the old queue, and every bundle reaches both — which at-least-once already requires handlers to
+   tolerate.
+2. When the old queue is empty and no old consumer is left, delete it. It is still bound to the
+   exchange and would otherwise fill with every message forever.
+
+Quorum queues need RabbitMQ 3.8 or later; the framework's integration tests run against 4.x.
+
+**Client subscriptions** (`default-` prefix) are exclusive, auto-deleting queues for a process that is
+listening right now; they have no dead-letter queue. A conflict is requeued, any other failure is
+dropped — there is nobody to return a message to.
 
 ## Backpressure
 

@@ -34,8 +34,11 @@ namespace Stratara.Outbox.RabbitMQ.Mediator;
 /// The worker runs <see cref="CommandWorkerLane.EffectiveDegreeOfParallelism"/> parallel subscriptions
 /// (defaulting to <see cref="Environment.ProcessorCount"/>), each wrapped in the <c>MessageBus</c>
 /// resilience pipeline. Failures inside <c>DispatchAsync</c> propagate to the subscription handler,
-/// which is NACKed by the <see cref="Stratara.Abstractions.Messaging.IMessageBus"/> implementation
-/// (with concurrency conflicts requeued and other errors dead-lettered). The <see cref="CommandWorkerLane"/>
+/// and the <see cref="Stratara.Abstractions.Messaging.IMessageBus"/> implementation applies the
+/// bounds of <see cref="Stratara.Abstractions.Messaging.MessageRetryOptions"/>: the command is
+/// redelivered up to <c>MaxDeliveryAttempts</c> times on a failure and up to
+/// <c>MaxConflictRequeues</c> times on a concurrency conflict, then moved to the subscription's
+/// dead-letter destination, on either broker. The <see cref="CommandWorkerLane"/>
 /// selects the interactive (default) or heavy command topic/subscription so a dedicated heavy-command
 /// worker can drain long-running commands without starving the interactive lane.
 /// </remarks>

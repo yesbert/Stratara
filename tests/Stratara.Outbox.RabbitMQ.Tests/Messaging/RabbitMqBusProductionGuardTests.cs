@@ -101,5 +101,5 @@ public sealed class RabbitMqBusProductionGuardTests
     }
 
     private static RabbitMqBus CreateBus(IConfiguration config, IHostEnvironment env) =>
-        new(NullLogger<RabbitMqBus>.Instance, config, env, Options.Create(new BusEnvelopeJsonOptions()));
+        new(NullLogger<RabbitMqBus>.Instance, config, env, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions()));
 }
