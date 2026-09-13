@@ -1,6 +1,6 @@
 ## 0. Gate
 
-- [ ] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
+- [x] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
       Nothing below starts before it.
 
 ## 1. Ground
@@ -12,8 +12,12 @@
       `dotnet restore` succeeds and `git grep Microsoft.Orleans -- '*.csproj'` lists only the new projects.
 - [ ] 1.3 Create `src/Stratara.Orleans/` (Tier-C, `IsPackable=false`), `tests/Stratara.Orleans.Tests/`,
       `tests/Stratara.Orleans.IntegrationTests/` and `tests/Stratara.Orleans.Benchmarks/`, and add them to
-      the solution but not to `Stratara.Publish.slnf`. Verify: `./scripts/local-gauntlet.sh` passes and
-      `Stratara.Publish.slnf` is unchanged in the diff.
+      the solution. `src/Stratara.Orleans` stays out of `Stratara.Publish.slnf`; `tests/Stratara.Orleans.Tests`
+      goes in, because `PublishFilterCoverageTests` requires every `tests/*/*.Tests.csproj` to be there — the
+      filter also lists test projects, and a non-packable project in it is not packed. The benchmark program
+      exits without running anything unless it is given arguments, because the gauntlet runs every test-folder
+      executable except `Stratara.Benchmarks`. Verify: `./scripts/local-gauntlet.sh` passes, and the only
+      line added to `Stratara.Publish.slnf` is the unit-test project.
 
 ## 2. Pre-register before any run
 

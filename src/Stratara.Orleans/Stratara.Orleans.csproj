@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <!-- Proof of concept of change prove-an-orleans-execution-model (Tier-C). Not packable and not in
+             Stratara.Publish.slnf: nothing here is published until a follow-up change decides so. -->
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Orleans.Sdk"/>
+        <PackageReference Include="Microsoft.Orleans.Server"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Orleans.Tests"/>
+        <InternalsVisibleTo Include="Stratara.Orleans.IntegrationTests"/>
+        <InternalsVisibleTo Include="Stratara.Orleans.Benchmarks"/>
+    </ItemGroup>
+
+</Project>

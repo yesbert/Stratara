@@ -35,6 +35,7 @@
       "tests/Stratara.Identity.EntityFrameworkCore.Tests/Stratara.Identity.EntityFrameworkCore.Tests.csproj",
       "tests/Stratara.Identity.Core.Tests/Stratara.Identity.Core.Tests.csproj",
       "tests/Stratara.Infrastructure.Tests/Stratara.Infrastructure.Tests.csproj",
+      "tests/Stratara.Orleans.Tests/Stratara.Orleans.Tests.csproj",
       "tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj",
       "tests/Stratara.Outbox.RabbitMQ.Tests/Stratara.Outbox.RabbitMQ.Tests.csproj",
       "tests/Stratara.Projections.Tests/Stratara.Projections.Tests.csproj",
