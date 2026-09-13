@@ -24,8 +24,9 @@ applies to the entire NuGet family.
   PostgreSQL detector and `AddStrataraTestingEventStore<T>()` the SQLite one; detectors accumulate,
   so a host on another provider adds its own without displacing the framework's. A host that
   registers its write context without `AddNpgsqlWriteDbContextFactory<T>()` gets no detector and
-  must register `IStoreConflictDetector` itself — one line — to keep the `ConcurrencyException` it
-  had.
+  no longer sees a `ConcurrencyException` on a version collision: it switches to that registration,
+  or registers an `IStoreConflictDetector` of its own that recognises PostgreSQL's SQL state
+  `23505` in the exception chain (the framework's implementations are not public).
 
 ### Fixed
 

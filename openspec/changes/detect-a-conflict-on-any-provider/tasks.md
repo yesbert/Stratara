@@ -33,7 +33,8 @@ event source stops naming a provider, and the pin test flips last — its flip i
       `tests/Stratara.Infrastructure.Tests/EventSourcing/EventSourceSqliteConcurrencyTests.cs`
       flips to `ConcurrencyException` — rename the test to say so and rewrite its summary to record
       that SF-003 is closed here; `grep -rn Npgsql src/Stratara.Infrastructure --include=*.cs`
-      returns nothing.
+      returns nothing. *Done 2026-09-13: the grep returns two XML-doc prose mentions of
+      `AddNpgsqlWriteDbContextFactory`, no `using`, no type, no package reference.*
 - [x] 3.2 A test with an empty detector set on the SQLite host (register the context without
       `AddStrataraTestingEventStore`'s detector) shows `DbUpdateException` — pinning design D3 so
       nobody adds a silent fallback later. Verify: the test is next to 3.1 and names D3.
@@ -47,8 +48,8 @@ event source stops naming a provider, and the pin test flips last — its flip i
       *Done 2026-09-13: no guide under `docs/` names the registration besides the cheatsheet and the
       generated API pages, so the cheatsheet's two rows carry the note.*
 - [x] 4.2 Regenerate `llms-full.txt` with the generator the documentation tests use. Verify: the
-      documentation tests pass. *Done 2026-09-13: regenerated without a diff — the catalogue carries
-      the registration summaries, and only remarks changed.*
+      documentation tests pass. *Done 2026-09-13: regenerated without a diff — the catalogue keeps
+      the first sentence of each registration summary, and none of those changed.*
 - [x] 4.3 `CHANGELOG.md` `[Unreleased]` → *Added*: `IStoreConflictDetector`, registered by the two
       store registrations; → *Fixed*: a version collision on SQLite is now a `ConcurrencyException`
       (test-support behaviour change); → the note for hosts that bypassed the registration. Verify:
