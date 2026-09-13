@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Stratara.Contracts.Session;
 using Stratara.Abstractions.Domain;
 using Stratara.Abstractions.EventSourcing;
@@ -29,9 +28,12 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// If none yields a non-empty Subject, the append fails fast with an <see cref="InvalidOperationException"/>.
 /// </para>
 /// <para>
-/// Concurrency conflicts (unique-index violations on stream version, PostgreSQL <c>23505</c>) are
+/// Concurrency conflicts — a unique-index violation on the stream version, recognised by the
+/// <see cref="IStoreConflictDetector"/> the store registration contributes for its provider — are
 /// surfaced as <see cref="ConcurrencyException"/> and recorded in
-/// <c>ApplicationDiagnostics.Metrics.EventSourceAppendConflicts</c>.
+/// <c>ApplicationDiagnostics.Metrics.EventSourceAppendConflicts</c>. With no detector registered
+/// only EF Core's own concurrency exception is recognised; a provider's unique violation then
+/// propagates as the persistence failure it was.
 /// </para>
 /// </remarks>
 internal sealed class EventSource(
@@ -40,10 +42,9 @@ internal sealed class EventSource(
     ISessionContextProvider sessionContextProvider,
     IEventBundleOutboxDispatcher outboxDispatcher,
     ISecureJsonSerializer serializer,
+    IEnumerable<IStoreConflictDetector> conflictDetectors,
     IBusEnvelopeSigner? signer = null) : IEventSource
 {
-    private const string PostgresUniqueViolationSqlState = "23505";
-
     private readonly List<EventStreamEntry> _eventStreamEntries = [];
     private readonly Dictionary<Guid, long> _streamVersions = new();
 
@@ -179,7 +180,7 @@ internal sealed class EventSource(
         _explicitSubjectOverrides.Clear();
     }
 
-    private static bool IsConcurrencyOrUniqueViolation(Exception ex)
+    private bool IsConcurrencyOrUniqueViolation(Exception ex)
     {
         // Provider-agnostic concurrency conflict surfaced by Stratara's EfTransaction wrap
         // (DbUpdateConcurrencyException -> ConcurrencyConflictException).
@@ -190,18 +191,7 @@ internal sealed class EventSource(
 
         if (ex is DbUpdateException dbEx)
         {
-            if (dbEx is DbUpdateConcurrencyException)
-            {
-                return true;
-            }
-
-            for (var inner = dbEx.InnerException; inner is not null; inner = inner.InnerException)
-            {
-                if (inner is PostgresException pg && pg.SqlState == PostgresUniqueViolationSqlState)
-                {
-                    return true;
-                }
-            }
+            return dbEx is DbUpdateConcurrencyException || conflictDetectors.Any(detector => detector.IsUniqueViolation(dbEx));
         }
 
         return false;

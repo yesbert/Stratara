@@ -7,6 +7,7 @@ using Stratara.EventSourcing.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
@@ -42,6 +43,12 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// host that composes its own role. They are resolved when the unit of work is first used, so
     /// the order of the <c>Add*</c> calls does not matter.
     /// </para>
+    /// <para>
+    /// The registration also contributes the <see cref="IStoreConflictDetector"/> that recognises
+    /// PostgreSQL's unique-violation error, so a duplicate stream version surfaces as a
+    /// <see cref="ConcurrencyException"/>. Detectors accumulate: a host that adds one for another
+    /// provider does not displace this one, and applying this registration twice adds it once.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TDbContext">The concrete write-store DbContext type.</typeparam>
     /// <param name="services">The service collection to add registrations to.</param>
@@ -62,6 +69,7 @@ public static class NpgsqlDbContextServiceCollectionExtensions
             sp.GetRequiredService<ISessionContextProvider>(),
             sp.GetRequiredService<ISecureJsonSerializer>()));
         services.TryAddScoped<IDbResolver, DefaultDbResolver>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IStoreConflictDetector, PostgresConflictDetector>());
         return services;
     }
 

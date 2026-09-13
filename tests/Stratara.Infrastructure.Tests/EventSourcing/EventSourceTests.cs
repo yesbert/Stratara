@@ -53,7 +53,24 @@ public class EventSourceTests
             _unitOfWorkMock.Object,
             _sessionContextProviderMock.Object,
             _outboxDispatcherMock.Object,
-            _serializerMock.Object);
+            _serializerMock.Object,
+            [new PostgresUniqueViolationDetector()]);
+    }
+
+    private sealed class PostgresUniqueViolationDetector : IStoreConflictDetector
+    {
+        public bool IsUniqueViolation(Exception exception)
+        {
+            for (var current = exception; current is not null; current = current.InnerException)
+            {
+                if (current is PostgresException { SqlState: "23505" })
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
     private sealed class TestAggregate

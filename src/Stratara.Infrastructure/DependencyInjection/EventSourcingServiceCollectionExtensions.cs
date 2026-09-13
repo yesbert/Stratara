@@ -20,6 +20,13 @@ public static class EventSourcingServiceCollectionExtensions
     /// To control the snapshot cadence — vary it per aggregate type, change the threshold, or
     /// disable snapshots with <see cref="NoSnapshotStrategy"/> — register your own singleton
     /// <see cref="ISnapshotStrategy"/>. A custom registration overrides the default.
+    /// <para>
+    /// This call registers no <see cref="IStoreConflictDetector"/>: the store registration that
+    /// knows the provider does — <c>AddNpgsqlWriteDbContextFactory</c> for PostgreSQL, the
+    /// test-support store for SQLite. A host that registers its write context another way, or
+    /// brings another provider, registers a detector itself; without one, a duplicate stream
+    /// version is not recognised as a <see cref="ConcurrencyException"/>.
+    /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>

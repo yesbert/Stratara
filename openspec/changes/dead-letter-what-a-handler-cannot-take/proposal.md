@@ -1,6 +1,6 @@
 # Dead-letter what a handler cannot take
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 
