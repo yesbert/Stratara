@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using Npgsql;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
@@ -148,5 +150,50 @@ public class NpgsqlDbContextServiceCollectionExtensionsTests
 
         Assert.Same(own, scope.ServiceProvider.GetRequiredService<IProjectionsUnitOfWork>());
         Assert.Equal(ServiceLifetime.Scoped, services.Single(d => d.ServiceType == typeof(IReadUnitOfWork)).Lifetime);
+    }
+
+    [Fact]
+    public void AddNpgsqlWriteDbContextFactory_CalledTwice_RegistersOneConflictDetector()
+    {
+        var services = CreateServices();
+        services.AddNpgsqlWriteDbContextFactory<TestWriteDbContext>();
+        services.AddNpgsqlWriteDbContextFactory<TestWriteDbContext>();
+
+        var detector = Assert.Single(services, d => d.ServiceType == typeof(IStoreConflictDetector));
+        Assert.Equal(typeof(PostgresConflictDetector), detector.ImplementationType);
+    }
+
+    [Fact]
+    public void AddNpgsqlWriteDbContextFactory_ConsumerDetector_IsKeptBesideTheFrameworksOne()
+    {
+        var services = CreateServices();
+        var own = Mock.Of<IStoreConflictDetector>();
+        services.AddSingleton(own);
+        services.AddNpgsqlWriteDbContextFactory<TestWriteDbContext>();
+        var sp = services.BuildServiceProvider();
+
+        var detectors = sp.GetRequiredService<IEnumerable<IStoreConflictDetector>>().ToList();
+
+        Assert.Equal(2, detectors.Count);
+        Assert.Contains(own, detectors);
+        Assert.Contains(detectors, d => d is PostgresConflictDetector);
+    }
+
+    [Fact]
+    public void PostgresConflictDetector_UniqueViolationSqlState_IsRecognised()
+    {
+        var detector = new PostgresConflictDetector();
+        var ex = new DbUpdateException("save failed", new PostgresException("duplicate key", "ERROR", "ERROR", "23505"));
+
+        Assert.True(detector.IsUniqueViolation(ex));
+    }
+
+    [Fact]
+    public void PostgresConflictDetector_OtherSqlState_IsNotRecognised()
+    {
+        var detector = new PostgresConflictDetector();
+        var ex = new DbUpdateException("save failed", new PostgresException("not null", "ERROR", "ERROR", "23502"));
+
+        Assert.False(detector.IsUniqueViolation(ex));
     }
 }

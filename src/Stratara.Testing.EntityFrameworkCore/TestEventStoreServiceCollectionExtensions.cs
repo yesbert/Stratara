@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Security;
@@ -24,6 +25,8 @@ public static class TestEventStoreServiceCollectionExtensions
     /// <see cref="InMemoryKeyStore"/>, a <see cref="TestSessionContextProvider"/>, and a
     /// <see cref="RecordingEventBundleOutboxDispatcher"/>. Register your aggregates with
     /// <c>AddAggregatesFromAssemblyContaining&lt;T&gt;()</c> so event payload types deserialize.
+    /// A duplicate stream version surfaces as <see cref="ConcurrencyException"/> here as it does on
+    /// PostgreSQL, through the SQLite <see cref="IStoreConflictDetector"/> this call registers.
     /// </summary>
     /// <typeparam name="TWriteDbContext">The concrete write <see cref="DbContext"/> (e.g. <see cref="StrataraTestWriteDbContext"/>).</typeparam>
     /// <param name="services">The service collection.</param>
@@ -73,6 +76,7 @@ public static class TestEventStoreServiceCollectionExtensions
             sp.GetRequiredService<IDbContextFactory<TWriteDbContext>>(),
             sp.GetRequiredService<ISessionContextProvider>(),
             sp.GetRequiredService<ISecureJsonSerializer>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IStoreConflictDetector, SqliteConflictDetector>());
 
         services.AddSecurity();
         services.AddMapping();

@@ -125,7 +125,7 @@ transport, but registering both in one host is still a smell — pick one.
 
 | Extension | What it does |
 |---|---|
-| `services.AddNpgsqlWriteDbContextFactory<TContext>()` | Npgsql-backed `IDbContextFactory<TContext>` for the write-store context, plus a scoped `IWriteUnitOfWork` over it unless the host registered its own. The unit of work also needs `ISessionContextProvider` and `ISecureJsonSerializer` from `AddSessionContext()` / `AddSecurity()`, which every worker composite applies |
+| `services.AddNpgsqlWriteDbContextFactory<TContext>()` | Npgsql-backed `IDbContextFactory<TContext>` for the write-store context, plus a scoped `IWriteUnitOfWork` over it unless the host registered its own, plus the `IStoreConflictDetector` that makes a PostgreSQL unique violation a `ConcurrencyException`. The unit of work also needs `ISessionContextProvider` and `ISecureJsonSerializer` from `AddSessionContext()` / `AddSecurity()`, which every worker composite applies. A host on another provider registers its own `IStoreConflictDetector`; detectors accumulate |
 | `services.AddNpgsqlReadDbContextFactory<TContext>()` | The same for a read-store context, plus a scoped `IProjectionsUnitOfWork` / `IReadUnitOfWork` over it unless the host registered its own |
 | `services.AddNpgsqlIdentityDbContextFactory<TContext>()` | The same for an identity-store context, **plus** a scoped resolution of the context itself so ASP.NET Identity can inject it directly |
 | `services.AddWriteStore(configuration)` | Binds `EventSourcingOptions` from the `EventSourcing` section — snapshot cadence, batch sizes and the other write-side knobs |
@@ -150,7 +150,7 @@ transport, but registering both in one host is still a smell — pick one.
 
 | Extension | What it does |
 |---|---|
-| `services.AddStrataraTestingEventStore()` | The event-sourcing write stack over an in-memory store, plus a test key store, encryptor and session context. Register your aggregates with `AddAggregatesFromAssemblyContaining<T>()` so event payloads resolve |
+| `services.AddStrataraTestingEventStore()` | The event-sourcing write stack over an in-memory store, plus a test key store, encryptor and session context, plus the SQLite `IStoreConflictDetector` so a duplicate stream version is a `ConcurrencyException` in tests as it is on PostgreSQL. Register your aggregates with `AddAggregatesFromAssemblyContaining<T>()` so event payloads resolve |
 
 ## Health checks
 

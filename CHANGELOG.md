@@ -16,7 +16,22 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `4.0.3`._
+### Added
+
+- `IStoreConflictDetector` in `Stratara.Abstractions.EventSourcing`: recognises a database
+  provider's refusal of a duplicate stream version, so the event source can surface it as a
+  `ConcurrencyException` on that provider. `AddNpgsqlWriteDbContextFactory<T>()` registers the
+  PostgreSQL detector and `AddStrataraTestingEventStore<T>()` the SQLite one; detectors accumulate,
+  so a host on another provider adds its own without displacing the framework's. A host that
+  registers its write context without `AddNpgsqlWriteDbContextFactory<T>()` gets no detector and
+  must register `IStoreConflictDetector` itself — one line — to keep the `ConcurrencyException` it
+  had.
+
+### Fixed
+
+- A duplicate stream version on the SQLite test store (`Stratara.Testing.EntityFrameworkCore`) now
+  surfaces as `ConcurrencyException`, as it does on PostgreSQL, instead of a bare
+  `DbUpdateException`. A test that asserted the old exception type needs the new one.
 
 ## [4.0.3] — 2026-09-03
 
