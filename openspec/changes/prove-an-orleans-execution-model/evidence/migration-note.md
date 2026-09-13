@@ -1,6 +1,6 @@
 # Migration note — from the bus workers to the Orleans execution model
 
-> **Status:** draft, written against the proof of concept on 2026-09-13. It describes what the
+> **Status:** final for the proof of concept, 2026-09-13; the recommendation in `results.md` is to ship the Orleans path as an additional execution model. It describes what the
 > proof of concept does; a shipped package may name things differently. It names no consumer.
 
 For a host that runs Stratara 4.0.x with the bus workers and wants to move to the Orleans execution

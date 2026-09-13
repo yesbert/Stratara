@@ -5,12 +5,12 @@
 
 ## 1. Ground
 
-- [ ] 1.1 Confirm Orleans 10.3.1 targets `net10.0`, and whether an ADO.NET grain directory and an ADO.NET
+- [x] 1.1 Confirm Orleans 10.3.1 targets `net10.0`, and whether an ADO.NET grain directory and an ADO.NET
       reminder provider exist for it. Record the answer and the reminder minimum period in
       `evidence/environment.md`. Verify: the file names the package ids and versions checked.
-- [ ] 1.2 Pin the Orleans packages the PoC needs in `Directory.Packages.props`, one version. Verify:
+- [x] 1.2 Pin the Orleans packages the PoC needs in `Directory.Packages.props`, one version. Verify:
       `dotnet restore` succeeds and `git grep Microsoft.Orleans -- '*.csproj'` lists only the new projects.
-- [ ] 1.3 Create `src/Stratara.Orleans/` (Tier-C, `IsPackable=false`), `tests/Stratara.Orleans.Tests/`,
+- [x] 1.3 Create `src/Stratara.Orleans/` (Tier-C, `IsPackable=false`), `tests/Stratara.Orleans.Tests/`,
       `tests/Stratara.Orleans.IntegrationTests/` and `tests/Stratara.Orleans.Benchmarks/`, and add them to
       the solution. `src/Stratara.Orleans` stays out of `Stratara.Publish.slnf`; `tests/Stratara.Orleans.Tests`
       goes in, because `PublishFilterCoverageTests` requires every `tests/*/*.Tests.csproj` to be there — the
@@ -85,7 +85,7 @@
       plus a timer (D8, Q2, Q3). Verify: `tests/Stratara.Orleans.IntegrationTests/Projections/` covers
       idempotent apply, a genuine conflict failing, a missing prerequisite not advancing the checkpoint,
       discovery by assembly and the recorded session.
-- [ ] 8.2 Kill between commit and publish, repeated, on the bus path and the checkpoint path. Verify:
+- [x] 8.2 Kill between commit and publish, repeated, on the bus path and the checkpoint path. Verify:
       `tests/Stratara.Orleans.IntegrationTests/Projections/CommitPublishKillTests.cs` — raw counts in
       `evidence/raw/commit-publish-kill/`.
 
@@ -118,25 +118,25 @@
 
 ## 13. Benchmarks — ask the owner before every run over 30 minutes or using a paid resource
 
-- [ ] 13.1 Append throughput: current store, native schema, portable counter. Verify:
+- [x] 13.1 Append throughput: current store, native schema, portable counter. Verify:
       `evidence/raw/append-throughput/` and a row in `evidence/results.md` against its expectation.
-- [ ] 13.2 Event-to-read-model latency p50/p99: push, catch-up with hint, hybrid. Verify:
+- [x] 13.2 Event-to-read-model latency p50/p99: push, catch-up with hint, hybrid. Verify:
       `evidence/raw/read-model-latency/` and a row in `evidence/results.md`.
-- [ ] 13.3 Commands per aggregate: `MediatorCommandWorker` against the aggregate grain, including
+- [x] 13.3 Commands per aggregate: `MediatorCommandWorker` against the aggregate grain, including
       contention. Verify: `evidence/raw/commands-per-aggregate/` and a row in `evidence/results.md`.
-- [ ] 13.4 Rebuild duration: full replay against per-projection rebuild with other projections running.
+- [x] 13.4 Rebuild duration: full replay against per-projection rebuild with other projections running.
       Verify: `evidence/raw/rebuild/` and a row in `evidence/results.md`.
-- [ ] 13.5 Resource use at idle and under load. Verify: `evidence/raw/resources/` and a row in
+- [x] 13.5 Resource use at idle and under load. Verify: `evidence/raw/resources/` and a row in
       `evidence/results.md`.
 
 ## 14. Decide and hand over
 
-- [ ] 14.1 Record the owner's decision for SF-001, SF-002 and SF-003 in `design.md` → *Findings*, and open a
+- [x] 14.1 Record the owner's decision for SF-001, SF-002 and SF-003 in `design.md` → *Findings*, and open a
       proposal for each that needs a fix. Verify: each finding ends in a dated decision; each fix has a
       change directory under `openspec/changes/`.
-- [ ] 14.2 Write the recommendation in `evidence/results.md`: additional execution model only, or the
+- [x] 14.2 Write the recommendation in `evidence/results.md`: additional execution model only, or the
       recommended one, with the bus-worker deprecation path if so, and answers to Q5 and Q6. Verify: every
       claim cites a row in the results table.
-- [ ] 14.3 Write the consumer migration note in `evidence/migration-note.md`: registrations that change,
+- [x] 14.3 Write the consumer migration note in `evidence/migration-note.md`: registrations that change,
       guarantees that get stronger, handler assumptions that become unnecessary but stay harmless. Verify:
       it names no consumer and points at no file outside the repository.

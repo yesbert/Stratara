@@ -313,6 +313,8 @@ guarantee on every capability that meets it and correct the worker remark.
 consume from the bus and so sidesteps the finding; it does not resolve it for consumers who stay on the
 bus.
 
+**Decided by the owner, 2026-09-13:** (a). Change `dead-letter-what-a-handler-cannot-take`, proposed.
+
 ### SF-002 — Committing events and publishing them are two transactions
 
 **Observed.** `EventSource.SaveChangesAsync` commits the entries (`EventSource.cs:155`) and publishes the
@@ -340,6 +342,11 @@ measures it.
 resolves SF-002 for it, and the bus path still needs (a) or an explicit spec statement of the gap for as
 long as it is supported.
 
+**Decided by the owner, 2026-09-13:** T1 measured the loss (20 of 20 on the bus, 0 of 20 on the
+checkpoint path); (b) is offered as an additional execution model and closes the finding for its
+consumers. For the bus path: a change that states the gap in `outbox-and-messaging` and evaluates (a).
+Change `close-the-gap-between-commit-and-publish`, proposed.
+
 ### SF-003 — Concurrency detection depends on a PostgreSQL exception
 
 **Observed.** A duplicate stream version is an insert that violates the unique index, and `EventSource`
@@ -358,6 +365,9 @@ host accordingly.
 
 **Proposed decision.** First pin it: the SQLite correctness test above. If it confirms the finding, (a)
 in its own change, because the PoC's constraint 3 needs the same port for its own readers.
+
+**Decided by the owner, 2026-09-13:** the test confirmed it (T7); (a). Change
+`detect-a-conflict-on-any-provider`, proposed.
 
 ## Risks / Trade-offs
 

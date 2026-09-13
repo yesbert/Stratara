@@ -1,0 +1,221 @@
+{
+  "measurement": "append-throughput",
+  "results": [
+    {
+      "layout": "current",
+      "distribution": "spread",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        550.7668610651543,
+        606.6078692982302,
+        588.160760310239
+      ],
+      "median": 588.160760310239
+    },
+    {
+      "layout": "current",
+      "distribution": "spread",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        2643.724076633101,
+        2611.763838776759,
+        2473.3835486257067
+      ],
+      "median": 2611.763838776759
+    },
+    {
+      "layout": "current",
+      "distribution": "spread",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        2625.016819795273,
+        2670.8091272337947,
+        2631.560318691428
+      ],
+      "median": 2631.560318691428
+    },
+    {
+      "layout": "current",
+      "distribution": "one-bucket",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        375.0614149002096,
+        387.4369733513527,
+        383.529606399213
+      ],
+      "median": 383.529606399213
+    },
+    {
+      "layout": "current",
+      "distribution": "one-bucket",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1686.5988354844608,
+        1720.4380992393428,
+        1800.119614348134
+      ],
+      "median": 1720.4380992393428
+    },
+    {
+      "layout": "current",
+      "distribution": "one-bucket",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1784.6620043799533,
+        1871.400466469023,
+        1899.633184631314
+      ],
+      "median": 1871.400466469023
+    },
+    {
+      "layout": "native",
+      "distribution": "spread",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        582.689359620315,
+        596.4303559694976,
+        590.0648248166867
+      ],
+      "median": 590.0648248166867
+    },
+    {
+      "layout": "native",
+      "distribution": "spread",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        2657.3573415648343,
+        2489.3959201987295,
+        2673.1440868502373
+      ],
+      "median": 2657.3573415648343
+    },
+    {
+      "layout": "native",
+      "distribution": "spread",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        2658.8107671200823,
+        2605.565665439845,
+        2417.0129480833834
+      ],
+      "median": 2605.565665439845
+    },
+    {
+      "layout": "native",
+      "distribution": "one-bucket",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        389.2535472344894,
+        348.7223677277926,
+        379.45959269695254
+      ],
+      "median": 379.45959269695254
+    },
+    {
+      "layout": "native",
+      "distribution": "one-bucket",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1655.8686917322575,
+        1732.1675730089146,
+        1702.8770704111573
+      ],
+      "median": 1702.8770704111573
+    },
+    {
+      "layout": "native",
+      "distribution": "one-bucket",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1808.7803697841648,
+        1744.3618822460137,
+        1806.5033651454362
+      ],
+      "median": 1806.5033651454362
+    },
+    {
+      "layout": "counter",
+      "distribution": "spread",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        343.95599578330587,
+        337.78619649071015,
+        334.7764127265829
+      ],
+      "median": 337.78619649071015
+    },
+    {
+      "layout": "counter",
+      "distribution": "spread",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1405.270695396939,
+        1379.4296987931107,
+        1424.8831795276433
+      ],
+      "median": 1405.270695396939
+    },
+    {
+      "layout": "counter",
+      "distribution": "spread",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1526.9484644968065,
+        1388.4296079448275,
+        1485.9003730843235
+      ],
+      "median": 1485.9003730843235
+    },
+    {
+      "layout": "counter",
+      "distribution": "one-bucket",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        255.42712917899087,
+        260.126895466324,
+        252.9277180081758
+      ],
+      "median": 255.42712917899087
+    },
+    {
+      "layout": "counter",
+      "distribution": "one-bucket",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        547.5386887552241,
+        553.849008298735,
+        546.2438668489716
+      ],
+      "median": 547.5386887552241
+    },
+    {
+      "layout": "counter",
+      "distribution": "one-bucket",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        485.2303240595677,
+        494.5614829414197,
+        488.76561242612274
+      ],
+      "median": 488.76561242612274
+    }
+  ]
+}
