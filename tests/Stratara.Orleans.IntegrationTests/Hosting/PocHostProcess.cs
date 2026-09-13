@@ -139,7 +139,9 @@ public sealed class PocHostProcess : IAsyncDisposable
         {
             try
             {
-                await SendAsync("exit");
+                // "exit" is answered by the process ending, not by a reply line.
+                await _process.StandardInput.WriteLineAsync("exit");
+                await _process.StandardInput.FlushAsync();
                 using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 await _process.WaitForExitAsync(exitTimeout.Token);
             }

@@ -19,7 +19,9 @@ namespace Stratara.Orleans.Benchmarks;
 /// B2 of the expectations: the time from a commit returning to the read model holding the row, per
 /// event, for the bus push, the checkpoint catch-up woken by a hint, and the hybrid. Events are
 /// appended at a steady rate; the latency is the projection's own timestamp minus the appender's,
-/// both from this machine's clock. Three repetitions per path; every latency in the raw result.
+/// taken just before the commit, both from this machine's clock — so every path pays the same
+/// commit and none can be applied before its clock started. Three repetitions per path; every
+/// latency in the raw result.
 /// </summary>
 public static class ReadModelLatencyRun
 {
@@ -33,7 +35,7 @@ public static class ReadModelLatencyRun
     public static async Task<int> RunAsync(string evidenceRoot, int events, int ratePerSecond, int repetitions)
     {
         var run = Evidence.CreateRunDirectory(evidenceRoot, "read-model-latency");
-        await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).Build();
+        await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).WithCommand("-c", "max_connections=400").Build();
         await using var redis = new RedisBuilder(RedisFixture.Image).Build();
         await using var rabbit = new RabbitMqBuilder(RabbitMqFixture.Image).Build();
         await Task.WhenAll(postgres.StartAsync(), redis.StartAsync(), rabbit.StartAsync());
@@ -83,10 +85,11 @@ public static class ReadModelLatencyRun
                     scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(PocSessions.New());
                     var source = scope.ServiceProvider.GetRequiredService<IEventSource>();
                     await source.CreateAsync<Counter>(streamId, new CounterCreated(streamId));
+                    // The clock starts before the commit: the save returns only after the publish or the
+                    // nudge, and the push path can apply the row before that return.
+                    committedAt[streamId] = DateTimeOffset.UtcNow;
                     await source.SaveChangesAsync();
                 }
-
-                committedAt[streamId] = DateTimeOffset.UtcNow;
 
                 var due = started + (long)((i + 1) * interval.TotalSeconds * Stopwatch.Frequency);
                 var wait = TimeSpan.FromSeconds((due - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency);

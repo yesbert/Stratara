@@ -34,7 +34,7 @@ public static class AppendThroughputRun
     public static async Task<int> RunAsync(string evidenceRoot, int appends, int repetitions)
     {
         var run = Evidence.CreateRunDirectory(evidenceRoot, "append-throughput");
-        await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).Build();
+        await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).WithCommand("-c", "max_connections=400").Build();
         await postgres.StartAsync();
         Evidence.WriteEnvironment(run, new Dictionary<string, string> { ["postgres"] = PostgreSqlFixture.Image }, new { appends, repetitions, Writers, Layouts, Distributions });
 
@@ -51,6 +51,7 @@ public static class AppendThroughputRun
                         var database = $"b1_{layout}_{distribution.Replace('-', '_')}_{writers}_{repetition}";
                         var connectionString = new NpgsqlConnectionStringBuilder(postgres.GetConnectionString()) { Database = database }.ConnectionString;
                         var seconds = await MeasureAsync(layout, distribution, writers, appends, connectionString);
+                        NpgsqlConnection.ClearAllPools();
                         perRepetition.Add(appends / seconds);
                         Console.WriteLine($"{layout,-8} {distribution,-10} writers {writers,2} rep {repetition + 1}: {appends / seconds,8:F0} appends/s");
                     }
@@ -84,13 +85,12 @@ public static class AppendThroughputRun
                 if (distribution == "spread")
                 {
                     await events.CreateAsync<Counter>(streamId, new CounterCreated(streamId), ct);
+                    await events.SaveChangesAsync(ct);
                 }
                 else
                 {
                     await AppendWithRetryAsync(events, streamId, ct);
                 }
-
-                await events.SaveChangesAsync(ct);
             });
 
         return Stopwatch.GetElapsedTime(started).TotalSeconds;
@@ -98,7 +98,8 @@ public static class AppendThroughputRun
 
     /// <summary>
     /// Writers on one bucket collide on stream versions; a conflict is retried the way the command
-    /// worker retries it, and the retries are part of what the setting measures.
+    /// worker retries it — the whole append again — and the retries are part of what the setting
+    /// measures.
     /// </summary>
     private static async Task AppendWithRetryAsync(IEventSource events, Guid streamId, CancellationToken cancellationToken)
     {
@@ -115,11 +116,16 @@ public static class AppendThroughputRun
                     await events.CreateAsync<Counter>(streamId, new CounterCreated(streamId), cancellationToken);
                 }
 
+                await events.SaveChangesAsync(cancellationToken);
                 return;
             }
             catch (InvalidOperationException)
             {
                 // Two writers created the stream at once; append instead.
+            }
+            catch (ConcurrencyException)
+            {
+                // Another writer took this version; read the head again and append after it.
             }
         }
     }

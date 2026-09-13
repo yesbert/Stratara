@@ -210,9 +210,10 @@ internal static class ReadStoreRegistration
     public static IServiceCollection AddNpgsqlReadDbContextFactoryOn<TContext>(this IServiceCollection services, string connectionString)
         where TContext : DbContext
     {
+        var capped = new Npgsql.NpgsqlConnectionStringBuilder(connectionString) { MaxPoolSize = 40 }.ConnectionString;
         services.AddDbContextFactory<TContext>(options => options
             .UseSnakeCaseNamingConvention()
-            .UseNpgsql(connectionString, npgsql => npgsql.UseVector()));
+            .UseNpgsql(capped, npgsql => npgsql.UseVector()));
         return services;
     }
 }

@@ -13,6 +13,17 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        var code = await RunAsync(args);
+        Environment.Exit(code);
+        return code;
+    }
+
+    /// <summary>
+    /// The runs leave threads behind — child processes' readers, silo threads — that would keep the
+    /// process alive after the work is done; <see cref="Main"/> ends it explicitly.
+    /// </summary>
+    private static async Task<int> RunAsync(string[] args)
+    {
         if (args is ["--poc-host", var scenario])
         {
             return await PocHostEntry.RunAsync(scenario);

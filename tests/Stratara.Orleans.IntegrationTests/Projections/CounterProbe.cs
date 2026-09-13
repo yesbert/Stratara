@@ -55,21 +55,13 @@ public sealed class CounterViewProjection(
         Guard(@event.StreamId, @event.EventTypeName);
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        if (await context.CounterViews.AnyAsync(v => v.StreamId == @event.StreamId, cancellationToken))
-        {
-            return;
-        }
-
-        context.CounterViews.Add(new CounterView
-        {
-            StreamId = @event.StreamId,
-            Value = 0,
-            LastVersion = @event.Version,
-            AppliedByTenant = Tenant(),
-            Applications = 1,
-            AppliedAt = DateTimeOffset.UtcNow,
-        });
-        await context.SaveChangesAsync(cancellationToken);
+        await context.Database.ExecuteSqlAsync(
+            $"""
+             INSERT INTO poc_counter_view (stream_id, value, last_version, applied_by_tenant, applications, applied_at)
+             VALUES ({@event.StreamId}, 0, {@event.Version}, {Tenant()}, 1, {DateTimeOffset.UtcNow})
+             ON CONFLICT (stream_id) DO NOTHING
+             """,
+            cancellationToken);
     }
 
     public async Task HandleAsync(IEvent<CounterIncremented> @event, CancellationToken cancellationToken)
@@ -77,19 +69,19 @@ public sealed class CounterViewProjection(
         Guard(@event.StreamId, @event.EventTypeName);
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var view = await context.CounterViews.SingleOrDefaultAsync(v => v.StreamId == @event.StreamId, cancellationToken)
-                   ?? throw new PrecedingFactMissingException(@event.StreamId, @event.EventTypeName);
-        if (view.LastVersion >= @event.Version)
+        if (!await context.CounterViews.AsNoTracking().AnyAsync(v => v.StreamId == @event.StreamId, cancellationToken))
         {
-            return;
+            throw new PrecedingFactMissingException(@event.StreamId, @event.EventTypeName);
         }
 
-        view.Value += @event.Data.By;
-        view.LastVersion = @event.Version;
-        view.AppliedByTenant = Tenant();
-        view.Applications++;
-        view.AppliedAt = DateTimeOffset.UtcNow;
-        await context.SaveChangesAsync(cancellationToken);
+        await context.Database.ExecuteSqlAsync(
+            $"""
+             UPDATE poc_counter_view
+             SET value = value + {@event.Data.By}, last_version = {@event.Version}, applied_by_tenant = {Tenant()},
+                 applications = applications + 1, applied_at = {DateTimeOffset.UtcNow}
+             WHERE stream_id = {@event.StreamId} AND last_version < {@event.Version}
+             """,
+            cancellationToken);
     }
 
     private void Guard(Guid streamId, string eventTypeName)

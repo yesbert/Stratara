@@ -21,13 +21,12 @@ public sealed class CounterAuditProjection(IDbContextFactory<PocReadDbContext> c
     private async Task RecordAsync(IEvent @event, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        if (await context.CounterAudits.AnyAsync(a => a.StreamId == @event.StreamId && a.Version == @event.Version, cancellationToken))
-        {
-            return;
-        }
-
-        context.CounterAudits.Add(new CounterAudit { StreamId = @event.StreamId, Version = @event.Version, AppliedAt = DateTimeOffset.UtcNow });
-        await context.SaveChangesAsync(cancellationToken);
+        await context.Database.ExecuteSqlAsync(
+            $"""
+             INSERT INTO poc_counter_audit (stream_id, version, applied_at) VALUES ({@event.StreamId}, {@event.Version}, {DateTimeOffset.UtcNow})
+             ON CONFLICT (stream_id, version) DO NOTHING
+             """,
+            cancellationToken);
     }
 }
 

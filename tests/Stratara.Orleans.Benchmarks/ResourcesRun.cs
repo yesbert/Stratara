@@ -20,7 +20,7 @@ public static class ResourcesRun
     public static async Task<int> RunAsync(string evidenceRoot, int idleSeconds, int loadSeconds, int ratePerSecond)
     {
         var run = Evidence.CreateRunDirectory(evidenceRoot, "resources");
-        await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).Build();
+        await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).WithCommand("-c", "max_connections=400").Build();
         await using var redis = new RedisBuilder(RedisFixture.Image).Build();
         await using var rabbit = new RabbitMqBuilder(RabbitMqFixture.Image).Build();
         await Task.WhenAll(postgres.StartAsync(), redis.StartAsync(), rabbit.StartAsync());
