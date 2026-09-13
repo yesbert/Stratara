@@ -12,9 +12,13 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
+        <ProjectReference Include="..\Stratara.EventSourcing.EntityFrameworkCore\Stratara.EventSourcing.EntityFrameworkCore.csproj"/>
+        <ProjectReference Include="..\Stratara.Projections\Stratara.Projections.csproj"/>
+        <ProjectReference Include="..\Stratara.Resilience\Stratara.Resilience.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="Microsoft.Orleans.Reminders"/>
         <PackageReference Include="Microsoft.Orleans.Sdk"/>
         <PackageReference Include="Microsoft.Orleans.Server"/>
     </ItemGroup>

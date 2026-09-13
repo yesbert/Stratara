@@ -1,0 +1,64 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Stratara.Abstractions.Outbox;
+using Stratara.Abstractions.Persistence;
+using Stratara.Contracts.Messages;
+
+namespace Stratara.Orleans.Singleton;
+
+/// <summary>
+/// The outbox drain as singleton work: the same two passes the bus-hosted outbox worker makes —
+/// stored commands, then stored bundles, each as one bounded batch handed to its dispatcher — without
+/// the distributed lock, because the grain that runs it is the only one in the cluster that does.
+/// </summary>
+public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<OutboxDrainOptions> options) : ISingletonWork
+{
+    private readonly OutboxDrainOptions _options = options.Value;
+
+    /// <inheritdoc/>
+    public string Name => "outbox-drain";
+
+    /// <inheritdoc/>
+    public TimeSpan Period => _options.PollingInterval;
+
+    /// <inheritdoc/>
+    public async Task RunAsync(CancellationToken cancellationToken)
+    {
+        await DrainAsync<CommandEnvelope, ICommandOutboxDispatcher>(
+            (dispatcher, entries, ct) => dispatcher.EnqueueOutboxEntriesAsync(entries, ct), cancellationToken);
+        await DrainAsync<EventBundle, IEventBundleOutboxDispatcher>(
+            (dispatcher, entries, ct) => dispatcher.EnqueueOutboxEntriesAsync(entries, ct), cancellationToken);
+    }
+
+    private async Task DrainAsync<TMessage, TDispatcher>(
+        Func<TDispatcher, IReadOnlyList<OutboxEntry>, CancellationToken, Task> dispatch,
+        CancellationToken cancellationToken)
+        where TDispatcher : notnull
+    {
+        using var scope = scopeFactory.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        var repository = unitOfWork.CreateOutboxRepository(transaction);
+
+        var entries = await repository.GetManyAsync<TMessage>(_options.BatchSize, cancellationToken);
+        if (entries.Count == 0 || cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await dispatch(scope.ServiceProvider.GetRequiredService<TDispatcher>(), entries, cancellationToken);
+    }
+}
+
+/// <summary>Settings for <see cref="OutboxDrainWork"/>.</summary>
+public sealed class OutboxDrainOptions
+{
+    /// <summary>The configuration section the options bind from.</summary>
+    public const string SectionName = "Orleans:OutboxDrain";
+
+    /// <summary>How often the drain runs.</summary>
+    public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How many stored messages of each kind one run hands to its dispatcher.</summary>
+    public int BatchSize { get; set; } = 100;
+}

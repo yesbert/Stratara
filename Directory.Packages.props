@@ -102,6 +102,7 @@
   <ItemGroup Label="Orleans (proof of concept)">
     <PackageVersion Include="Microsoft.Orleans.Clustering.AdoNet" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.GrainDirectory.Redis" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.Server" Version="10.3.1" />

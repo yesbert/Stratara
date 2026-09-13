@@ -22,6 +22,11 @@
         <PackageReference Include="coverlet.collector"/>
     </ItemGroup>
     <ItemGroup>
+        <None Update="OrleansSql/*.sql">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+    <ItemGroup>
         <ProjectReference Include="../../src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj"/>
         <ProjectReference Include="../../src/Stratara.Orleans/Stratara.Orleans.csproj"/>
     </ItemGroup>

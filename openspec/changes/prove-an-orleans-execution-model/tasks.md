@@ -50,7 +50,7 @@
 
 ## 5. Owner-checked durable timer
 
-- [ ] 5.1 Implement the timer port over reminders, with the owner check, self-unregistration and
+- [x] 5.1 Implement the timer port over reminders, with the owner check, self-unregistration and
       cancellation in the ending turn (D6); no `IRemindable` on a public type. Verify:
       `tests/Stratara.Orleans.IntegrationTests/Timers/OwnerCheckedTimerTests.cs` — owner removed while due.
 - [ ] 5.2 Hard-kill test: a separately started host process with open timers is killed and restarted.
@@ -59,7 +59,7 @@
 
 ## 6. Singleton work
 
-- [ ] 6.1 Run a unit of work once per cluster in one grain; use the outbox drain as the example. Verify:
+- [x] 6.1 Run a unit of work once per cluster in one grain; use the outbox drain as the example. Verify:
       `tests/Stratara.Orleans.IntegrationTests/Singleton/SingletonWorkTests.cs` — two silos, one execution
       per tick.
 
