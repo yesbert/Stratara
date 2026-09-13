@@ -107,7 +107,7 @@
 
 ## 12. Findings pinned
 
-- [ ] 12.1 Append the same stream version twice on the SQLite test host and record which exception
+- [x] 12.1 Append the same stream version twice on the SQLite test host and record which exception
       surfaces (SF-003). Verify: a test in `tests/Stratara.Infrastructure.Tests/EventSourcing/` asserting the
       observed behaviour, named for what it pins.
 
