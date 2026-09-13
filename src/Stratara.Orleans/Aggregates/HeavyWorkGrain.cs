@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
+using Polly;
+using Polly.Retry;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -45,15 +47,20 @@ internal sealed class HeavyWorkGrain(IServiceScopeFactory scopeFactory, IOptions
 {
     public const int MaxLocalWorkers = 8;
 
-    private readonly TimeSpan _permitRetry = options.Value.PermitRetry;
+    private readonly ResiliencePipeline<bool> _acquirePermit = new ResiliencePipelineBuilder<bool>()
+        .AddRetry(new RetryStrategyOptions<bool>
+        {
+            ShouldHandle = new PredicateBuilder<bool>().HandleResult(false),
+            MaxRetryAttempts = int.MaxValue,
+            BackoffType = DelayBackoffType.Constant,
+            Delay = options.Value.PermitRetry,
+        })
+        .Build();
 
     public async Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope)
     {
         var permits = GrainFactory.GetGrain<IHeavyWorkPermitGrain>(0);
-        while (!await permits.TryAcquireAsync())
-        {
-            await Task.Delay(_permitRetry);
-        }
+        await _acquirePermit.ExecuteAsync(async _ => await permits.TryAcquireAsync());
 
         try
         {

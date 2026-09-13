@@ -75,9 +75,11 @@ internal sealed class ProjectionGrain(
 
     private readonly ProjectionGrainOptions _options = options.Value;
     private string _projection = string.Empty;
-    private StoreReaderLoop _loop = null!;
+    private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
     private bool _paused;
+
+    private StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
@@ -100,9 +102,9 @@ internal sealed class ProjectionGrain(
 
     public Task NudgeAsync() => CatchUpAsync();
 
-    public Task<int> CatchUpAsync() => _paused || replayState.IsReplayActive ? Task.FromResult(0) : _loop.CatchUpAsync(ApplyEntryAsync);
+    public Task<int> CatchUpAsync() => _paused || replayState.IsReplayActive ? Task.FromResult(0) : Loop.CatchUpAsync(ApplyEntryAsync);
 
-    public Task<long> PositionAsync() => _loop.PositionAsync();
+    public Task<long> PositionAsync() => Loop.PositionAsync();
 
     public Task PauseAsync()
     {

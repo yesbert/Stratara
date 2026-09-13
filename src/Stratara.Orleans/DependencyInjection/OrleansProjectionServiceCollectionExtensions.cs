@@ -139,7 +139,9 @@ public static class OrleansProjectionServiceCollectionExtensions
             return descriptor.ImplementationFactory(services);
         }
 
-        return ActivatorUtilities.CreateInstance(services, descriptor.ImplementationType!);
+        var implementationType = descriptor.ImplementationType
+                                 ?? throw new InvalidOperationException($"The registration of {descriptor.ServiceType} names no implementation.");
+        return ActivatorUtilities.CreateInstance(services, implementationType);
     }
 
     private static void AddStoreReaderCore<TReadContext>(IServiceCollection services, bool hybrid) where TReadContext : DbContext

@@ -386,6 +386,31 @@ in its own change, because the PoC's constraint 3 needs the same port for its ow
 - **[Scope]** Six blocks, four readers and a benchmark suite is a lot for a proof of concept. → Blocks are
   built only as far as their test needs; D10 stops early on the failures that decide the question.
 
+**Known limitations of the proof-of-concept code**, found in the pre-merge review on 2026-09-13 and
+left as they are because the code is evidence, not a package. A change that ships the execution
+model must address each:
+
+- *No diagnostics.* `Stratara.Orleans` raises no log event and no metric. An entry that keeps failing
+  in `StoreReaderLoop.ApplyAsync` stalls its partition silently; the only signal is a checkpoint that
+  does not advance. A shipped package logs it with an event id from `LogEvents` and counts it.
+- *Heavy-work permits are a counter without a lease* (`HeavyWorkPermitGrain`). A worker silo that
+  dies between acquire and release leaks a permit for the life of the permit grain's activation;
+  under repeated worker crashes the cluster-wide limit shrinks to zero. A lease with an expiry, or a
+  holder list the permit grain reconciles against cluster membership, is required.
+- *A resumed intent has no bound.* `OrleansCommandDispatcher.ResumeAsync` hands every unfinished
+  intent back to its grain on each drain pass; an intent whose handler always throws is retried
+  forever and, because the hand-over is awaited, aborts the rest of the pass. The bounded retry and
+  dead-letter of `dead-letter-what-a-handler-cannot-take` apply here too.
+- *Reader and saga identities are simple type names.* Checkpoints are keyed on
+  `reader.GetType().Name` and saga state streams on the saga's simple name. Two types with the same
+  name in different namespaces collide, and renaming a reader class orphans every checkpoint.
+  A shipped package names them explicitly.
+- *The grain starters are hosted services.* `StoreReaderGrainStarter` and the singleton-work
+  starter make grain calls from `IHostedService.StartAsync`; that the silo is up by then depends on
+  `UseOrleans` being registered first. Orleans' own hook is a startup task on the silo lifecycle.
+- *Cancellation does not reach the store.* `StoreReaderLoop`, `DurableTimers` and the saga process
+  grain accept tokens and drop them before the reader and checkpoint calls.
+
 ## Migration Plan
 
 Nothing is deployed and nothing is published, so there is nothing to roll back: removing the new

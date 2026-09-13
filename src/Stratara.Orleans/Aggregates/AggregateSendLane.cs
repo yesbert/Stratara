@@ -39,28 +39,30 @@ public sealed class AggregateSendLane
         return RunAsync(previous, prepare, issue, completed);
     }
 
+    /// <summary>
+    /// Waits for the previous call to complete — however it completed, because an earlier call that
+    /// failed does not hold back the ones after it — then prepares and issues this one. The lane's
+    /// tail is released when the call completes, or at once if it could not be issued.
+    /// </summary>
     private static async Task<Task> RunAsync(Task previous, Task<AggregateCommandEnvelope> prepare, Func<AggregateCommandEnvelope, Task> issue, TaskCompletionSource completed)
     {
-        try
-        {
-            await previous;
-        }
-        catch (Exception)
-        {
-            // An earlier call that failed does not hold back the ones after it.
-        }
+        await Task.WhenAny(previous);
 
+        Task? call = null;
         try
         {
             var envelope = await prepare;
-            var call = issue(envelope);
-            _ = call.ContinueWith(_ => completed.TrySetResult(), TaskContinuationOptions.ExecuteSynchronously);
-            return call;
+            call = issue(envelope);
         }
-        catch (Exception)
+        finally
         {
-            completed.TrySetResult();
-            throw;
+            if (call is null)
+            {
+                completed.TrySetResult();
+            }
         }
+
+        _ = call.ContinueWith(_ => completed.TrySetResult(), TaskContinuationOptions.ExecuteSynchronously);
+        return call;
     }
 }

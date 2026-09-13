@@ -37,6 +37,6 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
 
         return entries.Count == 0
             ? CommittedBatch.Empty(afterPosition)
-            : new CommittedBatch([.. entries.Select(e => new CommittedEntry(e.Entry, e.Position!.Value))], entries[^1].Position!.Value);
+            : new CommittedBatch([.. entries.Select(e => new CommittedEntry(e.Entry, e.Position.GetValueOrDefault()))], entries[^1].Position.GetValueOrDefault());
     }
 }

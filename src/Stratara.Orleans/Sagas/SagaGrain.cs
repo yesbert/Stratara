@@ -57,8 +57,10 @@ internal sealed class SagaGrain(
     private const string KeepAliveReminder = "keep-alive";
 
     private readonly SagaGrainOptions _options = options.Value;
-    private StoreReaderLoop _loop = null!;
+    private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
+
+    private StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
@@ -80,9 +82,9 @@ internal sealed class SagaGrain(
 
     public Task NudgeAsync() => CatchUpAsync();
 
-    public Task<int> CatchUpAsync() => replayState.IsReplayActive ? Task.FromResult(0) : _loop.CatchUpAsync(DispatchEntryAsync);
+    public Task<int> CatchUpAsync() => replayState.IsReplayActive ? Task.FromResult(0) : Loop.CatchUpAsync(DispatchEntryAsync);
 
-    public Task<long> PositionAsync() => _loop.PositionAsync();
+    public Task<long> PositionAsync() => Loop.PositionAsync();
 
     Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => CatchUpAsync();
 
