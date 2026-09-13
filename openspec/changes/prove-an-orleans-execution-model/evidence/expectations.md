@@ -1,7 +1,11 @@
 # Expectations — registered before the first run
 
-> **Confirmed by the owner:** _pending_ (task 2.2). No file under `evidence/raw/` may exist before this
-> line carries a date.
+> **Confirmed by the owner:** 2026-09-13, as written. No file under `evidence/raw/` existed before this
+> line carried a date. Confirmed with two things known and left unchanged: Orleans promises no message
+> order (T3 holds through the scoped send lane, see design D5), and a silo restarted on the same
+> endpoint waits for its predecessor to be declared dead, so the kill-and-restart runs take several
+> times the durations registered below (T5 took 23 minutes). T1 was approved at 20 kills per path with
+> that in mind; the benchmarks were approved as registered.
 
 Every measurement below states what it expects and what would falsify it. A number written after a run
 is not a threshold; if a run shows that a threshold was badly chosen, the run stands as recorded and the

@@ -21,11 +21,11 @@
 
 ## 2. Pre-register before any run
 
-- [ ] 2.1 Write `evidence/expectations.md`: for every correctness test and every benchmark in `design.md`,
+- [x] 2.1 Write `evidence/expectations.md`: for every correctness test and every benchmark in `design.md`,
       the expected result, a concrete falsification threshold, iteration counts, the usable-throughput
       threshold for the portable counter (D10), and the expected wall-clock duration of each run.
       Verify: committed in its own commit, before any file under `evidence/raw/` exists.
-- [ ] 2.2 The owner confirms the thresholds. Verify: the confirmation date is written at the top of
+- [x] 2.2 The owner confirms the thresholds. Verify: the confirmation date is written at the top of
       `evidence/expectations.md` in the same or a later commit, before the first raw result.
 
 ## 3. One host (stop criterion)
