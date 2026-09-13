@@ -39,7 +39,7 @@ against the source on 2026-09-13.
 | C3 | SF-001: the archived design states the unbounded requeue at lines 128-132 | The passage is lines 127-133 of `2026-09-02-let-no-fact-overtake-its-beginning/design.md`; the quoted sentence is lines 129-131. The same design (line 27) already recorded "Everything else is `requeue=false`" and left the transports out of scope deliberately. |
 | C4 | SF-001: the failure is recoverable on Azure Service Bus | Confirmed, and the asymmetry is wider: Azure Service Bus dead-letters a failure (`AzureServiceBusBus.cs:101`) and *abandons* a concurrency conflict (line 96), which the broker bounds by its maximum delivery count. RabbitMQ neither dead-letters the one nor bounds the other. |
 | C5 | SF-003: `EventSource` recognises a conflict through `PostgresException` | Overstated. `IsConcurrencyOrUniqueViolation` (`EventSource.cs:182-208`) also recognises `ConcurrencyConflictException` and `DbUpdateConcurrencyException`, which are provider-neutral. The claim holds for the case that matters: an append is an insert, a duplicate version is a unique violation, and only the PostgreSQL branch (line 200) recognises that. |
-| C6 | SF-003: the SQLite behaviour is unverified | Still unverified. The only test (`tests/Stratara.Infrastructure.Tests/EventSourcing/EventSourceTests.cs:274`) throws a mocked `PostgresException`; no test appends a duplicate version against a real provider other than PostgreSQL. |
+| C6 | SF-003: the SQLite behaviour is unverified | Was unverified: the only test (`tests/Stratara.Infrastructure.Tests/EventSourcing/EventSourceTests.cs:274`) throws a mocked `PostgresException`. **Verified on 2026-09-13 by task 12.1**: `EventSourceSqliteConcurrencyTests` appends the same version twice on the SQLite host and gets a `DbUpdateException` over a UNIQUE violation, not `ConcurrencyException`. The finding holds. |
 | C7 | Hard requirement: the event store "is written against EF Core and must stay replaceable" | Not a current property. The store package takes a hard dependency on the PostgreSQL provider, and no spec requires provider neutrality — `event-sourcing-store` requires only that the unique constraint exists. Database neutrality is therefore a design goal for new code in this change, not a guarantee to preserve. |
 | C8 | §5: the replay worker is unaffected by commit order because publication is suppressed | The replay reader can skip a late-committing entry like any "after sequence" reader. It is covered because that entry's bundle is suppressed into durable storage and drained after the replay (`EventBundleOutboxDispatcher.cs:44`, `:59`). The cover only reaches hosts that share the replay coordination state (`projections` → *Publication is suppressed while a replay is active*). |
 | C9 | Consumer file paths and consumer names as evidence | Not verifiable from here, and not allowed in this repository: Stratara never references a consumer application, and no file here may point outside the repository. This change names no consumer and carries the substance instead. |
@@ -130,13 +130,24 @@ the highest returned position can still commit later. Implementations, in build 
 |---|---|---|
 | Naive | `SequenceNumber > checkpoint` | Baseline; expected to fail the interleaving test |
 | Safety window | only entries older than a delay | Baseline; no guarantee under long transactions |
-| Portable counter | a position row per bucket, incremented inside the append transaction | Mandatory fallback and yardstick; any relational database |
-| PostgreSQL native | transaction id (`xid8`) per entry, read only below `pg_snapshot_xmin(pg_current_snapshot())` | First production candidate |
+| Portable counter | a position row per partition, incremented and locked inside the append transaction | Mandatory fallback and yardstick; any relational database |
+| PostgreSQL native | transaction id (`xid8`) per entry; **ordered by it**, read only below `pg_snapshot_xmin(pg_current_snapshot())` | First production candidate |
 | SQL Server native | `rowversion` and `MIN_ACTIVE_ROWVERSION()` | Only if time allows |
 
-The portable counter orders **per bucket**: the counter row's lock serialises appends in one bucket,
-which is what makes commit order equal position order, and is also its throughput ceiling. A reader
-built on it therefore checkpoints per bucket, which constrains Q2.
+The portable counter orders **per partition** — a configurable fold of the 4096 buckets, 16 by
+default — not per bucket: the counter row's lock serialises appends in one partition, which is what
+makes commit order equal position order, and is also its throughput ceiling. A reader built on it
+checkpoints per partition, which is the unit Q2 settles on. In the proof of concept the counter is
+maintained by an EF Core save interceptor on the write context, so the shipped write path is untouched;
+a shipped version would do the same from the unit of work.
+
+*Found while building the native reader (2026-09-13):* the transaction id and the sequence number are
+assigned in two separate atomic steps, so a transaction can hold the **lower id and the higher sequence
+number**. A reader that orders by sequence number and merely filters by `xmin` still skips in that
+case. The native reader therefore uses the transaction id as its position and orders by it, with the
+sequence number only as the order within one transaction — and it never ends a batch in the middle of
+one transaction's entries. The hand-off's sketch (§5) did not say this; the test in task 4.2 would
+have.
 
 Both non-baseline implementations need store columns the shipped model does not have. They live in a
 PoC-only model extension used by the integration tests. Shipping one changes `event-sourcing-store` →
@@ -186,6 +197,19 @@ and applies through the same projection manager the replay worker uses. Conseque
 - *discovery by assembly* and *recorded session*: reused, not reimplemented.
 
 A commit hint wakes the grain (Q3); a timer is the safety net.
+
+*Found while building (2026-09-13):* the framework's projection handler opens no transaction — each
+projection writes inside its own `HandleAsync` however it chooses, through the read unit of work,
+its own context, or memory. A checkpoint "in the read model's transaction" therefore cannot be
+written generically. The grain writes it after the batch, in a transaction of its own, and the gap
+between the two is covered by the guarantee the `projections` capability already gives: a projection
+applies an event whose effect is already present without failing. That settles Q2's second half and
+is the same at-least-once contract the bus path has always had.
+
+The projection services and the two bus-fed workers are registered by one call
+(`AddProjectionWorker`), and the services are internal. The grains take the same registration and
+remove the two workers by name — the consumer's migration is the composite it already calls plus one
+call. A shipped version splits that registration; it is a productisation item, not a PoC concern.
 
 ### D9 — Heavy work records intent before hand-off and completion after
 
@@ -350,10 +374,12 @@ build does not start from nothing.
    stream keyed by correlation — it reuses rehydration, concurrency and the stream as truth. The
    timer-only variant is sketched for sagas whose state is fully derivable. *Decided by:* task 9.
 2. **One projection grain per projection, or per projection and bucket, and how do a checkpoint and the
-   read-model write stay atomic?** *Leaning:* per projection and bucket *partition* (a configurable number
-   of bucket ranges), because the portable counter orders per bucket and 4096 grains per projection is too
-   many; the checkpoint row is written in the read store's transaction, and a projection that writes
-   outside that store relies on idempotent apply. *Decided by:* tasks 4 and 8, and the rebuild benchmark.
+   read-model write stay atomic?** *Decided 2026-09-13 by tasks 4.1 and 8.1:* per projection and
+   **partition** — a configurable fold of the buckets, 16 by default — because the portable counter
+   orders per partition and 4096 grains per projection is too many. The checkpoint is **not** in the
+   read model's transaction: the projection handler has no transaction to join (see D8), so the grain
+   writes the checkpoint after the batch and relies on idempotent apply for the gap. The rebuild
+   benchmark still decides whether 16 partitions is the right default.
 3. **The wake-up hint after a commit.** A database notification, a light bus message, or a grain call from
    the event source. *Leaning:* a grain call inside one cluster, a database notification as a
    provider-specific option behind a port, a bus message only across clusters — always with the timer as

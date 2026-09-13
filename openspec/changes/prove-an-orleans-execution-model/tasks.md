@@ -37,14 +37,15 @@
 
 ## 4. Committed position reader
 
-- [ ] 4.1 Define the port and the PoC-only store model extension (D4). Verify: the shipped
+- [x] 4.1 Define the port and the PoC-only store model extension (D4). Verify: the shipped
       `EventStreamEntryConfiguration.cs` is unchanged in the diff.
-- [ ] 4.2 Implement the naive and the safety-window readers. Verify:
+- [x] 4.2 Implement the naive and the safety-window readers. Verify:
       `tests/Stratara.Orleans.IntegrationTests/CommitOrder/InterleavedCommitTests.cs` shows the naive reader
       skipping an entry — if it does not, the test does not provoke the interleaving and is fixed first.
-- [ ] 4.3 Implement the portable counter reader. Verify: the same test passes for it over the
+- [x] 4.3 Implement the portable counter reader. Verify: the same test passes for it over the
       pre-registered iteration count.
-- [ ] 4.4 Implement the PostgreSQL-native reader. Verify: the same test passes for it.
+- [x] 4.4 Implement the PostgreSQL-native reader. Verify: the same test passes for it. Also passes the
+      reversed-transaction-id case the hand-off's sketch would have failed (see design D4).
 - [ ] 4.5 Optional — SQL Server native, only once every other task in groups 1-13 is done. Verify: the
       same test on a SQL Server container.
 
