@@ -23,6 +23,7 @@
     <Project Path="src/Stratara.Identity.Core/Stratara.Identity.Core.csproj" />
     <Project Path="src/Stratara.Infrastructure/Stratara.Infrastructure.csproj" />
     <Project Path="src/Stratara.Mediator/Stratara.Mediator.csproj" />
+    <Project Path="src/Stratara.Orleans/Stratara.Orleans.csproj" />
     <Project Path="src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj" />
     <Project Path="src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj" />
     <Project Path="src/Stratara.Projections/Stratara.Projections.csproj" />
@@ -63,6 +64,9 @@
     <Project Path="tests/Stratara.Identity.Core.Tests/Stratara.Identity.Core.Tests.csproj" />
     <Project Path="tests/Stratara.Infrastructure.Tests/Stratara.Infrastructure.Tests.csproj" />
     <Project Path="tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj" />
+    <Project Path="tests/Stratara.Orleans.Benchmarks/Stratara.Orleans.Benchmarks.csproj" />
+    <Project Path="tests/Stratara.Orleans.IntegrationTests/Stratara.Orleans.IntegrationTests.csproj" />
+    <Project Path="tests/Stratara.Orleans.Tests/Stratara.Orleans.Tests.csproj" />
     <Project Path="tests/Stratara.Outbox.RabbitMQ.Tests/Stratara.Outbox.RabbitMQ.Tests.csproj" />
     <Project Path="tests/Stratara.Projections.Tests/Stratara.Projections.Tests.csproj" />
     <Project Path="tests/Stratara.Sagas.Tests/Stratara.Sagas.Tests.csproj" />

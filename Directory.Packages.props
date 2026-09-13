@@ -7,6 +7,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="5.9.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.9.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
@@ -96,6 +97,17 @@
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
   </ItemGroup>
+  <!-- Orleans: referenced only by the non-packable proof-of-concept projects of change
+       prove-an-orleans-execution-model. One version for every Orleans package. -->
+  <ItemGroup Label="Orleans (proof of concept)">
+    <PackageVersion Include="Microsoft.Orleans.Clustering.AdoNet" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.GrainDirectory.Redis" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Server" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.TestingHost" Version="10.3.1" />
+  </ItemGroup>
   <!-- SourceLink: embeds GitHub source URLs into .pdb so .snupkg-Symbole zurück auf
        Source mappen (debugger Step-Into in den Stratara-Quellcode). Wired up in
        Directory.Build.props als PackageReference mit PrivateAssets=all. -->
@@ -112,6 +124,7 @@
          version affected by GHSA-q939-rpr3-3284 (NU1903). Drop the pin once Testcontainers
          requires >= 2026.0.0 itself. -->
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.ServiceBus" Version="4.14.0" />
