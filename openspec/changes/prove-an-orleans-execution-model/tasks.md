@@ -30,7 +30,7 @@
 
 ## 3. One host (stop criterion)
 
-- [ ] 3.1 Register an existing Stratara worker composite and an Orleans silo with a Redis grain directory
+- [x] 3.1 Register an existing Stratara worker composite and an Orleans silo with a Redis grain directory
       in one host, in both orders. Verify: `tests/Stratara.Orleans.IntegrationTests/Hosting/CoHostingTests.cs`
       starts the host, dispatches a command through `IMediator` and calls a grain, in each order — with no
       change to any file under `src/` outside `src/Stratara.Orleans/`.
