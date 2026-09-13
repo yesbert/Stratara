@@ -168,6 +168,25 @@ session. Its turn replaces the bucket lock. Two shapes are built:
 
 *Rejected: implementing `ICommandOutboxDispatcher` with a bare grain call.* Silent change of semantics.
 
+*Found while building (2026-09-13):* **Orleans makes no promise about message order.** The
+`[Unordered]` attribute is obsolete in Orleans 10 with the note "message ordering is not guaranteed
+regardless of whether this attribute is used". The first run of the arrival-order test reordered 420
+of 500 pairs; ordering the *sends* did not help (425 of 500), because calls in flight at the same
+time are delivered in any order. The hand-off's premise — "ordering across two quick commands is
+preserved, which a competing-consumer queue does not promise" — is wrong for Orleans as much as for
+the queue: the grain's turn serialises, it does not order. What holds is what the caller enforces:
+the proof of concept adds a scoped *send lane* that issues each call to an aggregate only after the
+previous call to it from the same scope has completed, established synchronously at initiation. The
+promise is per scope — one request, one handler, one unit of work — and it costs one round trip per
+command on one aggregate, which is what the grain would take anyway. Across scopes nothing is
+promised, as before. On the durable-intent shape a resumed intent keeps its order because the drain
+reads intents in the order they were recorded.
+
+*Also found:* a test assembly cannot host the process the tests kill. Running the host from a module
+initializer deadlocks — the initializer holds the module lock, and the first continuation that
+touches the module on another thread waits for it forever. The killed-and-restarted host is the
+benchmark executable in a `--poc-host` mode, one process the tests start, drive over stdin and kill.
+
 ### D6 — The durable timer is an owner-checked reminder behind a Stratara port
 
 A timer is registered with an owner id and a purpose. When it fires, the handler checks the owner first

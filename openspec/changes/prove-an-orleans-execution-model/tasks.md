@@ -54,9 +54,11 @@
 - [x] 5.1 Implement the timer port over reminders, with the owner check, self-unregistration and
       cancellation in the ending turn (D6); no `IRemindable` on a public type. Verify:
       `tests/Stratara.Orleans.IntegrationTests/Timers/OwnerCheckedTimerTests.cs` — owner removed while due.
-- [ ] 5.2 Hard-kill test: a separately started host process with open timers is killed and restarted.
+- [x] 5.2 Hard-kill test: a separately started host process with open timers is killed and restarted.
       Verify: `tests/Stratara.Orleans.IntegrationTests/Timers/HardKillTimerTests.cs` — timers fire once for
-      existing owners and never for removed ones.
+      existing owners and never for removed ones. Passed 10 of 10 kills; the run took 23 minutes, not
+      the registered 5 — a silo restarted on the same endpoint waits for its predecessor to be declared
+      dead before it serves reminders (noted for the results).
 
 ## 6. Singleton work
 
@@ -66,17 +68,19 @@
 
 ## 7. Aggregate grain
 
-- [ ] 7.1 Synchronous shape: an `IAggregateScopedCommand` executed in a grain keyed by aggregate id,
+- [x] 7.1 Synchronous shape: an `IAggregateScopedCommand` executed in a grain keyed by aggregate id,
       through the unchanged handler under the recorded session (D5). Verify:
       `tests/Stratara.Orleans.IntegrationTests/Aggregates/ArrivalOrderTests.cs` — approve then cancel, in
-      arrival order every iteration.
-- [ ] 7.2 Durable-intent shape behind `ICommandOutboxDispatcher`, resumed by the timer. Verify:
+      arrival order every iteration. Passed only once the send lane chained on completion: Orleans
+      promises no message order (see design D5).
+- [x] 7.2 Durable-intent shape behind `ICommandOutboxDispatcher`, resumed by the timer. Verify:
       `tests/Stratara.Orleans.IntegrationTests/Aggregates/DurableIntentTests.cs` — the host is killed after
-      `EnqueueCommandAsync` returns and before the append; the command is applied after restart.
+      `EnqueueCommandAsync` returns and before the append; the command is applied after restart. Resumed
+      by the singleton outbox drain rather than a per-intent timer: the outbox row is the intent.
 
 ## 8. Projection grain
 
-- [ ] 8.1 A grain per projection and bucket partition, reading through the port, applying through the
+- [x] 8.1 A grain per projection and bucket partition, reading through the port, applying through the
       existing projection pipeline, with the checkpoint in the read store's transaction and a commit hint
       plus a timer (D8, Q2, Q3). Verify: `tests/Stratara.Orleans.IntegrationTests/Projections/` covers
       idempotent apply, a genuine conflict failing, a missing prerequisite not advancing the checkpoint,
@@ -87,14 +91,14 @@
 
 ## 9. Saga grain
 
-- [ ] 9.1 Run existing stateless `ISaga` classes unchanged in a grain; add state, correlation and timeouts
+- [x] 9.1 Run existing stateless `ISaga` classes unchanged in a grain; add state, correlation and timeouts
       through an additional interface, with state in its own stream (Q1). Verify:
       `tests/Stratara.Orleans.IntegrationTests/Sagas/` — an unchanged saga from `tests/Stratara.Sagas.Tests`
       passes, and a stateful saga resumes its timeout after a hard kill. `ISaga.cs` is unchanged in the diff.
 
 ## 10. Heavy-work grain
 
-- [ ] 10.1 Bounded `[StatelessWorker]` grain with intent before hand-off and completion after, and a
+- [x] 10.1 Bounded `[StatelessWorker]` grain with intent before hand-off and completion after, and a
       cluster-wide permit grain (D9, Q4). Verify:
       `tests/Stratara.Orleans.IntegrationTests/HeavyWork/HeavyBurstTests.cs` — interactive latency under a
       sustained burst stays within its pre-registered range; a crash between intent and completion is
@@ -102,7 +106,7 @@
 
 ## 11. Shutdown and reset
 
-- [ ] 11.1 One reset clears timers, membership and checkpoints deterministically. Verify:
+- [x] 11.1 One reset clears timers, membership and checkpoints deterministically. Verify:
       `tests/Stratara.Orleans.IntegrationTests/Hosting/ResetTests.cs` — after reset, no reminder row,
       membership row or checkpoint row remains, and a restart fires nothing.
 

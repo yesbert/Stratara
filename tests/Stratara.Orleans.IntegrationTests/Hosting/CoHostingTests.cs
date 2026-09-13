@@ -79,7 +79,8 @@ public sealed class CoHostingTests(PostgreSqlFixture postgres, RedisFixture redi
         builder.AddCommandWorkerServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
-            .AddCommandHandlersFromAssemblyContaining<CoHostingTests>()
+            .AddScoped<ICommandHandler<PingCommand>, PingCommandHandler>()
+            .AddTrustedType<PingCommand>()
             .AddAggregatesFromAssemblyContaining<CoHostingTests>()
             .AddSingleton<CommandLog>();
     }
