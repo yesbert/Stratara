@@ -98,6 +98,15 @@ against the default are two-thirds gone with one registration choice (the direct
 entirely for the rebuild; the operational item is new and sharper. That is the owner's call, with
 this file and the archived one side by side.
 
+**Decided by the owner, 2026-09-14:** the Orleans execution model becomes the **recommended** one.
+The archived recommendation of 2026-09-13 stands as the record of that day; from here on a change
+that ships the execution model — packable projects, the store schema the readers need, the spec
+deltas, the migration and operations notes on the documentation site — carries the recommendation
+into the published surface. The condition the owner attached: the hard-death finding and its
+answers are documented for consumers, which `operations-note.md` in this directory now does and the
+shipping change must publish. The bus workers stay supported and undeprecated until that change
+says otherwise.
+
 ## Still open after this change
 
 - B2's p99 is not settled: one run of two inside the bound. A third run, or a longer one at the same

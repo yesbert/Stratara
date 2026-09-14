@@ -71,6 +71,10 @@
 
 ## 6. Close
 
+- [x] 6.0 `evidence/operations-note.md` states the hard-death finding with its three answers, the
+      directory per grain type, the profile, and the bus path's cost since 4.0.4. Verify: the file
+      cites the raw directories for each claim.
+
 - [x] 6.1 Every integration test of the archived change is green on the final code:
       `dotnet test tests/Stratara.Orleans.IntegrationTests`. Verify: the run's summary in `results.md`.
 - [x] 6.2 `evidence/results.md` states every number against its archived baseline and its expectation,

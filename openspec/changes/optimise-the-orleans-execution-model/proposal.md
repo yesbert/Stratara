@@ -35,6 +35,9 @@ asked again until they are.
 - The benchmark silo gets a production-shaped profile — default reminder refresh, default drain
   interval — so that it pays what a deployed silo pays and not what the kill-and-restart tests
   need; the tests keep their fast profile.
+- The findings an operator needs — a silo that dies hard and a replacement on another address,
+  the directory per grain type, the profile, what the bus path costs since 4.0.4 — are written up
+  in `evidence/operations-note.md`, beside the archived migration note.
 - Every measurement of the archived change that named one of these costs is re-run with the bus
   path as the in-run control, its raw output committed in this change's `evidence/`, and its result
   compared with the archived number. Expectations are written before the first run.
