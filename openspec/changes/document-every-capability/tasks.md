@@ -5,12 +5,12 @@
 
 ## 1. Documentation tests first (D3, D4)
 
-- [ ] 1.1 The token boundary in `DocumentationCorpus.MentionsToken` refuses a dot followed by an
+- [x] 1.1 The token boundary in `DocumentationCorpus.MentionsToken` refuses a dot followed by an
       identifier character. Verify: a new case in `ConfigurationSectionNameTests` asserts
       `SessionContext.TenantId` does not name the section and `"SessionContext": {` does; the test run
       lists every section that is now reported as undocumented, and each is added to the task that
       documents it below.
-- [ ] 1.2 A new test class checks framework-shaped type names in inline code against the published
+- [x] 1.2 A new test class checks framework-shaped type names in inline code against the published
       assemblies, the assemblies beside the test, and the page's own fenced blocks, with a commented
       allowlist. Verify: a case asserts that `SagaOrchestrationWorker`, `EventProjectionWorker` and
       `OptimisticConcurrencyException` fail and `TestSessionContextProvider` passes; the class is green

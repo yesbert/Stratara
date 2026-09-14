@@ -53,7 +53,7 @@ That's it — the handler is now resolved per-scope and dispatched whenever `med
 
 - **Max 7 constructor parameters** (this counts as one). If you need more, group them in a `sealed record` parameter object.
 - **No magic numbers** — name your constants.
-- **No manual retry loops** — pull a Polly pipeline from `Stratara.Resilience` via `IResiliencePipelineProvider<string>`.
+- **No manual retry loops** — pull a Polly pipeline from `Stratara.Resilience` via `ResiliencePipelineProvider<string>`.
 - **No `Stopwatch`** — use `ActivitySource.StartActivity()` for timing.
 
 ## Logging

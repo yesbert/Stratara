@@ -78,7 +78,7 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 Canonical examples in the repo:
 
 - `Stratara.Shared.Diagnostics.Extensions.DistinctEventTypeNames` — wraps `IReadOnlyList<IEvent>`.
-- `Stratara.Projections.Diagnostics.Extensions.ChangeSetFieldNames` — wraps `IReadOnlyList<ChangeDetail>`.
+- `Stratara.Shared.Diagnostics.Extensions.ChangeSetFieldNames` (in the `Stratara.Projections` package) — wraps `IReadOnlyList<ChangeDetail>`.
 
 ## What never to do
 
