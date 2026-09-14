@@ -81,17 +81,9 @@ internal static class CommandExecution
 
         if (intentId is { } id)
         {
-            CompleteIntent(services, id);
+            await services.GetRequiredService<IntentCompletionQueue>().CompleteAsync(id);
         }
     }
-
-    /// <summary>
-    /// The completion leaves the turn at once: the queue deletes the record with the others of its
-    /// window. A host without the queue — one that registered the grains but not the dispatcher —
-    /// never records an intent, so nothing reaches this point there.
-    /// </summary>
-    private static void CompleteIntent(IServiceProvider services, Guid intentId) =>
-        services.GetRequiredService<IntentCompletionQueue>().Complete(intentId);
 
     private interface IHandlerInvoker
     {

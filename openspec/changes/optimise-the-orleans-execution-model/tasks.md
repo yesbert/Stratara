@@ -1,7 +1,9 @@
 ## 0. Gate
 
 - [x] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
-      Nothing below starts before it.
+      Nothing below starts before it. *Record:* the owner approved in the session that proposed —
+      asked "Freigeben und umsetzen?" on 2026-09-14 and chose it — so the artifacts were committed
+      once, already approved; there is no separate proposed-to-approved commit.
 
 ## 1. Pre-register before any run
 
@@ -53,7 +55,9 @@
 - [x] 4.3 `PocSilo.Configure` takes a profile (`Test`, `Production`) and a directory setting (Redis as
       default, or Redis named for the long-lived grains with the built-in directory for aggregate and
       runner grains); the long-lived grains carry `[GrainDirectory]`. Tests keep `Test` and Redis as
-      default. Verify: `CoHostingTests` and `SingletonWorkTests` green under both directory settings.
+      default. Verify: the suite green under the test default (`raw/integration-suite/20260914-104800/`),
+      and B3 and B5 complete with 0 conflicts and 12 000 of 12 000 applied under both settings
+      (`raw/commands-per-aggregate/`, `raw/resources/`). No test class runs under the built-in setting.
 - [x] 4.4 Run B3 under the production profile, both directory settings: `-- --commands-per-aggregate
       <evidence-dir>`. Verify: `evidence/raw/commands-per-aggregate/<timestamp>/` and the comparison
       with the archived 131 / 150 / 87 % (intent) and 166 / 223 / 99 % (synchronous).

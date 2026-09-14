@@ -66,8 +66,8 @@ internal interface IProjectionGrain : IGrainWithStringKey
 /// <summary>
 /// Reads its partition of the event store in commit order from its checkpoint and applies each
 /// entry to its projection through the framework's projection handler, under the session recorded
-/// with the entry. One catch-up loop runs at a time per grain — the single-flight guard, not the
-/// turn, is the serialisation, which is what lets a nudge interleave — so two facts about one
+/// with the entry. One catch-up loop runs at a time per grain — the loop's single-flight guard, not
+/// the turn, is the serialisation, which is what lets a nudge interleave — so two facts about one
 /// aggregate never apply concurrently. The checkpoint moves only past entries that applied; an
 /// entry that fails — a missing prerequisite past the retry policy, or any other failure — stops the
 /// batch where it is, and the next nudge or poll tries again from there.
@@ -87,9 +87,8 @@ internal sealed class ProjectionGrain(
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
     private HashSet<string>? _relevant;
+    private Type? _projectionType;
     private bool _paused;
-    private bool _dirty;
-    private Task<int>? _running;
 
     private StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
@@ -129,56 +128,26 @@ internal sealed class ProjectionGrain(
     public async Task PauseAsync()
     {
         _paused = true;
-        if (_running is { IsCompleted: false } running)
-        {
-            await running;
-        }
-
+        await Loop.WaitForRunningAsync(CancellationToken.None);
         Loop.Invalidate();
+    }
+
+    /// <summary>A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.</summary>
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        await Loop.WaitForRunningAsync(cancellationToken);
+        await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
     public Task ResumeAsync()
     {
         _paused = false;
-        RequestCatchUp();
-        return Task.CompletedTask;
+        return NudgeAsync();
     }
 
     Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => RequestCatchUp();
 
-    /// <summary>
-    /// Marks the store as worth reading and returns the loop that will read it — the running one,
-    /// which reads once more before it ends, or a new one. Every caller runs on the activation's
-    /// scheduler, so the flag and the field need no lock.
-    /// </summary>
-    private Task<int> RequestCatchUp()
-    {
-        _dirty = true;
-        if (_running is { IsCompleted: false } running)
-        {
-            return running;
-        }
-
-        _running = RunLoopAsync();
-        return _running;
-    }
-
-    private async Task<int> RunLoopAsync()
-    {
-        var total = 0;
-        while (_dirty)
-        {
-            _dirty = false;
-            if (_paused || replayState.IsReplayActive)
-            {
-                break;
-            }
-
-            total += await Loop.CatchUpAsync(ApplyBatchAsync);
-        }
-
-        return total;
-    }
+    private Task<int> RequestCatchUp() => Loop.RequestCatchUp(ApplyBatchAsync, () => _paused || replayState.IsReplayActive);
 
     /// <summary>
     /// One scope, one projection instance and one relevant-event set for the batch; per entry, the
@@ -190,8 +159,7 @@ internal sealed class ProjectionGrain(
         var services = scope.ServiceProvider;
         var sessions = services.GetRequiredService<ISessionContextProvider>();
         var handler = services.GetRequiredService<IProjectionHandler>();
-        var projection = services.GetServices<IProjection>().FirstOrDefault(p => handler.GetProjectionName(p) == _projection)
-                         ?? throw new InvalidOperationException($"No projection named '{_projection}' is registered on this silo.");
+        var projection = ResolveProjection(services, handler);
         _relevant ??= new HashSet<string>(handler.GetRelevantEventTypeNames(projection), StringComparer.Ordinal);
 
         return await Loop.ApplyEachAsync(batch, async (entry, cancellationToken) =>
@@ -207,6 +175,25 @@ internal sealed class ProjectionGrain(
 
             await handler.ProjectAsync(projection, relevantEvents, cancellationToken);
         });
+    }
+
+
+    /// <summary>
+    /// The first batch finds the projection among every registered one and remembers its type; every
+    /// later batch builds only that one, instead of every projection the silo has for the name of one.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No projection of the grain's name is registered on this silo.</exception>
+    private IProjection ResolveProjection(IServiceProvider services, IProjectionHandler handler)
+    {
+        if (_projectionType is { } type)
+        {
+            return (IProjection)ActivatorUtilities.CreateInstance(services, type);
+        }
+
+        var projection = services.GetServices<IProjection>().FirstOrDefault(p => handler.GetProjectionName(p) == _projection)
+                         ?? throw new InvalidOperationException($"No projection named '{_projection}' is registered on this silo.");
+        _projectionType = projection.GetType();
+        return projection;
     }
 }
 

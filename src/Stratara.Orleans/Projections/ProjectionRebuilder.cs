@@ -60,10 +60,8 @@ internal sealed class ProjectionRebuilder(
 
             var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
             var reader = services.GetRequiredService<ICommittedPositionReader>().GetType().Name;
-            for (var partition = 0; partition < commitOrder.Value.PartitionCount; partition++)
-            {
-                await checkpoints.SetAsync(projectionName, partition, reader, 0, cancellationToken);
-            }
+            await Task.WhenAll(Enumerable.Range(0, commitOrder.Value.PartitionCount)
+                .Select(partition => checkpoints.SetAsync(projectionName, partition, reader, 0, cancellationToken)));
         }
         finally
         {

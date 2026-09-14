@@ -36,14 +36,14 @@ public static class StopDelayRun
         foreach (var scenario in Scenarios)
         {
             port++;
-            var store = Database(postgres.GetConnectionString(), $"r3_{port}");
-            var read = Database(postgres.GetConnectionString(), $"r3_{port}_read");
-            var orleans = Database(postgres.GetConnectionString(), $"r3_orleans_{port}");
-            await EnsureDatabaseAsync(store);
-            await EnsureDatabaseAsync(read);
+            var store = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"r3_{port}");
+            var read = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"r3_{port}_read");
+            var orleans = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"r3_orleans_{port}");
+            await PocSilo.EnsureDatabaseAsync(store);
+            await PocSilo.EnsureDatabaseAsync(read);
             var environment = PocHostSettings.ToEnvironment(
                 store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), 11800 + port, 31800 + port,
-                read: read, profile: profile, membership: PocSiloMembership.Default);
+                read: read, profile: profile);
 
             // Two shapes: a host stopped after a plain start, and a host that was restarted on the
             // endpoint of a killed predecessor — the shape every kill test ends with.
@@ -86,24 +86,5 @@ public static class StopDelayRun
         Evidence.WriteResult(run, new { measurement = "stop-delay", results });
         Console.WriteLine($"raw result: {run}");
         return 0;
-    }
-
-    private static string Database(string connectionString, string database) =>
-        new NpgsqlConnectionStringBuilder(connectionString) { Database = database }.ConnectionString;
-
-    private static async Task EnsureDatabaseAsync(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        var database = builder.Database!;
-        builder.Database = "postgres";
-        await using var connection = new NpgsqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", database);
-        if (await exists.ExecuteScalarAsync() is null)
-        {
-            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", connection);
-            await create.ExecuteNonQueryAsync();
-        }
     }
 }

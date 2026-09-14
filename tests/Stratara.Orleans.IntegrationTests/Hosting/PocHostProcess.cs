@@ -71,10 +71,19 @@ public sealed class PocHostProcess : IAsyncDisposable
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        var ready = await host.ReadReplyAsync(readyTimeout ?? ReplyTimeout);
-        if (ready != "ready")
+        try
         {
-            throw new InvalidOperationException($"The host did not come up; first reply was '{ready}'. Log:{Environment.NewLine}{string.Join(Environment.NewLine, host._log)}");
+            var ready = await host.ReadReplyAsync(readyTimeout ?? ReplyTimeout);
+            if (ready != "ready")
+            {
+                throw new InvalidOperationException($"The host did not come up; first reply was '{ready}'. Log:{Environment.NewLine}{string.Join(Environment.NewLine, host._log)}");
+            }
+        }
+        catch (Exception)
+        {
+            host.Kill();
+            process.Dispose();
+            throw;
         }
 
         return host;

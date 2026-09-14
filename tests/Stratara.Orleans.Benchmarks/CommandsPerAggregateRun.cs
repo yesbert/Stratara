@@ -55,7 +55,7 @@ public static class CommandsPerAggregateRun
                 for (var repetition = 0; repetition < repetitions; repetition++)
                 {
                     port++;
-                    var store = Database(postgres.GetConnectionString(), $"b3_{path.Replace('-', '_')}_{distribution}_{repetition}");
+                    var store = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"b3_{path.Replace('-', '_')}_{distribution}_{repetition}");
                     var (seconds, conflicts) = await MeasureAsync(path, aggregates, commands, store, postgres.GetConnectionString(), redis.GetConnectionString(), rabbit.GetConnectionString(), 11300 + port, 30200 + port, directory);
                     Console.WriteLine($"{path,-13} {distribution,-7} rep {repetition + 1}: {commands / seconds,8:F0} commands/s, {conflicts} conflicts");
                     results.Add(new { path, distribution, aggregates, commands, repetition, seconds, commandsPerSecond = commands / seconds, conflicts, directory = directory.ToString() });
@@ -137,10 +137,10 @@ public static class CommandsPerAggregateRun
         }
         else
         {
-            var orleans = Database(adminConnectionString, "b3_orleans");
+            var orleans = PostgreSqlFixture.ConnectionStringFor(adminConnectionString, "b3_orleans");
             await PocSilo.EnsureSchemaAsync(orleans);
             builder.AddBackendServices();
-            builder.UseOrleans(silo => PocSilo.Configure(silo, orleans, redis, siloPort, gatewayPort, PocSiloProfile.Production, directory, PocSiloMembership.Default));
+            builder.UseOrleans(silo => new PocHostSettings(store, store, orleans, redis, rabbit, siloPort, gatewayPort, PocSiloProfile.Production, directory).ConfigureSilo(silo));
             builder.Services.AddEventSourcing().AddStrataraAggregateGrains();
             if (path == "grain-intent")
             {
@@ -169,9 +169,6 @@ public static class CommandsPerAggregateRun
         await Task.Delay(TimeSpan.FromSeconds(2));
         return host;
     }
-
-    private static string Database(string connectionString, string database) =>
-        new NpgsqlConnectionStringBuilder(connectionString) { Database = database }.ConnectionString;
 
     public sealed class CompletionCounter
     {

@@ -46,17 +46,17 @@ public static class RebuildRun
 
         var results = new List<object>();
 
-        var busStore = Database(postgres.GetConnectionString(), "b4_bus");
-        var busRead = Database(postgres.GetConnectionString(), "b4_bus_read");
-        await EnsureDatabaseAsync(busStore);
-        await EnsureDatabaseAsync(busRead);
+        var busStore = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), "b4_bus");
+        var busRead = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), "b4_bus_read");
+        await PocSilo.EnsureDatabaseAsync(busStore);
+        await PocSilo.EnsureDatabaseAsync(busRead);
         results.Add(await FullReplayAsync(busStore, busRead, rabbit.GetConnectionString(), events, liveRatePerSecond));
 
-        var grainStore = Database(postgres.GetConnectionString(), "b4_grain");
-        var grainRead = Database(postgres.GetConnectionString(), "b4_grain_read");
-        await EnsureDatabaseAsync(grainStore);
-        await EnsureDatabaseAsync(grainRead);
-        results.Add(await PerProjectionRebuildAsync(grainStore, grainRead, Database(postgres.GetConnectionString(), "b4_orleans"), redis.GetConnectionString(), rabbit.GetConnectionString(), events, liveRatePerSecond));
+        var grainStore = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), "b4_grain");
+        var grainRead = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), "b4_grain_read");
+        await PocSilo.EnsureDatabaseAsync(grainStore);
+        await PocSilo.EnsureDatabaseAsync(grainRead);
+        results.Add(await PerProjectionRebuildAsync(grainStore, grainRead, PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), "b4_orleans"), redis.GetConnectionString(), rabbit.GetConnectionString(), events, liveRatePerSecond));
 
         Evidence.WriteResult(run, new { measurement = "rebuild", results });
         Console.WriteLine($"raw result: {run}");
@@ -65,7 +65,7 @@ public static class RebuildRun
 
     private static async Task<object> FullReplayAsync(string store, string read, string rabbit, int events, int liveRate)
     {
-        var settings = new PocHostSettings(store, read, string.Empty, string.Empty, rabbit, 0, 0, PocSiloProfile.Production, Membership: PocSiloMembership.Default);
+        var settings = new PocHostSettings(store, read, string.Empty, string.Empty, rabbit, 0, 0, PocSiloProfile.Production);
         using var host = await new ProjectionScenario(ProjectionPath.Bus).BuildAsync(settings);
         await host.StartAsync();
 
@@ -93,7 +93,7 @@ public static class RebuildRun
 
     private static async Task<object> PerProjectionRebuildAsync(string store, string read, string orleans, string redis, string rabbit, int events, int liveRate)
     {
-        var settings = new PocHostSettings(store, read, orleans, redis, rabbit, 11501, 30401, PocSiloProfile.Production, Membership: PocSiloMembership.Default);
+        var settings = new PocHostSettings(store, read, orleans, redis, rabbit, 11501, 30401, PocSiloProfile.Production);
         using var host = await new ProjectionScenario(ProjectionPath.Grain).BuildAsync(settings);
         await host.StartAsync();
 
@@ -225,24 +225,5 @@ public static class RebuildRun
         }
 
         Console.WriteLine($"  the counter view did not reach {expected} rows within {timeout}");
-    }
-
-    private static string Database(string connectionString, string database) =>
-        new NpgsqlConnectionStringBuilder(connectionString) { Database = database }.ConnectionString;
-
-    private static async Task EnsureDatabaseAsync(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        var database = builder.Database!;
-        builder.Database = "postgres";
-        await using var connection = new NpgsqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", database);
-        if (await exists.ExecuteScalarAsync() is null)
-        {
-            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", connection);
-            await create.ExecuteNonQueryAsync();
-        }
     }
 }

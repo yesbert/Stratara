@@ -27,9 +27,77 @@ internal sealed class StoreReaderLoop(
 {
     private long _position;
     private bool _positionKnown;
+    private bool _dirty;
+    private Task<int>? _running;
+
+    /// <summary>The catch-up in flight, or <see langword="null"/> when none is.</summary>
+    public Task<int>? Running => _running is { IsCompleted: false } running ? running : null;
 
     /// <summary>Forgets the cached position, so the next catch-up reads the checkpoint store first.</summary>
     public void Invalidate() => _positionKnown = false;
+
+    /// <summary>
+    /// Waits for the running loop, if any, to end — however it ends. A loop that failed has left
+    /// its checkpoint where the failure was and will be reported to whoever requests the next one;
+    /// a pause or a deactivation only needs it to be over.
+    /// </summary>
+    public async Task WaitForRunningAsync(CancellationToken cancellationToken)
+    {
+        if (Running is not { } running)
+        {
+            return;
+        }
+
+        try
+        {
+            await running.WaitAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _ = ex;
+        }
+    }
+
+    /// <summary>
+    /// Marks the store as worth reading and returns the loop that will read it — the running one,
+    /// which reads once more before it ends, or a new one. One loop runs at a time, which is the
+    /// serialisation the grain's turn no longer provides once a nudge may interleave; every caller
+    /// runs on the activation's scheduler, so the flag and the field need no lock. A loop that
+    /// finds reading suspended forgets its position, because whoever suspends it — a pause, a
+    /// replay — may change the checkpoint before reading resumes.
+    /// </summary>
+    /// <param name="applyBatch">What one batch means; see <see cref="CatchUpAsync(Func{CommittedBatch, Task{int}}, Func{bool})"/>.</param>
+    /// <param name="suspended">Whether reading is off for now — paused, or a replay is active.</param>
+    /// <returns>The loop; completes with how many entries it applied.</returns>
+    public Task<int> RequestCatchUp(Func<CommittedBatch, Task<int>> applyBatch, Func<bool> suspended)
+    {
+        _dirty = true;
+        if (Running is { } running)
+        {
+            return running;
+        }
+
+        _running = RunLoopAsync(applyBatch, suspended);
+        return _running;
+    }
+
+    private async Task<int> RunLoopAsync(Func<CommittedBatch, Task<int>> applyBatch, Func<bool> suspended)
+    {
+        var total = 0;
+        while (_dirty)
+        {
+            _dirty = false;
+            if (suspended())
+            {
+                Invalidate();
+                break;
+            }
+
+            total += await CatchUpAsync(applyBatch, suspended);
+        }
+
+        return total;
+    }
 
     public async Task<long> PositionAsync()
     {
@@ -51,7 +119,14 @@ internal sealed class StoreReaderLoop(
     /// batch's count when every entry applied. <see cref="ApplyEachAsync"/> is the usual body.
     /// </param>
     /// <returns>How many entries applied.</returns>
-    public async Task<int> CatchUpAsync(Func<CommittedBatch, Task<int>> applyBatch)
+    public Task<int> CatchUpAsync(Func<CommittedBatch, Task<int>> applyBatch) => CatchUpAsync(applyBatch, static () => false);
+
+    /// <summary>
+    /// Reads and applies until the store has nothing newer, a batch applies only partly, or
+    /// <paramref name="suspended"/> says to stop at the next batch boundary — a pause does not wait
+    /// for a partition that is far behind to catch up first.
+    /// </summary>
+    public async Task<int> CatchUpAsync(Func<CommittedBatch, Task<int>> applyBatch, Func<bool> suspended)
     {
         using var scope = scopeFactory.CreateScope();
         var (reader, checkpoints) = Resolve(scope.ServiceProvider);
@@ -65,7 +140,7 @@ internal sealed class StoreReaderLoop(
 
         var total = 0;
 
-        while (true)
+        while (!suspended())
         {
             var batch = await reader.ReadAfterAsync(partition, _position, batchSize);
             if (batch.Entries.Count == 0)
@@ -91,6 +166,8 @@ internal sealed class StoreReaderLoop(
             await checkpoints.SetAsync(consumer, partition, readerName, batch.Position);
             _position = batch.Position;
         }
+
+        return total;
     }
 
     /// <summary>

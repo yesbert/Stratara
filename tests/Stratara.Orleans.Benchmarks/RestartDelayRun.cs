@@ -46,9 +46,9 @@ public static class RestartDelayRun
         {
             port++;
             var label = $"{profile}/{membership}";
-            var store = Database(postgres.GetConnectionString(), $"r1_{port}");
-            var orleans = Database(postgres.GetConnectionString(), $"r1_orleans_{port}");
-            await EnsureDatabaseAsync(store);
+            var store = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"r1_{port}");
+            var orleans = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"r1_orleans_{port}");
+            await PocSilo.EnsureDatabaseAsync(store);
             var environment = PocHostSettings.ToEnvironment(
                 store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), 11600 + port, 30500 + port,
                 profile: profile, membership: membership);
@@ -86,49 +86,43 @@ public static class RestartDelayRun
         {
             port++;
             var label = $"join-after-kill/{membership}";
-            var store = Database(postgres.GetConnectionString(), $"r1_{port}");
-            var orleans = Database(postgres.GetConnectionString(), $"r1_orleans_{port}");
-            await EnsureDatabaseAsync(store);
+            var store = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"r1_{port}");
+            var orleans = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"r1_orleans_{port}");
+            await PocSilo.EnsureDatabaseAsync(store);
 
             // One join per setting: the mechanism is deterministic — the joiner retries until
             // MaxJoinAttemptTime (five minutes) — and a join may take all of it.
-            for (var iteration = 1; iteration <= 1; iteration++)
+            // The two hosts must share a cluster, which the test default of one cluster per port would deny them.
+            var cluster = $"{PocSilo.ClusterId}-join-{port}";
+            var killedPort = 11700 + port * 10;
+            var joiningPort = killedPort + 5;
+            var killed = await PocHostProcess.StartAsync("timers", PocHostSettings.ToEnvironment(
+                store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), killedPort, killedPort + 20_000,
+                profile: PocSiloProfile.Production, membership: membership, clusterId: cluster));
+            killed.Kill();
+            await killed.DisposeAsync();
+
+            var joinerEnvironment = PocHostSettings.ToEnvironment(
+                store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), joiningPort, joiningPort + 20_000,
+                profile: PocSiloProfile.Production, membership: membership, clusterId: cluster);
+            joinerEnvironment["POC_START_TIMEOUT_SECONDS"] = "360";
+            var started = Stopwatch.GetTimestamp();
+            double? ready;
+            try
             {
-                var killedPort = 11700 + port * 10 + iteration;
-                var killed = await PocHostProcess.StartAsync("timers", PocHostSettings.ToEnvironment(
-                    store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), killedPort, killedPort + 20_000,
-                    profile: PocSiloProfile.Production, membership: membership));
-                killed.Kill();
-                await killed.DisposeAsync();
-
-                var joiningPort = killedPort + 5;
-                var started = Stopwatch.GetTimestamp();
-                double? ready;
-                PocHostProcess? joining = null;
-                var joinerEnvironment = PocHostSettings.ToEnvironment(
-                    store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), joiningPort, joiningPort + 20_000,
-                    profile: PocSiloProfile.Production, membership: membership);
-                joinerEnvironment["POC_START_TIMEOUT_SECONDS"] = "360";
-                try
-                {
-                    joining = await PocHostProcess.StartAsync("timers", joinerEnvironment, readyTimeout: TimeSpan.FromMinutes(7));
-                    ready = Stopwatch.GetElapsedTime(started).TotalSeconds;
-                    Console.WriteLine($"{label,-28} join {iteration}: ready {ready:F1} s");
-                }
-                catch (Exception ex) when (ex is TimeoutException or InvalidOperationException)
-                {
-                    ready = null;
-                    Console.WriteLine($"{label,-28} join {iteration}: not ready within six minutes ({Stopwatch.GetElapsedTime(started).TotalSeconds:F0} s)");
-                    Console.WriteLine(ex.Message);
-                }
-
-                results.Add(new { profile = PocSiloProfile.Production.ToString(), membership = membership.ToString(), shape = "join-after-kill", restart = iteration, readySeconds = ready, timerFiredSeconds = (double?)null });
-                if (joining is not null)
-                {
-                    await joining.SendExpectingExitAsync("exit", TimeSpan.FromMinutes(1));
-                    await joining.DisposeAsync();
-                }
+                await using var joining = await PocHostProcess.StartAsync("timers", joinerEnvironment, readyTimeout: TimeSpan.FromMinutes(7));
+                ready = Stopwatch.GetElapsedTime(started).TotalSeconds;
+                Console.WriteLine($"{label,-28} join: ready {ready:F1} s");
+                await joining.SendExpectingExitAsync("exit", TimeSpan.FromMinutes(1));
             }
+            catch (Exception ex) when (ex is TimeoutException or InvalidOperationException)
+            {
+                ready = null;
+                Console.WriteLine($"{label,-28} join: not ready within six minutes ({Stopwatch.GetElapsedTime(started).TotalSeconds:F0} s)");
+                Console.WriteLine(ex.Message);
+            }
+
+            results.Add(new { profile = PocSiloProfile.Production.ToString(), membership = membership.ToString(), shape = "join-after-kill", restart = 1, readySeconds = ready, timerFiredSeconds = (double?)null });
         }
 
         Evidence.WriteResult(run, new { measurement = "restart-delay", results });
@@ -150,24 +144,5 @@ public static class RestartDelayRun
         }
 
         return Stopwatch.GetElapsedTime(started).TotalSeconds;
-    }
-
-    private static string Database(string connectionString, string database) =>
-        new NpgsqlConnectionStringBuilder(connectionString) { Database = database }.ConnectionString;
-
-    private static async Task EnsureDatabaseAsync(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        var database = builder.Database!;
-        builder.Database = "postgres";
-        await using var connection = new NpgsqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", database);
-        if (await exists.ExecuteScalarAsync() is null)
-        {
-            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", connection);
-            await create.ExecuteNonQueryAsync();
-        }
     }
 }

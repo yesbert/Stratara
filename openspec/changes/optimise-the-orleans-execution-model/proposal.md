@@ -19,8 +19,8 @@ asked again until they are.
 
 - The projection rebuild resumes every partition concurrently and no longer awaits a partition's
   whole catch-up inside `ResumeAsync`; a batch is applied under one scope, one projection instance
-  and one relevant-event set instead of one of each per entry; the proof-of-concept store model
-  gains an expression index so a partition read does not scan the other fifteen partitions.
+  and one relevant-event set instead of one of each per entry. An index for the partition read
+  was planned in case that was not enough; it was not needed (task 2.4) and was not built.
 - The durable-intent dispatcher completes intents in batches — one delete statement per short
   window instead of one context and one round trip per command — and the command envelope is
   marked immutable so a local grain call does not deep-copy it.
@@ -56,8 +56,8 @@ What does change inside the proof of concept, and would matter to a change that 
 - an intent completed by the handler may stay recorded for up to one completion window before its
   row is deleted; a host that dies in that window resumes the intent and runs the handler a second
   time, which the at-least-once contract of the durable-intent shape already allows;
-- the store schema the proof-of-concept readers need gains an index; a shipping change carries it
-  in its migration note like the columns it already has to carry.
+- the store schema the proof-of-concept readers need is unchanged: the index the plan held in
+  reserve was not needed.
 
 ## Capabilities
 
@@ -77,10 +77,12 @@ kept before.
   `Projections/ProjectionRebuilder.cs`, `Projections/StoreReaderLoop.cs`,
   `Projections/ProjectionCheckpoint.cs`, `Aggregates/AggregateGrain.cs`,
   `Aggregates/OrleansCommandDispatcher.cs`, `Aggregates/AggregateCommandEnvelope.cs`,
-  `CommitOrder/CommitOrderModel.cs`, `CommitOrder/PostgresTransactionIdReader.cs`, and the
-  registrations under `DependencyInjection/`.
+  `Aggregates/IntentCompletionQueue.cs` (new), `GrainDirectories.cs` (new), the grains that
+  select the durable directory, and the registrations under `DependencyInjection/`. Nothing under
+  `CommitOrder/` changed.
 - **Modified test support:** `tests/Stratara.Orleans.IntegrationTests/Hosting/PocSilo.cs` gains a
-  profile parameter; `tests/Stratara.Orleans.Benchmarks/` gains a restart-delay run and uses the
+  profile, a directory and a membership parameter and one cluster per test silo;
+  `tests/Stratara.Orleans.Benchmarks/` gains a restart-delay run and a stop-delay run and uses the
   production profile.
 - **New evidence directory:** `openspec/changes/optimise-the-orleans-execution-model/evidence/` —
   `expectations.md`, `raw/<measurement>/<timestamp>/`, `results.md`. It travels into the archive.

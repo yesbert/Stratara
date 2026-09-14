@@ -32,7 +32,7 @@ public static class ResourcesRun
         foreach (var (scenario, siloPort, gatewayPort) in Hosts)
         {
             var store = new NpgsqlConnectionStringBuilder(postgres.GetConnectionString()) { Database = $"b5_{scenario}" }.ConnectionString;
-            await EnsureDatabaseAsync(store);
+            await PocSilo.EnsureDatabaseAsync(store);
             var environment = PocHostSettings.ToEnvironment(
                 store,
                 new NpgsqlConnectionStringBuilder(postgres.GetConnectionString()) { Database = "b5_orleans" }.ConnectionString,
@@ -41,8 +41,7 @@ public static class ResourcesRun
                 siloPort,
                 gatewayPort,
                 profile: PocSiloProfile.Production,
-                directory: directory,
-                membership: PocSiloMembership.Default);
+                directory: directory);
 
             await using var host = await PocHostProcess.StartAsync(scenario, environment);
             var process = Process.GetProcessById(host.ProcessId);
@@ -89,22 +88,6 @@ public static class ResourcesRun
         }
 
         return samples;
-    }
-
-    private static async Task EnsureDatabaseAsync(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        var database = builder.Database!;
-        builder.Database = "postgres";
-        await using var connection = new NpgsqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", database);
-        if (await exists.ExecuteScalarAsync() is null)
-        {
-            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", connection);
-            await create.ExecuteNonQueryAsync();
-        }
     }
 
     public sealed record Sample(DateTimeOffset At, double RssMb, double CpuSeconds);

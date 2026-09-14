@@ -66,8 +66,6 @@ internal sealed class SagaGrain(
     private readonly SagaGrainOptions _options = options.Value;
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
-    private bool _dirty;
-    private Task<int>? _running;
 
     private StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
@@ -101,35 +99,14 @@ internal sealed class SagaGrain(
 
     Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => RequestCatchUp();
 
-    /// <summary>One loop at a time; a request while it runs makes it read once more before it ends.</summary>
-    private Task<int> RequestCatchUp()
+    /// <summary>A loop a nudge started holds no request; the activation waits for it so a successor never dispatches beside it.</summary>
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
-        _dirty = true;
-        if (_running is { IsCompleted: false } running)
-        {
-            return running;
-        }
-
-        _running = RunLoopAsync();
-        return _running;
+        await Loop.WaitForRunningAsync(cancellationToken);
+        await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
-    private async Task<int> RunLoopAsync()
-    {
-        var total = 0;
-        while (_dirty)
-        {
-            _dirty = false;
-            if (replayState.IsReplayActive)
-            {
-                break;
-            }
-
-            total += await Loop.CatchUpAsync(DispatchBatchAsync);
-        }
-
-        return total;
-    }
+    private Task<int> RequestCatchUp() => Loop.RequestCatchUp(DispatchBatchAsync, () => replayState.IsReplayActive);
 
     /// <summary>One scope, one saga manager and one process list for the batch; per entry, the recorded session.</summary>
     private async Task<int> DispatchBatchAsync(CommittedBatch batch)

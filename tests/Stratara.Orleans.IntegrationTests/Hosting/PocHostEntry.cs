@@ -86,7 +86,8 @@ public sealed record PocHostSettings(
     int GatewayPort,
     PocSiloProfile Profile = PocSiloProfile.Test,
     PocSiloDirectory Directory = PocSiloDirectory.RedisAsDefault,
-    PocSiloMembership Membership = PocSiloMembership.Default)
+    PocSiloMembership Membership = PocSiloMembership.Default,
+    string? ClusterId = null)
 {
     public static PocHostSettings FromEnvironment() => new(
         Require("POC_STORE"),
@@ -98,7 +99,8 @@ public sealed record PocHostSettings(
         int.Parse(Require("POC_GATEWAY_PORT")),
         Enum.Parse<PocSiloProfile>(Environment.GetEnvironmentVariable("POC_PROFILE") ?? nameof(PocSiloProfile.Test)),
         Enum.Parse<PocSiloDirectory>(Environment.GetEnvironmentVariable("POC_DIRECTORY") ?? nameof(PocSiloDirectory.RedisAsDefault)),
-        Enum.Parse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP") ?? nameof(PocSiloMembership.Default)));
+        Enum.Parse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP") ?? nameof(PocSiloMembership.Default)),
+        Environment.GetEnvironmentVariable("POC_CLUSTER"));
 
     public static Dictionary<string, string> ToEnvironment(
         string store,
@@ -110,7 +112,8 @@ public sealed record PocHostSettings(
         string? read = null,
         PocSiloProfile profile = PocSiloProfile.Test,
         PocSiloDirectory directory = PocSiloDirectory.RedisAsDefault,
-        PocSiloMembership membership = PocSiloMembership.Default) => new()
+        PocSiloMembership membership = PocSiloMembership.Default,
+        string? clusterId = null) => new()
     {
         ["POC_STORE"] = store,
         ["POC_READ"] = read ?? store,
@@ -122,11 +125,12 @@ public sealed record PocHostSettings(
         ["POC_PROFILE"] = profile.ToString(),
         ["POC_DIRECTORY"] = directory.ToString(),
         ["POC_MEMBERSHIP"] = membership.ToString(),
+        ["POC_CLUSTER"] = clusterId ?? string.Empty,
     };
 
     /// <summary>The silo configured as these settings say.</summary>
     public ISiloBuilder ConfigureSilo(ISiloBuilder silo) =>
-        PocSilo.Configure(silo, OrleansConnectionString, RedisConnectionString, SiloPort, GatewayPort, Profile, Directory, Membership);
+        PocSilo.Configure(silo, OrleansConnectionString, RedisConnectionString, SiloPort, GatewayPort, Profile, Directory, Membership, string.IsNullOrEmpty(ClusterId) ? null : ClusterId);
 
     private static string Require(string name) =>
         Environment.GetEnvironmentVariable(name)

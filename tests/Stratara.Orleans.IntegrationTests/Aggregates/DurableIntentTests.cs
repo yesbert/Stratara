@@ -51,7 +51,8 @@ public sealed class DurableIntentTests(PostgreSqlFixture postgres, RedisFixture 
             var applied = await WaitForAsync(restarted, $"applied {aggregateId}", "true");
 
             Assert.True(applied, $"Kill {kill + 1}: the command was not applied after the restart. Log:{Environment.NewLine}{string.Join(Environment.NewLine, restarted.Log)}");
-            Assert.Equal("0", await restarted.SendAsync("outbox-count"));
+            // The record is deleted one completion window after the handler, not inside its turn.
+            Assert.True(await WaitForAsync(restarted, "outbox-count", "0"), $"Kill {kill + 1}: the intent's record was not deleted after the handler completed.");
         }
     }
 

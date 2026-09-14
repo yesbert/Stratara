@@ -72,13 +72,14 @@ public static class PocSilo
 
         silo.Configure<ClusterOptions>(options =>
         {
-            // One cluster per silo port unless a test says otherwise: the test classes share one
-            // membership table, and a silo that joins an existing cluster must reach every Active
-            // entry in it — including one a kill test left behind — before it may join (see the
-            // restart-delay evidence of optimise-the-orleans-execution-model). A killed silo's own
-            // successor on the same port still finds and buries it, which is what the kill tests need.
+            // One cluster and one service per silo port unless a test says otherwise: the test
+            // classes share one membership and one reminder table, and a silo that joins an existing
+            // cluster must reach every Active entry in it — including one a kill test left behind —
+            // before it may join (see the restart-delay evidence of
+            // optimise-the-orleans-execution-model). A killed silo's own successor on the same port
+            // still finds and buries it, which is what the kill tests need.
             options.ClusterId = clusterId ?? $"{ClusterId}-{siloPort}";
-            options.ServiceId = ServiceId;
+            options.ServiceId = options.ClusterId;
         });
         silo.Configure<EndpointOptions>(options =>
         {
@@ -102,18 +103,13 @@ public static class PocSilo
             silo.UseRedisGrainDirectoryAsDefault(options => options.ConfigurationOptions = redis);
         }
 
-        switch (membership)
+        if (membership == PocSiloMembership.ShortIAmAlive)
         {
-            case PocSiloMembership.ShortIAmAlive:
-                silo.Configure<ClusterMembershipOptions>(options =>
-                {
-                    options.IAmAliveTablePublishTimeout = TimeSpan.FromSeconds(5);
-                    options.NumMissedTableIAmAliveLimit = 2;
-                });
-                break;
-            case PocSiloMembership.Default:
-            default:
-                break;
+            silo.Configure<ClusterMembershipOptions>(options =>
+            {
+                options.IAmAliveTablePublishTimeout = TimeSpan.FromSeconds(5);
+                options.NumMissedTableIAmAliveLimit = 2;
+            });
         }
 
         if (profile == PocSiloProfile.Test)
@@ -156,7 +152,8 @@ public static class PocSilo
         }
     }
 
-    private static async Task EnsureDatabaseAsync(string connectionString)
+    /// <summary>Creates the database the connection string names if it does not exist.</summary>
+    public static async Task EnsureDatabaseAsync(string connectionString)
     {
         var builder = new NpgsqlConnectionStringBuilder(connectionString);
         var database = builder.Database ?? throw new InvalidOperationException("The Orleans connection string names no database.");

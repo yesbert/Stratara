@@ -55,7 +55,7 @@ public sealed class SagaScenario : IPocScenario
                     options.KeepAlivePeriod = TimeSpan.FromSeconds(5);
                 }
             })
-            .Configure<Stratara.Orleans.Timers.DurableTimerOptions>(options => options.RetryPeriod = TimeSpan.FromSeconds(1));
+            .Configure<Stratara.Orleans.Timers.DurableTimerOptions>(options => options.RetryPeriod = settings.Profile == PocSiloProfile.Test ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1));
 
         var host = builder.Build();
         await using (var scope = host.Services.CreateAsyncScope())

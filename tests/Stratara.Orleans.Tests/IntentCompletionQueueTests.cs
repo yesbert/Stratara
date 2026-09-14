@@ -29,7 +29,7 @@ public sealed class IntentCompletionQueueTests
         var ids = Enumerable.Range(0, 200).Select(_ => Guid.NewGuid()).ToList();
         foreach (var id in ids)
         {
-            queue.Complete(id);
+            await queue.CompleteAsync(id);
         }
 
         await WaitUntilAsync(() => flushed.Count >= 192, TimeSpan.FromSeconds(2));
@@ -52,11 +52,33 @@ public sealed class IntentCompletionQueueTests
         await queue.StartAsync(CancellationToken.None);
 
         var started = DateTimeOffset.UtcNow;
-        queue.Complete(Guid.NewGuid());
+        await queue.CompleteAsync(Guid.NewGuid());
 
         var at = await flushedAt.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.InRange((at - started).TotalMilliseconds, 20, 1000);
         await queue.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_completion_after_the_stop_is_deleted_at_once()
+    {
+        var flushed = new ConcurrentBag<Guid>();
+        var queue = new IntentCompletionQueue(TimeSpan.FromSeconds(10), 64, (ids, _) =>
+        {
+            foreach (var id in ids)
+            {
+                flushed.Add(id);
+            }
+
+            return Task.CompletedTask;
+        });
+        await queue.StartAsync(CancellationToken.None);
+        await queue.StopAsync(CancellationToken.None);
+
+        var id = Guid.NewGuid();
+        await queue.CompleteAsync(id);
+
+        Assert.Contains(id, flushed);
     }
 
     [Fact]
@@ -75,7 +97,7 @@ public sealed class IntentCompletionQueueTests
         await queue.StartAsync(CancellationToken.None);
 
         var id = Guid.NewGuid();
-        queue.Complete(id);
+        await queue.CompleteAsync(id);
         await queue.StopAsync(CancellationToken.None);
 
         Assert.Contains(id, flushed);
