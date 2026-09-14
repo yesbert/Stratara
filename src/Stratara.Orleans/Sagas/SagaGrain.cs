@@ -31,17 +31,22 @@ public sealed class SagaGrainOptions
 }
 
 /// <summary>One grain per partition for all registered sagas, keyed <c>sagas/partition</c>.</summary>
+[Alias("Stratara.Orleans.ISagaGrain")]
 internal interface ISagaGrain : IGrainWithStringKey
 {
+    [Alias("EnsureRunningAsync")]
     Task EnsureRunningAsync();
 
     /// <summary>A commit happened in this partition; interleaves with a running catch-up, which then reads once more.</summary>
     [OneWay]
     [AlwaysInterleave]
+    [Alias("NudgeAsync")]
     Task NudgeAsync();
 
+    [Alias("CatchUpAsync")]
     Task<int> CatchUpAsync();
 
+    [Alias("PositionAsync")]
     Task<long> PositionAsync();
 }
 

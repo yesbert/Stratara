@@ -39,8 +39,10 @@ public sealed class ProjectionGrainOptions
 }
 
 /// <summary>One grain per projection and partition, keyed <c>projection/partition</c>.</summary>
+[Alias("Stratara.Orleans.IProjectionGrain")]
 internal interface IProjectionGrain : IGrainWithStringKey
 {
+    [Alias("EnsureRunningAsync")]
     Task EnsureRunningAsync();
 
     /// <summary>
@@ -49,17 +51,22 @@ internal interface IProjectionGrain : IGrainWithStringKey
     /// </summary>
     [OneWay]
     [AlwaysInterleave]
+    [Alias("NudgeAsync")]
     Task NudgeAsync();
 
     /// <summary>Reads and applies until the store has nothing newer; returns how many entries were applied.</summary>
+    [Alias("CatchUpAsync")]
     Task<int> CatchUpAsync();
 
+    [Alias("PositionAsync")]
     Task<long> PositionAsync();
 
     /// <summary>Stops reading until <see cref="ResumeAsync"/>; returns once no batch is in flight.</summary>
+    [Alias("PauseAsync")]
     Task PauseAsync();
 
     /// <summary>Reads again, from whatever the checkpoint now says; returns once the read is requested, not once it is done.</summary>
+    [Alias("ResumeAsync")]
     Task ResumeAsync();
 }
 

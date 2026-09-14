@@ -110,7 +110,7 @@ public sealed class AzureServiceBusRetryBoundsTests
     };
 
     [Theory]
-    [MemberData(nameof(RefusedReads))]
+    [MemberData(nameof(RefusedReads), DisableDiscoveryEnumeration = true)]
     public async Task AReadThatFails_EndsTheCheckNotTheSubscription_AndTheConfiguredBoundsApply(Exception refusal)
     {
         _administration

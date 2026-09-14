@@ -71,6 +71,7 @@ public static class OrleansAggregateServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddScoped<AggregateSendLane>();
+        services.TryAddScoped<IntentRecorder>();
         services.AddOptions<HeavyWorkOptions>();
         services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher, OrleansCommandDispatcher>();
         AddIntentCompletion(services);
