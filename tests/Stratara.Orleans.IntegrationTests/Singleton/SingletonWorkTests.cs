@@ -50,7 +50,8 @@ public sealed class SingletonWorkTests(PostgreSqlFixture postgres, RedisFixture 
         await PocSilo.EnsureSchemaAsync(orleansConnectionString);
 
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
-        builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));
+        // Two silos, one cluster: the test is about the work running once across them.
+        builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort, clusterId: $"{PocSilo.ClusterId}-singleton"));
         builder.Services
             .AddSingleton(new ProbeWorkContext(siloName, executions))
             .AddStrataraSingletonWork<ProbeWork>(options => options.KeepAlivePeriod = TimeSpan.FromSeconds(5));

@@ -86,7 +86,7 @@ public sealed record PocHostSettings(
     int GatewayPort,
     PocSiloProfile Profile = PocSiloProfile.Test,
     PocSiloDirectory Directory = PocSiloDirectory.RedisAsDefault,
-    PocSiloMembership Membership = PocSiloMembership.ShortIAmAlive)
+    PocSiloMembership Membership = PocSiloMembership.Default)
 {
     public static PocHostSettings FromEnvironment() => new(
         Require("POC_STORE"),
@@ -98,7 +98,7 @@ public sealed record PocHostSettings(
         int.Parse(Require("POC_GATEWAY_PORT")),
         Enum.Parse<PocSiloProfile>(Environment.GetEnvironmentVariable("POC_PROFILE") ?? nameof(PocSiloProfile.Test)),
         Enum.Parse<PocSiloDirectory>(Environment.GetEnvironmentVariable("POC_DIRECTORY") ?? nameof(PocSiloDirectory.RedisAsDefault)),
-        Enum.Parse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP") ?? nameof(PocSiloMembership.ShortIAmAlive)));
+        Enum.Parse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP") ?? nameof(PocSiloMembership.Default)));
 
     public static Dictionary<string, string> ToEnvironment(
         string store,
@@ -110,7 +110,7 @@ public sealed record PocHostSettings(
         string? read = null,
         PocSiloProfile profile = PocSiloProfile.Test,
         PocSiloDirectory directory = PocSiloDirectory.RedisAsDefault,
-        PocSiloMembership membership = PocSiloMembership.ShortIAmAlive) => new()
+        PocSiloMembership membership = PocSiloMembership.Default) => new()
     {
         ["POC_STORE"] = store,
         ["POC_READ"] = read ?? store,

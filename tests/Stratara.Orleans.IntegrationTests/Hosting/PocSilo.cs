@@ -17,11 +17,11 @@ public enum PocSiloProfile
 }
 
 /// <summary>
-/// How long the membership table keeps treating a killed silo as alive. A silo that restarts on the
-/// same endpoint marks its older clone dead at once; a silo that joins on <em>another</em> endpoint
-/// while a killed silo's entry is still Active tries to reach it and waits for the entry to age out
-/// — with the defaults, ninety seconds, which is where the archived kill tests spent their time.
-/// The tests share one membership table and kill silos, so their default is the short setting.
+/// The <c>IAmAlive</c> settings of the membership protocol. Measured in optimise-the-orleans-execution-model
+/// and found not to matter for a join: a silo that restarts on the same endpoint marks its older clone
+/// dead at once, and a silo that joins on another endpoint while a killed silo's entry is still Active
+/// fails after <c>MaxJoinAttemptTime</c> under either setting, because the connectivity check never
+/// skips a stale entry. Kept for the experiment's record; the default is Orleans' default.
 /// </summary>
 public enum PocSiloMembership
 {
@@ -65,13 +65,19 @@ public static class PocSilo
         int gatewayPort,
         PocSiloProfile profile = PocSiloProfile.Test,
         PocSiloDirectory directory = PocSiloDirectory.RedisAsDefault,
-        PocSiloMembership membership = PocSiloMembership.ShortIAmAlive)
+        PocSiloMembership membership = PocSiloMembership.Default,
+        string? clusterId = null)
     {
         var redis = ConfigurationOptions.Parse(redisConnectionString);
 
         silo.Configure<ClusterOptions>(options =>
         {
-            options.ClusterId = ClusterId;
+            // One cluster per silo port unless a test says otherwise: the test classes share one
+            // membership table, and a silo that joins an existing cluster must reach every Active
+            // entry in it — including one a kill test left behind — before it may join (see the
+            // restart-delay evidence of optimise-the-orleans-execution-model). A killed silo's own
+            // successor on the same port still finds and buries it, which is what the kill tests need.
+            options.ClusterId = clusterId ?? $"{ClusterId}-{siloPort}";
             options.ServiceId = ServiceId;
         });
         silo.Configure<EndpointOptions>(options =>
