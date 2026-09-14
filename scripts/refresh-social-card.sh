@@ -49,7 +49,7 @@ export NODE_PATH="$(dirname "${PUP_DIR}")"
 
 # Chrome resolves the card's relative <img src> against the HTML file, so render from its directory.
 cd "${SRC_DIR}"
-CHROME="${CHROME_BIN}" node render.js social-card.html social-card@2x.png
+CHROME="${CHROME_BIN}" node render.mjs social-card.html social-card@2x.png
 sips --resampleHeightWidth 640 1280 social-card@2x.png --out "${OUT}" >/dev/null
 rm -f social-card@2x.png
 

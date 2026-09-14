@@ -2,14 +2,10 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Outbox;
-using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Projections;
-using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Contracts.Messages;
-using Stratara.Contracts.Session;
 using Stratara.Shared.Outbox.Mapping;
-using Stratara.Shared.Reflections;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -28,10 +24,9 @@ namespace Stratara.Orleans.Aggregates;
 /// as the bus dispatcher does. Hand-overs to one aggregate from one scope keep their order.
 /// </remarks>
 internal sealed class OrleansCommandDispatcher(
-    IWriteUnitOfWork unitOfWork,
+    IntentRecorder recorder,
     IGrainFactory grainFactory,
     ISessionContextProvider sessionContextProvider,
-    ISecureJsonSerializer serializer,
     IProjectionReplayState replayState,
     AggregateSendLane lane,
     IOptions<OrleansDispatchOptions> options,
@@ -47,7 +42,7 @@ internal sealed class OrleansCommandDispatcher(
         var heavy = command is IHeavyCommand;
         var aggregateId = (command as IAggregateScopedCommand)?.AggregateId;
 
-        var recorded = RecordAsync(intentId, command, session, heavy, cancellationToken);
+        var recorded = recorder.RecordAsync(intentId, command, session, heavy, cancellationToken);
         var issued = lane.SendAsync(aggregateId ?? intentId, recorded, payload =>
             replayState.IsReplayActive ? Task.CompletedTask : HandOver(intentId, payload, heavy, aggregateId));
 
@@ -70,23 +65,6 @@ internal sealed class OrleansCommandDispatcher(
             var payload = new AggregateCommandEnvelope(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson);
             await HandOver(entry.Id, payload, envelope.Heavy, AggregateIdOf(envelope));
         }
-    }
-
-    private async Task<AggregateCommandEnvelope> RecordAsync<T>(Guid intentId, T command, SessionContext session, bool heavy, CancellationToken cancellationToken)
-        where T : ICommand
-    {
-        var envelope = new CommandEnvelope(
-            intentId,
-            await serializer.SerializeAsync(command, session.TenantId, session.ActorUserId, cancellationToken),
-            command.GetType().GetQualifiedTypeName(),
-            JsonSerializer.Serialize(session),
-            Heavy: heavy);
-
-        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
-        await unitOfWork.CreateOutboxRepository(transaction).AddAsync(envelope, cancellationToken);
-        await transaction.SaveChangesAsync(cancellationToken);
-
-        return new AggregateCommandEnvelope(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson);
     }
 
     private Task HandOver(Guid intentId, AggregateCommandEnvelope payload, bool heavy, Guid? aggregateId)

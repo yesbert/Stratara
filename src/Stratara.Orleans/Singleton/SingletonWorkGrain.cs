@@ -7,10 +7,13 @@ using Orleans.GrainDirectory;
 namespace Stratara.Orleans.Singleton;
 
 /// <summary>One grain per registered <see cref="ISingletonWork"/>, keyed by its name.</summary>
+[Alias("Stratara.Orleans.ISingletonWorkGrain")]
 internal interface ISingletonWorkGrain : IGrainWithStringKey
 {
+    [Alias("EnsureRunningAsync")]
     Task EnsureRunningAsync();
 
+    [Alias("RunsAsync")]
     Task<long> RunsAsync();
 }
 

@@ -11,15 +11,19 @@ using Orleans.GrainDirectory;
 namespace Stratara.Orleans.Sagas;
 
 /// <summary>One grain per process instance, keyed <c>sagaType|correlationId</c>.</summary>
+[Alias("Stratara.Orleans.ISagaProcessGrain")]
 internal interface ISagaProcessGrain : IGrainWithStringKey
 {
     /// <summary>Advances the process with the fact at <paramref name="version"/> of <paramref name="streamId"/>, read back from the store.</summary>
+    [Alias("HandleAsync")]
     Task HandleAsync(Guid streamId, long version);
 
     /// <summary>A timeout the process scheduled is due.</summary>
+    [Alias("OnTimeoutAsync")]
     Task OnTimeoutAsync(string purpose);
 
     /// <summary>Whether the process exists and has not completed — the owner check for its timers.</summary>
+    [Alias("IsAliveAsync")]
     Task<bool> IsAliveAsync();
 }
 

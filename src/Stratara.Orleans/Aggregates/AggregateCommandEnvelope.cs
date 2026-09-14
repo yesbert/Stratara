@@ -7,6 +7,7 @@ namespace Stratara.Orleans.Aggregates;
 /// instead of copying it.
 /// </summary>
 [GenerateSerializer]
+[Alias("Stratara.Orleans.AggregateCommandEnvelope")]
 [Immutable]
 public sealed record AggregateCommandEnvelope(
     [property: Id(0)] string CommandTypeName,

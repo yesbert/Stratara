@@ -351,9 +351,10 @@ internal sealed class RabbitMqBus(
             return 1;
         }
 
-        var earlier = headers.TryGetValue(AcquiredCountHeader, out var acquired) ? acquired
-            : headers.TryGetValue(DeliveryCountHeader, out var delivered) ? delivered
-            : null;
+        if (!headers.TryGetValue(AcquiredCountHeader, out var earlier))
+        {
+            headers.TryGetValue(DeliveryCountHeader, out earlier);
+        }
 
         return earlier switch
         {

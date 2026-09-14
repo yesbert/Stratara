@@ -21,18 +21,24 @@ public sealed class HeavyWorkOptions
 }
 
 /// <summary>A bounded pool of workers per silo; the key is ignored.</summary>
+[Alias("Stratara.Orleans.IHeavyWorkGrain")]
 internal interface IHeavyWorkGrain : IGrainWithIntegerKey
 {
+    [Alias("ExecuteIntentAsync")]
     Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope);
 }
 
 /// <summary>One grain for the cluster that hands out the permits heavy work runs under.</summary>
+[Alias("Stratara.Orleans.IHeavyWorkPermitGrain")]
 internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
 {
+    [Alias("TryAcquireAsync")]
     Task<bool> TryAcquireAsync();
 
+    [Alias("ReleaseAsync")]
     Task ReleaseAsync();
 
+    [Alias("InUseAsync")]
     Task<int> InUseAsync();
 }
 

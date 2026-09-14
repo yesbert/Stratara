@@ -67,6 +67,12 @@ jobs:
       # Sonar counts a file with no coverage data as 0% covered, so excluding the data-only ones is
       # what keeps the number about behaviour rather than about records.
       #
+      # src/Stratara.Orleans is out of the coverage measure, not out of the analysis. It is a proof of
+      # concept that is not packable, and what verifies it is the Testcontainers suite in
+      # integration.yml, whose kill-and-restart tests run the silo in a second process; unit-test
+      # coverage of it would read as roughly zero whatever that suite proves. Its issues are still
+      # reported. The change that ships it as a package (ship-the-orleans-execution-model) takes
+      # it back into the measure.
       # sonar.sources and sonar.tests are deliberately absent: the .NET scanner derives both from
       # the MSBuild analysis, and the old pipeline never set them either.
       - name: Begin analysis
@@ -80,7 +86,7 @@ jobs:
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.host.url="${SONAR_HOST_URL}" \
             /d:sonar.exclusions='**/bin/**,**/obj/**,**/TestResults/**,artifacts/**,reports/**,samples/**,scripts/**,tools/**,**/*.g.cs,tmp/**,docs/**,.junie/**' \
-            /d:sonar.coverage.exclusions='src/Stratara.Contracts/**,src/Stratara.Diagnostics/**,src/Stratara.Identity.AspNetCore/**,src/Stratara.ServiceDefaults/**,src/Stratara.ServiceDefaults.AspNetCore/**,**/*Command.cs,**/*Query.cs,**/*Event.cs,**/*Events.cs,**/*DbContext.cs,**/*Dto.cs,**/*Options.cs,**/LogEvents.cs,**/Program.cs,**/Migrations/**' \
+            /d:sonar.coverage.exclusions='src/Stratara.Contracts/**,src/Stratara.Diagnostics/**,src/Stratara.Identity.AspNetCore/**,src/Stratara.ServiceDefaults/**,src/Stratara.ServiceDefaults.AspNetCore/**,**/*Command.cs,**/*Query.cs,**/*Event.cs,**/*Events.cs,**/*DbContext.cs,**/*Dto.cs,**/*Options.cs,**/LogEvents.cs,**/Program.cs,**/Migrations/**,src/Stratara.Orleans/**' \
             /d:sonar.cpd.exclusions='src/Stratara.Contracts/**/*.cs,**/*Dto.cs,**/*Options.cs,**/*Event.cs,**/*Events.cs' \
             /d:sonar.cs.file.suffixes=.cs \
             /d:sonar.sourceEncoding=UTF-8 \
