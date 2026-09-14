@@ -1,3 +1,4 @@
+using Stratara.Abstractions.EventSourcing;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.Registry;
@@ -53,6 +54,15 @@ public class ResiliencePipelineFailurePathTests
     {
         var attempts = await AttemptsUntilItGivesUpAsync(
             Pipeline(ResilienceNames.ConcurrencyConflict), () => new ConcurrencyConflictException());
+
+        Assert.Equal(6, attempts);
+    }
+
+    [Fact]
+    public async Task TheConcurrencyPipelineRetriesAConflictTheEventSourceReports()
+    {
+        var attempts = await AttemptsUntilItGivesUpAsync(
+            Pipeline(ResilienceNames.ConcurrencyConflict), () => new ConcurrencyException(Guid.NewGuid(), "Account"));
 
         Assert.Equal(6, attempts);
     }

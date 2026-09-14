@@ -43,6 +43,11 @@ know about.
   `http.request.header.proxy_authorization` and `http.response.header.set_cookie`, but the
   OpenTelemetry semantic conventions keep the dash — `proxy-authorization`, `set-cookie` — so a host
   that captured headers under those names exported the values. Both forms are redacted now.
+- **The concurrency-conflict policy retries a conflict the event source reports.** An append that
+  lost the race surfaces from `IEventSource.SaveChangesAsync` as `ConcurrencyException`, and
+  `ResilienceNames.ConcurrencyConflict` retried only `ConcurrencyConflictException` — so an
+  `IResilientRequest` whose handler appends events ran once and failed on the first conflict. The
+  policy now retries both, and still nothing else.
 
 ### Added
 
