@@ -1,7 +1,7 @@
 # The integration suites — the tests that need real infrastructure.
 #
-# They bring up Redis and RabbitMQ through Testcontainers, so they need a Docker daemon. The hosted
-# Ubuntu runner has one, and the runner user is already in the docker group.
+# They bring up Redis, RabbitMQ and PostgreSQL through Testcontainers, so they need a Docker daemon.
+# The hosted Ubuntu runner has one, and the runner user is already in the docker group.
 #
 # Deliberately not a required check on pull requests. Container startup is the flakiest thing in
 # this repository's CI, and a flaky required check teaches people to re-run rather than to read.
@@ -24,7 +24,9 @@ jobs:
   integration:
     name: Integration suite (Testcontainers)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The Orleans suite alone takes around 18 minutes once its kill tests actually run; the build
+    # and the container pulls come on top.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +40,7 @@ jobs:
           docker --version
           docker info | head -20
 
-      # There is one integration project today. The loop keeps adding the next one free of friction.
+      # The loop picks up every *IntegrationTests project, so adding one needs no edit here.
       - name: Build the integration test projects
         shell: bash
         run: |
@@ -48,6 +50,13 @@ jobs:
             echo "=== Building ${csproj} ==="
             dotnet build "${csproj}" -c Release --nologo
           done
+
+      # The Orleans kill-and-restart tests spawn a second process, the scenario host in
+      # Stratara.Orleans.Benchmarks, and look for its assembly beside their own output in the same
+      # configuration. The host references the test project, not the other way round, so the loop
+      # above never builds it; without this step every kill test fails before it starts.
+      - name: Build the scenario host the Orleans integration tests spawn
+        run: dotnet build tests/Stratara.Orleans.Benchmarks/Stratara.Orleans.Benchmarks.csproj -c Release --nologo
 
       - name: Run the integration tests
         shell: bash
