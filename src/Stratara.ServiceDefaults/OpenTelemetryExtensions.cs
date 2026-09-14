@@ -22,7 +22,9 @@ namespace Microsoft.Extensions.Hosting;
 /// <para>
 /// HTTP-client instrumentation registers an enrichment callback that overwrites any
 /// <c>http.request.header.authorization</c> / <c>http.request.header.cookie</c> /
-/// <c>http.response.header.set-cookie</c> tags with <c>"REDACTED"</c>. This defends against bearer
+/// <c>http.request.header.proxy-authorization</c> /
+/// <c>http.response.header.set-cookie</c> tags with <c>"REDACTED"</c>, in the dashed form the
+/// semantic conventions name them and in the underscore form older capture code wrote. This defends against bearer
 /// tokens or session cookies leaking into trace exporters when a consumer opts into header capture
 /// (via <c>OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS</c> or the SDK's own options). The default OTel
 /// behaviour without that opt-in is already to omit headers, so for most consumers this is a
@@ -35,7 +37,9 @@ public static class OpenTelemetryExtensions
     [
         "http.request.header.authorization",
         "http.request.header.cookie",
+        "http.request.header.proxy-authorization",
         "http.request.header.proxy_authorization",
+        "http.response.header.set-cookie",
         "http.response.header.set_cookie",
     ];
 

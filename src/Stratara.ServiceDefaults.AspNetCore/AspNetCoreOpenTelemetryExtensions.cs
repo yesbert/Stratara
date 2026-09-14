@@ -11,7 +11,9 @@ namespace Microsoft.Extensions.Hosting;
 /// <remarks>
 /// Server-side ASP.NET Core instrumentation registers an enrichment callback that overwrites any
 /// captured <c>http.request.header.authorization</c> / <c>http.request.header.cookie</c> /
-/// <c>http.response.header.set-cookie</c> tags with <c>"REDACTED"</c>. This is a defensive measure
+/// <c>http.request.header.proxy-authorization</c> /
+/// <c>http.response.header.set-cookie</c> tags with <c>"REDACTED"</c>, in the dashed form the
+/// semantic conventions name them and in the underscore form older capture code wrote. This is a defensive measure
 /// for hosts that opt into header capture via <c>OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS</c> or
 /// the SDK's own options — without that opt-in, OTel does not record headers anyway, so this is
 /// a belt-and-braces safeguard against incoming bearer tokens or session cookies leaking through
@@ -23,7 +25,9 @@ public static class AspNetCoreOpenTelemetryExtensions
     [
         "http.request.header.authorization",
         "http.request.header.cookie",
+        "http.request.header.proxy-authorization",
         "http.request.header.proxy_authorization",
+        "http.response.header.set-cookie",
         "http.response.header.set_cookie",
     ];
 
