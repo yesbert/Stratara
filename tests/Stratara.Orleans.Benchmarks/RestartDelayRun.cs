@@ -57,7 +57,7 @@ public static class RestartDelayRun
             var host = await PocHostProcess.StartAsync("timers", environment);
             var coldReady = Stopwatch.GetElapsedTime(coldStarted).TotalSeconds;
             Console.WriteLine($"{label,-28} cold start: ready {coldReady:F1} s");
-            results.Add(new { profile = profile.ToString(), membership = membership.ToString(), restart = 0, readySeconds = coldReady, timerFiredSeconds = double.NaN });
+            results.Add(new { profile = profile.ToString(), membership = membership.ToString(), restart = 0, readySeconds = coldReady, timerFiredSeconds = (double?)null });
 
             for (var restart = 1; restart <= restarts; restart++)
             {
@@ -72,7 +72,7 @@ public static class RestartDelayRun
                 var ready = Stopwatch.GetElapsedTime(started).TotalSeconds;
                 var fired = await WaitForFiringAsync(host, owner, started);
                 Console.WriteLine($"{label,-28} restart {restart}: ready {ready:F1} s, timer fired after {fired:F1} s");
-                results.Add(new { profile = profile.ToString(), membership = membership.ToString(), restart, readySeconds = ready, timerFiredSeconds = fired });
+                results.Add(new { profile = profile.ToString(), membership = membership.ToString(), restart, readySeconds = ready, timerFiredSeconds = double.IsNaN(fired) ? null : (double?)fired });
             }
 
             await host.SendExpectingExitAsync("exit", TimeSpan.FromMinutes(1));
