@@ -109,9 +109,9 @@ operations:
         on top-level interface methods), never block on .Result or .Wait(), use await using for
         IAsyncDisposable. ConfigureAwait(false) is deliberately not used in this repository.
       - >-
-        Naming - PascalCase types and methods, IPascalCase interfaces, camelCase locals,
-        parameters and private fields with no underscore prefix. Suffixes - Async, Handler,
-        Service, Repository, Options.
+        Naming - PascalCase types and methods, IPascalCase interfaces, camelCase locals and
+        parameters, private fields with an underscore prefix (_field) as the code base does
+        throughout. Suffixes - Async, Handler, Service, Repository, Options.
       - >-
         Prefer sealed record for data carriers (events, commands, queries, DTOs, parameter
         objects). Use class only where mutation, identity equality or open inheritance is
