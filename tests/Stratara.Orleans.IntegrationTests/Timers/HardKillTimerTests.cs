@@ -25,7 +25,10 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
             redis.ConnectionString,
             rabbit: string.Empty,
             siloPort: 11171,
-            gatewayPort: 30060);
+            gatewayPort: 30060,
+            // R2 of optimise-the-orleans-execution-model runs this test once under the shortened
+            // membership profile: POC_MEMBERSHIP=ShortIAmAlive in the test runner's environment.
+            membership: Enum.TryParse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP"), out var membership) ? membership : PocSiloMembership.Default);
         await PostgresTimerHostSchema.EnsureDatabaseAsync(postgres.ConnectionStringFor("poc_timers_store"));
 
         var report = new List<string>();

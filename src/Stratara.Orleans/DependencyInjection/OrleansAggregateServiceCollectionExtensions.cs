@@ -61,8 +61,14 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.TryAddScoped<AggregateSendLane>();
         services.AddOptions<HeavyWorkOptions>();
         services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher, OrleansCommandDispatcher>();
-        services.TryAddSingleton<IntentCompletionQueue>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.Extensions.Hosting.IHostedService>(sp => sp.GetRequiredService<IntentCompletionQueue>()));
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(IntentCompletionQueue)))
+        {
+            // One instance for the grains that complete intents and for the host that starts and
+            // stops the queue's loop; a hosted-service registration of its own would be a second one.
+            services.AddSingleton<IntentCompletionQueue>();
+            services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp => sp.GetRequiredService<IntentCompletionQueue>());
+        }
+
         return services;
     }
 
