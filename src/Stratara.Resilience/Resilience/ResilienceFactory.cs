@@ -85,7 +85,8 @@ internal static class ResilienceFactory
 
     /// <remarks>
     /// Retries only on <see cref="ConcurrencyConflictException"/> — the provider-agnostic
-    /// optimistic-concurrency signal — so a handler that re-reads and re-applies on a version clash
+    /// optimistic-concurrency signal — and on <see cref="ConcurrencyException"/>, the form the event
+    /// source reports a lost append in, so a handler that re-reads and re-applies on a version clash
     /// succeeds after a transient conflict. Any other exception is left to propagate. Short backoff
     /// (50ms exponential + jitter) because a concurrency conflict resolves as soon as the competing
     /// writer commits; five retries — six attempts in all — bound the in-process retry budget.
@@ -93,7 +94,7 @@ internal static class ResilienceFactory
     public static void CreateConcurrencyConflictPipeline(ResiliencePipelineBuilder pipelineBuilder) =>
         pipelineBuilder.AddRetry(new RetryStrategyOptions
         {
-            ShouldHandle = new PredicateBuilder().Handle<ConcurrencyConflictException>(),
+            ShouldHandle = new PredicateBuilder().Handle<ConcurrencyConflictException>().Handle<ConcurrencyException>(),
             MaxRetryAttempts = ConcurrencyConflictRetryAttempts,
             Delay = ConcurrencyConflictRetryDelay,
             BackoffType = DelayBackoffType.Exponential,
