@@ -53,7 +53,7 @@ They use their own small tenant/simulation domain rather than the bank-account o
 | [Identity](07-identity.md) | External OpenID Connect sign-in + hardened JIT provisioning, API keys / PATs, and the auth-scheme selector routing all three | 10–15 min |
 | [Identity Directory](08-identity-directory.md) | Tenant membership (roles scoped per membership), `[RequirePermission]` at the mediator, and the scoped-settings fallback chain | 10–15 min |
 
-Each sample is **self-contained code** (no shared "Stratara.Sample.Common" project) — duplication between samples is intentional so each one reads from top to bottom without jumping to a shared library. Every sample is smoke-tested by the local gauntlet via [`tests/Stratara.Samples.SmokeTests/`](https://github.com/yesbert/Stratara/tree/main/tests/Stratara.Samples.SmokeTests), which runs before every push: the console samples' output is asserted, the web samples are started and probed over HTTP. The CI workflow does not run these tests.
+Each sample is **self-contained code** (no shared "Stratara.Sample.Common" project) — duplication between samples is intentional so each one reads from top to bottom without jumping to a shared library. Every sample is smoke-tested on every pull request by the required CI check, and by the local gauntlet, via [`tests/Stratara.Samples.SmokeTests/`](https://github.com/yesbert/Stratara/tree/main/tests/Stratara.Samples.SmokeTests): the console samples' output is asserted, the web samples are started and probed over HTTP.
 
 ## Running locally
 
