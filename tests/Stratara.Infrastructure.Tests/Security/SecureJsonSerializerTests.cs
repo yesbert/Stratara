@@ -62,6 +62,14 @@ public class SecureJsonSerializerTests
         public int Value { get; set; }
     }
 
+    private sealed class EncryptedAmountDto
+    {
+        public string Plain { get; set; } = "";
+
+        [EncryptData(DataSensitivityLevel.UserScoped)]
+        public decimal Amount { get; set; }
+    }
+
     private sealed class PartiallyEncryptedDto
     {
         public string Plain { get; set; } = "";
@@ -421,6 +429,22 @@ public class SecureJsonSerializerTests
         Assert.NotNull(deserialized);
         Assert.Equal("visible", deserialized.Plain);
         Assert.Null(deserialized.Secret);
+    }
+
+    [Fact]
+    public async Task Deserialize_PropertyLevel_RevokedKeyOnAValueTypeField_ReadsAsDefault()
+    {
+        var obj = new EncryptedAmountDto { Plain = "visible", Amount = 42.5m };
+        var serialized = await _serializer.SerializeAsync(obj, TestTenantId, TestUserId);
+
+        _keyStoreMock.Setup(k => k.GetDataEncryptionKeyAsync(TestKeyId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+
+        var deserialized = await _serializer.DeserializeAsync<EncryptedAmountDto>(serialized, TestTenantId, TestUserId);
+
+        Assert.NotNull(deserialized);
+        Assert.Equal("visible", deserialized.Plain);
+        Assert.Equal(0m, deserialized.Amount);
     }
 
     [Fact]

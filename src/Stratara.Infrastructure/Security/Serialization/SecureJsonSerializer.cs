@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -36,6 +38,8 @@ internal sealed partial class SecureJsonSerializer(
     ILogger<SecureJsonSerializer>? logger = null,
     IHostEnvironment? environment = null) : ISecureJsonSerializer
 {
+    private static readonly ConcurrentDictionary<Type, byte[]> DefaultValueJson = new();
+
     /// <inheritdoc/>
     /// <exception cref="ArgumentException">Thrown when <paramref name="obj"/> is not a reference-type instance.</exception>
     public async Task<string> SerializeAsync<T>(T obj, Guid? tenantId = null, Guid? userId = null, CancellationToken cancellationToken = default)
@@ -204,7 +208,7 @@ internal sealed partial class SecureJsonSerializer(
 
         if (!root.TryGetProperty(accessor.Name, out var propEl) || propEl.ValueKind == JsonValueKind.Null)
         {
-            writer.WriteNullValue();
+            WriteAbsentValue(writer, accessor.PropertyType);
             return;
         }
 
@@ -218,12 +222,26 @@ internal sealed partial class SecureJsonSerializer(
         var plain = await DecryptToBytesAsync(wrapper, tenantId, userId, accessor.Name, cancellationToken);
         if (plain is null)
         {
-            writer.WriteNullValue();
+            WriteAbsentValue(writer, accessor.PropertyType);
             return;
         }
 
         writer.WriteRawValue(plain, true);
     }
+
+    private static void WriteAbsentValue(Utf8JsonWriter writer, Type propertyType)
+    {
+        if (!propertyType.IsValueType || Nullable.GetUnderlyingType(propertyType) is not null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteRawValue(DefaultValueJson.GetOrAdd(propertyType, CreateDefaultValueJson), true);
+    }
+
+    private static byte[] CreateDefaultValueJson(Type valueType) =>
+        JsonSerializer.SerializeToUtf8Bytes(RuntimeHelpers.GetUninitializedObject(valueType), valueType);
 
     private async Task<byte[]?> DecryptToBytesAsync(EncryptedWrapper wrapper, Guid? tenantId, Guid? userId, string scope,
         CancellationToken cancellationToken)

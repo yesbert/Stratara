@@ -75,6 +75,33 @@ public class InMemoryKeyStoreTests
     }
 
     [Fact]
+    public async Task Revoking_the_current_version_leaves_the_scope_usable()
+    {
+        var store = new InMemoryKeyStore();
+        var scope = Scope(Guid.CreateVersion7());
+
+        var revoked = await store.GetOrCreateCurrentKeyAsync(scope);
+        await store.RevokeAsync(revoked.KeyId);
+        var next = await store.GetOrCreateCurrentKeyAsync(scope);
+
+        Assert.NotEqual(revoked.KeyId, next.KeyId);
+        Assert.NotNull(await store.GetDataEncryptionKeyAsync(next.KeyId));
+    }
+
+    [Fact]
+    public async Task Revoking_the_newest_version_falls_back_to_the_highest_remaining_one()
+    {
+        var store = new InMemoryKeyStore();
+        var scope = Scope(Guid.CreateVersion7());
+
+        var first = await store.GetOrCreateCurrentKeyAsync(scope);
+        var rotated = await store.RotateAsync(scope);
+        await store.RevokeAsync(rotated);
+
+        Assert.Equal(first.KeyId, (await store.GetOrCreateCurrentKeyAsync(scope)).KeyId);
+    }
+
+    [Fact]
     public async Task EraseScope_shreds_every_version()
     {
         var store = new InMemoryKeyStore();

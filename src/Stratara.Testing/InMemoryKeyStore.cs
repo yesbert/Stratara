@@ -62,8 +62,48 @@ public sealed class InMemoryKeyStore : IKeyStore
     public ValueTask RevokeAsync(string keyId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(keyId);
-        _keysById.TryRemove(keyId, out _);
+
+        lock (_gate)
+        {
+            if (!_keysById.TryRemove(keyId, out _))
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var separator = keyId.LastIndexOf("::v", StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var scopeKey = keyId[..separator];
+            if (!_currentByScope.TryGetValue(scopeKey, out var current) || current != keyId)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var remaining = HighestRemainingKeyId(scopeKey);
+            if (remaining is null)
+            {
+                _currentByScope.TryRemove(scopeKey, out _);
+            }
+            else
+            {
+                _currentByScope[scopeKey] = remaining;
+            }
+        }
+
         return ValueTask.CompletedTask;
+    }
+
+    private string? HighestRemainingKeyId(string scopeKey)
+    {
+        var prefix = scopeKey + "::v";
+
+        return _keysById.Keys
+            .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+            .OrderByDescending(k => int.Parse(k.AsSpan(prefix.Length), System.Globalization.CultureInfo.InvariantCulture))
+            .FirstOrDefault();
     }
 
     /// <inheritdoc />

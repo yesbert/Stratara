@@ -48,6 +48,15 @@ know about.
   `ResilienceNames.ConcurrencyConflict` retried only `ConcurrencyConflictException` — so an
   `IResilientRequest` whose handler appends events ran once and failed on the first conflict. The
   policy now retries both, and still nothing else.
+- **A revoked encrypted field of a value type reads as its default instead of failing the object.**
+  Deserialization wrote an unreadable field back as JSON `null`, which a `decimal`, `int` or other
+  non-nullable value type cannot hold — so erasing a subject's key made every record with such a
+  field throw instead of degrading. The field now reads as the type's default, and the object's
+  other fields are recovered.
+- **`InMemoryKeyStore` keeps a scope usable after its current version is revoked.** Revoking the
+  current key left the scope pointing at a key that no longer existed, so the next
+  `GetOrCreateCurrentKeyAsync` threw. It now falls back to the highest remaining version, or creates
+  a new one, as `EnvelopeFileKeyStore` does.
 
 ### Added
 
