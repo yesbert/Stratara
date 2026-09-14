@@ -52,7 +52,7 @@ is wrapped, and there is no cost to having the behaviour registered.
 
 | Constant on `ResilienceNames` | Behaviour | Use it when |
 |---|---|---|
-| `ResilienceNames.ConcurrencyConflict` | Retries **only** `ConcurrencyConflictException`, up to six attempts, short exponential backoff | Your handler re-reads and re-applies on a version clash |
+| `ResilienceNames.ConcurrencyConflict` | Retries **only** a concurrency conflict — `ConcurrencyException` from the event source or `ConcurrencyConflictException` from a unit of work — up to six attempts, short exponential backoff | Your handler re-reads and re-applies on a version clash |
 | `ResilienceNames.CommandDispatcher` | Up to four attempts, exponential backoff | Bounded retry around command dispatch |
 | `ResilienceNames.EventBundleDispatcher` | Up to four attempts, exponential backoff | Bounded retry around bundle dispatch |
 | `ResilienceNames.MessageBus` | Retries indefinitely, behind a circuit breaker | Broker traffic, where dropping the message is worse than waiting |

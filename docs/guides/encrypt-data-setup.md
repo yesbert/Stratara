@@ -167,8 +167,10 @@ read-path compatibility switch and nothing else.
 `GetDataEncryptionKeyAsync` returns `null` for it, and data encrypted under it cannot be recovered.
 Other versions of the same scope are untouched.
 
-The scope stays usable. With the file store, the next write that asks for the scope's current key
-(`GetOrCreateCurrentKeyAsync`) gets a new version, so new writes keep succeeding. A scope does not go
+The scope stays usable. The next write that asks for the scope's current key
+(`GetOrCreateCurrentKeyAsync`) gets the highest version that is left, or a new one when none is, so
+new writes keep succeeding. The file store and `InMemoryKeyStore` from `Stratara.Testing` behave the
+same way. A scope does not go
 dead because its latest version was revoked. To destroy *every* version of a scope, which is the
 GDPR Art. 17 crypto-shred of a subject, use `EraseScopeAsync(scope)`.
 
@@ -176,15 +178,16 @@ GDPR Art. 17 crypto-shred of a subject, use `EraseScopeAsync(scope)`.
 
 Erasing a subject's key must not make every record that mentions the subject unreadable. When
 `ISecureJsonSerializer` deserializes an object whose `[EncryptData]` field was encrypted under a key
-that no longer exists, **that field reads as absent** (`null`) and the object's other fields are
-recovered normally. An event carrying one shredded field still rehydrates, and a projection still
+that no longer exists, **that field reads as absent** and the object's other fields are recovered
+normally. An event carrying one shredded field still rehydrates, and a projection still
 sees everything else in it.
 
 Two consequences to design for:
 
 - **Give an encrypted field a type that can be absent**, such as a `string`, another reference type,
-  or a nullable value type like `decimal?`. The field comes back as `null`, and a non-nullable value
-  type has no way to hold that.
+  or a nullable value type like `decimal?`. Such a field comes back as `null`. A non-nullable value
+  type such as `decimal` comes back as its default, `0`, which a reader cannot tell apart from a
+  stored zero.
 - **`[EncryptData]` on a class encrypts the object as one unit.** If that key is gone, the whole
   object reads as `null`, not just one field.
 

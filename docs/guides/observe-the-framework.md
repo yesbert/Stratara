@@ -171,8 +171,10 @@ usually longer, and less protected, than the credential's own lifetime.
 This applies to outgoing HTTP calls traced by `ConfigureOpenTelemetry()` and to incoming requests
 traced by `ConfigureAspNetOpenTelemetry()` from `Stratara.ServiceDefaults.AspNetCore`. The tags it
 replaces are `http.request.header.authorization`, `http.request.header.cookie`,
-`http.request.header.proxy_authorization` and `http.response.header.set_cookie`. Each gets the value
-`REDACTED`.
+`http.request.header.proxy-authorization` and `http.response.header.set-cookie` — the names the
+OpenTelemetry semantic conventions give them — and the underscore forms
+`http.request.header.proxy_authorization` and `http.response.header.set_cookie` that older capture
+code wrote. Each gets the value `REDACTED`.
 
 Redaction replaces a value. It never adds one. If a request has none of these headers, no tag is
 added. OpenTelemetry records no headers at all unless you opt into header capture, so for most hosts
