@@ -33,7 +33,8 @@ any other subsystem's.
 The Orleans execution model SHALL publish, from the framework's one meter, the measurements an
 operator needs to see it working: entries applied per projection and partition, stalled partitions,
 commands recorded, resumed and kept, completions flushed and the flush's failures, heavy-work
-permits in use, and the age of the oldest unapplied entry per partition where the reader can tell.
+permits in use, and the age of the oldest unapplied entry per partition, measured from the time
+recorded with the entry.
 The names SHALL be part of the published instrument contract.
 
 #### Scenario: A partition falls behind

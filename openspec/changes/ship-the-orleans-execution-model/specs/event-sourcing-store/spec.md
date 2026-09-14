@@ -9,7 +9,8 @@ on, so that a consumer's migration produces a schema that enforces them.
 The declaration SHALL include what the commit-order readers and the Orleans execution model need:
 on the event stream, a commit-order column filled by the database on insert where the provider
 offers one, and a per-partition position column with its counter table for every provider; on the
-outbox record, the attempt count and the kept-for-an-operator state a bounded resume needs; and on
+outbox record, the attempt count, the kept state, the time of the last hand-over and the aggregate the
+command names, which a bounded resume needs; and on
 the read side, a checkpoint table keyed by consumer and partition. A consumer that does not use the
 execution model SHALL be able to migrate these additions without any behaviour changing.
 
@@ -43,9 +44,12 @@ The framework SHALL offer a reader that returns a partition's entries after a po
 in which no entry at or below the position of a returned batch can still commit later, so that a
 consumer resuming from a stored position never skips an entry. A batch SHALL say whether more
 entries exist, and a batch SHALL never end in the middle of one transaction's entries. Two readers
-SHALL be offered: one native to PostgreSQL that costs the store nothing on append, and one portable
-to any relational provider that keeps a per-partition position at the cost of serialising appends
-within a partition. A position from one reader SHALL NOT be accepted by the other.
+SHALL be offered: one native to PostgreSQL that adds no work to an append, and one for any relational
+provider the framework ships a store registration for, under which concurrent appends to one partition
+wait for each other. A position SHALL NOT be accepted by the other reader, nor under a partition count
+other than the one it was written under. A store that holds entries from before the portable reader
+was adopted SHALL be positioned once before that reader serves, and the reader SHALL refuse to start on
+a store with entries it has not positioned.
 
 #### Scenario: A long transaction commits after a later one
 
@@ -58,3 +62,14 @@ within a partition. A position from one reader SHALL NOT be accepted by the othe
 
 - **WHEN** a checkpoint written under one reader is read under the other
 - **THEN** the read is refused with a message naming both readers, rather than misread
+
+#### Scenario: A consumer changes the partition count
+
+- **WHEN** a checkpoint written under one partition count is read after the host changed the count
+- **THEN** the read is refused with a message naming both counts, rather than skipping entries
+
+#### Scenario: A store with history adopts the portable reader
+
+- **WHEN** a store holding entries written before the upgrade adopts the portable reader
+- **THEN** the documented backfill positions those entries in commit order within each partition, and
+  a reader started before the backfill refuses to start with a message that names it

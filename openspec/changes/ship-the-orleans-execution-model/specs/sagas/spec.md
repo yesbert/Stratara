@@ -65,9 +65,12 @@ dispatches one batch at a time.
 
 On the Orleans execution model a saga MAY opt in to state: it declares which events it handles and
 how it correlates them, and the framework SHALL keep its state per correlation in an event stream of
-its own — never in grain storage — SHALL rehydrate it from that stream, and SHALL let it register a
-timeout that fires once per cluster on or after its due time and survives a restart. A saga that
-does not opt in SHALL keep running unchanged and stateless, as the contract says.
+its own, so that it needs no storage of its own to configure, SHALL rehydrate it from that stream, and
+SHALL let it register a timeout that fires once per cluster on or after its due time and survives a
+restart. A fact MAY reach a process more than once, and a timeout MAY reach it for a step whose events
+were not recorded; the framework SHALL hand every delivery the state as recorded, so that the process
+decides from it. A saga that does not opt in SHALL keep running unchanged and stateless, as the
+contract says.
 
 #### Scenario: A process times out after a restart
 
@@ -79,3 +82,9 @@ does not opt in SHALL keep running unchanged and stateless, as the contract says
 
 - **WHEN** a host registers an existing stateless saga and a stateful process
 - **THEN** the stateless saga behaves as it did on the bus, one instance per fact, no state kept
+
+#### Scenario: A fact reaches a process twice
+
+- **WHEN** a fact is delivered to a process again after a crash
+- **THEN** the process receives it with state that already reflects its first handling, if that
+  handling was recorded
