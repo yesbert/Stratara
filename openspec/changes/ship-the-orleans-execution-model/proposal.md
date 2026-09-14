@@ -1,0 +1,123 @@
+# Ship the Orleans execution model
+
+> **Status:** proposed
+
+## Why
+
+Two archived changes answered the question the proof of concept was built for.
+`prove-an-orleans-execution-model` (2026-09-13) showed that a virtual-actor runtime closes, by
+construction, the gaps the bus workers leave open — a committed fact that never reaches a
+projection, a command that is lost between acceptance and execution, a rebuild that empties every
+read model — and `optimise-the-orleans-execution-model` (2026-09-14, #77) removed the costs that had
+argued against making it the default: a rebuild of one projection at 17.6 % of a full replay,
+processor time per command at +12 % of the bus host, one aggregate under load at parity. On that
+evidence the owner decided on 2026-09-14 that **the Orleans execution model becomes the
+recommended one** (recorded in the archived `evidence/results.md`). Today it is a non-packable
+proof of concept that no consumer can install. This change ships it.
+
+## What Changes
+
+- **Two new packages in the lockstep family**, Tier-C, packable and in the publish filter: the
+  execution model — aggregate grain, durable-intent dispatcher, projection and saga grains,
+  singleton work, durable timers, bounded heavy work — and its Entity Framework Core persistence —
+  the commit-order readers, the checkpoint store and the store-schema addition. Working names
+  `Stratara.Orleans` and `Stratara.Orleans.EntityFrameworkCore`. Orleans is pinned to the range
+  `[10.3.1, 11.0.0)`; an Orleans minor upgrade is a Stratara patch unless the wire format changes.
+- **A new capability, `orleans-execution`**, stating what a consumer of those packages observes:
+  one activation per aggregate cluster-wide with the store's version constraint as the backstop;
+  an accepted command recorded before the call returns, resumed after a crash, retried a bounded
+  number of times and then kept; command order per aggregate within one scope; projections and
+  sagas that read the store in commit order from a checkpoint and never miss a committed fact; a
+  failing entry that stops its partition, is retried without advancing the checkpoint, and is
+  logged and counted; one projection rebuilt alone while the others keep applying; singleton work
+  once per cluster; owner-checked durable timers that survive a restart; heavy work bounded
+  cluster-wide by permits that expire with their holder; one reset; and what a silo restart and a
+  join after a hard death do and do not do.
+- **The store schema grows** by the commit-order columns and the partition counter on the write
+  side and the checkpoint table on the read side, and the outbox record gains what a bounded
+  resume needs; each is a consumer migration, named in the migration note.
+- **Six limitations the proof of concept recorded are closed**: no diagnostics; permits without a
+  lease; an unbounded resume; simple-name identities for readers and sagas; hosted-service
+  starters; cancellation that did not reach the store. And the three items #77's review named:
+  batch deletion through the outbox repository port; a start-up check for the named durable grain
+  directory; a batch that says whether more exists.
+- **The composites split additively.** The projection and saga composites keep their names and
+  what they register; each gains a sibling that registers everything but the bus-fed worker, so
+  the Orleans registrations remove nothing by name.
+- **The documentation follows the specs**: pages for the new capability, the migration note and
+  the operations note on the site, the AI index's core facts, the landing page and README saying
+  which execution model is recommended, and an unreleased changelog entry.
+- **Evidence**: B3 and B5 re-run once on the packaged code with diagnostics on, against the
+  archived optimised numbers; the integration suite runs against the packages.
+
+**Not in this change:** deprecating the bus workers (they stay supported in 4.x and are removed
+no earlier than the next major, by their own change); a SQL Server native reader (the portable
+counter serves every other provider); Orleans streams; any change to what `ISaga`, `IProjection`,
+`ICommandHandler<T>`, `IAggregateScopedCommand` or `IEventSource` promise.
+
+## Consumer-visible effect
+
+A consumer can install the Orleans execution model from the feed and run it beside or instead of
+the bus workers. Everything a consumer has today keeps working unchanged: every existing composite
+registers what it registered, every existing contract promises what it promised, and a host that
+does not install the new packages notices nothing except two new outbox columns in its next
+migration. The published surface gains two packages, one registration per role, one optional
+interface for stateful processes, one for rebuildable projections, the timer port, and one
+default-implemented member on the outbox repository port. This is a **minor** bump after the
+merge: new packable projects.
+
+## Capabilities
+
+### New Capabilities
+
+- `orleans-execution`: what a consumer of the Orleans execution model packages observes — the
+  guarantees per role, the operational shape, and the answers to a hard death.
+
+### Modified Capabilities
+
+- `event-sourcing-store`: *The store declares its own schema* gains the commit-order columns, the
+  partition counter, the checkpoint table and the resume bookkeeping on the outbox record; a new
+  requirement makes the store readable in commit order without skipping a late committer.
+- `outbox-and-messaging`: *Dispatch attempts the bus first and falls back to durable storage*
+  gains the durable-intent shape; *A worker drains durable storage in batches under a distributed
+  lock* gains the singleton-work shape that needs no lock; a new requirement lets stored messages
+  be removed as a batch through the repository port.
+- `projections`: *A replay truncates every read model before rebuilding* gains the per-projection
+  rebuild; *Bundles about one aggregate are applied one at a time within a process* gains the
+  cluster-wide shape; new requirements state the checkpoint path and what a stalled partition
+  reports.
+- `sagas`: *Sagas consume the event stream through their own subscription* gains the store-reading
+  shape; *Bundles about one aggregate reach sagas one at a time within a process* gains the
+  cluster-wide shape; a new requirement states what a stateful process is.
+- `host-composition`: *Each worker role has one composite that wires it* gains the split into
+  services and bus worker, and the one registration per role the Orleans model adds.
+- `observability`: *Log event ids follow a partitioned schema that reserves a consumer range* gains
+  the Orleans band; a new requirement lists what the execution model measures.
+- `package-distribution`: *Every package ships at one lockstep version* and *Dependencies flow one
+  way and never cycle* gain the two packages and the runtime dependency range.
+
+## Impact
+
+- **New, packable:** `src/Stratara.Orleans/` (today the proof of concept, made packable in place)
+  and `src/Stratara.Orleans.EntityFrameworkCore/` (new; today's `CommitOrder/` readers, the
+  checkpoint store and the model extension move there). Both in `Stratara.Publish.slnf`.
+- **Modified, packable:** `src/Stratara.Abstractions/` (a default-implemented member on the outbox
+  repository port; the timer, singleton-work and rebuildable-projection ports if they are to be
+  adoptable without the runtime — a design decision); `src/Stratara.EventSourcing.EntityFrameworkCore/`
+  (the batch delete, the outbox record's resume bookkeeping, the schema addition);
+  `src/Stratara.Projections/` and `src/Stratara.Sagas/` (the split registrations);
+  `src/Stratara.Infrastructure/` (the sibling composites); `src/Stratara.Diagnostics/` (the log
+  event band and the instruments).
+- **Tests:** `tests/Stratara.Orleans.Tests/`, `tests/Stratara.Orleans.IntegrationTests/` and
+  `tests/Stratara.Orleans.Benchmarks/` follow the packages; the integration suite becomes the
+  packages' suite.
+- **Documentation:** `docs/` gains the capability's pages, the migration note and the operations
+  note; `llms.txt` and `llms-full.txt`, `README.md` and the landing page name the recommended
+  model; `CHANGELOG.md` gains an unreleased entry.
+- **Version:** `<VersionPrefix>` is not touched here; `/bump-version minor` follows the merge.
+- **Superseded sources:** `openspec/changes/archive/2026-09-13-prove-an-orleans-execution-model/evidence/migration-note.md`
+  and `openspec/changes/archive/2026-09-14-optimise-the-orleans-execution-model/evidence/operations-note.md`
+  — carried onto the documentation site by this change; the archived copies stay as the record of
+  their day. The *Known limitations of the proof-of-concept code* list in
+  `openspec/changes/archive/2026-09-13-prove-an-orleans-execution-model/design.md` is closed by
+  this change, item by item, in `design.md`.
