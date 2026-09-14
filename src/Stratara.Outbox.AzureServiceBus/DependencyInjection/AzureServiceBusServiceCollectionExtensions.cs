@@ -1,6 +1,8 @@
 using Azure.Core;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.Messaging;
@@ -39,12 +41,8 @@ public static class AzureServiceBusServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrEmpty(connectionString);
 
         services.TryAddSingleton(_ => new ServiceBusClient(connectionString));
-        // Replace (not TryAdd) so an explicit Azure Service Bus registration wins the IMessageBus
-        // slot even when the RabbitMQ umbrella (AddMessaging) already claimed it. One transport per
-        // host; the explicitly-chosen one is the transport.
-        services.Replace(ServiceDescriptor.Singleton<IMessageBus, AzureServiceBusBus>());
-
-        return services;
+        services.TryAddSingleton(_ => new ServiceBusAdministrationClient(connectionString));
+        return services.AddAzureServiceBusCore();
     }
 
     /// <summary>
@@ -75,10 +73,25 @@ public static class AzureServiceBusServiceCollectionExtensions
 
         var tokenCredential = credential ?? new DefaultAzureCredential();
         services.TryAddSingleton(_ => new ServiceBusClient(fullyQualifiedNamespace, tokenCredential));
+        services.TryAddSingleton(_ => new ServiceBusAdministrationClient(fullyQualifiedNamespace, tokenCredential));
+        return services.AddAzureServiceBusCore();
+    }
+
+    /// <summary>
+    /// The registrations both entry points share: the bus itself, and the retry bounds bound from
+    /// the <c>MessageRetry</c> section when the host carries a configuration, validated at start-up.
+    /// </summary>
+    private static IServiceCollection AddAzureServiceBusCore(this IServiceCollection services)
+    {
         // Replace (not TryAdd) so an explicit Azure Service Bus registration wins the IMessageBus
         // slot even when the RabbitMQ umbrella (AddMessaging) already claimed it. One transport per
         // host; the explicitly-chosen one is the transport.
         services.Replace(ServiceDescriptor.Singleton<IMessageBus, AzureServiceBusBus>());
+        services.AddOptions<MessageRetryOptions>()
+            .Configure<IServiceProvider>((options, provider) =>
+                provider.GetService<IConfiguration>()?.GetSection(MessageRetryOptions.SectionName).Bind(options))
+            .Validate(MessageRetryOptionsValidation.IsValid, MessageRetryOptionsValidation.Message)
+            .ValidateOnStart();
 
         return services;
     }

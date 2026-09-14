@@ -5,14 +5,17 @@
 Where a handler fails on a message from a durable subscription, the framework SHALL have the
 transport deliver the message again a bounded number of times, and after the bound SHALL move it to
 a dead-letter destination that belongs to that subscription, where an operator can inspect it and
-return it to the subscription. A message SHALL NOT be discarded by the framework on any transport.
+return it to the subscription. A message on a durable subscription SHALL NOT be discarded by the
+framework on any transport. A transient subscription — one that exists only while its process
+listens — has nobody to return a message to and is outside this requirement.
 
 A concurrency conflict SHALL be treated as a retry, not a failure, but SHALL be bounded as well: a
 message that conflicts more often than the bound allows is moved to the same destination.
 
-Both bounds SHALL be configurable with defaults, and every move to the dead-letter destination SHALL
-be recorded with the topic, the subscription and the reason, and counted as a measurement dimensioned
-by topic and subscription.
+Both bounds SHALL be configurable with defaults, and every move to the dead-letter destination the
+framework decides SHALL be recorded with the topic, the subscription and the reason, and counted as
+a measurement dimensioned by topic and subscription. A move the broker makes on its own — its
+backstop limit firing before the framework's decision — is the broker's to record.
 
 The alternative — reject and drop — turns a handler bug into a silent loss after the caller was told
 the command was accepted; a bundle that vanishes from one subscription leaves that side of the
@@ -65,8 +68,8 @@ broker the framework ships an implementation for.
 
 - **WHEN** a handler exhausts the retry bound on a message
 - **THEN** the message is found on the subscription's dead-letter destination whichever broker is in
-  use — verified against a live RabbitMQ broker; on Azure Service Bus verified against the
-  consumer's handling of a delivered message, not against a live namespace
+  use — verified against a live RabbitMQ broker and against the Azure Service Bus emulator, not a
+  live namespace
 
 #### Scenario: Broker credentials are missing outside development
 

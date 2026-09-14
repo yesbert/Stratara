@@ -64,15 +64,29 @@ discard; `docs/guides/outbox-setup-azureservicebus.md:80` — describes the brok
 
 ### D1 — RabbitMQ worker queues become quorum queues with a dead-letter exchange
 
-Worker subscriptions are declared with `x-queue-type: quorum`,
-`x-dead-letter-exchange: <topic>.dead-letter` and `x-dead-letter-routing-key: <subscription>`;
-the exchange is a direct exchange and `<subscription>.dead-letter` is a quorum queue bound to it
-under the subscription's name. A `BasicNack(requeue: false)` on such a queue routes the message to
-the dead-letter queue instead of dropping it.
+Worker subscriptions are declared with `x-queue-type: quorum`, `x-dead-letter-exchange: ""` (the
+default exchange) and `x-dead-letter-routing-key: <subscription>.dead-letter`, which is a quorum
+queue of that name; `x-dead-letter-strategy: at-least-once` with the `x-overflow: reject-publish`
+it requires, so the move itself cannot lose the message. A `BasicNack(requeue: false)` on such a
+queue routes the message to the dead-letter queue instead of dropping it. *Changed during apply,
+2026-09-13:* the first draft used a per-topic direct exchange; because the dead-letter exchange is
+part of what the broker compares on redeclaration, a subscription bound to two topics would have
+failed its second declaration — the default exchange keeps the arguments a function of the
+subscription alone and needs no extra exchange.
 
-Quorum queues stamp `x-delivery-count` on every redelivery, which is the count the consumer reads
-to apply the bounds (D3). `x-delivery-limit` is set to the larger of the two bounds as a backstop:
-if the framework's own check were ever skipped, the broker dead-letters instead of looping.
+Quorum queues stamp a delivery count on every redelivery, which is the count the consumer reads to
+apply the bounds (D3). *Found during apply, 2026-09-13:* RabbitMQ 4.3 no longer increments
+`x-delivery-count` for a redelivery the consumer asked for with `basic.nack(requeue)` — only for one
+it did not ask for, such as a channel that closed mid-message — and stamps the number of earlier
+deliveries in a new header, `x-acquired-count`. Without that the bound never fired: a poison message
+looped 6 944 times in five seconds. The consumer therefore reads `x-acquired-count` first and
+`x-delivery-count` as the fallback for earlier versions (unverified live; the integration image is
+4.3). Because 4.3 also preserves `x-acquired-count` on a dead-lettered message and a shovel copies
+headers, a message an operator returns would arrive with its exhausted count: the consumer treats a
+delivery the broker does not flag as redelivered as a first delivery, whatever headers it carries.
+`x-delivery-limit` is set one above the larger bound as a backstop for the redeliveries RabbitMQ
+4.3 does count — a consumer that dies mid-message — and to override the default limit of 20 that
+4.x applies to quorum queues.
 
 *Alternative considered:* classic queues with a dead-letter exchange and a re-publish carrying an
 attempt header instead of a requeue. That keeps the queue type but means every retry is a publish
@@ -114,8 +128,8 @@ queue's type after creation.
 ### D3 — The framework applies the bounds from the delivery count; the broker's limits are backstops
 
 On both transports the consumer reads the delivery count the broker supplies — the
-`x-delivery-count` header on RabbitMQ (absent on the first delivery, so 0), `DeliveryCount` on
-Service Bus (1 on the first) — and decides:
+`x-acquired-count` (4.x) or `x-delivery-count` (3.x) header on RabbitMQ (absent on the first
+delivery, so 0), `DeliveryCount` on Service Bus (1 on the first) — and decides:
 
 | Outcome | Count under the bound | Count at the bound |
 |---|---|---|

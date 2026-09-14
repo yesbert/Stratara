@@ -112,7 +112,7 @@ Use the `ResilienceNames` constants rather than the literal pipeline strings.
 
 | Extension | Bus |
 |---|---|
-| `builder.AddMessaging()` | RabbitMQ — extends `IHostApplicationBuilder`, and is what the worker composites call |
+| `builder.AddMessaging()` | RabbitMQ — extends `IHostApplicationBuilder`, and is what the worker composites call. Binds `Messaging`, `BusEnvelopeJson` and `MessageRetry` (the redelivery bounds, validated at start-up) |
 | `services.AddAzureServiceBus(connectionString)` | Azure Service Bus (connection-string) |
 | `services.AddAzureServiceBusWithManagedIdentity(...)` | Azure Service Bus (DefaultAzureCredential) |
 

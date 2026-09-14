@@ -46,5 +46,12 @@ public interface IMessageBus
     /// dispatch every incoming message to <paramref name="handler"/>. Establishes the subscription
     /// if <see cref="EnsureSubscriptionAsync"/> has not already done so.
     /// </summary>
+    /// <remarks>
+    /// A message the handler throws on is redelivered under the bounds of
+    /// <see cref="MessageRetryOptions"/> — a concurrency conflict under
+    /// <see cref="MessageRetryOptions.MaxConflictRequeues"/>, anything else under
+    /// <see cref="MessageRetryOptions.MaxDeliveryAttempts"/> — and then moved to the subscription's
+    /// dead-letter destination, on every implementation the framework ships. It is never discarded.
+    /// </remarks>
     Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default);
 }

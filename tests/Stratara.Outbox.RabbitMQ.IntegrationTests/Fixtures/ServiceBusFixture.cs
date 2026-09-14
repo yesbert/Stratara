@@ -11,7 +11,7 @@ namespace Stratara.Outbox.RabbitMQ.IntegrationTests.Fixtures;
 /// <remarks>
 /// The Azure Service Bus emulator does not support runtime topic / subscription creation — the set
 /// of topics and subscriptions must be predeclared in a <c>Config.json</c> mounted into the container.
-/// This fixture mounts <c>Fixtures/servicebus-emulator-config.json</c>, which declares the five
+/// This fixture mounts <c>Fixtures/servicebus-emulator-config.json</c>, which declares the six
 /// topic / subscription pairs the integration tests in <c>ServiceBusTests</c> use.
 /// </remarks>
 public sealed class ServiceBusFixture : IAsyncLifetime

@@ -28,8 +28,36 @@ applies to the entire NuGet family.
   or registers an `IStoreConflictDetector` of its own that recognises PostgreSQL's SQL state
   `23505` in the exception chain (the framework's implementations are not public).
 
+- `MessageRetryOptions` (`Stratara.Abstractions.Messaging`, section `MessageRetry`):
+  `MaxDeliveryAttempts` (default 3) and `MaxConflictRequeues` (default 100), bound and validated by
+  `AddMessaging()` and by both `AddAzureServiceBus*` registrations. `MessageRetryPolicy` is the
+  decision both transports apply. Log event `108_110` and counter `messaging.dead_lettered`
+  (tags `messaging.topic`, `messaging.subscription`, `reason`) record every dead-lettering; `108_111`
+  warns when a Service Bus subscription's `MaxDeliveryCount` is below the bounds.
+
+### Changed
+
+- **RabbitMQ worker subscriptions are quorum queues with a dead-letter queue, under a new name.**
+  A message whose handler throws is redelivered up to `MaxDeliveryAttempts` times (a concurrency
+  conflict up to `MaxConflictRequeues` times) and then moved to `<subscription>.dead-letter`; it was
+  rejected and dropped by the broker before (conflicts were requeued without bound). Because a
+  classic queue cannot be redeclared as a quorum queue, the worker queue is now
+  `<subscription>.v2`. **Rollout:** deploy — old and new consumers share the exchange and both
+  receive every message — then delete the old `<subscription>` queue once it is drained, or it fills
+  forever. Needs RabbitMQ 3.8+.
+- **Azure Service Bus applies the same bounds.** A handler failure is abandoned for redelivery until
+  `MaxDeliveryAttempts` and then dead-lettered with reason `failure` (it was dead-lettered on the
+  first failure with the exception type as reason); a conflict is dead-lettered by the framework
+  past `MaxConflictRequeues` with reason `conflict` (it was left to the broker's `MaxDeliveryCount`).
+  Set the subscription's `MaxDeliveryCount` at least one above the larger bound.
+- `AddAzureServiceBus` and `AddAzureServiceBusWithManagedIdentity` also register a
+  `ServiceBusAdministrationClient` (try-add) for the advisory limit check.
+
 ### Fixed
 
+- The `MediatorCommandWorker` remark said a failing command was dead-lettered; on RabbitMQ it was
+  dropped. It is now dead-lettered on both brokers, and the remark and the
+  `BusEnvelopeIntegrityMode.Strict` remark say what happens.
 - A duplicate stream version on the SQLite test store (`Stratara.Testing.EntityFrameworkCore`) now
   surfaces as `ConcurrencyException`, as it does on PostgreSQL, instead of a bare
   `DbUpdateException`. A test that asserted the old exception type needs the new one.

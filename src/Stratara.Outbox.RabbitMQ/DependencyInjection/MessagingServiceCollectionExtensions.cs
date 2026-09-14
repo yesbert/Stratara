@@ -14,7 +14,10 @@ public static class MessagingServiceCollectionExtensions
     /// <summary>
     /// Registers the messaging infrastructure: <see cref="IMessageBus"/> backed by
     /// <see cref="RabbitMqBus"/>, the <c>IMessagingIdentifier</c> service, and binds
-    /// <see cref="MessagingOptions"/> from the <c>Messaging</c> configuration section.
+    /// <see cref="MessagingOptions"/> from the <c>Messaging</c> configuration section,
+    /// <see cref="BusEnvelopeJsonOptions"/> from <c>BusEnvelopeJson</c> and
+    /// <see cref="MessageRetryOptions"/> from <c>MessageRetry</c>, the last validated at start-up
+    /// so that a bound of zero is refused before a message is consumed.
     /// </summary>
     /// <param name="builder">The host-application builder.</param>
     /// <returns>The same builder, for chaining.</returns>
@@ -38,6 +41,10 @@ public static class MessagingServiceCollectionExtensions
             .AddOptions<MessagingOptions>().Bind(builder.Configuration.GetSection(MessagingOptions.SectionName));
         builder.Services
             .AddOptions<BusEnvelopeJsonOptions>().Bind(builder.Configuration.GetSection(BusEnvelopeJsonOptions.SectionName));
+        builder.Services
+            .AddOptions<MessageRetryOptions>().Bind(builder.Configuration.GetSection(MessageRetryOptions.SectionName))
+            .Validate(MessageRetryOptionsValidation.IsValid, MessageRetryOptionsValidation.Message)
+            .ValidateOnStart();
 
         return builder;
     }

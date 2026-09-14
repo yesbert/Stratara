@@ -67,13 +67,23 @@ signal a concurrency conflict identifying the stream and aggregate type, SHALL c
 batch, and SHALL record the conflict as a measurement dimensioned by aggregate type.
 
 A conflict SHALL be distinguishable from any other persistence failure, so that a caller can retry
-the former and must not retry the latter.
+the former and must not retry the latter — and it SHALL be distinguishable on every database
+provider the framework ships a store registration for, not only on the one it was first built on.
+A version collision that the database refuses through its uniqueness constraint is a concurrency
+conflict on every provider.
 
 #### Scenario: Two writers race on one stream
 
 - **WHEN** a save fails because another writer has already written the versions being appended
 - **THEN** the failure identifies itself as a concurrency conflict, names the stream and the
   aggregate type, and the staged batch is cleared so a retry starts from a re-read
+
+#### Scenario: Two writers race on a provider other than PostgreSQL
+
+- **WHEN** a save fails because of a version collision on a provider the framework ships a
+  registration for
+- **THEN** the failure is the same concurrency conflict a PostgreSQL store signals — verified on the
+  SQLite store the test-support package registers
 
 #### Scenario: A save fails for an unrelated reason
 
@@ -227,9 +237,15 @@ write-side unit of work available to everything that depends on it — appending
 through the outbox, handling commands in a worker — without a further registration by the consumer.
 A write-side unit of work the consumer registers itself SHALL take precedence over the framework's.
 
+The same registration SHALL make the store recognise its provider's version collision as a
+concurrency conflict. A consumer that brings a provider the framework has no registration for MAY
+register its own recognition of that provider's collision, and the framework SHALL consult it
+alongside its own.
+
 A store whose context is registered but whose unit of work is not is a store that fails at the first
 command with an error naming a type no guide mentions. The registration that declares the context
-is the one place that knows which context the unit of work should be built over.
+is the one place that knows which context the unit of work should be built over — and which
+provider's error means "someone else wrote first".
 
 #### Scenario: A consumer registers only the write context
 
@@ -248,3 +264,9 @@ is the one place that knows which context the unit of work should be built over.
 
 - **WHEN** the write-store context is registered more than once for the same context type
 - **THEN** one unit of work is resolved, bound to that context
+
+#### Scenario: A consumer brings a provider the framework does not ship
+
+- **WHEN** a consumer registers its own recognition of a provider's version collision
+- **THEN** a collision that recognition identifies is signalled as a concurrency conflict, and the
+  framework's own recognitions keep working beside it
