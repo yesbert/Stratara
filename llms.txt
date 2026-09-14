@@ -54,6 +54,26 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   `ResilienceNames.PrecedingFact` policy (5 attempts, ~3 s total) with the lock released between
   attempts, and fails it only when the retries are exhausted. Any other exception fails the bundle
   on the first attempt. A beginning that is minutes late is what replay is for, not the retry.
+- **A message a handler cannot take (since 4.0.4):** on a durable subscription the transport
+  redelivers it up to `MessageRetry:MaxDeliveryAttempts` times (default 3; a concurrency conflict up
+  to `MessageRetry:MaxConflictRequeues`, default 100) and then moves it to the subscription's
+  dead-letter destination — `<subscription>.dead-letter` on RabbitMQ, the subscription's DLQ on
+  Azure Service Bus — logged as `108_110` and counted on `messaging.dead_lettered`. Nothing is
+  dropped by the framework; an operator returns the message once the cause is fixed. Before 4.0.4
+  RabbitMQ dropped a failed message and requeued a conflict without bound. **RabbitMQ worker queues
+  are quorum queues named `<subscription>.v2`** since 4.0.4; after deploying, delete the old
+  `<subscription>` queue once it is drained, or it fills forever at the fanout exchange. Needs
+  RabbitMQ 3.8+.
+- **The commit-to-publish window (since 4.0.4):** by default a save commits, then publishes; a
+  process that ends in between leaves committed events no projection or saga receives (projections
+  recover by replay, sagas not at all). `Outbox:DurableBundles = true` writes the bundle to the
+  outbox table in the commit transaction and removes it once the bus accepted it — window closed,
+  for about 28–30 % fewer appends per second. Default stays off.
+- **Concurrency conflicts on any provider (since 4.0.4):** a duplicate stream version is a
+  `ConcurrencyException` on every provider the framework ships a store registration for
+  (PostgreSQL via `AddNpgsqlWriteDbContextFactory<T>()`, SQLite via the test-support store), through
+  `IStoreConflictDetector`; a host on another provider registers its own detector, and detectors
+  accumulate.
 - **Aggregates:** `IAggregate` (`Guid Id`), `ITenantAggregate : IAggregate` (`Guid TenantId`).
   Events are immutable `sealed record`s. Aggregate properties use `set` (public setter, NOT
   `private set`) so snapshot JSON deserialization works. `Apply` methods hold the write logic.
@@ -132,7 +152,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [Stratara.Projections](https://www.nuget.org/packages/Stratara.Projections) (Tier-C): projection runtime + `ProjectionManager` (push-driven from the event bus).
 - [Stratara.Sagas](https://www.nuget.org/packages/Stratara.Sagas) (Tier-C): `ISaga` discovery + saga dispatcher + hosted `SagaWorker`.
 - [Stratara.Security](https://www.nuget.org/packages/Stratara.Security) (Tier-C): dependency-light `IKeyStore` (`EnvelopeFileKeyStore`, KEK-wrapped versioned DEKs, rotate/revoke/crypto-shred) + AES-GCM blob encryptor. No EF/RabbitMQ/Redis/cloud SDKs.
-- [Stratara.Outbox.RabbitMQ](https://www.nuget.org/packages/Stratara.Outbox.RabbitMQ) (Tier-C): RabbitMQ `IMessageBus` + retry/command workers + heavy-command lane + Redis-coordinated projection replay.
+- [Stratara.Outbox.RabbitMQ](https://www.nuget.org/packages/Stratara.Outbox.RabbitMQ) (Tier-C): RabbitMQ `IMessageBus` (quorum worker queues with bounded redelivery and a dead-letter queue per subscription) + retry/command workers + heavy-command lane + Redis-coordinated projection replay + the `Outbox:DurableBundles` opt-in.
 - [Stratara.Outbox.AzureServiceBus](https://www.nuget.org/packages/Stratara.Outbox.AzureServiceBus) (Tier-C): Azure Service Bus `IMessageBus` implementation.
 - [Stratara.Infrastructure](https://www.nuget.org/packages/Stratara.Infrastructure) (Tier-C): authorization decorators + DI composition glue (`AddBackendServices`, `AddCommonFrameworkServices`).
 - [Stratara.Identity.Core](https://www.nuget.org/packages/Stratara.Identity.Core) (Tier-C): channel-agnostic identity primitives (sign-in / auth-state / token-storage abstractions).

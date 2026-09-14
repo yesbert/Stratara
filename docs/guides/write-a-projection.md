@@ -117,7 +117,14 @@ doubling, about three seconds in all, with the aggregate lock **released between
 creating fact can land in the gap. Any other exception fails the bundle on the first attempt, as
 *A failing projection stops the bundle* requires. If the retries run out, the bundle fails the same
 way, and the log names the stream and the event type — at that point the beginning is not late, it
-is missing, and that is what replay is for.
+is missing.
+
+A failed bundle is not lost. The transport delivers it again — up to `MessageRetry:MaxDeliveryAttempts`
+times (default 3) — and then moves it to the projection subscription's dead-letter destination
+(`<subscription>.dead-letter` on RabbitMQ, the subscription's DLQ on Service Bus), logged as `108_110`
+and counted on `messaging.dead_lettered`. Fix the cause, return the message, and the read model
+catches up; a full replay is the repair of last resort, not the only one. See
+[When a handler cannot take a message](outbox-setup-rabbitmq.md#when-a-handler-cannot-take-a-message).
 
 A host that needs every bundle applied in the order the transport delivers it sets
 `Projections:DegreeOfParallelism` to `1`. A value that is not a positive number means one consumer
