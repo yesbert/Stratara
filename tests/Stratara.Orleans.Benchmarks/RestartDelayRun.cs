@@ -57,7 +57,7 @@ public static class RestartDelayRun
             var host = await PocHostProcess.StartAsync("timers", environment);
             var coldReady = Stopwatch.GetElapsedTime(coldStarted).TotalSeconds;
             Console.WriteLine($"{label,-28} cold start: ready {coldReady:F1} s");
-            results.Add(new { profile = profile.ToString(), membership = membership.ToString(), restart = 0, readySeconds = coldReady, timerFiredSeconds = (double?)null });
+            results.Add(new { profile = profile.ToString(), membership = membership.ToString(), shape = "same-endpoint", restart = 0, readySeconds = (double?)coldReady, timerFiredSeconds = (double?)null });
 
             for (var restart = 1; restart <= restarts; restart++)
             {
@@ -72,11 +72,58 @@ public static class RestartDelayRun
                 var ready = Stopwatch.GetElapsedTime(started).TotalSeconds;
                 var fired = await WaitForFiringAsync(host, owner, started);
                 Console.WriteLine($"{label,-28} restart {restart}: ready {ready:F1} s, timer fired after {fired:F1} s");
-                results.Add(new { profile = profile.ToString(), membership = membership.ToString(), restart, readySeconds = ready, timerFiredSeconds = double.IsNaN(fired) ? null : (double?)fired });
+                results.Add(new { profile = profile.ToString(), membership = membership.ToString(), shape = "same-endpoint", restart, readySeconds = (double?)ready, timerFiredSeconds = double.IsNaN(fired) ? null : (double?)fired });
             }
 
             await host.SendExpectingExitAsync("exit", TimeSpan.FromMinutes(1));
             await host.DisposeAsync();
+        }
+
+        // The second shape, found by the integration suite: a silo that joins on another endpoint
+        // while a killed silo's entry is still Active in the membership table. It has to reach that
+        // silo before it may join, and waits for the entry to age out.
+        foreach (var membership in new[] { PocSiloMembership.Default, PocSiloMembership.ShortIAmAlive })
+        {
+            port++;
+            var label = $"join-after-kill/{membership}";
+            var store = Database(postgres.GetConnectionString(), $"r1_{port}");
+            var orleans = Database(postgres.GetConnectionString(), $"r1_orleans_{port}");
+            await EnsureDatabaseAsync(store);
+
+            for (var iteration = 1; iteration <= restarts; iteration++)
+            {
+                var killedPort = 11700 + port * 10 + iteration;
+                var killed = await PocHostProcess.StartAsync("timers", PocHostSettings.ToEnvironment(
+                    store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), killedPort, killedPort + 20_000,
+                    profile: PocSiloProfile.Production, membership: membership));
+                killed.Kill();
+                await killed.DisposeAsync();
+
+                var joiningPort = killedPort + 5;
+                var started = Stopwatch.GetTimestamp();
+                double? ready;
+                PocHostProcess? joining = null;
+                try
+                {
+                    joining = await PocHostProcess.StartAsync("timers", PocHostSettings.ToEnvironment(
+                        store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), joiningPort, joiningPort + 20_000,
+                        profile: PocSiloProfile.Production, membership: membership));
+                    ready = Stopwatch.GetElapsedTime(started).TotalSeconds;
+                    Console.WriteLine($"{label,-28} join {iteration}: ready {ready:F1} s");
+                }
+                catch (Exception ex) when (ex is TimeoutException or InvalidOperationException)
+                {
+                    ready = null;
+                    Console.WriteLine($"{label,-28} join {iteration}: not ready within the host's two-minute start timeout ({Stopwatch.GetElapsedTime(started).TotalSeconds:F0} s)");
+                }
+
+                results.Add(new { profile = PocSiloProfile.Production.ToString(), membership = membership.ToString(), shape = "join-after-kill", restart = iteration, readySeconds = ready, timerFiredSeconds = (double?)null });
+                if (joining is not null)
+                {
+                    await joining.SendExpectingExitAsync("exit", TimeSpan.FromMinutes(1));
+                    await joining.DisposeAsync();
+                }
+            }
         }
 
         Evidence.WriteResult(run, new { measurement = "restart-delay", results });

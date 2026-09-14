@@ -140,7 +140,7 @@ public static class CommandsPerAggregateRun
             var orleans = Database(adminConnectionString, "b3_orleans");
             await PocSilo.EnsureSchemaAsync(orleans);
             builder.AddBackendServices();
-            builder.UseOrleans(silo => PocSilo.Configure(silo, orleans, redis, siloPort, gatewayPort, PocSiloProfile.Production, directory));
+            builder.UseOrleans(silo => PocSilo.Configure(silo, orleans, redis, siloPort, gatewayPort, PocSiloProfile.Production, directory, PocSiloMembership.Default));
             builder.Services.AddEventSourcing().AddStrataraAggregateGrains();
             if (path == "grain-intent")
             {

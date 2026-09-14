@@ -26,9 +26,9 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
             rabbit: string.Empty,
             siloPort: 11171,
             gatewayPort: 30060,
-            // R2 of optimise-the-orleans-execution-model runs this test once under the shortened
-            // membership profile: POC_MEMBERSHIP=ShortIAmAlive in the test runner's environment.
-            membership: Enum.TryParse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP"), out var membership) ? membership : PocSiloMembership.Default);
+            // The test cluster's default is the short setting; POC_MEMBERSHIP in the runner's
+            // environment overrides it — R2 of optimise-the-orleans-execution-model used that.
+            membership: Enum.TryParse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP"), out var membership) ? membership : PocSiloMembership.ShortIAmAlive);
         await PostgresTimerHostSchema.EnsureDatabaseAsync(postgres.ConnectionStringFor("poc_timers_store"));
 
         var report = new List<string>();

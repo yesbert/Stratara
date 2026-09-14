@@ -65,7 +65,7 @@ public static class RebuildRun
 
     private static async Task<object> FullReplayAsync(string store, string read, string rabbit, int events, int liveRate)
     {
-        var settings = new PocHostSettings(store, read, string.Empty, string.Empty, rabbit, 0, 0, PocSiloProfile.Production);
+        var settings = new PocHostSettings(store, read, string.Empty, string.Empty, rabbit, 0, 0, PocSiloProfile.Production, Membership: PocSiloMembership.Default);
         using var host = await new ProjectionScenario(ProjectionPath.Bus).BuildAsync(settings);
         await host.StartAsync();
 
@@ -93,7 +93,7 @@ public static class RebuildRun
 
     private static async Task<object> PerProjectionRebuildAsync(string store, string read, string orleans, string redis, string rabbit, int events, int liveRate)
     {
-        var settings = new PocHostSettings(store, read, orleans, redis, rabbit, 11501, 30401, PocSiloProfile.Production);
+        var settings = new PocHostSettings(store, read, orleans, redis, rabbit, 11501, 30401, PocSiloProfile.Production, Membership: PocSiloMembership.Default);
         using var host = await new ProjectionScenario(ProjectionPath.Grain).BuildAsync(settings);
         await host.StartAsync();
 

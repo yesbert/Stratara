@@ -52,7 +52,7 @@ public static class ReadModelLatencyRun
                 var read = Database(postgres.GetConnectionString(), $"b2_{scenario.Replace('-', '_')}_{repetition}_read");
                 await EnsureDatabaseAsync(store);
                 await EnsureDatabaseAsync(read);
-                var settings = new PocHostSettings(store, read, Database(postgres.GetConnectionString(), "b2_orleans"), redis.GetConnectionString(), rabbit.GetConnectionString(), siloPort, gatewayPort, PocSiloProfile.Production);
+                var settings = new PocHostSettings(store, read, Database(postgres.GetConnectionString(), "b2_orleans"), redis.GetConnectionString(), rabbit.GetConnectionString(), siloPort, gatewayPort, PocSiloProfile.Production, Membership: PocSiloMembership.Default);
 
                 var latencies = await MeasureAsync(scenario, settings, events, ratePerSecond);
                 var sorted = latencies.Order().ToList();

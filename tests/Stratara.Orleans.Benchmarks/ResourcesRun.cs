@@ -41,7 +41,8 @@ public static class ResourcesRun
                 siloPort,
                 gatewayPort,
                 profile: PocSiloProfile.Production,
-                directory: directory);
+                directory: directory,
+                membership: PocSiloMembership.Default);
 
             await using var host = await PocHostProcess.StartAsync(scenario, environment);
             var process = Process.GetProcessById(host.ProcessId);

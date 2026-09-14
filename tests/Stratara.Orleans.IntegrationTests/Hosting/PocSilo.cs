@@ -16,7 +16,13 @@ public enum PocSiloProfile
     Production,
 }
 
-/// <summary>How the membership protocol treats a predecessor that died on the same endpoint.</summary>
+/// <summary>
+/// How long the membership table keeps treating a killed silo as alive. A silo that restarts on the
+/// same endpoint marks its older clone dead at once; a silo that joins on <em>another</em> endpoint
+/// while a killed silo's entry is still Active tries to reach it and waits for the entry to age out
+/// — with the defaults, ninety seconds, which is where the archived kill tests spent their time.
+/// The tests share one membership table and kill silos, so their default is the short setting.
+/// </summary>
 public enum PocSiloMembership
 {
     /// <summary>Orleans' defaults: a stale entry is skipped after three missed <c>IAmAlive</c> periods of thirty seconds.</summary>
@@ -59,7 +65,7 @@ public static class PocSilo
         int gatewayPort,
         PocSiloProfile profile = PocSiloProfile.Test,
         PocSiloDirectory directory = PocSiloDirectory.RedisAsDefault,
-        PocSiloMembership membership = PocSiloMembership.Default)
+        PocSiloMembership membership = PocSiloMembership.ShortIAmAlive)
     {
         var redis = ConfigurationOptions.Parse(redisConnectionString);
 
