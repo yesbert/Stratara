@@ -27,6 +27,8 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Stratara.Outbox.RabbitMQ.IntegrationTests"/>
+        <InternalsVisibleTo Include="Stratara.Outbox.RabbitMQ.Tests"/>
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
     </ItemGroup>
 
     <ItemGroup>

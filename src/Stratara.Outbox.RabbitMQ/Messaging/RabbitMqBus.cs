@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
 using Stratara.Diagnostics;
@@ -33,10 +34,12 @@ namespace Stratara.Outbox.RabbitMQ.Messaging;
 /// redelivery (<c>x-acquired-count</c> from RabbitMQ 4.3, <c>x-delivery-count</c> before) — and
 /// then rejected without requeue, which moves it to the dead-letter queue. The broker's own
 /// <c>x-delivery-limit</c> sits one above the larger bound as a backstop for redeliveries the
-/// consumer did not ask for, such as a consumer that died mid-message. The <c>.v2</c> suffix
-/// exists because a classic queue of the old name cannot be redeclared as a quorum queue: old and
-/// new consumers coexist on the same exchange during a rollout, and the operator deletes the old
-/// queue once it is drained.
+/// consumer did not ask for, such as a consumer that died mid-message. A worker queue that already
+/// exists keeps the limit it was declared with: when the bounds change between deployments the
+/// queue is used as it is and a warning names it, rather than the subscription failing to open.
+/// The <c>.v2</c> suffix exists because a classic queue of the old name cannot be redeclared as a
+/// quorum queue: old and new consumers coexist on the same exchange during a rollout, and the
+/// operator deletes the old queue once it is drained.
 /// </para>
 /// <para>
 /// A client subscription keeps the classic behaviour: a concurrency conflict is requeued, any other
@@ -71,6 +74,7 @@ internal sealed class RabbitMqBus(
     private const string AcquiredCountHeader = "x-acquired-count";
     private const string DeliveryCountHeader = "x-delivery-count";
     private const string QuorumQueueType = "quorum";
+    private const string DeliveryLimitArgument = "x-delivery-limit";
     private const int MaxOutstandingConfirms = 50_000;
     private static readonly TimeSpan NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
 
@@ -224,7 +228,7 @@ internal sealed class RabbitMqBus(
         await using var connection = await factory.CreateConnectionAsync(cancellationToken);
         await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
-        await DeclareAndBindAsync(channel, topic, subscription, cancellationToken);
+        await DeclareAndBindAsync(connection, channel, topic, subscription, cancellationToken);
     }
 
     private static bool IsClientSubscription(string subscription) =>
@@ -241,8 +245,9 @@ internal sealed class RabbitMqBus(
 
     // Establishing and subscribing must declare the same queue with the same arguments: RabbitMQ
     // rejects a redeclaration whose properties differ, so a drift here would surface as a channel
-    // error on whichever path ran second.
-    private async Task DeclareAndBindAsync(IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
+    // error on whichever path ran second. The one difference tolerated is the delivery limit an
+    // earlier deployment's bounds declared; see DeclareWorkerQueueAsync.
+    private async Task DeclareAndBindAsync(IConnection connection, IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
     {
         await channel.ExchangeDeclareAsync(topic, ExchangeType.Fanout, cancellationToken: cancellationToken);
 
@@ -258,10 +263,55 @@ internal sealed class RabbitMqBus(
             arguments: QuorumQueueArguments(), cancellationToken: cancellationToken);
 
         var queue = WorkerQueueName(subscription);
-        await channel.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false,
-            arguments: WorkerQueueArguments(deadLetterQueue), cancellationToken: cancellationToken);
+        await DeclareWorkerQueueAsync(connection, queue, deadLetterQueue, subscription, cancellationToken);
         await channel.QueueBindAsync(queue, topic, string.Empty, cancellationToken: cancellationToken);
     }
+
+    /// <summary>
+    /// Declares the worker queue on a channel of its own, because a declaration the broker refuses
+    /// closes the channel it arrived on. The refusal that is expected is an existing queue whose
+    /// <c>x-delivery-limit</c> came from the retry bounds of an earlier deployment: the broker
+    /// compares that argument on every redeclaration and a quorum queue cannot change it in place.
+    /// Such a queue is used as it is. The framework's bounds still decide every redelivery a
+    /// consumer asks for, and on RabbitMQ 4.3 and later the limit counts no other kind; before 4.3 it
+    /// counts every redelivery, so a bound raised above the old limit is cut short by the broker until
+    /// the drained queue is deleted and declared again. The warning names the queue for that step.
+    /// Any other refusal still fails the declaration: a queue of that name with another type or
+    /// another dead-letter route would lose the messages a handler cannot take.
+    /// </summary>
+    private async Task DeclareWorkerQueueAsync(IConnection connection, string queue, string deadLetterQueue, string subscription, CancellationToken cancellationToken)
+    {
+        var declaring = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        try
+        {
+            await declaring.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false,
+                arguments: WorkerQueueArguments(deadLetterQueue), cancellationToken: cancellationToken);
+            return;
+        }
+        catch (OperationInterruptedException refused) when (IsDeliveryLimitMismatch(refused))
+        {
+            logger.LogWorkerQueueDeclaredWithOtherArguments(subscription, queue, _retryPolicy.BrokerDeliveryLimit, refused.ShutdownReason!.ReplyText);
+        }
+        finally
+        {
+            await declaring.DisposeAsync();
+        }
+
+        // The queue exists, or the refusal would have been a different one; a passive declaration
+        // confirms it without comparing arguments, and fails loudly if it was deleted in between.
+        await using var confirming = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        await confirming.QueueDeclarePassiveAsync(queue, cancellationToken);
+    }
+
+    /// <summary>
+    /// The broker names the argument it compared in its refusal
+    /// (<c>inequivalent arg 'x-delivery-limit' for queue …</c>). Should that wording ever change, the
+    /// refusal is no longer recognised and the declaration fails as it did before — loudly, not
+    /// silently.
+    /// </summary>
+    private static bool IsDeliveryLimitMismatch(OperationInterruptedException refused) =>
+        refused.ShutdownReason is { ReplyCode: Constants.PreconditionFailed } reason
+        && reason.ReplyText.Contains("'" + DeliveryLimitArgument + "'", StringComparison.Ordinal);
 
     private static Dictionary<string, object?> QuorumQueueArguments() => new(StringComparer.Ordinal)
     {
@@ -282,7 +332,7 @@ internal sealed class RabbitMqBus(
         ["x-dead-letter-routing-key"] = deadLetterQueue,
         ["x-dead-letter-strategy"] = "at-least-once",
         ["x-overflow"] = "reject-publish",
-        ["x-delivery-limit"] = _retryPolicy.BrokerDeliveryLimit,
+        [DeliveryLimitArgument] = _retryPolicy.BrokerDeliveryLimit,
     };
 
     /// <summary>
@@ -346,7 +396,7 @@ internal sealed class RabbitMqBus(
         var connection = await factory.CreateConnectionAsync(cancellationToken);
         var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
-        await DeclareAndBindAsync(channel, topic, subscription, cancellationToken);
+        await DeclareAndBindAsync(connection, channel, topic, subscription, cancellationToken);
 
         var consumer = new AsyncEventingBasicConsumer(channel);
         consumer.ReceivedAsync += async (_, args) =>

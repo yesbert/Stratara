@@ -454,6 +454,41 @@ public class EventSourceTests
         Assert.NotEqual(_tenantId, entry.TenantId);
     }
 
+    /// <summary>
+    /// A unit of work that is not Entity Framework's surfaces the provider's exception unwrapped; the
+    /// detector contract says it receives whatever the save threw.
+    /// </summary>
+    [Fact]
+    public async Task SaveChangesAsync_OnAnUnwrappedUniqueViolation_ThrowsConcurrencyException()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _transactionMock.Setup(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new PostgresException("duplicate key value violates unique constraint", "ERROR", "ERROR", "23505"));
+
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
+
+        var ex = await Assert.ThrowsAsync<ConcurrencyException>(() => _eventSource.SaveChangesAsync());
+
+        Assert.Equal(streamId, ex.StreamId);
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_OnAnUnwrappedUnrelatedFailure_PropagatesAsIs()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var unrelated = new InvalidOperationException("connection lost", new PostgresException("disk full", "ERROR", "ERROR", "53100"));
+        _transactionMock.Setup(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(unrelated);
+
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => _eventSource.SaveChangesAsync());
+
+        Assert.Same(unrelated, thrown);
+    }
+
     private static DbUpdateException CreateUniqueViolationDbUpdateException() =>
         new("unique constraint violation",
             new PostgresException("duplicate key value violates unique constraint", "ERROR", "ERROR", "23505"));

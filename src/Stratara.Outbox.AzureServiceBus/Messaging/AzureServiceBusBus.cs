@@ -37,9 +37,13 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// <para>
 /// The decision is the framework's, read from the message's <c>DeliveryCount</c>, so the same
 /// bounds mean the same number of handler runs as on RabbitMQ. The subscription's own
-/// <c>MaxDeliveryCount</c> is a backstop and must be at least one above the larger bound; where an
-/// administration client is registered and the host may read the subscription, a lower value is
-/// logged as a warning when the subscription is opened.
+/// <c>MaxDeliveryCount</c> is a backstop and must be at least one above the larger bound — a
+/// subscription created with Service Bus defaults allows 10 deliveries, well below the default
+/// conflict bound of 100. Where an administration client is registered and the host may read the
+/// subscription, a lower value is logged as a warning when the subscription is opened and the
+/// bounds for that subscription are lowered to fit under it, so the framework still makes the move
+/// and records it. Without that read the broker dead-letters first, under its own reason and
+/// outside the framework's log and counter.
 /// </para>
 /// <para>
 /// System-level errors (connection drops, auth failures) arrive via <c>ProcessErrorAsync</c> and
@@ -65,9 +69,10 @@ internal sealed class AzureServiceBusBus(
     private const int MaxDeadLetterDescriptionLength = 4096;
 
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
+    private readonly MessageRetryOptions _retryOptions = retryOptions.Value;
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _checkedSubscriptions = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MessageRetryPolicy> _subscriptionPolicies = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public async Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default)
@@ -92,7 +97,7 @@ internal sealed class AzureServiceBusBus(
     /// <inheritdoc/>
     public async Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default)
     {
-        await WarnIfBrokerLimitIsBelowBoundsAsync(topic, subscription, cancellationToken);
+        var retryPolicy = await ResolveRetryPolicyAsync(topic, subscription, cancellationToken);
 
         var processor = client.CreateProcessor(topic, subscription, new ServiceBusProcessorOptions());
 
@@ -113,12 +118,12 @@ internal sealed class AzureServiceBusBus(
             catch (ConcurrencyException ce)
             {
                 logger.LogConcurrencyConflictRequeued(ce.StreamId, ce.AggregateTypeName);
-                await SettleFailedAsync(args, topic, subscription, MessageFailureKind.Conflict, ce, cancellationToken);
+                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, cancellationToken);
             }
             catch (Exception ex)
             {
                 logger.LogMessageProcessingFailed(topic, ex);
-                await SettleFailedAsync(args, topic, subscription, MessageFailureKind.Failure, ex, cancellationToken);
+                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Failure, ex, cancellationToken);
             }
         };
 
@@ -131,10 +136,10 @@ internal sealed class AzureServiceBusBus(
         await processor.StartProcessingAsync(cancellationToken);
     }
 
-    private async Task SettleFailedAsync(ProcessMessageEventArgs args, string topic, string subscription, MessageFailureKind kind, Exception cause, CancellationToken cancellationToken)
+    private async Task SettleFailedAsync(ProcessMessageEventArgs args, string topic, string subscription, MessageRetryPolicy retryPolicy, MessageFailureKind kind, Exception cause, CancellationToken cancellationToken)
     {
         var attempt = args.Message.DeliveryCount;
-        if (_retryPolicy.Decide(attempt, kind) == MessageDisposition.Redeliver)
+        if (retryPolicy.Decide(attempt, kind) == MessageDisposition.Redeliver)
         {
             await args.AbandonMessageAsync(args.Message, cancellationToken: cancellationToken);
             return;
@@ -156,28 +161,54 @@ internal sealed class AzureServiceBusBus(
     }
 
     /// <summary>
-    /// Reads the subscription's <c>MaxDeliveryCount</c> once per subscription and warns when it is
-    /// below what the bounds need. Advisory: a host may hold the right to read messages without the
-    /// right to read the subscription's definition, and the bounds apply either way, so a refusal
-    /// or a management endpoint that is not there ends the check rather than the subscription.
+    /// The bounds that apply on one subscription. The subscription's <c>MaxDeliveryCount</c> is read
+    /// once; where it is below what the configured bounds need, the broker would dead-letter first,
+    /// under its own reason and outside the framework's log and counter, so a warning is logged and
+    /// the bounds are lowered to fit under the broker's limit. Advisory: a host may hold the right to
+    /// read messages without the right to read the subscription's definition, so a failed read ends
+    /// the check rather than the subscription, and the configured bounds apply unchanged.
     /// </summary>
-    private async Task WarnIfBrokerLimitIsBelowBoundsAsync(string topic, string subscription, CancellationToken cancellationToken)
+    internal async Task<MessageRetryPolicy> ResolveRetryPolicyAsync(string topic, string subscription, CancellationToken cancellationToken)
     {
-        if (administration is null || !_checkedSubscriptions.TryAdd($"{topic}/{subscription}", true))
+        if (administration is null)
         {
-            return;
+            return _retryPolicy;
         }
 
+        var key = $"{topic}/{subscription}";
+        if (_subscriptionPolicies.TryGetValue(key, out var known))
+        {
+            return known;
+        }
+
+        var policy = _retryPolicy;
         try
         {
             var properties = await administration.GetSubscriptionAsync(topic, subscription, cancellationToken);
-            if (properties.Value.MaxDeliveryCount < _retryPolicy.BrokerDeliveryLimit)
+            var brokerLimit = properties.Value.MaxDeliveryCount;
+            if (brokerLimit < _retryPolicy.BrokerDeliveryLimit)
             {
-                logger.LogBrokerDeliveryLimitBelowBounds(topic, subscription, properties.Value.MaxDeliveryCount, _retryPolicy.BrokerDeliveryLimit);
+                logger.LogBrokerDeliveryLimitBelowBounds(topic, subscription, brokerLimit, _retryPolicy.BrokerDeliveryLimit);
+                policy = RetryPolicyWithin(_retryOptions, brokerLimit);
             }
         }
-        catch (Exception ex) when (ex is RequestFailedException or ServiceBusException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Advisory, see the summary: no read, no adjustment. The configured bounds apply.
         }
+
+        return _subscriptionPolicies.GetOrAdd(key, policy);
     }
+
+    /// <summary>
+    /// The configured bounds, lowered so that the framework decides no later than the delivery the
+    /// broker's own limit would dead-letter after: a failure on that delivery at the latest, a
+    /// conflict on it as well, which is one requeue fewer than the limit.
+    /// </summary>
+    internal static MessageRetryPolicy RetryPolicyWithin(MessageRetryOptions options, int brokerLimit) =>
+        new(new MessageRetryOptions
+        {
+            MaxDeliveryAttempts = Math.Max(1, Math.Min(options.MaxDeliveryAttempts, brokerLimit)),
+            MaxConflictRequeues = Math.Max(0, Math.Min(options.MaxConflictRequeues, brokerLimit - 1)),
+        });
 }
