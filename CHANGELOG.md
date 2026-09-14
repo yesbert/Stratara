@@ -16,6 +16,18 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_no changes yet since `4.0.4`._
+
+## [4.0.4] — 2026-09-14
+
+Three findings from a proof of concept of an alternative execution model, each fixed on the shipped
+path. A message a handler cannot take is now redelivered a bounded number of times and then
+dead-lettered on both brokers instead of being dropped on one of them; an opt-in closes the window
+in which a committed fact could be lost between the commit and its publication; and a version
+collision is a concurrency conflict on every supported database provider, not only on PostgreSQL.
+Additive on every published surface, with one operator step on RabbitMQ: the worker queues change
+name and type, and the old ones are deleted once drained.
+
 ### Added
 
 - `Outbox:DurableBundles` (`OutboxOptions.DurableBundles`, default `false`): an event bundle is
@@ -3153,7 +3165,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.3...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.4...main
+[4.0.4]: https://github.com/yesbert/Stratara/releases/tag/v4.0.4
 [4.0.3]: https://github.com/yesbert/Stratara/releases/tag/v4.0.3
 [4.0.2]: https://github.com/yesbert/Stratara/releases/tag/v4.0.2
 [4.0.1]: https://github.com/yesbert/Stratara/releases/tag/v4.0.1
