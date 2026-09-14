@@ -1,6 +1,6 @@
 # Document every capability
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-14)
 
 ## Why
 

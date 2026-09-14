@@ -1,6 +1,6 @@
 ## 0. Gate
 
-- [ ] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
+- [x] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
       Nothing below starts before it.
 
 ## 1. Documentation tests first (D3, D4)

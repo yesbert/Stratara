@@ -1,6 +1,6 @@
 # Ship the Orleans execution model
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-14)
 
 ## Why
 
