@@ -219,6 +219,15 @@ is no back-off. The framework reads the delivery count the broker stamps on ever
 `x-delivery-limit` sits one above the larger bound as a backstop for redeliveries nobody asked
 for — a consumer that died mid-message — which is the only kind RabbitMQ 4.3+ counts against it.
 A message the broker dead-letters by that backstop is not in the framework's log or counter.
+
+**Changing the bounds on a running deployment.** RabbitMQ compares `x-delivery-limit` whenever a
+queue is declared again and cannot change it on an existing quorum queue. A worker queue that
+already exists therefore keeps the limit it was first declared with: the subscription opens and uses
+it, and the bus logs a warning (`108_112`) naming the queue and the broker's reply. The new bounds
+still decide every redelivery the consumer asks for. From RabbitMQ 4.3 the old limit counts no other
+kind, so nothing more is needed. Before 4.3 it counts every redelivery, so a bound raised above the
+old limit is cut short by the broker; delete the drained queue and let the next start declare it
+again.
 The worker queue dead-letters through the default exchange straight to `<subscription>.dead-letter`
 with the at-least-once strategy, so the move itself cannot lose the message.
 

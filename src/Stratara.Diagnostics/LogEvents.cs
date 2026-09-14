@@ -161,8 +161,10 @@ public static class LogEvents
         public const int PublishChannelCleanupFailed = 108_109;
         /// <summary>A message exhausted its redelivery bound and was moved to the subscription's dead-letter destination (warning).</summary>
         public const int MessageDeadLettered = 108_110;
-        /// <summary>The broker's own delivery limit on a subscription is below the framework's bounds, so the broker may dead-letter first (warning).</summary>
+        /// <summary>The broker's own delivery limit on a subscription is below the framework's bounds; the bounds for that subscription are lowered to fit under it (warning).</summary>
         public const int BrokerDeliveryLimitBelowBounds = 108_111;
+        /// <summary>A worker queue already exists with arguments other than the ones declared now, typically the delivery limit of earlier retry bounds, and is used as it is (warning).</summary>
+        public const int WorkerQueueDeclaredWithOtherArguments = 108_112;
     }
 
     /// <summary>Aggregate-update event-IDs (109_000s).</summary>

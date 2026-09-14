@@ -186,22 +186,15 @@ internal sealed class EventSource(
         _explicitSubjectOverrides.Clear();
     }
 
-    private bool IsConcurrencyOrUniqueViolation(Exception ex)
-    {
-        // Provider-agnostic concurrency conflict surfaced by Stratara's EfTransaction wrap
-        // (DbUpdateConcurrencyException -> ConcurrencyConflictException).
-        if (ex is ConcurrencyConflictException)
-        {
-            return true;
-        }
-
-        if (ex is DbUpdateException dbEx)
-        {
-            return dbEx is DbUpdateConcurrencyException || conflictDetectors.Any(detector => detector.IsUniqueViolation(dbEx));
-        }
-
-        return false;
-    }
+    /// <summary>
+    /// A conflict the persistence layer names as one, or a unique violation a registered detector
+    /// recognises. Every detector sees the exception as the unit of work threw it, whatever its
+    /// type: which layer wraps the provider's exception is a provider detail, and a unit of work that
+    /// is not Entity Framework's surfaces the provider's exception unwrapped.
+    /// </summary>
+    private bool IsConcurrencyOrUniqueViolation(Exception ex) =>
+        ex is ConcurrencyConflictException or DbUpdateConcurrencyException
+        || conflictDetectors.Any(detector => detector.IsUniqueViolation(ex));
 
     /// <summary>
     /// Maps and signs the bundle before the transaction opens, so a save with no session fails

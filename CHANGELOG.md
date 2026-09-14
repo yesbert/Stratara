@@ -16,7 +16,31 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_no changes yet since `4.0.4`._
+Three fixes to the 4.0.4 retry and conflict work. Nothing to change in a host; one new warning to
+know about.
+
+### Fixed
+
+- **RabbitMQ: changing the retry bounds no longer stops a worker from subscribing.** A worker queue
+  carries `x-delivery-limit` from the bounds it was first declared with, and RabbitMQ refuses a
+  redeclaration with a different value — so a deployment that changed `MessageRetry` failed every
+  subscription with `PRECONDITION_FAILED`. An existing queue is now used as it is, and the bus logs
+  `108_112` naming it. From RabbitMQ 4.3 the old limit does not cut the new bounds short; before 4.3
+  a raised bound needs the drained queue deleted once.
+- **Azure Service Bus: a subscription whose `MaxDeliveryCount` is below the bounds no longer hides
+  its dead-lettering.** Where the host can read the subscription, the bounds for it are lowered to
+  fit under the broker's limit, so the framework makes the move and it reaches `108_110` and
+  `messaging.dead_lettered`. The warning `108_111` now says so. A failure to read the subscription
+  of any kind other than cancellation ends the check instead of the subscription.
+- **A unique violation is a concurrency conflict whatever exception type carries it.** The event
+  source consulted the registered `IStoreConflictDetector`s only for an Entity Framework
+  `DbUpdateException`, so a unit of work that surfaced the provider's exception unwrapped got a
+  persistence failure instead of a `ConcurrencyException`. Every detector now sees the exception
+  as the save threw it, as its contract says.
+
+### Added
+
+- `LogEvents.Messaging.WorkerQueueDeclaredWithOtherArguments` (`108_112`).
 
 ## [4.0.4] — 2026-09-14
 

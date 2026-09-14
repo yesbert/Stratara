@@ -111,6 +111,21 @@ public static partial class LoggerMessagingExtensions
         Message = "Message on topic {Topic} dead-lettered for subscription {Subscription} after {DeliveryAttempt} deliveries ({Reason}).")]
     public static partial void LogMessageDeadLettered(this ILogger logger, string topic, string subscription, string reason, int deliveryAttempt);
 
+    /// <summary>
+    /// Warns that a worker queue already exists with arguments other than the ones declared now —
+    /// typically the delivery limit of an earlier deployment's retry bounds — and is used as it is.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="subscription">The subscription the queue belongs to.</param>
+    /// <param name="queue">The worker queue.</param>
+    /// <param name="deliveryLimit">The delivery limit the configured bounds would have declared.</param>
+    /// <param name="brokerReply">The broker's refusal, which names the argument and both values.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Messaging.WorkerQueueDeclaredWithOtherArguments,
+        Level = LogLevel.Warning,
+        Message = "Worker queue {Queue} of subscription {Subscription} already exists with other arguments than the current retry bounds declare (x-delivery-limit {DeliveryLimit}) and is used as it is. Broker reply: {BrokerReply}")]
+    public static partial void LogWorkerQueueDeclaredWithOtherArguments(this ILogger logger, string subscription, string queue, int deliveryLimit, string brokerReply);
+
     /// <summary>Logs that disposing the publish channel / connection before a recreate failed; the recreate proceeds anyway.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="exception">The cleanup exception.</param>

@@ -36,5 +36,10 @@ public sealed class MessageRetryOptions
     /// How many times a message that reports a concurrency conflict is redelivered before it is
     /// moved to the dead-letter destination. Defaults to 100; the minimum is 1.
     /// </summary>
+    /// <remarks>
+    /// A broker's own delivery limit has to leave room for this bound. An Azure Service Bus
+    /// subscription created with defaults allows 10 deliveries; provision it with a
+    /// <c>MaxDeliveryCount</c> of at least one above the larger bound.
+    /// </remarks>
     public int MaxConflictRequeues { get; set; } = 100;
 }

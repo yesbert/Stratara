@@ -100,10 +100,16 @@ come from one section:
 ```
 
 The framework reads the message's `DeliveryCount`. The subscription's own `MaxDeliveryCount` is a
-backstop and must be **at least one above the larger bound** (101 with the defaults), or the broker
-dead-letters first with its own reason and the framework's log and counter never fire. Where the
-host's credentials can read the subscription's definition, the bus logs a warning (`108_111`) at
-subscribe time when the limit is too low; a host with data-plane-only rights skips the check.
+backstop and should be **at least one above the larger bound** (101 with the defaults). A
+subscription created with Service Bus defaults allows only 10 deliveries.
+
+- **The host can read the subscription's definition.** The bus logs a warning (`108_111`) at
+  subscribe time when the limit is too low, and lowers the bounds for that subscription to fit
+  under it. The framework still makes the move and records it, only sooner than configured.
+- **The host has data-plane rights only.** The check is skipped and the configured bounds apply.
+  With a limit that is too low the broker dead-letters first, with its own reason
+  `MaxDeliveryCountExceeded`, and the framework's log and counter never fire. Raise the limit when
+  you provision the subscription.
 
 Every dead-lettering is logged (`108_110`) and counted on `messaging.dead_lettered`, tagged with
 `messaging.topic`, `messaging.subscription` and `reason`. Alert on the counter or on the broker's

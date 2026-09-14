@@ -147,6 +147,65 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         Assert.Equal(4, attempts);
     }
 
+    /// <summary>
+    /// <em>A host configures the bounds</em>, on a broker where the subscription already exists
+    /// under the bounds of an earlier deployment: the queue keeps what it was declared with, and the
+    /// subscription must open anyway rather than fail its redeclaration.
+    /// </summary>
+    [Fact]
+    public async Task BoundsChangeOnAnExistingSubscription_TheSubscriptionStillOpens_AndTheNewBoundsApply()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var earlierDeployment = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3, MaxConflictRequeues = 4 });
+        await earlierDeployment.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 2, MaxConflictRequeues = 7 });
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+
+        var attempts = 0;
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new InvalidOperationException("poison");
+        }, cts.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("rebounded"), cts.Token);
+
+        var deadLettered = await WaitForDeadLetterAsync(subscription, cts.Token);
+        Assert.Equal("rebounded", deadLettered.Payload);
+        Assert.Equal(2, attempts);
+    }
+
+    /// <summary>
+    /// The tolerance for an earlier deployment's delivery limit stops there. A worker queue of the
+    /// right name but the wrong type has no dead-letter route, so a message a handler cannot take
+    /// would be dropped; the subscription must refuse to open on it.
+    /// </summary>
+    [Fact]
+    public async Task AClassicQueueUnderTheWorkerQueueName_StillFailsTheSubscription()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        await using (var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token))
+        await using (var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token))
+        {
+            await channel.QueueDeclareAsync(RabbitMqBus.WorkerQueueName(subscription), durable: true, exclusive: false, autoDelete: false, cancellationToken: cts.Token);
+        }
+
+        var bus = CreateBus(new MessageRetryOptions());
+
+        var refused = await Assert.ThrowsAsync<global::RabbitMQ.Client.Exceptions.OperationInterruptedException>(
+            () => bus.EnsureSubscriptionAsync(topic, subscription, cts.Token));
+        Assert.Equal((ushort?)406, refused.ShutdownReason?.ReplyCode);
+        Assert.DoesNotContain("'x-delivery-limit'", refused.ShutdownReason!.ReplyText, StringComparison.Ordinal);
+    }
+
     private sealed record DeadLettered(byte[] Body, IReadOnlyBasicProperties Properties);
 
     private async Task<TestMessage> WaitForDeadLetterAsync(string subscription, CancellationToken cancellationToken)
