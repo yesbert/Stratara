@@ -45,10 +45,20 @@ public static class StopDelayRun
                 store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), 11800 + port, 31800 + port,
                 read: read, profile: profile, membership: PocSiloMembership.Default);
 
-            for (var iteration = 1; iteration <= 1; iteration++)
+            // Two shapes: a host stopped after a plain start, and a host that was restarted on the
+            // endpoint of a killed predecessor — the shape every kill test ends with.
+            for (var iteration = 1; iteration <= 2; iteration++)
             {
                 var host = await PocHostProcess.StartAsync(scenario, environment);
                 await Task.Delay(TimeSpan.FromSeconds(5));
+                if (iteration == 2)
+                {
+                    host.Kill();
+                    await host.DisposeAsync();
+                    host = await PocHostProcess.StartAsync(scenario, environment);
+                    await Task.Delay(TimeSpan.FromSeconds(5));
+                }
+
                 var started = Stopwatch.GetTimestamp();
                 string outcome;
                 double? seconds;
@@ -67,8 +77,9 @@ public static class StopDelayRun
 
                 var tail = host.Log.TakeLast(25).ToList();
                 await host.DisposeAsync();
-                Console.WriteLine($"{scenario,-16} stop {iteration}: {outcome}{(seconds is { } s ? $" after {s:F1} s" : string.Empty)}");
-                results.Add(new { scenario, iteration, outcome, seconds, logTail = tail });
+                var shape = iteration == 1 ? "plain" : "after-kill-and-restart";
+                Console.WriteLine($"{scenario,-16} stop {iteration} ({shape}): {outcome}{(seconds is { } s ? $" after {s:F1} s" : string.Empty)}");
+                results.Add(new { scenario, iteration, shape, outcome, seconds, logTail = tail });
             }
         }
 
