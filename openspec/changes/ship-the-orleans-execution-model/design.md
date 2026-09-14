@@ -283,6 +283,24 @@ Evidence: `package-distribution` → *Documentation never names an API that does
 archived notes; `LogEventAllocationTests`, `DiCheatsheetCoverageTests` and
 `ReferenceCatalogueIsCurrentTests` in `tests/Stratara.Documentation.Tests`.
 
+**Presented as a headline feature (owner request, 2026-09-14).** Naming the recommended model is not
+enough: the owner asked that the execution model be presented as the release's headline feature on
+every entry point a reader arrives through. `README.md` gains a door beside the existing three that
+leads with the benefit the capability specifies, a step in *It grows with you*, and the measured rows
+in *Numbers, not adjectives*; the landing page carries the same door, a feature card in *What is in
+the box* and the same numbers; `docs/getting-started/` gains *Choose an execution model*, which links
+the capability, migration and operations pages; the minor's `CHANGELOG.md` section opens with it, and
+that section is the GitHub release note. Every claim is one a requirement of `orleans-execution` or a
+number in `evidence/results.md` supports, and a number measured on the proof of concept is not quoted
+as a number of the packages — the rows come from task 7.3.
+
+*Rejected: a separate marketing page.* It would restate the capability in a second voice and drift
+from it; the entry points present the feature and link to the derived pages instead.
+
+Evidence: the owner's request of 2026-09-14; `README.md` and `docs/index.md` section structure
+(*Pick your door*, *It grows with you*, *What is in the box*, *Numbers, not adjectives*);
+`release.yml` → `announce` publishes the version's `CHANGELOG.md` section as the release note.
+
 ### D14 — Evidence before the tag
 
 B3 and B5 run once on the packaged code with diagnostics on, under the production profile and the

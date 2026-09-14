@@ -126,7 +126,7 @@
       full-replay note; the operations page, with the hard-death scenario and its three answers, the
       statement that returns a kept command, and the host code for a Redis-backed directory. Verify:
       `tests/Stratara.Documentation.Tests` green and every API the pages name exists.
-- [ ] 6.2 `llms.txt` core facts; `README.md` and the landing page name the recommended model; `CHANGELOG.md`
+- [ ] 6.2 `llms.txt` core facts; `CHANGELOG.md`
       unreleased entry; the package count 25 to 27 everywhere D13 lists; the log-event range; a
       cheatsheet row per new registration; the pin comment in `Directory.Packages.props`; `llms-full.txt`
       regenerated with `dotnet run --project tools/Stratara.ReferenceCatalogue -- llms-full.txt`. Verify:
@@ -136,6 +136,21 @@
       analysis collects the Orleans integration suite's in-process coverage (D26). Verify: the first
       analysis of `main` after the merge reports the quality gate as passed with the package in the
       coverage measure.
+
+- [ ] 6.4 `README.md` presents the execution model as the headline feature, after 7.3 so real numbers
+      exist (D13): a door beside the existing three that leads with the benefit the capability
+      specifies, a step in *It grows with you*, the measured B3 and B5 rows in *Numbers, not
+      adjectives*, and the recommended model beside the supported bus workers. Verify: every number
+      equals a value in `evidence/results.md` from 7.3; every link resolves; `LandingBadgeTests` green.
+- [ ] 6.5 `docs/index.md`, the landing page, carries the same door, a `st-feature` card in *What is in
+      the box*, and the same numbers (D13). Verify: `docfx build docs/docfx.json --warningsAsErrors`
+      green; `SiteMetadataTests` green; the numbers identical to `README.md`.
+- [ ] 6.6 `docs/getting-started/choose-an-execution-model.md`, derived from `orleans-execution` and
+      `host-composition`, links the capability, migration and operations pages and is listed in its
+      `toc.yml` (D13). Verify: `tests/Stratara.Documentation.Tests` green.
+- [ ] 6.7 The minor's `CHANGELOG.md` section opens with the execution model, since `release.yml` →
+      `announce` publishes that section as the GitHub release note (D13). Verify: a read of the section
+      before the tag.
 
 ## 7. Tests and evidence (D14, D25)
 
