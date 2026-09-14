@@ -38,3 +38,7 @@
   href: configure-snapshots.md
 - name: Testing Patterns
   href: testing-patterns.md
+- name: Observe the Framework
+  href: observe-the-framework.md
+- name: Queue Background Work
+  href: queue-background-work.md

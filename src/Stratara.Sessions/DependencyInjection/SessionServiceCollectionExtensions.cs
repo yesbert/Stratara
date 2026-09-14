@@ -12,7 +12,9 @@ public static class SessionServiceCollectionExtensions
 {
     /// <summary>
     /// Register the concrete <see cref="ISessionContextProvider"/> implementation as
-    /// a scoped service plus the <see cref="SessionContextOptions"/> binding. Pair with
+    /// a scoped service and register <see cref="SessionContextOptions"/> with its defaults. The
+    /// options are not bound to configuration; bind the <c>SessionContext</c> section to change
+    /// them. Pair with
     /// <c>app.UseMiddleware&lt;SessionContextMiddleware&gt;()</c> in the ASP.NET Core
     /// pipeline to populate the context per request.
     /// </summary>
