@@ -113,6 +113,11 @@ internal sealed class IntentCompletionQueue : IHostedService
         await FlushAsync(ids, CancellationToken.None);
     }
 
+    /// <summary>
+    /// A flush that fails is left to the drain: the rows are still there, and the handlers
+    /// tolerate a second run. Nothing is logged, which the proof of concept's known limitation on
+    /// diagnostics already records.
+    /// </summary>
     private async Task FlushAsync(List<Guid> ids, CancellationToken cancellationToken)
     {
         if (ids.Count == 0)
@@ -126,7 +131,7 @@ internal sealed class IntentCompletionQueue : IHostedService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Left to the drain: the rows are still there, and the handlers tolerate a second run.
+            _ = ex;
         }
     }
 
