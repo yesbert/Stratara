@@ -5,9 +5,10 @@ description: "Which Add*Services call a host needs, chosen by the shape of work 
 
 # DI Composition
 
-> **Derived page.** The behaviour described here is specified by the `host-composition` capability
-> under `openspec/specs/`. That specification is the source; this page explains and
-> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+> **Derived page.** The behaviour described here is specified by the `host-composition` and
+> `event-sourcing-store` capabilities under `openspec/specs/`. Those specifications are the source;
+> this page explains and illustrates them. Where the two disagree, the specification is right and this
+> page is a bug.
 
 Stratara composes via à-la-carte `Add*Services()` extension methods on `IServiceCollection` and `IHostApplicationBuilder`. A typical host picks two or three, never all of them. Pick by **what shape of work** the host does, not by what packages it references.
 
@@ -113,6 +114,72 @@ builder.AddHeavyCommandWorkerServices(degreeOfParallelism: 2);
 ```
 
 `degreeOfParallelism` bounds how many heavy commands run at once. If no heavy worker is running, heavy commands are held in the outbox (never dropped) until one comes online. Over Azure Service Bus, provision the `heavy-command` topic + subscription up front (as with the default command topic). Topic and subscription names are configurable — the entry named `HeavyCommand` in the `Messaging:Topics` array, defaulting to `heavy-command` / `heavy-command-subscription`.
+
+## The store declares its own schema
+
+The write store brings its tables with it. Derive your write context from `WriteDbContext<TContext>`
+and the model already holds the event stream, snapshots, the command log, the outbox and the
+integrity anchors — together with the constraints the store's guarantees depend on. Generate a
+migration from that context and the database enforces them:
+
+| Table | Constraint | What the database refuses |
+|---|---|---|
+| `event_stream_entry` | unique over `bucket_id`, `stream_id`, `version` | A second event at the same version of the same stream in the same partition. Two writers that collide lose at the database, not only in the application, and the loser sees a `ConcurrencyException` |
+| `snapshot` | unique over `bucket_id`, `stream_id`, `version` | A second snapshot for the same stream version |
+| `event_chain_anchor` | unique over `bucket_id`, `sequence_number` | A second integrity anchor at the same sequence number in the same partition |
+| `command_log_entry` | index on `bucket_id` | — |
+| `outbox_entry` | index on `bucket_id` | — |
+
+The table and column names are the ones the `AddNpgsql*DbContextFactory` registrations produce, which
+apply a snake_case naming convention. Keep these constraints in the migration as generated. A schema
+you maintain by hand, or with another tool, has to carry them too — without the unique constraint on
+the event stream, a version collision is no longer refused by the database.
+
+### A context applies only its own configurations
+
+`WriteDbContext<TContext>`, `ReadDbContext<TContext>` and `IdentityStore<TContext, TUser>` ship in one
+assembly, `Stratara.EventSourcing.EntityFrameworkCore`. Each of them applies the entity configurations
+of its own store only, filtering `ApplyConfigurationsFromAssembly` by namespace, so a write context
+never picks up read-store or identity tables. Call `base.OnModelCreating` when you override it and
+you keep that filter.
+
+Your own contexts need the same discipline when they share an assembly. If a write context and a
+read context — or any two contexts — live side by side and each picks up configurations with
+`ApplyConfigurationsFromAssembly`, give each a namespace predicate:
+
+```csharp
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
+
+public sealed class LedgerWriteDbContext(DbContextOptions<LedgerWriteDbContext> options)
+    : WriteDbContext<LedgerWriteDbContext>(options);
+
+public sealed class LedgerReadDbContext(DbContextOptions<LedgerReadDbContext> options)
+    : ReadDbContext<LedgerReadDbContext>(options)
+{
+    // The namespace that holds this context's IEntityTypeConfiguration<T> classes, and no sibling's.
+    private const string ReadModelConfigurations = "Ledger.Persistence.ReadModels";
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);   // the framework's read-store configurations, already filtered
+
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(LedgerReadDbContext).Assembly,
+            type => type.Namespace?.StartsWith(ReadModelConfigurations, StringComparison.Ordinal) == true);
+    }
+}
+```
+
+```csharp
+builder.Services.AddNpgsqlWriteDbContextFactory<LedgerWriteDbContext>();
+builder.Services.AddNpgsqlReadDbContextFactory<LedgerReadDbContext>();
+```
+
+Without the predicate, the context takes in its sibling's entity configurations and its model gains
+tables that belong to another context. The migrations you generated for it no longer match that
+model, and nothing in-process says so: the mismatch shows up only when the context meets a real
+database, as pending model changes. An in-memory test database does not catch it.
 
 ## Example: a worker that runs everything
 

@@ -15,7 +15,7 @@ about, and invokes only the matching methods.
 
 `IProjection` (`Stratara.Projections.Abstractions`) is an **empty marker** — it declares nothing.
 The contract is a naming convention: the runtime reflects over your class for `HandleAsync` methods
-whose first parameter is an `IEvent<TEvent>`. That method's event type is what makes a projection
+whose first parameter is the event payload or an `IEvent<TEvent>`. That method's event type is what makes a projection
 "interested" in an event; events outside that set are skipped without invoking the projection.
 
 ## The shape
@@ -45,6 +45,29 @@ You write one `HandleAsync(IEvent<TEvent>, CancellationToken)` per event you car
 `switch`, no base-method override. The payload is `@event.Data`: `IEvent<TEvent>` re-declares `Data`
 as the typed event, while the non-generic `IEvent` also carries `StreamId`, `Version`, `TenantId`
 and `UserId`.
+
+### Payload or envelope
+
+A handler may take the enveloped event, as above, or the **payload itself**. Take the payload when
+the event is all you need:
+
+```csharp
+using JetBrains.Annotations;
+using Stratara.Projections.Abstractions;
+
+public sealed class OpeningBalanceProjection(IAccountBalanceStore store) : IProjection
+{
+    [UsedImplicitly]
+    private Task HandleAsync(AccountOpened opened, CancellationToken ct) =>
+        store.UpsertAsync(opened.AccountId, opened.InitialBalance, ct);
+}
+```
+
+Take `IEvent<TEvent>` when you need the metadata as well — the stream, the version, the owning
+tenant and user. When a relevant event arrives, the handler taking its payload is invoked; the one
+taking the envelope is invoked only where the projection declares no payload handler for that event.
+Declare one or the other per event, not both. Registration treats the two shapes alike: the payload
+type is what `AddProjectionsFromAssemblyContaining<T>()` adds to the trusted types either way.
 
 Handlers may be **private** — discovery uses `BindingFlags.NonPublic`, so they stay off the
 projection's public surface. Mark them `[UsedImplicitly]` so analyzers don't flag them; the runtime
@@ -206,7 +229,8 @@ converge-not-accumulate rule above is not optional. A failure that persists thro
 ends the replay exactly as an unretried one would.
 
 And when it ends, it marks itself inactive **whether it succeeded or not**. A replay that dies
-half-way leaves you with partially rebuilt read models and no flag saying so. Treat a failed replay
+half-way leaves you with partially rebuilt read models and no active flag saying so — only the
+failure message described under [Watch a replay](#watch-a-replay). Treat a failed replay
 as "run it again", not as "it stopped safely".
 
 **A replay is a maintenance operation.** Run it in a window, after a backup of the read store. The
@@ -249,6 +273,52 @@ half-rebuilt read models and tells nobody.
 One thing a version bump does not do for you: a marking that is *already* stuck from before you
 adopted the lease was written without an expiry and does not gain one. Clear it once — an explicit
 deactivation, or let the next replay's own completion clear it.
+
+## Watch a replay
+
+A replay publishes how far it has got, and records why it stopped when it fails, so an operator can
+tell "still running" from "stopped part way". `IProjectionReplayState.GetProgress()` returns a
+`ReplayProgress`:
+
+| Member | While running | After a failure | After success, or before any replay |
+|---|---|---|---|
+| `IsActive` | `true` | `false` | `false` |
+| `ProcessedEvents` / `TotalEvents` | events applied so far / events to replay | `0` / `0` | `0` / `0` |
+| `Percentage` | `0`–`100`, derived from the two counts | `0` | `0` |
+| `ErrorMessage` | `null` | the failure's message | `null` |
+
+The total is published once the read models are truncated, so a replay that is still truncating
+reports `0` of `0`. A total of zero yields a percentage of `0`, never a division failure. A failure
+message longer than 500 characters is truncated rather than stored whole, and it stays readable until
+the next replay starts. A replay interrupted by **host shutdown** is not recorded as a failure —
+shutdown is not a replay error, so it leaves no message behind.
+
+Reading and requesting a replay from an admin endpoint takes two lines; the guard on them is yours,
+because the framework has none:
+
+```csharp
+app.MapGet("/admin/projections/replay", (IProjectionReplayState replay) => replay.GetProgress())
+    .RequireAuthorization("PlatformAdmin");
+
+app.MapPost("/admin/projections/replay", (IProjectionReplayState replay) => replay.RequestReplay())
+    .RequireAuthorization("PlatformAdmin");
+```
+
+What the endpoint sees follows the registration described under
+[What the framework does not do](#what-the-framework-does-not-do): with the shared Redis connection
+every host reads the same progress, without it each host reads only its own.
+
+## A replayed event runs under the session that recorded it
+
+While replaying, each event is applied under the **session context recorded with it** — its owning
+tenant and user, its actor, its correlation and causation ids — not under the replaying host's own.
+A handler that reads `ISessionContextProvider.Current` during a replay sees the session of the
+request that produced the event, event by event, even when one batch holds events from many tenants.
+
+That is what keeps a rebuild faithful: without it, every rebuilt row would be attributed to whichever
+session happened to be ambient, and tenant-scoped writes would land in the wrong tenant. Write
+handlers that take the tenant from the event or from the session, and a replay puts each row back
+where it was.
 
 ## See also
 

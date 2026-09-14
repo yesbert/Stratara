@@ -58,6 +58,36 @@ a consumer can adopt the contracts without any infrastructure.
 | Tenant membership, permissions, API keys | `Stratara.Identity.EntityFrameworkCore` `+ Stratara.Identity.AspNetCore` |
 | Tests | `Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore` (test projects only) |
 
+## Debugging into the framework
+
+Every published package lets your debugger step from your own code into Stratara's source, and the
+source you see is the source the package was built from, at that exact commit.
+
+- **Symbols ship with every package.** Each package is published with a symbol package (`.snupkg`)
+  pushed to the NuGet.org symbol server in the same step as the package itself.
+- **The symbols carry SourceLink.** They point at the public GitHub repository at the commit the
+  release was built from, so the debugger fetches the matching file rather than whatever is on
+  `main` today. Files generated during the build are embedded in the symbols.
+- **Builds are deterministic.** Releases are built as continuous-integration builds with
+  deterministic compilation, so building the same commit twice produces identical outputs and the
+  symbols always match the binaries you downloaded.
+
+To use this, turn off "Just My Code" and enable the NuGet.org symbol server in your debugger. In
+Visual Studio both are under *Tools → Options → Debugging*. In VS Code with the C# extension, set
+them in the launch configuration:
+
+```jsonc
+{
+  "type": "coreclr",
+  "request": "launch",
+  "justMyCode": false,
+  "symbolOptions": { "searchNuGetOrgSymbolServer": true }
+}
+```
+
+A local build from source is marked as a `dev` prerelease and is not a continuous-integration build.
+The deterministic-output guarantee is about the published packages.
+
 ## Versioning
 
 A `v*` tag publishes the whole family to nuget.org; nothing publishes on a merge. A tag may name a

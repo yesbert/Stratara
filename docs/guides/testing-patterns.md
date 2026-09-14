@@ -82,6 +82,34 @@ assert on your mocked repository / unit-of-work.
 Postgres), add `Stratara.Testing.EntityFrameworkCore` and use `EventStoreTestHost` — it runs the
 real stack on in-memory SQLite. See its package README.
 
+### What the host lets you observe
+
+`EventStoreTestHost` makes what happened visible without a broker:
+
+- **`Outbox`** is a `RecordingEventBundleOutboxDispatcher`. Every event bundle a save produced lands in
+  its `Bundles`, ready for assertions.
+- **`Session`** is the `TestSessionContextProvider` the whole stack reads. It starts on
+  `EventStoreTestHost.DefaultTenantId`. Change its context and every later `ExecuteAsync` and
+  `AggregateAsync` runs under the new tenant.
+- **`Services`** is the root service provider, for anything else you need to resolve.
+
+```csharp
+await using var host = EventStoreTestHost.Create(s => s.AddAggregatesFromAssemblyContaining<Account>());
+var accountId = Guid.NewGuid();
+
+await host.ExecuteAsync(async events =>
+{
+    await events.CreateAsync<Account>(accountId, new AccountOpened(accountId, "Ada", 100m));
+    await events.SaveChangesAsync();
+});
+
+var published = host.Outbox.Bundles;           // the bundle that save produced
+var actingTenant = host.Session.Current!.TenantId;   // EventStoreTestHost.DefaultTenantId
+
+var otherTenant = Guid.NewGuid();
+host.Session.Set(TestSessionContext.ForTenant(otherTenant));   // what follows runs as otherTenant
+```
+
 ## The test-support packages stay out of running systems
 
 Both test-support packages wire in-memory and development-grade implementations. A host that starts
