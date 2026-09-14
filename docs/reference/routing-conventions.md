@@ -25,7 +25,7 @@ The full decision matrix for which marker type a command/query should implement 
 
 - **`IQuery<T>` with side effects.** Queries are read-only by contract. If your "query" mutates state, it's a command — re-mark it.
 - **HTTP endpoints calling handlers directly.** Always go through `IMediator` or `ICommandOutboxDispatcher`. Direct handler-calls bypass the pipeline (no auth, no audit, no retry).
-- **Saga `await`ing an outbox dispatch.** `ICommandOutboxDispatcher.EnqueueCommandAsync(...)` returns when the row is *written*, not when the handler ran. If you need to wait for the result, you're in `IMediator` territory.
+- **Saga `await`ing an outbox dispatch.** `ICommandOutboxDispatcher.EnqueueCommandAsync(...)` returns when the command is *accepted* — published to the bus, or stored for the outbox worker when the bus refuses it — not when the handler ran. If you need to wait for the result, you're in `IMediator` territory.
 
 ## How to pick: a quick decision
 

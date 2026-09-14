@@ -3,7 +3,7 @@
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
 > specifications are the source; this page explains and illustrates them.
 
-Two **Hero Samples** show what makes Stratara different — tamper-evident event streams and tenant-aware encryption — in ~100 lines each. Five **Learning Path** samples walk the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order. A **Pipeline Behaviors** sample shows request validation. Every sample is self-contained (no shared common project) and runs in under a second.
+Two **Hero Samples** show what makes Stratara different — tamper-evident event streams and tenant-aware encryption — in about 155 and 320 lines. Five **Learning Path** samples walk the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order. A **Pipeline Behaviors** sample shows request validation, and two **Identity & Access** samples show external sign-in, API keys, tenant membership and permissions. Every sample is self-contained (no shared common project) and runs in under a second.
 
 The seven hero + learning-path samples share the same **bank-account / money-transfer** domain so you don't have to re-learn the problem space for each one.
 
@@ -56,7 +56,7 @@ dotnet run --project samples/Stratara.Sample.TamperProof
 
 ## Building all samples
 
-Samples are excluded from `Stratara.Publish.slnf` but smoke-tested in CI via [`tests/Stratara.Samples.SmokeTests/`](../tests/Stratara.Samples.SmokeTests) — every sample is run and its output asserted, so one that stops working fails CI rather than rotting silently.
+Samples are excluded from `Stratara.Publish.slnf` and smoke-tested by the local gauntlet (`scripts/local-gauntlet.sh`) via [`tests/Stratara.Samples.SmokeTests/`](../tests/Stratara.Samples.SmokeTests): every console sample is run and its output asserted, the two web samples are started and probed over HTTP. The CI workflow does not run these tests; the gauntlet runs before every push.
 
 **What that does and does not cover.** The samples are deliberately self-contained, which means they reference four framework packages between them — `Stratara.Mediator`, `Stratara.Validation`, `Stratara.Identity.AspNetCore` and `Stratara.Identity.EntityFrameworkCore`. A breaking change in one of those fails a sample. A breaking change in the other twenty-one does not, because no sample calls into them: the event store, the outbox, the sagas, the projections and the encryption stack are written out by hand here rather than consumed. Those surfaces are covered by their own test projects and by the documentation checks, not by these samples.
 

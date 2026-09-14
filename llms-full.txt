@@ -181,7 +181,7 @@ Public extension methods a host calls to wire Stratara, with what each one does 
 | `AddTrustedType<T>()` | Stratara.Abstractions | Registers T in the trusted-type allowlist |
 | `AddTrustedTypeResolver()` | Stratara.Abstractions | Registers the ITrustedTypeResolver as a singleton if no implementation has been registered yet |
 | `AddValidatorsFromAssemblyContaining<T>()` | Stratara.Validation | Scan the assembly containing T and register every concrete IValidator`1 implementation as a scoped service against each closed IValidator`1 interface it implements |
-| `AddWriteStore(IConfiguration configuration)` | Stratara.EventSourcing.EntityFrameworkCore | Binds EventSourcingOptions from the EventSourcing configuration section so write-side components (event-stream/snapshot/outbox repositories) can resolve host-tuned settings such as snapshot cadence and batch sizes |
+| `AddWriteStore(IConfiguration configuration)` | Stratara.EventSourcing.EntityFrameworkCore | Binds EventSourcingOptions from the EventSourcing configuration section |
 | `ConfigureAspNetOpenTelemetry<TBuilder>()` | Stratara.ServiceDefaults.AspNetCore | Wires ASP.NET Core request instrumentation on metrics + tracing on top of the base pipeline configured by ConfigureOpenTelemetry |
 | `ConfigureOpenTelemetry<TBuilder>(Action<MeterProviderBuilder> configureMetrics, Action<TracerProviderBuilder> configureTracing)` | Stratara.ServiceDefaults | Configures OpenTelemetry logging + metrics + tracing on the given host builder |
 | `ConfigureSerilog()` | Stratara.ServiceDefaults | Registers Serilog as the host's logging provider with Stratara defaults (destructuring attributes, async console sink, OTLP sink when configured) |

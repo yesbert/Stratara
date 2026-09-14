@@ -53,11 +53,11 @@ The `IEventSource` interface: append events to a stream + reconstruct aggregates
 
 ## Projection
 
-A read-model builder driven by event bundles from the bus. Implements `IProjection` and a `HandleAsync(IEnumerable<IEvent>, …)` method. Stratara discovers and registers projections via `AddProjectionsFromAssemblyContaining<T>()`; they run inside the `EventProjectionWorker`.
+A read-model builder driven by event bundles from the bus. `IProjection` is an empty marker; the runtime finds one `HandleAsync` method per event type, taking the enveloped `IEvent<TEvent>` or the bare event payload. Stratara discovers and registers projections via `AddProjectionsFromAssemblyContaining<T>()`; they run inside the `ProjectionWorker`.
 
 ## Saga (Process Manager)
 
-A long-running process that reacts to events by issuing more commands. Implements `ISaga`. Stratara routes events through `AddSagasFromAssemblyContaining<T>()` + the `SagaOrchestrationWorker`.
+A long-running process that reacts to events by issuing more commands. Implements the empty marker `ISaga`. Stratara routes events through `AddSagasFromAssemblyContaining<T>()` + the `SagaWorker`.
 
 ## Validation
 
@@ -73,7 +73,7 @@ The addressing unit for data-encryption keys (`KeyScope` in `Stratara.Abstractio
 
 ## Outbox
 
-The transactional outbox pattern. When a handler emits events, they land in the `outbox_entry` table inside the same DB transaction. The `OutboxWorker` polls + publishes to the bus (RabbitMQ / Azure Service Bus). At-least-once delivery + idempotent consumers.
+Stratara's take on the outbox pattern. A command or an event bundle is published to the bus first (RabbitMQ / Azure Service Bus); only when the bus refuses it or is unreachable is it written to the `outbox_entry` table, where the `OutboxWorker` publishes it later. A host that sets `Outbox:DurableBundles = true` writes each event bundle to the table in the transaction that commits its events instead, so a process that ends between commit and publish loses nothing. At-least-once delivery + idempotent consumers.
 
 ## Bus Envelope
 
@@ -90,7 +90,7 @@ The Stratara session model distinguishes:
 
 - **Actor** — *who triggered* the operation. Used for audit + rate-limit keying + event payload's `CreatedByUserId`. Fields: `ActorTenantId`, `ActorUserId`.
 - **Subject** — *the data owner*. Used for routing + encryption AAD + query filter. Fields: unprefixed `TenantId`, `UserId?`.
-- **ClientId** — neither actor nor subject; the *connection identity* (browser tab / phone call / SSR session). Used as `Conversation` / `ProactiveSession` aggregate stream-id + SignalR target.
+- **ClientId** — neither actor nor subject; the *connection identity* (browser tab / phone call / SSR session). Use it to address one connection — as a stream id or as the target of a push, for example.
 
 ## Trusted Type Resolver
 

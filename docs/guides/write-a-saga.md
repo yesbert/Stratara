@@ -9,7 +9,7 @@ description: "How to react to events by issuing more commands: registering a sag
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
-A saga (a.k.a. process manager) reacts to events by issuing more commands. Stratara registers sagas via `AddSagasFromAssemblyContaining<T>()` + the `SagaOrchestrationWorker`.
+A saga (a.k.a. process manager) reacts to events by issuing more commands. Stratara registers sagas via `AddSagasFromAssemblyContaining<T>()` + the `SagaWorker`.
 
 ## The contract
 
@@ -76,7 +76,7 @@ such promise.
 
 A saga that reads a view before it dispatches can therefore see a follow-up fact before the view has
 the entity it is about. Throw `PrecedingFactMissingException(streamId, eventTypeName)` where the
-lookup comes back empty: the worker retries the bundle — five attempts, about three seconds in all,
+lookup comes back empty: the worker retries the bundle — six attempts, about three seconds in all,
 with the aggregate lock released in between — and fails it only when the retries run out. Every
 other exception fails the bundle on the first attempt.
 
@@ -98,5 +98,5 @@ The pattern: the saga listens for both `WithdrawSucceeded` and `DepositFailed`. 
 
 ## Anti-patterns
 
-- **Don't expect a result from an outbox command.** `dispatcher.EnqueueCommandAsync(…)` returns once the row is written, not once the command runs — you get the envelope id, not the outcome. If you need a synchronous result, dispatch through `IMediator.HandleAsync(…)` instead (but you give up the outbox's at-least-once delivery).
+- **Don't expect a result from an outbox command.** `dispatcher.EnqueueCommandAsync(…)` returns once the command is accepted — published, or stored for the outbox worker — not once it runs — you get the envelope id, not the outcome. If you need a synchronous result, dispatch through `IMediator.HandleAsync(…)` instead (but you give up the outbox's at-least-once delivery).
 - **Don't query write-store state from the saga.** Query a projection or a read-store. The saga is a read-side actor that produces write-side effects — keep its reads on the read side.

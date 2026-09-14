@@ -57,9 +57,9 @@ already has the framework services and needs a second lane.
 |---|---|
 | `services.AddMediatorWorker()` | The interactive command worker — subscribes to the command topic, restores the session context, dispatches through `IMediator` |
 | `services.AddHeavyCommandWorker(dop?)` | The heavy-command lane, draining the `heavy-command` topic so `IHeavyCommand` work cannot starve the interactive lane |
-| `services.AddOutboxWorker()` | The outbox-drain hosted service; binds `OutboxOptions` from configuration |
-| `services.AddProjectionWorker()` | The projection runtime and its hosted service; binds `ProjectionOptions` |
-| `services.AddSagaWorker()` | The saga runtime and its hosted service; binds `SagaOptions` |
+| `services.AddOutboxWorker(configuration)` | The outbox-drain hosted service; binds `OutboxOptions` from configuration |
+| `services.AddProjectionWorker(configuration)` | The projection runtime and its hosted service; binds `ProjectionOptions` |
+| `services.AddSagaWorker(configuration)` | The saga runtime and its hosted service; binds `SagaOptions` |
 | `services.AddEventStreamHashWorker()` | The event-stream hashing worker and the anchor services behind it |
 
 ## Domain registration (`IServiceCollection`)
@@ -103,7 +103,7 @@ These tell Stratara *what* to dispatch / project / saga. Call once per assembly 
 
 | Extension | What it does |
 |---|---|
-| `services.AddResiliencePipelines()` | Registers the four Polly named pipelines — `ResilienceNames.MessageBus`, `.CommandDispatcher`, `.EventBundleDispatcher`, `.ConcurrencyConflict` |
+| `services.AddResiliencePipelines()` | Registers the six Polly named pipelines — `ResilienceNames.MessageBus`, `.CommandDispatcher`, `.EventBundleDispatcher`, `.ConcurrencyConflict`, `.PrecedingFact`, `.ProjectionReplayBatch` |
 | `services.AddStrataraResilienceBehavior()` | Mediator behavior that dispatches `IResilientRequest` through its chosen pipeline |
 
 Use the `ResilienceNames` constants rather than the literal pipeline strings.
@@ -128,7 +128,7 @@ transport, but registering both in one host is still a smell — pick one.
 | `services.AddNpgsqlWriteDbContextFactory<TContext>()` | Npgsql-backed `IDbContextFactory<TContext>` for the write-store context, plus a scoped `IWriteUnitOfWork` over it unless the host registered its own, plus the `IStoreConflictDetector` that makes a PostgreSQL unique violation a `ConcurrencyException`. The unit of work also needs `ISessionContextProvider` and `ISecureJsonSerializer` from `AddSessionContext()` / `AddSecurity()`, which every worker composite applies. A host on another provider registers its own `IStoreConflictDetector`; detectors accumulate |
 | `services.AddNpgsqlReadDbContextFactory<TContext>()` | The same for a read-store context, plus a scoped `IProjectionsUnitOfWork` / `IReadUnitOfWork` over it unless the host registered its own |
 | `services.AddNpgsqlIdentityDbContextFactory<TContext>()` | The same for an identity-store context, **plus** a scoped resolution of the context itself so ASP.NET Identity can inject it directly |
-| `services.AddWriteStore(configuration)` | Binds `EventSourcingOptions` from the `EventSourcing` section — snapshot cadence, batch sizes and the other write-side knobs |
+| `services.AddWriteStore(configuration)` | Binds `EventSourcingOptions` from the `EventSourcing` section, which carries no settings today. Snapshot cadence is the registered `ISnapshotStrategy` — `VersionThresholdSnapshotStrategy` (every 50 events) unless you register another |
 | `services.AddCommandAuditing()` | `CommandAuditBehavior` for both command shapes — persists an audit row per dispatched command; queries pass through (`Stratara.EventSourcing.Pipeline.CommandAudit`) |
 
 ## Outbox coordination + projection replay (`Stratara.Outbox.RabbitMQ`)
@@ -136,7 +136,7 @@ transport, but registering both in one host is still a smell — pick one.
 | Extension | What it does |
 |---|---|
 | `services.AddRedisOutboxLock()` | Replaces the no-op `NullOutboxLock` with the Redis-backed one, which is what makes **more than one outbox-worker replica** safe. Needs an `IConnectionMultiplexer` — `AddCaching()` from `Stratara.Infrastructure` registers one. Lease it via `OutboxOptions.LockLeaseSeconds` |
-| `services.AddProjectionReplayState()` | Registers the Redis-backed projection-replay state **and** `ProjectionReplayOptions` with its defaults, so the replay marking is leased (`LeaseSeconds`, default 300) rather than outliving a crashed replay. Idempotent |
+| `services.AddProjectionReplayState()` | Registers the projection-replay state — shared over Redis where an `IConnectionMultiplexer` is registered, held in process otherwise (warning `104_012`) — **and** `ProjectionReplayOptions` with its defaults, so the replay marking is leased (`LeaseSeconds`, default 300) rather than outliving a crashed replay. Idempotent |
 
 ## Observability (`Stratara.ServiceDefaults`)
 

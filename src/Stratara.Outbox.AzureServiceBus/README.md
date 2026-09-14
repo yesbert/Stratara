@@ -8,8 +8,10 @@
 Azure Service Bus implementation of `Stratara.Abstractions.Messaging.IMessageBus`. Publishes JSON-serialized messages to topics and exposes a subscription helper that wires up a Service Bus processor with per-message exception classification:
 
 - success → `CompleteMessageAsync`
-- `ConcurrencyException` → `AbandonMessageAsync` (Service Bus redelivers)
-- any other exception → `DeadLetterMessageAsync` (explicit DLQ with the exception type as reason)
+- `ConcurrencyException` → `AbandonMessageAsync` until `MessageRetry:MaxConflictRequeues` redeliveries (default 100) have not resolved it, then `DeadLetterMessageAsync` with reason `conflict`
+- any other exception → `AbandonMessageAsync` until `MessageRetry:MaxDeliveryAttempts` deliveries (default 3) have failed, then `DeadLetterMessageAsync` with reason `failure` and the exception in the description
+
+The subscription's own `MaxDeliveryCount` must leave room for the bounds; a subscription created with Service Bus defaults allows 10 deliveries. Where the host can read the subscription, the bus lowers the bounds for it to fit and logs `108_111`.
 
 System-level errors (connection drops, auth failures) arrive via `ProcessErrorAsync` and are logged; the Service Bus client owns the reconnect / retry policy for those.
 

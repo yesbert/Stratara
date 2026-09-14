@@ -26,7 +26,7 @@ What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is t
 - **Vendor-neutral request validation** — the `Stratara.Validation` package runs `IValidator<T>` as the outermost mediator behavior, blocking invalid commands before the handler (FluentValidation-shape-compatible, no FluentValidation dependency).
 - **Outbox-pattern dispatcher** for async messaging via RabbitMQ or Azure Service Bus, with publisher-confirms and broker-reconnect.
 - **Event store** on PostgreSQL via EF Core — write store, read store, identity store; snapshot tables, command-log, outbox, event-stream entries.
-- **Hash-chained integrity worker** that verifies the event stream wasn't mutated post-commit.
+- **Hash-chained, tamper-evident event streams** — a worker chains every committed event to the one before it; verifying the chain is a pass you schedule, not something the framework runs on its own.
 - **Field-level encryption** with `[EncryptData]` — AES-GCM with tenant-bound AAD, transparent serialization-boundary seal.
 - **Production key store + envelope encryption** — the dependency-light `Stratara.Security` package (`EnvelopeFileKeyStore`) manages KEK-wrapped, versioned per-`KeyScope` keys with rotation, revoke, and whole-scope crypto-shredding (GDPR Article 17) — no EF Core, RabbitMQ, or cloud SDK required.
 - **Projection runtime** + **saga runtime** that consume event bundles from the bus.

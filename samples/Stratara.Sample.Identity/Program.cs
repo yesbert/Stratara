@@ -71,6 +71,8 @@ app.MapGet("/api/me", (ClaimsPrincipal user) =>
         Results.Ok(new { subject = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub") }))
     .RequireAuthorization();
 
+// Open on purpose, so the offline API-key lane can be driven with curl. A real host puts key issuance
+// behind an administrator policy — .RequireAuthorization("<admin policy>") — never leaves it open.
 app.MapPost("/admin/api-keys", async (IApiKeyStore keys, CancellationToken cancellationToken) =>
 {
     var issued = await keys.IssueAsync(
@@ -94,6 +96,11 @@ app.MapGet("/api/whoami", (ClaimsPrincipal user) => Results.Ok(new
         scheme = "resolved by the auth-scheme selector from the request shape",
     }))
     .RequireAuthorization();
+
+
+// Where the provisioning step sends a sign-in it refused (see OnTicketReceived below).
+app.MapGet("/login-failed", (string? reason) =>
+    Results.Problem(title: "Sign-in was not completed", detail: reason, statusCode: StatusCodes.Status403Forbidden));
 
 app.Run();
 

@@ -22,7 +22,7 @@ commands are rejected at the edge; the handler stays free of guard clauses.
 1. **`RegisterUserCommand : ICommand<Guid>`** and its handler — the handler has **no input checks**,
    because validation runs first.
 2. **`RegisterUserValidator : IValidator<RegisterUserCommand>`** — returns a `ValidationResult`
-   (never `null`; `ValidationResult.Success` when valid). It produces all three severities:
+   (never `null`; `ValidationResult.Success` when valid). It produces two of the three severities:
    - `Error` for a malformed email or under-age request (blocks),
    - `Warning` for an implausibly high age (passes through, logged).
 3. **DI wiring** via `AddStrataraValidation()` + `AddValidatorsFromAssemblyContaining<Program>()`,

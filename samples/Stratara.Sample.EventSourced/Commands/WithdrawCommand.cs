@@ -20,6 +20,6 @@ public sealed class WithdrawCommandHandler(
         }
 
         store.Append(command.AccountId, new AmountWithdrawn(command.AccountId, command.Amount, clock.GetUtcNow()));
-        await store.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await store.SaveChangesAsync(cancellationToken);
     }
 }

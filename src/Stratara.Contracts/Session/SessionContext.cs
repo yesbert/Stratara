@@ -21,7 +21,7 @@ namespace Stratara.Contracts.Session;
 /// <param name="ActorUserId">User id of the principal who triggered the operation (audit dimension).</param>
 /// <param name="TenantId">Tenant the data belongs to (data-owner dimension; routing, encryption AAD, query filter).</param>
 /// <param name="UserId">Optional user the data belongs to (null for tenant-scoped aggregates).</param>
-/// <param name="ClientId">Optional client identifier (browser tab / phone call / SSR session) — used as Conversation/ProactiveSession stream id.</param>
+/// <param name="ClientId">Optional client identifier (browser tab / phone call / SSR session) — the connection identity, neither actor nor subject; use it to address one connection.</param>
 [ExcludeFromCodeCoverage]
 public sealed record SessionContext(
     [property: JsonPropertyName("CorrelationId")] string CorrelationId,

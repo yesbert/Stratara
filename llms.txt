@@ -51,7 +51,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   **within a process** (per-aggregate bucket lock, `BucketLockPool` in `Stratara.Abstractions`).
   A projection or saga that finds the entity a fact refers to absent throws
   `PrecedingFactMissingException(streamId, eventTypeName)`; the worker retries the bundle under the
-  `ResilienceNames.PrecedingFact` policy (5 attempts, ~3 s total) with the lock released between
+  `ResilienceNames.PrecedingFact` policy (6 attempts, ~3 s total) with the lock released between
   attempts, and fails it only when the retries are exhausted. Any other exception fails the bundle
   on the first attempt. A beginning that is minutes late is what replay is for, not the retry.
 - **A message a handler cannot take (since 4.0.4):** on a durable subscription the transport
@@ -63,7 +63,11 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   RabbitMQ dropped a failed message and requeued a conflict without bound. **RabbitMQ worker queues
   are quorum queues named `<subscription>.v2`** since 4.0.4; after deploying, delete the old
   `<subscription>` queue once it is drained, or it fills forever at the fanout exchange. Needs
-  RabbitMQ 3.8+.
+  RabbitMQ 3.13+. **Changing the bounds later (since 4.0.5):** an existing worker queue keeps the
+  `x-delivery-limit` it was declared with and is used as it is, with warning `108_112`; before
+  RabbitMQ 4.3 a raised bound needs the drained queue deleted once. On Azure Service Bus a
+  subscription's `MaxDeliveryCount` must leave room for the bounds (a default subscription allows
+  10); where the host can read the subscription, the bounds are lowered to fit and `108_111` says so.
 - **The commit-to-publish window (since 4.0.4):** by default a save commits, then publishes; a
   process that ends in between leaves committed events no projection or saga receives (projections
   recover by replay, sagas not at all). `Outbox:DurableBundles = true` writes the bundle to the
@@ -79,7 +83,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   `private set`) so snapshot JSON deserialization works. `Apply` methods hold the write logic.
 - **Event sourcing:** `IEventSource` (`CreateAsync` / `AppendAsync` / `SaveChangesAsync`),
   `IAggregationService.AggregateAsync`. Stream tables: `event_stream_entry`, `snapshot`,
-  `command_log_entry`, `outbox_entry` (declared by `Stratara.EventSourcing.EntityFrameworkCore`,
+  `command_log_entry`, `outbox_entry`, `event_chain_anchor` (declared by `Stratara.EventSourcing.EntityFrameworkCore`,
   PostgreSQL/Npgsql).
 - **Event upcasting** (since 3.1.7): register `IEventUpcaster` via `AddEventUpcaster<T>()` to
   transform an old event's at-rest JSON into the current record's shape before deserialization.
@@ -117,7 +121,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 
 ## Getting started
 
-- [Install & hello-mediator](https://github.com/yesbert/Stratara#install): `dotnet add package Stratara.Mediator`, then `AddMediator()` + `AddCommandHandlersFromAssemblyContaining<T>()`.
+- [Install & hello-mediator](https://github.com/yesbert/Stratara#pick-your-door): `dotnet add package Stratara.Mediator`, then `AddMediator()` + `AddCommandHandlersFromAssemblyContaining<T>()`.
 - [Documentation site](https://stratara.tech): conceptual overview, getting-started walkthrough, guides, and the auto-generated API reference — the authoritative current source.
 - [README](https://github.com/yesbert/Stratara/blob/main/README.md): package map, quick start, performance numbers.
 - [CHANGELOG](https://github.com/yesbert/Stratara/blob/main/CHANGELOG.md): per-release notes (Keep a Changelog format) — the source of truth for what shipped in each version.
@@ -152,7 +156,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [Stratara.Projections](https://www.nuget.org/packages/Stratara.Projections) (Tier-C): projection runtime + `ProjectionManager` (push-driven from the event bus).
 - [Stratara.Sagas](https://www.nuget.org/packages/Stratara.Sagas) (Tier-C): `ISaga` discovery + saga dispatcher + hosted `SagaWorker`.
 - [Stratara.Security](https://www.nuget.org/packages/Stratara.Security) (Tier-C): dependency-light `IKeyStore` (`EnvelopeFileKeyStore`, KEK-wrapped versioned DEKs, rotate/revoke/crypto-shred) + AES-GCM blob encryptor. No EF/RabbitMQ/Redis/cloud SDKs.
-- [Stratara.Outbox.RabbitMQ](https://www.nuget.org/packages/Stratara.Outbox.RabbitMQ) (Tier-C): RabbitMQ `IMessageBus` (quorum worker queues with bounded redelivery and a dead-letter queue per subscription) + retry/command workers + heavy-command lane + Redis-coordinated projection replay + the `Outbox:DurableBundles` opt-in.
+- [Stratara.Outbox.RabbitMQ](https://www.nuget.org/packages/Stratara.Outbox.RabbitMQ) (Tier-C): RabbitMQ `IMessageBus` (quorum worker queues with bounded redelivery and a dead-letter queue per subscription) + retry/command workers + heavy-command lane + projection replay coordination (in process, or shared over Redis when a connection is registered) + the `Outbox:DurableBundles` opt-in.
 - [Stratara.Outbox.AzureServiceBus](https://www.nuget.org/packages/Stratara.Outbox.AzureServiceBus) (Tier-C): Azure Service Bus `IMessageBus` implementation.
 - [Stratara.Infrastructure](https://www.nuget.org/packages/Stratara.Infrastructure) (Tier-C): authorization decorators + DI composition glue (`AddBackendServices`, `AddCommonFrameworkServices`).
 - [Stratara.Identity.Core](https://www.nuget.org/packages/Stratara.Identity.Core) (Tier-C): channel-agnostic identity primitives (sign-in / auth-state / token-storage abstractions).
@@ -172,4 +176,4 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 
 - [License (MIT)](https://github.com/yesbert/Stratara/blob/main/LICENSE): free for any use including commercial.
 - [Security policy](https://github.com/yesbert/Stratara/blob/main/SECURITY.md): how to report vulnerabilities (do not file a public issue).
-- [Contributing model](https://github.com/yesbert/Stratara/blob/main/CONTRIBUTING.md): GitHub is a one-way mirror of an internal source-of-truth — open an issue rather than a PR.
+- [Contributing model](https://github.com/yesbert/Stratara/blob/main/CONTRIBUTING.md): development happens on GitHub in the open; issues and pull requests are welcome, and the file says what a review looks for.

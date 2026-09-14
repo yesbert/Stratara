@@ -36,9 +36,9 @@ Expected output (abridged):
 === Stratara TamperProof ===
 
 --- Append three events ---
-  #1  AccountOpened         hash=70be4f…
-  #2  AmountDeposited       hash=796018…
-  #3  AmountWithdrawn       hash=6a0260…
+  #1  AccountOpened         hash=9d5ad374cb03…
+  #2  AmountDeposited       hash=d97eaadead5a…
+  #3  AmountWithdrawn       hash=0ec278df5cf4…
 
 --- Verify the chain (clean) ---
   OK — every entry's stored hash matches a fresh re-hash of its payload.
@@ -46,9 +46,13 @@ Expected output (abridged):
 
 --- Tamper: rewrite entry #2's deposit from $50 to $5000 ---
 
---- Verify the chain (tampered) ---
+--- Verify the chain (tampered, stale hash) ---
   CAUGHT: Event stream tampering detected at sequence #2: stored hash does not match a fresh re-hash of the payload (payload was modified after commit)
 ```
+
+The hashes differ on every run. The run goes on past this point: the clean chain is anchored to an
+external source of truth first, then a determined insider recomputes every hash after the tamper so
+the chain verifies clean again, and only the check against the external anchor catches it.
 
 ## How this maps to the real Stratara
 

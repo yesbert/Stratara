@@ -26,7 +26,7 @@ public static class ResilienceNames
 
     /// <summary>
     /// Optimistic-concurrency-conflict pipeline. Strategy: retries <b>only</b> on
-    /// <c>Stratara.Abstractions.Persistence.ConcurrencyConflictException</c> (5 attempts, short
+    /// <c>Stratara.Abstractions.Persistence.ConcurrencyConflictException</c> (five retries, six attempts in all, short
     /// exponential backoff, jitter); any other exception propagates immediately. Intended for an
     /// in-process mediator request marked <c>IResilientRequest</c> whose handler re-reads and
     /// re-applies on a version clash.

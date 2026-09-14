@@ -63,8 +63,10 @@ Because the partitioning is deterministic, you scale by adding workers — not b
 Command, projection, and saga workers run as **competing consumers**: any number of worker
 instances on different machines, containers, or Kubernetes pods subscribe to the same topic,
 and the broker (RabbitMQ or Azure Service Bus) balances the load across them automatically.
-Each instance additionally fans out to `Environment.ProcessorCount` parallel subscriptions, so
-a 16-core node runs 16 handlers per worker type. Scaling out is a deployment knob — more
+Each instance additionally opens one subscription per processor by default, so a 16-core node
+runs 16 handlers per worker type. The projection and saga workers take the number from
+`Projections:DegreeOfParallelism` and `Sagas:DegreeOfParallelism` (`1` keeps strict transport
+order), and the heavy command lane takes it as an argument to `AddHeavyCommandWorker`. Scaling out is a deployment knob — more
 replicas — not a rewrite. (The event-stream hashing worker is the one deliberate exception: it
 runs single-instance because the hash chain is append-only.)
 
@@ -75,7 +77,10 @@ bus is unreachable does it persist the message to the outbox table, where a retr
 re-publishes it later and deletes it only after a confirmed send. Delivery is **at-least-once**:
 the fast path keeps normal-case latency low, the durable fallback survives a broker outage, and
 handlers stay idempotent (checkpoint the highest event version per stream, or de-duplicate on
-the event id).
+the event id). One window stays open on the fast path: a process that ends between the commit and
+the publish leaves committed events that no projection or saga receives. `Outbox:DurableBundles =
+true` closes it by writing each event bundle in the commit transaction, at a measured cost in
+throughput — see [Outbox Setup: RabbitMQ](../guides/outbox-setup-rabbitmq.md).
 
 ## Optimistic concurrency and snapshots
 

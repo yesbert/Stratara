@@ -20,7 +20,7 @@ description: "The minimum viable Stratara app — IMediator, ICommand and IQuery
 
 1. **`OpenAccountCommand` / `DepositCommand` / `WithdrawCommand`** marked as `ICommand<Guid>` (open returns the new ID) and `ICommand` (deposit + withdraw are fire-and-forget).
 2. **`GetBalanceQuery : IQuery<decimal>`** — read-only.
-3. Handlers implement `IQueryHandler<TRequest, TResult>` (the unified interface used by both `ICommand<T>` and `IQuery<T>`).
+3. A handler that returns a result implements `IQueryHandler<TRequest, TResult>` (the unified interface behind both `ICommand<T>` and `IQuery<T>`); a handler for a command without a result implements `ICommandHandler<TCommand>`.
 4. **DI wiring** via `AddMediator()` + `AddCommandHandlersFromAssemblyContaining<Program>()` + `AddQueryHandlersFromAssemblyContaining<Program>()` — no per-handler registrations.
 5. **`InsufficientBalanceException`** is thrown synchronously and bubbles back through `mediator.HandleAsync(…)` — the rejection path.
 

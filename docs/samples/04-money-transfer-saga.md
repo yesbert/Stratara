@@ -1,6 +1,6 @@
 ---
 title: "Sample 4: Money Transfer Saga"
-description: "A process manager in full: one transfer request fans out into a withdrawal and a deposit through the outbox, and reconciles what comes back."
+description: "A process manager in full: one transfer request fans out into a withdrawal and a deposit through the outbox."
 ---
 
 # Sample 4 — Money-Transfer Saga

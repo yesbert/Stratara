@@ -26,11 +26,11 @@ public sealed class InMemoryMessageBus : IMessageBus
         CancellationToken cancellationToken = default)
     {
         var channel = _topics.GetOrAdd(topic, _ => Channel.CreateUnbounded<object>());
-        await foreach (var message in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var message in channel.Reader.ReadAllAsync(cancellationToken))
         {
             if (message is T typed)
             {
-                await handler(typed).ConfigureAwait(false);
+                await handler(typed);
             }
         }
     }

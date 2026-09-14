@@ -8,7 +8,7 @@ namespace Stratara.Sample.Validation;
 /// behavior before the handler.
 /// </summary>
 /// <remarks>
-/// Demonstrates all three severities: an <see cref="ValidationSeverity.Error"/> blocks the request
+/// Demonstrates two of the three severities: an <see cref="ValidationSeverity.Error"/> blocks the request
 /// (the pipeline throws <see cref="StrataraValidationException"/>); a
 /// <see cref="ValidationSeverity.Warning"/> passes through to the handler but is logged.
 /// </remarks>
