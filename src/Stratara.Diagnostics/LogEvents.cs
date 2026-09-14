@@ -121,6 +121,8 @@ public static class LogEvents
         public const int OutboxLockUnavailable = 106_106;
         /// <summary>Releasing the outbox distributed lock failed; the key auto-expires on lease end (warning).</summary>
         public const int OutboxLockReleaseFailed = 106_107;
+        /// <summary>A bundle stored with its commit was accepted by the bus but its stored copy could not be removed; the drain will publish it again (warning).</summary>
+        public const int DurableBundleRemovalFailed = 106_108;
     }
 
     /// <summary>Event-stream-hash worker event-IDs (107_000s).</summary>

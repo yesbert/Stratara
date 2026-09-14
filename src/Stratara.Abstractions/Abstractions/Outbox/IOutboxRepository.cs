@@ -12,6 +12,19 @@ public interface IOutboxRepository
     /// <typeparam name="T">The serialised payload type (command envelope or event bundle).</typeparam>
     Task AddAsync<T>(T outboxData, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Persist an outbox entry under an identity the caller chose, so the caller can remove it
+    /// later by that identity. Used by a dispatcher that stores a bundle with the commit and
+    /// deletes it once the bus has accepted it.
+    /// </summary>
+    /// <typeparam name="T">The serialised payload type (command envelope or event bundle).</typeparam>
+    /// <param name="id">The identity of the entry.</param>
+    /// <param name="outboxData">The payload.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="NotSupportedException">The repository does not support caller-chosen identities.</exception>
+    Task AddAsync<T>(Guid id, T outboxData, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("This outbox repository does not support caller-chosen entry identities.");
+
     /// <summary>Remove an entry once it has been published successfully.</summary>
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 

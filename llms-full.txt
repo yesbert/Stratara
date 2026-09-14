@@ -40,6 +40,7 @@ Every bindable options type, the section it binds from, and the default each key
 | Key | Type | Default |
 |---|---|---|
 | `Outbox:BatchSize` | `Int32` | `10000` |
+| `Outbox:DurableBundles` | `Boolean` | `false` |
 | `Outbox:LockLeaseSeconds` | `Int32` | `60` |
 | `Outbox:PollingIntervalSeconds` | `Int32` | `30` |
 

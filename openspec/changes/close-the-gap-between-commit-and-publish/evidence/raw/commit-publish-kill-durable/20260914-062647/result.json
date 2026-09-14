@@ -1,0 +1,7 @@
+{
+  "kills": 20,
+  "durable": {
+    "lost": 0,
+    "streams": []
+  }
+}

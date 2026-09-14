@@ -1,0 +1,26 @@
+{
+  "commit": "e603caec0f40ad7327d69ab5a6e3ec9297e8736d",
+  "recordedAt": "2026-09-14T06:27:06.328312+00:00",
+  "machine": {
+    "description": "macOS 26.6.2",
+    "architecture": "Arm64",
+    "processors": 24,
+    "runtime": ".NET 10.0.12"
+  },
+  "images": {
+    "postgres": "postgres:17-alpine"
+  },
+  "settings": {
+    "appends": 10000,
+    "repetitions": 3,
+    "Writers": [
+      1,
+      8,
+      32
+    ],
+    "Layouts": [
+      "bus-first",
+      "durable"
+    ]
+  }
+}

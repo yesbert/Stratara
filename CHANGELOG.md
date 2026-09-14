@@ -18,6 +18,16 @@ applies to the entire NuGet family.
 
 ### Added
 
+- `Outbox:DurableBundles` (`OutboxOptions.DurableBundles`, default `false`): an event bundle is
+  written to the outbox table in the transaction that commits its events, published after the
+  commit, and removed once the bus has accepted it — so a process that ends between the commit and
+  the publish no longer loses the bundle for every subscription. `IEventBundleOutboxDispatcher`
+  gains `StoresBundlesWithCommit` and `StoreEventBundleAsync`, and `IOutboxRepository` an
+  `AddAsync(Guid id, …)` overload, all default-implemented so a consumer's own implementations keep
+  compiling and keep bus-first. `AddOutboxDispatcher()` now binds the `Outbox` section when the host
+  carries a configuration. Log event `106_108` records a stored copy the bus accepted but the
+  framework could not remove. The default path is unchanged; the specification now names its window.
+
 - `IStoreConflictDetector` in `Stratara.Abstractions.EventSourcing`: recognises a database
   provider's refusal of a duplicate stream version, so the event source can surface it as a
   `ConcurrencyException` on that provider. `AddNpgsqlWriteDbContextFactory<T>()` registers the
@@ -37,6 +47,9 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- A save now maps and signs its event bundle before the transaction opens, so a save with no
+  session context — or a signer that fails — fails before anything is committed rather than after
+  the commit with the events stranded unpublished.
 - **RabbitMQ worker subscriptions are quorum queues with a dead-letter queue, under a new name.**
   A message whose handler throws is redelivered up to `MaxDeliveryAttempts` times (a concurrency
   conflict up to `MaxConflictRequeues` times) and then moved to `<subscription>.dead-letter`; it was

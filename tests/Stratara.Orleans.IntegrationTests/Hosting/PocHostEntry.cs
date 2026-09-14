@@ -19,6 +19,7 @@ public static class PocHostEntry
         ["intent"] = () => new IntentScenario(),
         ["bus"] = () => new BusScenario(),
         ["projection-bus"] = () => new ProjectionScenario(ProjectionPath.Bus),
+        ["projection-bus-durable"] = () => new ProjectionScenario(ProjectionPath.Bus, durableBundles: true),
         ["projection-grain"] = () => new ProjectionScenario(ProjectionPath.Grain),
         ["projection-hybrid"] = () => new ProjectionScenario(ProjectionPath.Hybrid),
         ["saga"] = () => new SagaScenario(),

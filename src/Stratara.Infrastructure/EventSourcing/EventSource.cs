@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Stratara.Contracts.Messages;
 using Stratara.Contracts.Session;
 using Stratara.Abstractions.Domain;
 using Stratara.Abstractions.EventSourcing;
@@ -145,11 +146,16 @@ internal sealed class EventSource(
     /// <exception cref="InvalidOperationException">Thrown when no <see cref="SessionContext"/> is set on the current scope.</exception>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        var eventBundle = PrepareEventBundle();
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
 
         await eventStreamRepository.AddRangeAsync(_eventStreamEntries, cancellationToken);
         await snapshotService.AddSnapshotIfNeededAsync(_eventStreamEntries, cancellationToken);
+        if (outboxDispatcher.StoresBundlesWithCommit)
+        {
+            await outboxDispatcher.StoreEventBundleAsync(eventBundle, transaction, cancellationToken);
+        }
 
         try
         {
@@ -168,7 +174,7 @@ internal sealed class EventSource(
             throw new ConcurrencyException(streamId, aggregateTypeName, ex);
         }
 
-        await PublishEventBundleAsync(_eventStreamEntries, cancellationToken);
+        await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
         ClearBatchState();
     }
 
@@ -197,15 +203,16 @@ internal sealed class EventSource(
         return false;
     }
 
-    private async Task PublishEventBundleAsync(IReadOnlyList<EventStreamEntry> eventEntries, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Maps and signs the bundle before the transaction opens, so a save with no session fails
+    /// before anything is committed, and so the same instance can be stored with the commit and
+    /// published after it.
+    /// </summary>
+    private EventBundle PrepareEventBundle()
     {
         var sessionContext = sessionContextProvider.Current ?? throw new InvalidOperationException("Session context is not set");
-        var eventBundle = eventEntries.MapToEventBundle(sessionContext);
-        if (signer is not null)
-        {
-            eventBundle = eventBundle with { Signature = signer.Sign(BusEnvelopeCanonical.Of(eventBundle)) };
-        }
-        await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
+        var eventBundle = _eventStreamEntries.MapToEventBundle(sessionContext);
+        return signer is null ? eventBundle : eventBundle with { Signature = signer.Sign(BusEnvelopeCanonical.Of(eventBundle)) };
     }
 
     private async Task AddEventsToStreamAsync<TAggregate>(Guid streamId, IEnumerable<object> events, CancellationToken cancellationToken)

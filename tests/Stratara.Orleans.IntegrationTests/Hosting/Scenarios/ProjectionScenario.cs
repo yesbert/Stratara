@@ -33,7 +33,7 @@ public enum ProjectionPath
 /// after the commit and before any publish or nudge. Commands: <c>arm-kill</c>,
 /// <c>append streamId</c>, <c>view streamId timeoutMs</c>.
 /// </summary>
-public sealed class ProjectionScenario(ProjectionPath path) : IPocScenario
+public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles = false) : IPocScenario
 {
     public async Task<IHost> BuildAsync(PocHostSettings settings)
     {
@@ -47,9 +47,16 @@ public sealed class ProjectionScenario(ProjectionPath path) : IPocScenario
         {
             ["ConnectionStrings:defaultdb"] = settings.StoreConnectionString,
             ["ConnectionStrings:rabbitmq"] = settings.RabbitConnectionString,
+            ["Outbox:DurableBundles"] = durableBundles ? "true" : "false",
+            ["Outbox:PollingIntervalSeconds"] = "1",
         });
 
         builder.AddEventProjectionWorkerServices();
+        if (durableBundles)
+        {
+            builder.AddOutboxWorkerServices();
+        }
+
         builder.Services
             .AddEventSourcing()
             .AddOutboxDispatcher()
@@ -188,6 +195,11 @@ public sealed class KillingBundleDispatcher(IEventBundleOutboxDispatcher inner, 
 
         return (IEventBundleOutboxDispatcher)ActivatorUtilities.CreateInstance(services, descriptor.ImplementationType!);
     }
+
+    public bool StoresBundlesWithCommit => inner.StoresBundlesWithCommit;
+
+    public Task StoreEventBundleAsync(EventBundle eventBundle, Stratara.Abstractions.Persistence.ITransaction transaction, CancellationToken cancellationToken = default) =>
+        inner.StoreEventBundleAsync(eventBundle, transaction, cancellationToken);
 
     public Task EnqueueEventBundleAsync(EventBundle eventBundle, CancellationToken cancellationToken = default)
     {

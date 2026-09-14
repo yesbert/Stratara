@@ -108,10 +108,17 @@ Both default-implemented on the interface (`StoresBundlesWithCommit => false`,
 compiling and keeps bus-first. The RabbitMQ dispatcher implements both from
 `OutboxOptions.DurableBundles` (default `false`).
 
-The save becomes: start transaction; add entries and snapshot; if `StoresBundlesWithCommit`, map
-the bundle and `StoreEventBundleAsync(bundle, transaction)`; commit; then `EnqueueEventBundleAsync`
-as today. The dispatcher, when durable bundles are on, publishes and on acceptance deletes the row
-it stored — it knows the row's id because it wrote it; the bundle carries it.
+The save becomes: map and sign the bundle; start transaction; add entries and snapshot; if
+`StoresBundlesWithCommit`, `StoreEventBundleAsync(bundle, transaction)`; commit; then
+`EnqueueEventBundleAsync` with the same bundle instance. The dispatcher, when durable bundles are
+on, publishes and on acceptance deletes the row it stored — it knows the row's id because it wrote
+it. *Changed during apply, 2026-09-14:* the id does not travel on the bundle record. The dispatcher
+is scoped, the event source is scoped, and the same bundle instance goes through both calls, so a
+per-scope map from bundle instance to stored id is enough and `Stratara.Contracts` stays untouched —
+no optional property on the wire-level record, no constructor change. The repository gains a
+default-implemented `AddAsync(Guid id, …)` overload so the dispatcher can choose the id it will
+delete by. Mapping the bundle before the transaction opens also means a save with no session fails
+before anything is committed, where it used to fail after the commit.
 
 *Alternative considered:* a separate `IEventBundleWriteAhead` port. One more registration for the
 same component; the dispatcher is the thing that knows whether the bus was tried and whether it
@@ -119,8 +126,10 @@ accepted, so the delete belongs there.
 
 ### D3 — The delete happens after acceptance, inside the save's call, and its failure is not the save's failure
 
-`EnqueueEventBundleAsync` on the durable path: try the bus; on acceptance, delete the row in a
-short transaction of its own; on refusal, leave it. A delete that fails leaves a row the drain will
+`EnqueueEventBundleAsync` on the durable path: try the bus; on acceptance, delete the row on a
+context of its own — the delete executes at once, outside the save's transaction, which has
+committed; on refusal, leave it. A drain that ran in between has already published and deleted the
+row; the delete then affects nothing and the bundle was delivered twice, which at-least-once covers. A delete that fails leaves a row the drain will
 publish again — at-least-once, already required of every handler — and is logged, not thrown: the
 caller's save has committed and been published, and an exception now would be the after-commit
 failure D1 rules out.
@@ -143,11 +152,15 @@ unchanged.
   guide that a spike now means the bus is down, which it meant before too.
 - **The estimate in D1 is an estimate.** → Task 4.1 measures with the PoC's benchmark before the
   guide calls it cheap; if the cost is above 15 % of B1's throughput the guide says so and the
-  default question for 5.0 is answered with that number.
+  default question for 5.0 is answered with that number. *Measured 2026-09-14
+  (`evidence/results.md`, C1): the cost is about 30 %, twice the bound — the estimate was wrong,
+  the guide says so, and the 5.0 default stays `false`.*
 - **A consumer's own dispatcher keeps bus-first silently.** → By design; the interface defaults
   say so in their XML docs, and the option is documented as honoured by the framework's dispatcher.
-- **The bundle carries a storage id now.** → An additional property on the wire-level record, null
-  on the default path; `Stratara.Contracts` is additive-only.
+- **The port now carries a reference-identity contract.** → The dispatcher recognises the bundle it
+  stored by instance; a decorator that clones the bundle between store and publish drops to
+  bus-first for that save and leaves the stored row for the drain — a duplicate delivery, never a
+  loss. The XML docs on the port say "the same bundle instance".
 
 ## Migration Plan
 
@@ -160,4 +173,5 @@ unchanged.
 ## Open Questions
 
 - Whether `DurableBundles = true` becomes the default in 5.0 is answered by the measurement in task
-  4.1 and the owner's release decision; nothing in this change depends on the answer.
+  4.1 and the owner's release decision; nothing in this change depends on the answer. *Answered
+  2026-09-14 by C1: at a 30 % throughput cost it does not become the default.*

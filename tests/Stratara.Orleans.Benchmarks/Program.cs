@@ -36,6 +36,13 @@ public static class Program
             return await AppendThroughputRun.RunAsync(evidenceRoot, appends, repetitions);
         }
 
+        if (args is ["--durable-bundles", var durableEvidenceRoot, ..])
+        {
+            var appends = args.Length > 2 ? int.Parse(args[2]) : 10_000;
+            var repetitions = args.Length > 3 ? int.Parse(args[3]) : 3;
+            return await DurableBundlesRun.RunAsync(durableEvidenceRoot, appends, repetitions);
+        }
+
         if (args is ["--read-model-latency", var latencyEvidenceRoot, ..])
         {
             var events = args.Length > 2 ? int.Parse(args[2]) : 2_000;
