@@ -61,7 +61,7 @@ builder.Services.AddSagasFromAssemblyContaining<TransferSaga>();
 
 ## Idempotency
 
-Sagas **must be idempotent** — at-least-once delivery means the bus can replay the same event after a broker reconnect. Because a redelivery re-runs `HandleAsync`, guard the enqueue:
+Sagas **must be idempotent** — at-least-once delivery means the bus can replay the same event after a broker reconnect, and it redelivers a bundle whose handler threw (up to `MessageRetry:MaxDeliveryAttempts` times, then it is dead-lettered). Because a redelivery re-runs `HandleAsync`, guard the enqueue:
 
 - **State tracking** in your own read-store — `HasTransferBeenStarted(transferId)` before enqueueing, so a replay is a no-op.
 - **Deterministic command identity** — derive the down-stream command's own key from the source event so a duplicate enqueue collapses at the handler rather than moving money twice.
@@ -79,6 +79,13 @@ the entity it is about. Throw `PrecedingFactMissingException(streamId, eventType
 lookup comes back empty: the worker retries the bundle — five attempts, about three seconds in all,
 with the aggregate lock released in between — and fails it only when the retries run out. Every
 other exception fails the bundle on the first attempt.
+
+A saga has no replay, so a failed bundle must not vanish — and it does not: the transport delivers
+it again, up to `MessageRetry:MaxDeliveryAttempts` times (a concurrency conflict from the command
+the saga issues up to `MessageRetry:MaxConflictRequeues` times), and then moves it to the saga
+subscription's dead-letter destination, where an operator returns it once the cause is fixed. The
+process resumes from there. See
+[When a handler cannot take a message](outbox-setup-rabbitmq.md#when-a-handler-cannot-take-a-message).
 
 A host that needs strict order sets `Sagas:DegreeOfParallelism` to `1`; a value that is not a
 positive number means one consumer per processor.
