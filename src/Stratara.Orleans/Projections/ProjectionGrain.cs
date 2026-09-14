@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 using Polly.Registry;
 using Stratara.Abstractions.EventSourcing;
@@ -10,6 +11,7 @@ using Stratara.Contracts.Session;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Projections.Abstractions;
 using Stratara.Resilience;
+using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Projections;
 
@@ -41,7 +43,12 @@ internal interface IProjectionGrain : IGrainWithStringKey
 {
     Task EnsureRunningAsync();
 
-    /// <summary>A commit happened in this partition; read now rather than at the next poll.</summary>
+    /// <summary>
+    /// A commit happened in this partition; read now rather than at the next poll. Interleaves with a
+    /// running catch-up, which then reads once more before it ends, and costs the caller no reply.
+    /// </summary>
+    [OneWay]
+    [AlwaysInterleave]
     Task NudgeAsync();
 
     /// <summary>Reads and applies until the store has nothing newer; returns how many entries were applied.</summary>
@@ -49,21 +56,23 @@ internal interface IProjectionGrain : IGrainWithStringKey
 
     Task<long> PositionAsync();
 
-    /// <summary>Stops reading until <see cref="ResumeAsync"/>; returns once no batch is in flight, which the turn guarantees.</summary>
+    /// <summary>Stops reading until <see cref="ResumeAsync"/>; returns once no batch is in flight.</summary>
     Task PauseAsync();
 
-    /// <summary>Reads again, from whatever the checkpoint now says.</summary>
+    /// <summary>Reads again, from whatever the checkpoint now says; returns once the read is requested, not once it is done.</summary>
     Task ResumeAsync();
 }
 
 /// <summary>
 /// Reads its partition of the event store in commit order from its checkpoint and applies each
 /// entry to its projection through the framework's projection handler, under the session recorded
-/// with the entry. The grain's turn is the serialisation: one batch at a time, so two facts about
-/// one aggregate never apply concurrently. The checkpoint moves only past entries that applied; an
+/// with the entry. One catch-up loop runs at a time per grain — the loop's single-flight guard, not
+/// the turn, is the serialisation, which is what lets a nudge interleave — so two facts about one
+/// aggregate never apply concurrently. The checkpoint moves only past entries that applied; an
 /// entry that fails — a missing prerequisite past the retry policy, or any other failure — stops the
 /// batch where it is, and the next nudge or poll tries again from there.
 /// </summary>
+[GrainDirectory(GrainDirectories.Durable)]
 internal sealed class ProjectionGrain(
     IServiceScopeFactory scopeFactory,
     IEventMapperFactory eventMapperFactory,
@@ -77,6 +86,8 @@ internal sealed class ProjectionGrain(
     private string _projection = string.Empty;
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
+    private HashSet<string>? _relevant;
+    private Type? _projectionType;
     private bool _paused;
 
     private StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
@@ -100,46 +111,89 @@ internal sealed class ProjectionGrain(
 
     public Task EnsureRunningAsync() => this.RegisterOrUpdateReminder(KeepAliveReminder, _options.KeepAlivePeriod, _options.KeepAlivePeriod);
 
-    public Task NudgeAsync() => CatchUpAsync();
+    public Task NudgeAsync()
+    {
+        RequestCatchUp();
+        return Task.CompletedTask;
+    }
 
-    public Task<int> CatchUpAsync() => _paused || replayState.IsReplayActive ? Task.FromResult(0) : Loop.CatchUpAsync(ApplyEntryAsync);
+    public Task<int> CatchUpAsync() => RequestCatchUp();
 
     public Task<long> PositionAsync() => Loop.PositionAsync();
 
-    public Task PauseAsync()
+    /// <summary>
+    /// Pauses, waits for a running loop to end, and forgets the cached position: whoever pauses is
+    /// about to change the checkpoint behind the grain's back.
+    /// </summary>
+    public async Task PauseAsync()
     {
         _paused = true;
-        return Task.CompletedTask;
+        await Loop.WaitForRunningAsync(CancellationToken.None);
+        Loop.Invalidate();
+    }
+
+    /// <summary>A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.</summary>
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        await Loop.WaitForRunningAsync(cancellationToken);
+        await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
     public Task ResumeAsync()
     {
         _paused = false;
-        return CatchUpAsync();
+        return NudgeAsync();
     }
 
-    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => CatchUpAsync();
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => RequestCatchUp();
 
-    private async Task ApplyEntryAsync(EventStreamEntry entry, CancellationToken cancellationToken)
+    private Task<int> RequestCatchUp() => Loop.RequestCatchUp(ApplyBatchAsync, () => _paused || replayState.IsReplayActive);
+
+    /// <summary>
+    /// One scope, one projection instance and one relevant-event set for the batch; per entry, the
+    /// recorded session and the retry policy, as the <c>projections</c> guarantees require.
+    /// </summary>
+    private async Task<int> ApplyBatchAsync(CommittedBatch batch)
     {
         using var scope = scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-
-        services.GetRequiredService<ISessionContextProvider>().Set(RecordedSession.Of(entry));
-
+        var sessions = services.GetRequiredService<ISessionContextProvider>();
         var handler = services.GetRequiredService<IProjectionHandler>();
-        var projection = services.GetServices<IProjection>().FirstOrDefault(p => handler.GetProjectionName(p) == _projection)
-                         ?? throw new InvalidOperationException($"No projection named '{_projection}' is registered on this silo.");
+        var projection = ResolveProjection(services, handler);
+        _relevant ??= new HashSet<string>(handler.GetRelevantEventTypeNames(projection), StringComparer.Ordinal);
 
-        var events = await eventMapperFactory.MapToEventsAsync([entry], cancellationToken);
-        var relevant = handler.GetRelevantEventTypeNames(projection);
-        var relevantEvents = events.Where(e => relevant.Contains(e.EventTypeName)).ToList();
-        if (relevantEvents.Count == 0)
+        return await Loop.ApplyEachAsync(batch, async (entry, cancellationToken) =>
         {
-            return;
+            sessions.Set(RecordedSession.Of(entry));
+
+            var events = await eventMapperFactory.MapToEventsAsync([entry], cancellationToken);
+            var relevantEvents = events.Where(e => _relevant.Contains(e.EventTypeName)).ToList();
+            if (relevantEvents.Count == 0)
+            {
+                return;
+            }
+
+            await handler.ProjectAsync(projection, relevantEvents, cancellationToken);
+        });
+    }
+
+
+    /// <summary>
+    /// The first batch finds the projection among every registered one and remembers its type; every
+    /// later batch builds only that one, instead of every projection the silo has for the name of one.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No projection of the grain's name is registered on this silo.</exception>
+    private IProjection ResolveProjection(IServiceProvider services, IProjectionHandler handler)
+    {
+        if (_projectionType is { } type)
+        {
+            return (IProjection)ActivatorUtilities.CreateInstance(services, type);
         }
 
-        await handler.ProjectAsync(projection, relevantEvents, cancellationToken);
+        var projection = services.GetServices<IProjection>().FirstOrDefault(p => handler.GetProjectionName(p) == _projection)
+                         ?? throw new InvalidOperationException($"No projection named '{_projection}' is registered on this silo.");
+        _projectionType = projection.GetType();
+        return projection;
     }
 }
 

@@ -16,8 +16,11 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
 
     public string ConnectionString { get; private set; } = null!;
 
-    public string ConnectionStringFor(string database) =>
-        new NpgsqlConnectionStringBuilder(ConnectionString) { Database = database }.ConnectionString;
+    public string ConnectionStringFor(string database) => ConnectionStringFor(ConnectionString, database);
+
+    /// <summary>The connection string with the database name replaced — for a run that started its own container.</summary>
+    public static string ConnectionStringFor(string connectionString, string database) =>
+        new NpgsqlConnectionStringBuilder(connectionString) { Database = database }.ConnectionString;
 
     public async ValueTask InitializeAsync()
     {

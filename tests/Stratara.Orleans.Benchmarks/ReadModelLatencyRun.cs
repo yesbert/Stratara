@@ -41,18 +41,18 @@ public static class ReadModelLatencyRun
         await Task.WhenAll(postgres.StartAsync(), redis.StartAsync(), rabbit.StartAsync());
         Evidence.WriteEnvironment(run,
             new Dictionary<string, string> { ["postgres"] = PostgreSqlFixture.Image, ["redis"] = RedisFixture.Image, ["rabbitmq"] = RabbitMqFixture.Image },
-            new { events, ratePerSecond, repetitions });
+            new { events, ratePerSecond, repetitions, profile = PocSiloProfile.Production.ToString() });
 
         var results = new List<object>();
         foreach (var (scenario, siloPort, gatewayPort) in Paths)
         {
             for (var repetition = 0; repetition < repetitions; repetition++)
             {
-                var store = Database(postgres.GetConnectionString(), $"b2_{scenario.Replace('-', '_')}_{repetition}");
-                var read = Database(postgres.GetConnectionString(), $"b2_{scenario.Replace('-', '_')}_{repetition}_read");
-                await EnsureDatabaseAsync(store);
-                await EnsureDatabaseAsync(read);
-                var settings = new PocHostSettings(store, read, Database(postgres.GetConnectionString(), "b2_orleans"), redis.GetConnectionString(), rabbit.GetConnectionString(), siloPort, gatewayPort);
+                var store = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"b2_{scenario.Replace('-', '_')}_{repetition}");
+                var read = PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), $"b2_{scenario.Replace('-', '_')}_{repetition}_read");
+                await PocSilo.EnsureDatabaseAsync(store);
+                await PocSilo.EnsureDatabaseAsync(read);
+                var settings = new PocHostSettings(store, read, PostgreSqlFixture.ConnectionStringFor(postgres.GetConnectionString(), "b2_orleans"), redis.GetConnectionString(), rabbit.GetConnectionString(), siloPort, gatewayPort, PocSiloProfile.Production);
 
                 var latencies = await MeasureAsync(scenario, settings, events, ratePerSecond);
                 var sorted = latencies.Order().ToList();
@@ -135,24 +135,5 @@ public static class ReadModelLatencyRun
     {
         var index = (int)Math.Ceiling(percentile * sorted.Count) - 1;
         return sorted[Math.Clamp(index, 0, sorted.Count - 1)];
-    }
-
-    private static string Database(string connectionString, string database) =>
-        new NpgsqlConnectionStringBuilder(connectionString) { Database = database }.ConnectionString;
-
-    private static async Task EnsureDatabaseAsync(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        var database = builder.Database!;
-        builder.Database = "postgres";
-        await using var connection = new NpgsqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", database);
-        if (await exists.ExecuteScalarAsync() is null)
-        {
-            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", connection);
-            await create.ExecuteNonQueryAsync();
-        }
     }
 }

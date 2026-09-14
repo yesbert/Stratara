@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Orleans.Runtime;
+using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Singleton;
 
@@ -18,6 +19,7 @@ internal interface ISingletonWorkGrain : IGrainWithStringKey
 /// call, and keeps a reminder so that a silo's loss brings the grain back somewhere else. The
 /// grain directory's single-activation guarantee is what makes this "once per cluster".
 /// </summary>
+[GrainDirectory(GrainDirectories.Durable)]
 internal sealed class SingletonWorkGrain(
     IServiceScopeFactory scopeFactory,
     IOptions<SingletonWorkOptions> options) : Grain, ISingletonWorkGrain, IRemindable

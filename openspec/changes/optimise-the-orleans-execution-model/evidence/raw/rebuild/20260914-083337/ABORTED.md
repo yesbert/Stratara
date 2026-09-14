@@ -1,0 +1,1 @@
+Aborted: the per-projection rebuild host failed to start — the production profile keeps the 1-minute minimum reminder period and the projection scenario still asked for a 5-second keep-alive. Fixed by tying the keep-alive to the profile; the full replay (bus) number of this run stands: 81.4 s.

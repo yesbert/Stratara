@@ -28,7 +28,19 @@ public static class OrleansAggregateServiceCollectionExtensions
     {
         services.TryAddScoped<AggregateSendLane>();
         services.AddTransient(typeof(IPipelineBehavior<>), typeof(AggregateGrainBehavior<>));
+        AddIntentCompletion(services);
         return services;
+    }
+
+    /// <summary>
+    /// Every silo that can host an aggregate grain completes intents, because placement decides
+    /// where a recorded intent runs, not the host that recorded it.
+    /// </summary>
+    private static void AddIntentCompletion(IServiceCollection services)
+    {
+        services.AddOptions<OrleansDispatchOptions>();
+        services.TryAddSingleton<IntentCompletionQueue>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.Extensions.Hosting.IHostedService, IntentCompletionQueue>(sp => sp.GetRequiredService<IntentCompletionQueue>()));
     }
 
     /// <summary>
@@ -61,6 +73,7 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.TryAddScoped<AggregateSendLane>();
         services.AddOptions<HeavyWorkOptions>();
         services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher, OrleansCommandDispatcher>();
+        AddIntentCompletion(services);
         return services;
     }
 

@@ -1,0 +1,1 @@
+Stopped by hand: this was the built-in-directory run that the chain started right after the Redis-as-default run had crashed on the service registration (see 20260914-084905/ABORTED.md); it was stopped before measuring so the registration could be fixed first. Its environment.json is all it produced.

@@ -25,12 +25,16 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
             redis.ConnectionString,
             rabbit: string.Empty,
             siloPort: 11171,
-            gatewayPort: 30060);
+            gatewayPort: 30060,
+            // POC_MEMBERSHIP in the runner's environment selects the membership settings — R2 of
+            // optimise-the-orleans-execution-model ran this test once under the shortened ones.
+            membership: Enum.TryParse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP"), out var membership) ? membership : PocSiloMembership.Default);
         await PostgresTimerHostSchema.EnsureDatabaseAsync(postgres.ConnectionStringFor("poc_timers_store"));
 
         var report = new List<string>();
         for (var kill = 0; kill < Kills; kill++)
         {
+            var iterationStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             var kept = Enumerable.Range(0, OwnersPerKind).Select(i => $"kept-{kill}-{i}-{Guid.NewGuid():N}").ToList();
             var removed = Enumerable.Range(0, OwnersPerKind).Select(i => $"removed-{kill}-{i}-{Guid.NewGuid():N}").ToList();
 
@@ -47,8 +51,10 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
             }
 
             host.Kill();
+            var killedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             await using var restarted = await PocHostProcess.StartAsync("timers", environment);
+            var restartSeconds = System.Diagnostics.Stopwatch.GetElapsedTime(killedAt).TotalSeconds;
             await Task.Delay(SettleAfterRestart);
 
             foreach (var owner in kept)
@@ -63,10 +69,11 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
                 Assert.Equal("0", await restarted.SendAsync($"timers {owner}"));
             }
 
-            report.Add($"kill {kill + 1}/{Kills}: {OwnersPerKind} kept fired once, {OwnersPerKind} removed fired never");
+            report.Add($"kill {kill + 1}/{Kills}: {OwnersPerKind} kept fired once, {OwnersPerKind} removed fired never; restart took {restartSeconds:F1} s, iteration {System.Diagnostics.Stopwatch.GetElapsedTime(iterationStarted).TotalSeconds:F1} s so far");
         }
 
         TestContext.Current.TestOutputHelper?.WriteLine(string.Join(Environment.NewLine, report));
+        Console.WriteLine(string.Join(Environment.NewLine, report));
     }
 }
 

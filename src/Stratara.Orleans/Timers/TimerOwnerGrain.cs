@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Runtime;
+using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Timers;
 
@@ -11,6 +12,7 @@ namespace Stratara.Orleans.Timers;
 /// the owner, waits if it is early, hands the timer to the host's handler once it is due, and
 /// unregisters itself afterwards — or at once, if the owner is gone.
 /// </summary>
+[GrainDirectory(GrainDirectories.Durable)]
 internal sealed class TimerOwnerGrain(
     IServiceScopeFactory scopeFactory,
     IOptions<DurableTimerOptions> options,

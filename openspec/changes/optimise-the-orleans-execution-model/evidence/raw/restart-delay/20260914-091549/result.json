@@ -1,0 +1,89 @@
+{
+  "measurement": "restart-delay",
+  "results": [
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "restart": 0,
+      "readySeconds": 0.7850291,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "restart": 1,
+      "readySeconds": 0.7003664,
+      "timerFiredSeconds": 3.0488002
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "restart": 2,
+      "readySeconds": 0.7082035,
+      "timerFiredSeconds": 3.0927536
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "restart": 3,
+      "readySeconds": 0.8410321,
+      "timerFiredSeconds": 3.088848
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "restart": 0,
+      "readySeconds": 0.7186755,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "restart": 1,
+      "readySeconds": 0.7208323,
+      "timerFiredSeconds": 2.973765
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "restart": 2,
+      "readySeconds": 0.7403369,
+      "timerFiredSeconds": 3.0890006
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "restart": 3,
+      "readySeconds": 0.7255525,
+      "timerFiredSeconds": 3.077457
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "restart": 0,
+      "readySeconds": 0.7475755,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "restart": 1,
+      "readySeconds": 0.7270876,
+      "timerFiredSeconds": 2.9751207
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "restart": 2,
+      "readySeconds": 0.711459,
+      "timerFiredSeconds": 3.0945611
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "restart": 3,
+      "readySeconds": 0.7134852,
+      "timerFiredSeconds": 3.0648632
+    }
+  ]
+}

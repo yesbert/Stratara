@@ -55,7 +55,8 @@ public static class Program
         {
             var commands = args.Length > 2 ? int.Parse(args[2]) : 2_000;
             var repetitions = args.Length > 3 ? int.Parse(args[3]) : 3;
-            return await CommandsPerAggregateRun.RunAsync(commandsEvidenceRoot, commands, repetitions);
+            var directory = args.Length > 4 ? Enum.Parse<PocSiloDirectory>(args[4]) : PocSiloDirectory.RedisAsDefault;
+            return await CommandsPerAggregateRun.RunAsync(commandsEvidenceRoot, commands, repetitions, directory);
         }
 
         if (args is ["--resources", var resourcesEvidenceRoot, ..])
@@ -63,7 +64,20 @@ public static class Program
             var idle = args.Length > 2 ? int.Parse(args[2]) : 60;
             var load = args.Length > 3 ? int.Parse(args[3]) : 60;
             var rate = args.Length > 4 ? int.Parse(args[4]) : 200;
-            return await ResourcesRun.RunAsync(resourcesEvidenceRoot, idle, load, rate);
+            var directory = args.Length > 5 ? Enum.Parse<PocSiloDirectory>(args[5]) : PocSiloDirectory.RedisAsDefault;
+            return await ResourcesRun.RunAsync(resourcesEvidenceRoot, idle, load, rate, directory);
+        }
+
+        if (args is ["--restart-delay", var restartEvidenceRoot, ..])
+        {
+            var restarts = args.Length > 2 ? int.Parse(args[2]) : 3;
+            return await RestartDelayRun.RunAsync(restartEvidenceRoot, restarts);
+        }
+
+        if (args is ["--stop-delay", var stopEvidenceRoot, ..])
+        {
+            var profile = args.Length > 2 ? Enum.Parse<PocSiloProfile>(args[2]) : PocSiloProfile.Production;
+            return await StopDelayRun.RunAsync(stopEvidenceRoot, profile);
         }
 
         if (args is ["--rebuild", var rebuildEvidenceRoot, ..])

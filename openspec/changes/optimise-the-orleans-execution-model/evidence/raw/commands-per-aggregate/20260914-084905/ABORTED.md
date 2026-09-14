@@ -1,0 +1,1 @@
+Aborted: the grain-intent host failed to build its service provider — the intent completion queue was registered as an enumerable hosted service through a factory, which the container rejects. Fixed in the registration; the bus-worker numbers of this run stand (506/610/559, 542/559/564, 318/330/309 commands/s).

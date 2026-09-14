@@ -19,9 +19,10 @@ public sealed class TimersScenario : IPocScenario
         await PostgresTimerHost.EnsureSchemaAsync(settings.StoreConnectionString);
 
         var builder = PocHosting.CreateBuilder();
-        builder.UseOrleans(silo => PocSilo.Configure(silo, settings.OrleansConnectionString, settings.RedisConnectionString, settings.SiloPort, settings.GatewayPort));
+        builder.UseOrleans(silo => settings.ConfigureSilo(silo));
         builder.Services
-            .AddStrataraDurableTimers(options => options.RetryPeriod = TimeSpan.FromSeconds(1))
+            // The retry is a reminder period; below the production minimum only under the test profile.
+            .AddStrataraDurableTimers(options => options.RetryPeriod = settings.Profile == PocSiloProfile.Test ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1))
             .AddSingleton(new PostgresTimerHost(settings.StoreConnectionString))
             .AddSingleton<ITimerOwners>(sp => sp.GetRequiredService<PostgresTimerHost>())
             .AddSingleton<ITimerHandler>(sp => sp.GetRequiredService<PostgresTimerHost>());

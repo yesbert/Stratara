@@ -1,0 +1,302 @@
+{
+  "measurement": "commands-per-aggregate",
+  "results": [
+    {
+      "path": "bus-worker",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 4.0324638,
+      "commandsPerSecond": 495.9746941807636,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 3.3430031,
+      "commandsPerSecond": 598.2644766318045,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 3.2782661,
+      "commandsPerSecond": 610.0786022220709,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 3.5922577,
+      "commandsPerSecond": 556.7529300584421,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 3.7903738,
+      "commandsPerSecond": 527.6524441995668,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 3.5769373,
+      "commandsPerSecond": 559.1375616229001,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 6.2651214,
+      "commandsPerSecond": 319.22765295497703,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 6.308801,
+      "commandsPerSecond": 317.0174491159255,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 6.1775222,
+      "commandsPerSecond": 323.7544010768589,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.564586,
+      "commandsPerSecond": 1278.293427143027,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.4613965,
+      "commandsPerSecond": 1368.553982440768,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.4602362,
+      "commandsPerSecond": 1369.6414319820315,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.4715232,
+      "commandsPerSecond": 1359.135894017845,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.4498937,
+      "commandsPerSecond": 1379.411469958108,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.4716223,
+      "commandsPerSecond": 1359.044368925369,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 6.3395195,
+      "commandsPerSecond": 315.481323150753,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 6.2972985,
+      "commandsPerSecond": 317.59650586676173,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 6.4999235,
+      "commandsPerSecond": 307.69592903670326,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.4792233,
+      "commandsPerSecond": 1352.0609092623135,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.4195878,
+      "commandsPerSecond": 1408.8596703916446,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.4455231,
+      "commandsPerSecond": 1383.5821786590614,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.0257416,
+      "commandsPerSecond": 1949.8088017489006,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.0865305,
+      "commandsPerSecond": 1840.7214523660402,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.0405198,
+      "commandsPerSecond": 1922.1162345973619,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 5.9887177,
+      "commandsPerSecond": 333.9613086120256,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 5.7674315,
+      "commandsPerSecond": 346.7748164845998,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 5.8995859,
+      "commandsPerSecond": 339.00684453124074,
+      "conflicts": 0,
+      "directory": "RedisAsDefault"
+    }
+  ]
+}

@@ -1,13 +1,16 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 using Polly.Registry;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
+using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.Projections;
 using Stratara.Resilience;
 using Stratara.Sagas.Abstractions;
+using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Sagas;
 
@@ -32,6 +35,9 @@ internal interface ISagaGrain : IGrainWithStringKey
 {
     Task EnsureRunningAsync();
 
+    /// <summary>A commit happened in this partition; interleaves with a running catch-up, which then reads once more.</summary>
+    [OneWay]
+    [AlwaysInterleave]
     Task NudgeAsync();
 
     Task<int> CatchUpAsync();
@@ -46,6 +52,7 @@ internal interface ISagaGrain : IGrainWithStringKey
 /// sagas run here without modification. The grain's turn replaces the per-process bucket lock with a
 /// cluster-wide one.
 /// </summary>
+[GrainDirectory(GrainDirectories.Durable)]
 internal sealed class SagaGrain(
     IServiceScopeFactory scopeFactory,
     IEventMapperFactory eventMapperFactory,
@@ -80,31 +87,51 @@ internal sealed class SagaGrain(
 
     public Task EnsureRunningAsync() => this.RegisterOrUpdateReminder(KeepAliveReminder, _options.KeepAlivePeriod, _options.KeepAlivePeriod);
 
-    public Task NudgeAsync() => CatchUpAsync();
+    public Task NudgeAsync()
+    {
+        RequestCatchUp();
+        return Task.CompletedTask;
+    }
 
-    public Task<int> CatchUpAsync() => replayState.IsReplayActive ? Task.FromResult(0) : Loop.CatchUpAsync(DispatchEntryAsync);
+    public Task<int> CatchUpAsync() => RequestCatchUp();
 
     public Task<long> PositionAsync() => Loop.PositionAsync();
 
-    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => CatchUpAsync();
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => RequestCatchUp();
 
-    private async Task DispatchEntryAsync(EventStreamEntry entry, CancellationToken cancellationToken)
+    /// <summary>A loop a nudge started holds no request; the activation waits for it so a successor never dispatches beside it.</summary>
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        await Loop.WaitForRunningAsync(cancellationToken);
+        await base.OnDeactivateAsync(reason, cancellationToken);
+    }
+
+    private Task<int> RequestCatchUp() => Loop.RequestCatchUp(DispatchBatchAsync, () => replayState.IsReplayActive);
+
+    /// <summary>One scope, one saga manager and one process list for the batch; per entry, the recorded session.</summary>
+    private async Task<int> DispatchBatchAsync(CommittedBatch batch)
     {
         using var scope = scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
+        var sessions = services.GetRequiredService<ISessionContextProvider>();
+        var sagas = services.GetRequiredService<ISagaManager>();
+        var processes = services.GetServices<ISaga>().OfType<ISagaProcess>().ToList();
 
-        services.GetRequiredService<ISessionContextProvider>().Set(RecordedSession.Of(entry));
-        var events = await eventMapperFactory.MapToEventsAsync([entry], cancellationToken);
-        await services.GetRequiredService<ISagaManager>().HandleAsync(events, cancellationToken);
-
-        foreach (var process in services.GetServices<ISaga>().OfType<ISagaProcess>())
+        return await Loop.ApplyEachAsync(batch, async (entry, cancellationToken) =>
         {
-            foreach (var @event in events.Where(process.Handles))
+            sessions.Set(RecordedSession.Of(entry));
+            var events = await eventMapperFactory.MapToEventsAsync([entry], cancellationToken);
+            await sagas.HandleAsync(events, cancellationToken);
+
+            foreach (var process in processes)
             {
-                var key = SagaProcessKey.Of(process.GetType().Name, process.CorrelationOf(@event));
-                await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version);
+                foreach (var @event in events.Where(process.Handles))
+                {
+                    var key = SagaProcessKey.Of(process.GetType().Name, process.CorrelationOf(@event));
+                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version);
+                }
             }
-        }
+        });
     }
 }
 

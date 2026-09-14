@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Abstractions.Mediator;
-using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
@@ -48,8 +47,9 @@ internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory) : Gr
 
 /// <summary>
 /// What every grain-side execution does: restore the session, rebuild the command, invoke its
-/// handler inside the turn, and — for a recorded intent — delete the record once the handler has
-/// completed, so a crash before that point leaves the record for the sweeper to resume.
+/// handler inside the turn, and — for a recorded intent — hand the record to the completion queue
+/// once the handler has completed, so a crash before that point leaves the record for the drain to
+/// resume.
 /// </summary>
 internal static class CommandExecution
 {
@@ -81,15 +81,8 @@ internal static class CommandExecution
 
         if (intentId is { } id)
         {
-            await CompleteIntentAsync(services, id);
+            await services.GetRequiredService<IntentCompletionQueue>().CompleteAsync(id);
         }
-    }
-
-    private static async Task CompleteIntentAsync(IServiceProvider services, Guid intentId)
-    {
-        var unitOfWork = services.GetRequiredService<IWriteUnitOfWork>();
-        await using var transaction = await unitOfWork.StartAsync();
-        await unitOfWork.CreateOutboxRepository(transaction).DeleteAsync(intentId, CancellationToken.None);
     }
 
     private interface IHandlerInvoker

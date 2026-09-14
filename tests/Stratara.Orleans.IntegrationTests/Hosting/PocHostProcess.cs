@@ -29,7 +29,7 @@ public sealed class PocHostProcess : IAsyncDisposable
 
     public IReadOnlyList<string> Log => _log;
 
-    public static async Task<PocHostProcess> StartAsync(string scenario, IReadOnlyDictionary<string, string> environment)
+    public static async Task<PocHostProcess> StartAsync(string scenario, IReadOnlyDictionary<string, string> environment, TimeSpan? readyTimeout = null)
     {
         var start = new ProcessStartInfo("dotnet")
         {
@@ -71,10 +71,19 @@ public sealed class PocHostProcess : IAsyncDisposable
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        var ready = await host.ReadReplyAsync();
-        if (ready != "ready")
+        try
         {
-            throw new InvalidOperationException($"The host did not come up; first reply was '{ready}'. Log:{Environment.NewLine}{string.Join(Environment.NewLine, host._log)}");
+            var ready = await host.ReadReplyAsync(readyTimeout ?? ReplyTimeout);
+            if (ready != "ready")
+            {
+                throw new InvalidOperationException($"The host did not come up; first reply was '{ready}'. Log:{Environment.NewLine}{string.Join(Environment.NewLine, host._log)}");
+            }
+        }
+        catch (Exception)
+        {
+            host.Kill();
+            process.Dispose();
+            throw;
         }
 
         return host;
@@ -154,16 +163,18 @@ public sealed class PocHostProcess : IAsyncDisposable
         _process.Dispose();
     }
 
-    private async Task<string> ReadReplyAsync()
+    private Task<string> ReadReplyAsync() => ReadReplyAsync(ReplyTimeout);
+
+    private async Task<string> ReadReplyAsync(TimeSpan replyTimeout)
     {
-        using var timeout = new CancellationTokenSource(ReplyTimeout);
+        using var timeout = new CancellationTokenSource(replyTimeout);
         try
         {
             return await _replies.Reader.ReadAsync(timeout.Token);
         }
         catch (OperationCanceledException)
         {
-            throw new TimeoutException($"No reply from the host within {ReplyTimeout}. Log:{Environment.NewLine}{string.Join(Environment.NewLine, _log)}");
+            throw new TimeoutException($"No reply from the host within {replyTimeout}. Log:{Environment.NewLine}{string.Join(Environment.NewLine, _log)}");
         }
     }
 }

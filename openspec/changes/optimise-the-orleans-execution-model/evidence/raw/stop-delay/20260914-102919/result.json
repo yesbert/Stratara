@@ -1,0 +1,99 @@
+{
+  "measurement": "stop-delay",
+  "results": [
+    {
+      "scenario": "timers",
+      "iteration": 1,
+      "outcome": "exited",
+      "seconds": 0.0675793,
+      "logTail": [
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: Silo not running with ServerGC turned on - recommend checking app config : \u003Cconfiguration\u003E-\u003Cruntime\u003E-\u003CgcServer enabled=\u0022true\u0022\u003E",
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: ServerGC only kicks in on multi-core systems (settings enabling ServerGC have no effect on single-core machines).",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application started. Press Ctrl\u002BC to shut down.",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Hosting environment: Development",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Content root path: /Volumes/Daten/Projects/StrataraV2/Stratara",
+        "poc\u003E ready",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application is shutting down..."
+      ]
+    },
+    {
+      "scenario": "intent",
+      "iteration": 1,
+      "outcome": "exited",
+      "seconds": 0.1556242,
+      "logTail": [
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: Silo not running with ServerGC turned on - recommend checking app config : \u003Cconfiguration\u003E-\u003Cruntime\u003E-\u003CgcServer enabled=\u0022true\u0022\u003E",
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: ServerGC only kicks in on multi-core systems (settings enabling ServerGC have no effect on single-core machines).",
+        "warn: Stratara.Infrastructure.Security.KeyManagement.KeyStoreStartupProbe[112001]",
+        "      DummyKeyStore is the resolved IKeyStore implementation \u2014 encryption uses a deterministic test key derived from a constant baked into the shipping NuGet. NEVER deploy this configuration. Register a real IKeyStore (Azure Key Vault, AWS KMS, HSM) before calling AddSecurity().",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application started. Press Ctrl\u002BC to shut down.",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Hosting environment: Development",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Content root path: /Volumes/Daten/Projects/StrataraV2/Stratara",
+        "poc\u003E ready",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application is shutting down..."
+      ]
+    },
+    {
+      "scenario": "saga",
+      "iteration": 1,
+      "outcome": "exited",
+      "seconds": 0.0621054,
+      "logTail": [
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: Silo not running with ServerGC turned on - recommend checking app config : \u003Cconfiguration\u003E-\u003Cruntime\u003E-\u003CgcServer enabled=\u0022true\u0022\u003E",
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: ServerGC only kicks in on multi-core systems (settings enabling ServerGC have no effect on single-core machines).",
+        "warn: Stratara.Infrastructure.Security.KeyManagement.KeyStoreStartupProbe[112001]",
+        "      DummyKeyStore is the resolved IKeyStore implementation \u2014 encryption uses a deterministic test key derived from a constant baked into the shipping NuGet. NEVER deploy this configuration. Register a real IKeyStore (Azure Key Vault, AWS KMS, HSM) before calling AddSecurity().",
+        "warn: Stratara.Outbox.RabbitMQ.Projections.InProcessProjectionReplayState[104012]",
+        "      No Redis connection is registered, so projection-replay coordination is confined to this process: a replay requested here suppresses publication here only. Call AddCaching() for a replay to span hosts.",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application started. Press Ctrl\u002BC to shut down.",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Hosting environment: Development",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Content root path: /Volumes/Daten/Projects/StrataraV2/Stratara",
+        "poc\u003E ready",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application is shutting down..."
+      ]
+    },
+    {
+      "scenario": "projection-grain",
+      "iteration": 1,
+      "outcome": "exited",
+      "seconds": 0.0841656,
+      "logTail": [
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: Silo not running with ServerGC turned on - recommend checking app config : \u003Cconfiguration\u003E-\u003Cruntime\u003E-\u003CgcServer enabled=\u0022true\u0022\u003E",
+        "warn: Orleans.Runtime.Silo[100405]",
+        "      Note: ServerGC only kicks in on multi-core systems (settings enabling ServerGC have no effect on single-core machines).",
+        "warn: Stratara.Infrastructure.Security.KeyManagement.KeyStoreStartupProbe[112001]",
+        "      DummyKeyStore is the resolved IKeyStore implementation \u2014 encryption uses a deterministic test key derived from a constant baked into the shipping NuGet. NEVER deploy this configuration. Register a real IKeyStore (Azure Key Vault, AWS KMS, HSM) before calling AddSecurity().",
+        "warn: Stratara.Outbox.RabbitMQ.Projections.InProcessProjectionReplayState[104012]",
+        "      No Redis connection is registered, so projection-replay coordination is confined to this process: a replay requested here suppresses publication here only. Call AddCaching() for a replay to span hosts.",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application started. Press Ctrl\u002BC to shut down.",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Hosting environment: Development",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Content root path: /Volumes/Daten/Projects/StrataraV2/Stratara",
+        "poc\u003E ready",
+        "info: Microsoft.Hosting.Lifetime[0]",
+        "      Application is shutting down..."
+      ]
+    }
+  ]
+}
