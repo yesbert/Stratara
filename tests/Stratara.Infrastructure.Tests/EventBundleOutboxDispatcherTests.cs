@@ -47,7 +47,7 @@ public class EventBundleOutboxDispatcherTests
         uow.Setup(u => u.CreateOutboxRepository(transaction.Object))
             .Returns(repo.Object);
 
-        var sut = new EventBundleOutboxDispatcher(logger.Object, uow.Object, bus.Object, ids.Object, provider.Object, replayState.Object);
+        var sut = new EventBundleOutboxDispatcher(logger.Object, uow.Object, bus.Object, ids.Object, provider.Object, replayState.Object, Microsoft.Extensions.Options.Options.Create(new OutboxOptions()));
         return (sut, repo, transaction, uow, bus, ids, provider);
     }
 

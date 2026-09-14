@@ -37,6 +37,9 @@ public static class OutboxServiceCollectionExtensions
         services.AddProjectionReplayState();
         services.AddScoped<ICommandOutboxDispatcher, CommandOutboxDispatcher>();
         services.AddScoped<IEventBundleOutboxDispatcher, EventBundleOutboxDispatcher>();
+        services.AddOptions<OutboxOptions>()
+            .Configure<IServiceProvider>((options, provider) =>
+                provider.GetService<IConfiguration>()?.GetSection(OutboxOptions.SectionName).Bind(options));
         return services;
     }
 

@@ -20,7 +20,8 @@ SHALL NOT fail after the commit because the bundle could not be recorded.
 
 - **WHEN** a save persists a batch of events on a host with durable bundles
 - **THEN** the bundle is durable in the same commit as the events, and a failure to record it fails
-  the save before anything is committed — verified on the PostgreSQL store
+  the save before anything is committed — the atomic commit verified on the PostgreSQL store, the
+  refused record on the SQLite store the test-support package registers
 
 #### Scenario: No session is set
 

@@ -67,6 +67,13 @@ It is not left unimplemented by oversight, and it should not be "fixed" into a m
 the credentials a running host holds are data-plane credentials, and creating entities from them is a
 different permission and a different lifecycle.
 
+## Durable bundles
+
+The commit-to-publish window and the `Outbox:DurableBundles` option that closes it are
+transport-independent; the [RabbitMQ guide](outbox-setup-rabbitmq.md#durable-bundles-closing-the-commit-to-publish-window)
+describes both. With the option on, a bundle is in the outbox table when its events commit and is
+removed once Service Bus has accepted it; the outbox worker delivers whatever a crash left behind.
+
 ## Processor tuning
 
 The subscription processor runs with the Azure SDK's default `ServiceBusProcessorOptions` —

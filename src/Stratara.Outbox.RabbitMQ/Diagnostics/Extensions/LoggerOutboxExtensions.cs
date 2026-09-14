@@ -69,6 +69,19 @@ public static partial class LoggerOutboxExtensions
     public static partial void LogOutboxLockReleaseFailed(this ILogger logger, Exception exception);
 
     /// <summary>
+    /// Logs that a bundle stored with its commit was accepted by the bus but its stored copy could
+    /// not be removed; the outbox drain will publish it again, which at-least-once already allows.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="outboxEntryId">The stored entry that stays in the table.</param>
+    /// <param name="exception">The exception raised while removing it.</param>
+    [LoggerMessage(
+        EventId = LogEvents.OutboxProcessing.DurableBundleRemovalFailed,
+        Level = LogLevel.Warning,
+        Message = "Bundle {OutboxEntryId} was accepted by the bus but its stored copy could not be removed; the outbox drain will publish it again.")]
+    public static partial void LogDurableBundleRemovalFailed(this ILogger logger, Guid outboxEntryId, Exception exception);
+
+    /// <summary>
     /// Logs, once at start-up, that no shared coordination store is registered and replay
     /// coordination is therefore confined to this process.
     /// </summary>

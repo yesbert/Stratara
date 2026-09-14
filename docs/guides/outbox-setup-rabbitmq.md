@@ -162,6 +162,39 @@ Client subscriptions (`default-*`) are refused: they are declared exclusive and 
 queue established ahead of its consumer would be removed the moment the declaring channel closed.
 Establishing one would look like it worked and retain nothing.
 
+## Durable bundles: closing the commit-to-publish window
+
+By default a save commits its events and then tries the bus; the bundle reaches the outbox table only
+if the bus refuses it. Between the commit and that publish there is a window in which the process
+may end — and a bundle lost there is lost for every subscription: the events are in the store, and no
+projection and no saga is told. Projections recover by a replay; a saga has no such repair.
+
+`Outbox:DurableBundles` closes the window. The bundle is written to the outbox table **in the same
+transaction that commits its events**, published after the commit, and removed once the bus has
+accepted it. A process that ends anywhere after the commit leaves a row the outbox worker delivers.
+
+```jsonc
+{
+  "Outbox": {
+    "DurableBundles": true,       // default false: bus-first, window open
+    "PollingIntervalSeconds": 5   // how soon the worker picks up what a crash left behind
+  }
+}
+```
+
+What it costs: one insert per save inside a transaction that already exists, and one delete per
+accepted bundle afterwards. Measured on PostgreSQL against a bus that accepts instantly — an upper
+bound on the relative cost, since a real broker slows both paths alike — the option takes
+**28–30 % off the appends per second** at 1, 8 and 32 writers alike (2 650 → 1 860 at 32 writers on
+the reference machine). On a healthy bus the table stays near empty; a spike in it now means the
+bus is down, which it meant before too. Because the worker may drain a stored row before the save's
+own removal reaches it, a bundle can occasionally be delivered twice — which at-least-once already
+requires every handler to tolerate. Commands dispatched
+through `ICommandOutboxDispatcher` are unaffected — a command has no commit to be atomic with, and
+bus-first stays right for it. A host running sagas on the bus path, or one that cannot afford a
+replay, should switch it on; the outbox worker must run somewhere in the deployment for the rows
+a crash leaves to be delivered.
+
 ## When a handler cannot take a message
 
 A worker subscription is a **quorum queue** with a dead-letter queue beside it. A message whose

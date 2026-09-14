@@ -29,9 +29,9 @@ same transaction as the events.
   switching every host would be the silent change of semantics and of throughput the finding's change
   forbids. The cost is measured before the guide calls it cheap.
 
-Additive API only: two default-implemented members on the bundle dispatcher port, one option, one
-optional property on the bundle record. A host that changes nothing sees nothing; a host that opts in
-sees one row written and removed per save.
+Additive API only: two default-implemented members on the bundle dispatcher port, one
+default-implemented overload on the outbox repository port, one option. A host that changes nothing
+sees nothing; a host that opts in sees one row written and removed per save.
 
 ## Capabilities
 
@@ -55,7 +55,8 @@ None.
   own transaction when the dispatcher says so.
 - `src/Stratara.Outbox.RabbitMQ/Outbox/EventBundleOutboxDispatcher.cs`, `OutboxOptions.cs` —
   store-publish-delete for bundles on the option.
-- `src/Stratara.Contracts` — an optional storage id on the bundle record.
+- `src/Stratara.Abstractions/Abstractions/Outbox/IOutboxRepository.cs` — a default-implemented
+  `AddAsync(Guid id, …)` overload; `src/Stratara.Contracts` untouched.
 - `evidence/` in this change — the kill test and the cost measurement, recorded the way
   `prove-an-orleans-execution-model` records its runs.
 - Superseded sources: none.

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Registry;
 using Stratara.Contracts.Messages;
@@ -182,7 +183,7 @@ public class EventBundleOutboxDispatcherTests
 
         public EventBundleOutboxDispatcher Sut { get; }
 
-        public Harness()
+        public Harness(bool durableBundles = false)
         {
             MessagingIdentifier.SetupGet(m => m.EventBundleTopic).Returns(EventBundleTopic);
             UnitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Transaction.Object);
@@ -195,7 +196,84 @@ public class EventBundleOutboxDispatcherTests
                 MessageBus.Object,
                 MessagingIdentifier.Object,
                 PipelineProvider.Object,
-                ReplayState.Object);
+                ReplayState.Object,
+                Options.Create(new OutboxOptions { DurableBundles = durableBundles }));
         }
+    }
+
+    [Fact]
+    public void StoresBundlesWithCommit_FollowsTheOption()
+    {
+        Assert.False(new Harness().Sut.StoresBundlesWithCommit);
+        Assert.True(new Harness(durableBundles: true).Sut.StoresBundlesWithCommit);
+    }
+
+    [Fact]
+    public async Task DurableBundle_StoredThenAccepted_IsRemovedByItsStoredIdentity()
+    {
+        var harness = new Harness(durableBundles: true);
+        var bundle = NewEventBundle();
+        var storeTransaction = Mock.Of<ITransaction>();
+        Guid? storedId = null;
+        harness.OutboxRepository
+            .Setup(r => r.AddAsync(It.IsAny<Guid>(), bundle, It.IsAny<CancellationToken>()))
+            .Callback<Guid, EventBundle, CancellationToken>((id, _, _) => storedId = id)
+            .Returns(Task.CompletedTask);
+
+        await harness.Sut.StoreEventBundleAsync(bundle, storeTransaction);
+        await harness.Sut.EnqueueEventBundleAsync(bundle);
+
+        harness.UnitOfWork.Verify(u => u.CreateOutboxRepository(storeTransaction), Times.Once);
+        Assert.NotNull(storedId);
+        harness.MessageBus.Verify(b => b.PublishAsync(EventBundleTopic, bundle, It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(storedId.Value, It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.AddAsync(bundle, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DurableBundle_BusRefuses_KeepsTheStoredRowAndDoesNotStoreTwice()
+    {
+        var harness = new Harness(durableBundles: true);
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+        var bundle = NewEventBundle();
+
+        await harness.Sut.StoreEventBundleAsync(bundle, Mock.Of<ITransaction>());
+        await harness.Sut.EnqueueEventBundleAsync(bundle);
+
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.OutboxRepository.Verify(r => r.AddAsync(bundle, It.IsAny<CancellationToken>()), Times.Never);
+        harness.UnitOfWork.Verify(u => u.StartAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DurableBundle_RemovalFails_TheSaveIsNotFailed()
+    {
+        var harness = new Harness(durableBundles: true);
+        harness.OutboxRepository
+            .Setup(r => r.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("delete failed"));
+        var bundle = NewEventBundle();
+
+        await harness.Sut.StoreEventBundleAsync(bundle, Mock.Of<ITransaction>());
+        await harness.Sut.EnqueueEventBundleAsync(bundle);
+
+        harness.MessageBus.Verify(b => b.PublishAsync(EventBundleTopic, bundle, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DurableBundle_ReplayActive_LeavesTheRowForTheDrain()
+    {
+        var harness = new Harness(durableBundles: true);
+        harness.ReplayState.Setup(s => s.IsReplayActive).Returns(true);
+        var bundle = NewEventBundle();
+
+        await harness.Sut.StoreEventBundleAsync(bundle, Mock.Of<ITransaction>());
+        await harness.Sut.EnqueueEventBundleAsync(bundle);
+
+        harness.MessageBus.Verify(b => b.PublishAsync(It.IsAny<string>(), It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.OutboxRepository.Verify(r => r.AddAsync(bundle, It.IsAny<CancellationToken>()), Times.Never);
     }
 }

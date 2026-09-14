@@ -35,4 +35,16 @@ public sealed class OutboxOptions
     /// no-op <c>NullOutboxLock</c> is registered.
     /// </summary>
     public int LockLeaseSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Whether an event bundle is written to the outbox table in the same transaction that commits
+    /// its events, published after the commit, and removed once the bus has accepted it. Defaults
+    /// to <see langword="false"/>, the bus-first path: the bundle reaches the table only if the bus
+    /// refuses it, and a process that ends between the commit and the publish loses the bundle for
+    /// every subscription. With <see langword="true"/> a committed fact is in the table until the
+    /// bus has it, at the cost of one insert per save and one delete per accepted bundle. The store
+    /// must let the dispatcher choose the entry's identity: the framework's outbox repository does,
+    /// a consumer-supplied one has to implement the identity-taking overload.
+    /// </summary>
+    public bool DurableBundles { get; set; }
 }

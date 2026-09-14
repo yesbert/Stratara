@@ -1,0 +1,71 @@
+{
+  "measurement": "durable-bundles",
+  "results": [
+    {
+      "layout": "bus-first",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        545.9274069299271,
+        627.9716876201561,
+        603.9221689024037
+      ],
+      "median": 603.9221689024037
+    },
+    {
+      "layout": "bus-first",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        2645.800123029706,
+        2599.9904320352102,
+        2646.1486417901174
+      ],
+      "median": 2645.800123029706
+    },
+    {
+      "layout": "bus-first",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        2649.6875395714274,
+        2715.0836308205216,
+        2562.7279562534136
+      ],
+      "median": 2649.6875395714274
+    },
+    {
+      "layout": "durable",
+      "writers": 1,
+      "appends": 10000,
+      "appendsPerSecond": [
+        435.8826799275429,
+        435.2584123753543,
+        431.94712186268004
+      ],
+      "median": 435.2584123753543
+    },
+    {
+      "layout": "durable",
+      "writers": 8,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1877.2515168051461,
+        1899.137852187518,
+        1896.3471442462715
+      ],
+      "median": 1896.3471442462715
+    },
+    {
+      "layout": "durable",
+      "writers": 32,
+      "appends": 10000,
+      "appendsPerSecond": [
+        1861.4188553539805,
+        1917.7455167808296,
+        1837.9790244319793
+      ],
+      "median": 1861.4188553539805
+    }
+  ]
+}

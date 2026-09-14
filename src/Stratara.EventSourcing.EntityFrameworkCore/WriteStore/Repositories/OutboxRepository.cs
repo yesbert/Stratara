@@ -22,11 +22,14 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.Repositories;
 internal sealed class OutboxRepository(IWriteDbContext context) : IOutboxRepository
 {
     /// <inheritdoc/>
-    public async Task AddAsync<T>(T outboxData, CancellationToken cancellationToken)
+    public Task AddAsync<T>(T outboxData, CancellationToken cancellationToken) =>
+        AddAsync(Guid.CreateVersion7(), outboxData, cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task AddAsync<T>(Guid id, T outboxData, CancellationToken cancellationToken)
     {
         var dataJson = JsonSerializer.Serialize(outboxData);
         var dataTypeName = typeof(T).GetQualifiedTypeName();
-        var id = Guid.CreateVersion7();
         var outboxEntry = new OutboxEntry
         {
             Id = id,

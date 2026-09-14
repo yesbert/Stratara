@@ -40,7 +40,7 @@ that dispatches commands but runs no worker, a test host, a migration runner.
 | `services.AddSessionContext()` | The scoped session context and its accessor. Pair with `app.UseMiddleware<SessionContextMiddleware>()` in an ASP.NET host |
 | `services.AddIdentity()` | The scoped identity accessors that resolve from the ambient session context |
 | `services.AddBackgroundTasks()` | The in-process background-task queue and its hosted service (capacity 100 pending items) |
-| `services.AddOutboxDispatcher()` | `ICommandOutboxDispatcher` + `IEventBundleOutboxDispatcher` (scoped) and the bus they publish through |
+| `services.AddOutboxDispatcher()` | `ICommandOutboxDispatcher` + `IEventBundleOutboxDispatcher` (scoped) and the bus they publish through; binds `Outbox` (for `Outbox:DurableBundles`) when the host carries a configuration |
 | `services.AddAuthorizingCommandOutboxDispatcher()` | Wraps the dispatcher so `[RequireRole]` / `[RequirePermission]` are enforced on the outbox path too, keeping the inner dispatcher resolvable |
 | `services.AddPipelineBehaviorWithResult<T>()` | Registers an open-generic pipeline behaviour for the result-returning request shape |
 | `services.AddTrustedTypeResolver()` | The default `ITrustedTypeResolver` if none is registered. Idempotent |

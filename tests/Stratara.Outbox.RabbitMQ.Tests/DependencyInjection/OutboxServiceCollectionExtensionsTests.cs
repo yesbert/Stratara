@@ -216,4 +216,30 @@ public class OutboxServiceCollectionExtensionsTests
 
         Assert.Single(services, d => d.ServiceType == typeof(IProjectionReplayState));
     }
+
+    [Fact]
+    public void AddOutboxDispatcher_WithoutConfiguration_DurableBundlesDefaultsToOff()
+    {
+        var services = new ServiceCollection();
+
+        services.AddOutboxDispatcher();
+
+        var options = services.BuildServiceProvider().GetRequiredService<IOptions<OutboxOptions>>().Value;
+        Assert.False(options.DurableBundles);
+    }
+
+    [Fact]
+    public void AddOutboxDispatcher_BindsDurableBundlesFromTheOutboxSection()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Outbox:DurableBundles"] = "true",
+        });
+
+        builder.Services.AddOutboxDispatcher();
+
+        var options = builder.Services.BuildServiceProvider().GetRequiredService<IOptions<OutboxOptions>>().Value;
+        Assert.True(options.DurableBundles);
+    }
 }
