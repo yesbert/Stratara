@@ -90,7 +90,9 @@ public static class RestartDelayRun
             var orleans = Database(postgres.GetConnectionString(), $"r1_orleans_{port}");
             await EnsureDatabaseAsync(store);
 
-            for (var iteration = 1; iteration <= restarts; iteration++)
+            // One join per setting: the mechanism is deterministic — the joiner retries until
+            // MaxJoinAttemptTime (five minutes) — and a join may take all of it.
+            for (var iteration = 1; iteration <= 1; iteration++)
             {
                 var killedPort = 11700 + port * 10 + iteration;
                 var killed = await PocHostProcess.StartAsync("timers", PocHostSettings.ToEnvironment(
@@ -103,18 +105,21 @@ public static class RestartDelayRun
                 var started = Stopwatch.GetTimestamp();
                 double? ready;
                 PocHostProcess? joining = null;
+                var joinerEnvironment = PocHostSettings.ToEnvironment(
+                    store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), joiningPort, joiningPort + 20_000,
+                    profile: PocSiloProfile.Production, membership: membership);
+                joinerEnvironment["POC_START_TIMEOUT_SECONDS"] = "360";
                 try
                 {
-                    joining = await PocHostProcess.StartAsync("timers", PocHostSettings.ToEnvironment(
-                        store, orleans, redis.GetConnectionString(), rabbit.GetConnectionString(), joiningPort, joiningPort + 20_000,
-                        profile: PocSiloProfile.Production, membership: membership));
+                    joining = await PocHostProcess.StartAsync("timers", joinerEnvironment, readyTimeout: TimeSpan.FromMinutes(7));
                     ready = Stopwatch.GetElapsedTime(started).TotalSeconds;
                     Console.WriteLine($"{label,-28} join {iteration}: ready {ready:F1} s");
                 }
                 catch (Exception ex) when (ex is TimeoutException or InvalidOperationException)
                 {
                     ready = null;
-                    Console.WriteLine($"{label,-28} join {iteration}: not ready within the host's two-minute start timeout ({Stopwatch.GetElapsedTime(started).TotalSeconds:F0} s)");
+                    Console.WriteLine($"{label,-28} join {iteration}: not ready within six minutes ({Stopwatch.GetElapsedTime(started).TotalSeconds:F0} s)");
+                    Console.WriteLine(ex.Message);
                 }
 
                 results.Add(new { profile = PocSiloProfile.Production.ToString(), membership = membership.ToString(), shape = "join-after-kill", restart = iteration, readySeconds = ready, timerFiredSeconds = (double?)null });

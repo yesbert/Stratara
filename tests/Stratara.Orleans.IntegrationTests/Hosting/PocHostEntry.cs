@@ -38,7 +38,10 @@ public static class PocHostEntry
         var settings = PocHostSettings.FromEnvironment();
         using var host = await scenario.BuildAsync(settings);
 
-        using var startTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        // Two minutes unless the parent says otherwise: a join that waits for a killed silo's entry
+        // takes longer, and the restart-delay run wants to measure how much longer.
+        var startTimeoutSeconds = int.TryParse(Environment.GetEnvironmentVariable("POC_START_TIMEOUT_SECONDS"), out var configured) ? configured : 120;
+        using var startTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(startTimeoutSeconds));
         await host.StartAsync(startTimeout.Token);
         Reply("ready");
 
