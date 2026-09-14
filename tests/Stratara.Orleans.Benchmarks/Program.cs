@@ -74,6 +74,12 @@ public static class Program
             return await RestartDelayRun.RunAsync(restartEvidenceRoot, restarts);
         }
 
+        if (args is ["--stop-delay", var stopEvidenceRoot, ..])
+        {
+            var profile = args.Length > 2 ? Enum.Parse<PocSiloProfile>(args[2]) : PocSiloProfile.Production;
+            return await StopDelayRun.RunAsync(stopEvidenceRoot, profile);
+        }
+
         if (args is ["--rebuild", var rebuildEvidenceRoot, ..])
         {
             var events = args.Length > 2 ? int.Parse(args[2]) : 100_000;
