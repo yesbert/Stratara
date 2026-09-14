@@ -16,9 +16,11 @@ Truncation is what makes a replay a rebuild rather than a re-application: withou
 be applied a second time on top of state that already reflects them.
 
 On the Orleans execution model a projection that declares how to empty its own read model MAY be
-rebuilt alone: its read model is emptied, its checkpoints reset, and its partitions re-read from the
-beginning in parallel, while every other projection keeps applying live events. A projection that
-does not declare it is rebuilt with the others by the replay, as before.
+rebuilt alone: its checkpoints are reset, its read model emptied, and its partitions re-read from the
+beginning in parallel, while every other projection keeps applying live events; a rebuild that fails
+part-way resumes from the beginning. A projection that does not declare it is rebuilt with the others
+by the replay, as before, and on a host whose projections read the store a full replay SHALL also
+return their checkpoints to the beginning, so that they re-read what the replay emptied.
 
 #### Scenario: A replay runs to completion
 
@@ -53,8 +55,13 @@ does not declare it is rebuilt with the others by the replay, as before.
 
 - **WHEN** a rebuildable projection is asked to rebuild while others are registered
 - **THEN** only its read model is emptied and re-read, and the others apply live events throughout —
-  verified with a hundred thousand events over three projections, the rebuild at 17.6 % of a full
-  replay's duration and live events at five milliseconds median
+  verified with a hundred thousand events over three projections on the PostgreSQL store
+
+#### Scenario: A full replay runs on a host with store-reading projections
+
+- **WHEN** a full replay runs while projections read the store from checkpoints
+- **THEN** their read models are emptied with the others and refilled from the beginning of the store,
+  and no checkpoint is left past an entry whose effect the replay removed
 
 ### Requirement: Bundles about one aggregate are applied one at a time within a process
 
@@ -115,7 +122,7 @@ read from the store.
 
 - **WHEN** events are committed on a host with store-reading projections
 - **THEN** the projections apply them after the wake-up, within the latency the push path gives —
-  verified at two thousand events per run, the median ahead of the bus push
+  verified at two thousand events per run on the PostgreSQL store
 
 #### Scenario: The wake-up is lost
 

@@ -41,6 +41,16 @@ proof of concept that no consumer can install. This change ships it.
   starters; cancellation that did not reach the store. And the three items #77's review named:
   batch deletion through the outbox repository port; a start-up check for the named durable grain
   directory; a batch that says whether more exists.
+- **The review of the proof of concept after #77 is closed with it**: a command on this path passes
+  the mediator pipeline and the enqueue-time authorizer in either registration order; a command sent
+  for another aggregate runs in that aggregate's activation; a process timeout that touches its timers
+  completes, survives a kill inside its step and is not delayed by clock differences; a long handler is
+  not handed over again and an encrypted command keeps its order when resumed; the partition count is
+  part of a checkpoint's identity; a rebuild and a full replay leave no checkpoint past what they
+  emptied; settings, timer ports and singleton placement are checked at start; the reset and the
+  portable reader's backfill are designed; the published surface is trimmed to what a consumer should
+  use; kill tests prove what they claim; and the packages return to the analysis gate's coverage
+  measure.
 - **The composites split additively.** The projection and saga composites keep their names and
   what they register; each gains a sibling that registers everything but the bus-fed worker, so
   the Orleans registrations remove nothing by name.
@@ -60,9 +70,11 @@ counter serves every other provider); Orleans streams; any change to what `ISaga
 A consumer can install the Orleans execution model from the feed and run it beside or instead of
 the bus workers. Everything a consumer has today keeps working unchanged: every existing composite
 registers what it registered, every existing contract promises what it promised, and a host that
-does not install the new packages notices nothing except two new outbox columns in its next
-migration. The published surface gains two packages, one registration per role, one optional
-interface for stateful processes, one for rebuildable projections, the timer port, and one
+does not install the new packages notices nothing except the additions to the store schema in its
+next migration — the commit-order and position columns, the counter table, the outbox record's resume
+bookkeeping and the checkpoint table — none of which changes behaviour. The published surface gains
+two packages, one registration per role, one optional interface for stateful processes, one for
+rebuildable projections, the timer port, the reset port, members on the outbox record, and one
 default-implemented member on the outbox repository port. This is a **minor** bump after the
 merge: new packable projects.
 
@@ -102,18 +114,24 @@ merge: new packable projects.
   and `src/Stratara.Orleans.EntityFrameworkCore/` (new; today's `CommitOrder/` readers, the
   checkpoint store and the model extension move there). Both in `Stratara.Publish.slnf`.
 - **Modified, packable:** `src/Stratara.Abstractions/` (a default-implemented member on the outbox
-  repository port; the timer, singleton-work and rebuildable-projection ports if they are to be
-  adoptable without the runtime — a design decision); `src/Stratara.EventSourcing.EntityFrameworkCore/`
-  (the batch delete, the outbox record's resume bookkeeping, the schema addition);
-  `src/Stratara.Projections/` and `src/Stratara.Sagas/` (the split registrations);
-  `src/Stratara.Infrastructure/` (the sibling composites); `src/Stratara.Diagnostics/` (the log
-  event band and the instruments).
+  repository port, the outbox record's resume bookkeeping, and the timer, singleton-work, reader,
+  checkpoint and rebuilder ports — design D1); `src/Stratara.EventSourcing.EntityFrameworkCore/` (the
+  batch delete, the schema addition); `src/Stratara.Projections/` and `src/Stratara.Sagas/` (the
+  rebuildable projection and the process); `src/Stratara.EventSourcing.WorkerDefaults/` (the sibling
+  composites, D11); `src/Stratara.Infrastructure/` (the enqueue-time authorizer decorates the registered
+  dispatcher, D15); `src/Stratara.Diagnostics/` (the log event band and the instruments).
 - **Tests:** `tests/Stratara.Orleans.Tests/`, `tests/Stratara.Orleans.IntegrationTests/` and
   `tests/Stratara.Orleans.Benchmarks/` follow the packages; the integration suite becomes the
-  packages' suite.
+  packages' suite; `tests/Stratara.EventSourcing.WorkerDefaults.Tests/`,
+  `tests/Stratara.Infrastructure.Tests/` and `tests/Stratara.EntityFrameworkCore.Tests/` gain the cases
+  the tasks name.
+- **CI:** `.github/workflows/sonar.yml` loses the coverage exclusion for `src/Stratara.Orleans/**` and
+  collects the Orleans integration suite's coverage (D26); `.github/workflows/integration.yml` loses the
+  scenario-host build step once the test project builds the host (D25).
 - **Documentation:** `docs/` gains the capability's pages, the migration note and the operations
   note; `llms.txt` and `llms-full.txt`, `README.md` and the landing page name the recommended
-  model; `CHANGELOG.md` gains an unreleased entry.
+  model; `CHANGELOG.md` gains an unreleased entry; every page that states the package count or the
+  log-event range follows (D13).
 - **Version:** `<VersionPrefix>` is not touched here; `/bump-version minor` follows the merge.
 - **Superseded sources:** `openspec/changes/archive/2026-09-13-prove-an-orleans-execution-model/evidence/migration-note.md`
   and `openspec/changes/archive/2026-09-14-optimise-the-orleans-execution-model/evidence/operations-note.md`

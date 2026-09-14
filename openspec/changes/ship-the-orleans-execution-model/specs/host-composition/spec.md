@@ -6,11 +6,12 @@ The framework SHALL offer one composition entry point per worker role — backen
 handling, heavy command handling, event projection, saga orchestration, event-stream hashing and
 outbox handling — so that a host opts into a role with a single call.
 
-For the roles that have a bus-fed worker — event projection and saga orchestration — the framework
-SHALL also offer the same composite without the worker, so that a host adopting the Orleans
-execution model registers the role's services and then the execution model's registration for that
-role, and nothing is removed after it was registered. The existing composites SHALL keep registering
-what they register today.
+For event projection and saga orchestration, whose composites register the role's services together
+with its bus-fed worker, the framework SHALL also offer the same composite without the worker, so that
+a host adopting the Orleans execution model registers the role's services and then the execution
+model's registration for that role, and nothing is removed after it was registered. A host on the
+projection services composite SHALL still be able to run a full replay. The existing composites SHALL
+keep registering what they register today.
 
 #### Scenario: A host adopts one role
 

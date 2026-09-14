@@ -10,8 +10,7 @@ A host that has registered the Orleans execution model's command dispatcher inst
 every command in durable storage before the dispatch returns and hand it to its activation
 afterwards; the promise the caller relies on — an accepted command is not lost — is the same, and
 what changes is only what a dying host costs: nothing is lost, and a handler may run a second time.
-The stored record is removed once the handler has completed, shortly after and not inside the
-handler's turn.
+The stored record is removed shortly after the handler has completed.
 
 For an event bundle the same holds by default. A host MAY instead opt in to durable bundles: the
 bundle is then written to durable storage in the same transaction that commits its events, the bus
@@ -131,4 +130,4 @@ working without change.
 #### Scenario: The framework's repository removes a batch
 
 - **WHEN** the framework's own repository is asked to remove a batch
-- **THEN** one statement removes them all — verified on the PostgreSQL store
+- **THEN** the batch is removed in one round trip to the database — verified on the PostgreSQL store

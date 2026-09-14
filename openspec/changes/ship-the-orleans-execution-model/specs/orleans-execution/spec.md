@@ -13,7 +13,8 @@ aggregate SHALL run in that aggregate's activation, and two commands naming the 
 NOT run concurrently anywhere in the cluster. The activation is registered in a storage-backed
 directory a host provides. Where an unstable cluster produces a second activation regardless, the
 store's version constraint SHALL still refuse the second writer, so the guarantee degrades to the one
-the bus workers give and never below it.
+the bus workers give and never below it. A command that a handler sends for another aggregate SHALL
+run in that other aggregate's activation, not in the sending handler's.
 
 #### Scenario: Two commands name one aggregate from two hosts
 
@@ -26,15 +27,28 @@ the bus workers give and never below it.
 - **THEN** at most one of their appends succeeds and the other observes a concurrency conflict, as it
   would on the bus path
 
+#### Scenario: A handler sends a command for another aggregate
+
+- **WHEN** a handler running for one aggregate dispatches a command naming a second aggregate while a
+  command for the second aggregate is running
+- **THEN** the dispatched command runs after the running one, in the second aggregate's activation
+
 ### Requirement: An accepted command is recorded before the call returns and resumed after a crash
 
 Where a host has registered the Orleans execution model's command dispatcher, dispatching a command
 SHALL record it durably before the dispatch returns and hand it to its activation afterwards. A
 host that dies between acceptance and completion SHALL resume the command after a configurable
-grace. Completion SHALL be recorded outside the handler's turn; a command whose completion the host
-did not record before dying SHALL run again. A command whose handler keeps failing SHALL be resumed a
-bounded number of times and then kept for an operator, as a bus message a handler cannot take is
-kept, and SHALL NOT hold back the resumption of other commands.
+grace. A command whose completion the host had not recorded before it died SHALL run again. A command
+whose handler keeps failing SHALL be resumed a bounded number of times and then kept for an operator,
+as a bus message a handler cannot take is kept, and SHALL NOT hold back the resumption of other
+commands; an operator SHALL be able to return a kept command, which is then resumed with its attempts
+starting over. A command whose handler is still running SHALL NOT be handed over again, however long
+it runs, and a resumed command SHALL keep the order of the aggregate it names whatever protection its
+payload carries.
+
+Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
+tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
+registered SHALL apply whatever order it and the execution model were registered in.
 
 #### Scenario: The host dies after acceptance
 
@@ -53,6 +67,32 @@ kept, and SHALL NOT hold back the resumption of other commands.
 - **WHEN** a resumed command's handler throws on every attempt
 - **THEN** it is resumed up to the configured bound, then kept with the attempt count and the last
   failure, and the commands after it are still resumed
+
+#### Scenario: An operator returns a kept command
+
+- **WHEN** an operator returns a kept command through the documented procedure
+- **THEN** it is resumed with its attempt count starting over
+
+#### Scenario: A handler runs longer than the grace
+
+- **WHEN** a recorded command's handler is still running after the grace has passed
+- **THEN** it is not handed over again while it runs, and it runs once
+
+#### Scenario: A resumed command's payload is encrypted
+
+- **WHEN** a command whose payload is encrypted is resumed after a crash
+- **THEN** it runs in the activation of the aggregate it names, after the commands before it
+
+#### Scenario: A command the host's pipeline rejects is dispatched
+
+- **WHEN** a command that the host's validation or authorization rejects is dispatched on this path
+- **THEN** it is rejected as it would be on the bus path, and its handler does not run
+
+#### Scenario: Enqueue-time authorization is registered after the execution model
+
+- **WHEN** a host registers enqueue-time authorization before or after the execution model's dispatcher
+- **THEN** an unauthorised dispatch is refused and an authorised one reaches its activation, in both
+  orders
 
 #### Scenario: Two commands to one aggregate from one scope
 
@@ -86,6 +126,12 @@ saga whatever dies after the commit.
 - **THEN** only its read model is emptied and re-read from the beginning of the store, in parallel
   over the partitions, while every other projection keeps applying live events
 
+#### Scenario: A rebuild fails part-way
+
+- **WHEN** emptying a rebuildable projection's read model fails part-way through a rebuild
+- **THEN** the projection re-reads from the beginning of the store when it resumes, and never applies
+  on top of a partly emptied read model without re-reading
+
 ### Requirement: A failing entry stops its partition, is retried, and is visible
 
 Where an entry cannot be applied — a missing prerequisite past its retry policy, or a genuine
@@ -107,10 +153,13 @@ stops advancing is seen and not inferred from a checkpoint that stands still.
 
 ### Requirement: Work that must happen once happens once per cluster
 
-Singleton work SHALL run in one place in the cluster at its period, without a lock, and SHALL
-resume elsewhere when the silo running it is lost. Owner-checked durable timers SHALL fire once per
-cluster on or after their due time, SHALL fire for an owner that exists and never for one that was
-removed, and SHALL survive a restart of the silo that registered them.
+Singleton work SHALL run in one place in the cluster at its period, without a lock, only on a silo
+that registered it, and SHALL resume elsewhere when the silo running it is lost. Owner-checked durable
+timers SHALL fire once per cluster on or after their due time, SHALL fire for an owner that exists and
+never for one that was removed, and SHALL survive a restart of the silo that registered them. A timer
+SHALL NOT fire a further period late because the clocks of the silos differ slightly. A process
+timeout registered in a step SHALL survive a kill at any point of that step, and a timeout whose
+handling cancels or registers the process's timers SHALL complete.
 
 #### Scenario: Two silos run the same singleton work
 
@@ -128,6 +177,34 @@ removed, and SHALL survive a restart of the silo that registered them.
 - **THEN** every kept owner's timer fires exactly once and no removed owner's timer fires — verified
   with ten kills on the PostgreSQL reminder table
 
+#### Scenario: Silos register different singleton work
+
+- **WHEN** one silo registers a singleton work and another silo of the cluster does not
+- **THEN** the work runs on the silo that registered it, and the other silo reports no failure for it
+
+#### Scenario: The silo running singleton work is lost
+
+- **WHEN** the silo running a singleton work is killed while another silo that registered it stays
+- **THEN** the work runs on the remaining silo at its period
+
+#### Scenario: A timeout changes the process's timers
+
+- **WHEN** a process handles a timeout by cancelling or registering timers, or a fact for the process
+  arrives while its timeout is being handled
+- **THEN** the handling completes and the timeout does not run again
+
+#### Scenario: The host dies inside a step that schedules a timeout
+
+- **WHEN** a silo is killed at any point of a step that schedules a timeout, and the fact is applied
+  again after the restart
+- **THEN** the timeout fires once, and a timeout for a step whose events were never recorded reaches the
+  process with the state as recorded
+
+#### Scenario: A tick arrives shortly before the due time
+
+- **WHEN** a timer's tick runs on a silo whose clock is slightly behind the registering host's
+- **THEN** the timer fires on that tick and not a retry period later
+
 ### Requirement: Heavy work is bounded across the cluster by permits that expire with their holder
 
 Heavy commands SHALL run in a bounded worker pool per silo and under a cluster-wide bound of
@@ -144,8 +221,8 @@ queue behind heavy work.
 #### Scenario: Interactive commands during a heavy burst
 
 - **WHEN** interactive commands are dispatched while the heavy pool is saturated
-- **THEN** their latency stays within its no-burst range — verified with five hundred heavy units
-  of two hundred milliseconds against two hundred interactive commands
+- **THEN** their latency stays within its no-burst range — verified with a saturated heavy pool on
+  the PostgreSQL store
 
 ### Requirement: A host can reset what the execution model keeps outside the event stream
 
@@ -162,8 +239,8 @@ NOT be touched by a reset.
 
 ### Requirement: A restart and a hard death behave as stated, and the documentation says so
 
-A silo restarted on the endpoint it had SHALL be ready within seconds and SHALL fire a timer that
-came due while it was down on its due time. A silo joining on a **different** endpoint while a
+A silo restarted on the endpoint it had SHALL rejoin without waiting for its earlier membership
+entry to expire, and SHALL fire a timer that came due while it was down once it is back. A silo joining on a **different** endpoint while a
 killed silo's membership entry is still active SHALL NOT be assumed to join: it waits for the
 runtime's join window and then fails, and the documentation SHALL state the three answers — a second
 active silo that votes the dead one out, a restart on the dead silo's endpoint, or a cleanup of the
@@ -172,8 +249,8 @@ membership table — rather than imply the runtime recovers on its own.
 #### Scenario: A silo restarts on its own endpoint
 
 - **WHEN** a single silo is killed and restarted on the same endpoint
-- **THEN** it is ready in about a second and a timer registered before the kill fires at its due
-  time — verified on Orleans 10.3.1 with the PostgreSQL membership table
+- **THEN** it rejoins without waiting for a membership timeout and a timer registered before the kill
+  fires — verified on Orleans 10.3.1 with the PostgreSQL membership table
 
 #### Scenario: A replacement silo starts on another endpoint after a hard death
 
@@ -188,11 +265,13 @@ Each role — commands, projections, sagas, outbox drain, timers, heavy work —
 one registration after the role's existing composite, and a host SHALL be able to run both models
 at once during a rollout, because both apply idempotently. A host that registers the execution model
 without the storage-backed grain directory it requires SHALL fail at start with a message naming
-what is missing, not at the first activation.
+what is missing, not at the first activation, and so SHALL a host with an invalid setting, naming the
+setting. The host's own timer owners and handlers SHALL be honoured whatever order they are registered
+in relative to the execution model.
 
 #### Scenario: A host adopts the projection role
 
-- **WHEN** a host calls the projection composite and then the execution model's projection
+- **WHEN** a host calls the projection services composite and then the execution model's projection
   registration
 - **THEN** the bus-fed projection worker is not registered and the store-reading projections are
 
@@ -201,3 +280,14 @@ what is missing, not at the first activation.
 - **WHEN** a host registers the execution model but no storage-backed grain directory under the
   name the model selects
 - **THEN** the silo fails to start with a message that names the missing registration
+
+#### Scenario: A host configures an invalid setting
+
+- **WHEN** a host configures a non-positive batch size, limit or partition count, or a period below the
+  runtime's minimum
+- **THEN** the host fails at start with a message that names the setting
+
+#### Scenario: A host registers its timer owners after the execution model
+
+- **WHEN** a host registers its own timer owners and handlers after the execution model's registrations
+- **THEN** its timers fire for its owners, and stateful processes' timeouts still fire
