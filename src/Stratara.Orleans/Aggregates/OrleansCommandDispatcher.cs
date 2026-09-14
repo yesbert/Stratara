@@ -126,4 +126,14 @@ public sealed class OrleansDispatchOptions
     /// Shorter than the slowest handler means that handler may run twice.
     /// </summary>
     public TimeSpan IntentGrace { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long completed intents are collected before one delete removes them. A host that dies
+    /// inside the window resumes those intents after <see cref="IntentGrace"/> and runs their handlers
+    /// a second time; keep it far below the grace.
+    /// </summary>
+    public TimeSpan CompletionWindow { get; set; } = TimeSpan.FromMilliseconds(20);
+
+    /// <summary>How many completed intents one delete removes at most; a full batch ends the window early.</summary>
+    public int CompletionBatchSize { get; set; } = 64;
 }

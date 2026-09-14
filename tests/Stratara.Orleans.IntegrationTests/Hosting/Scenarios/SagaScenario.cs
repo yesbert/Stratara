@@ -31,7 +31,7 @@ public sealed class SagaScenario : IPocScenario
             ["ConnectionStrings:defaultdb"] = settings.StoreConnectionString,
             ["ConnectionStrings:rabbitmq"] = settings.RabbitConnectionString,
         });
-        builder.UseOrleans(silo => PocSilo.Configure(silo, settings.OrleansConnectionString, settings.RedisConnectionString, settings.SiloPort, settings.GatewayPort));
+        builder.UseOrleans(silo => settings.ConfigureSilo(silo));
         builder.AddSagaWorkerServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
@@ -49,7 +49,11 @@ public sealed class SagaScenario : IPocScenario
             .AddStrataraSagaGrains<PocReadDbContext>(options =>
             {
                 options.PollInterval = TimeSpan.FromSeconds(2);
-                options.KeepAlivePeriod = TimeSpan.FromSeconds(5);
+                if (settings.Profile == PocSiloProfile.Test)
+                {
+                    // Below the production minimum reminder period, which the test profile lowers.
+                    options.KeepAlivePeriod = TimeSpan.FromSeconds(5);
+                }
             })
             .Configure<Stratara.Orleans.Timers.DurableTimerOptions>(options => options.RetryPeriod = TimeSpan.FromSeconds(1));
 

@@ -17,7 +17,7 @@ public static class ResourcesRun
 {
     private static readonly (string Scenario, int SiloPort, int GatewayPort)[] Hosts = [("bus", 11401, 30301), ("intent", 11402, 30302)];
 
-    public static async Task<int> RunAsync(string evidenceRoot, int idleSeconds, int loadSeconds, int ratePerSecond)
+    public static async Task<int> RunAsync(string evidenceRoot, int idleSeconds, int loadSeconds, int ratePerSecond, PocSiloDirectory directory)
     {
         var run = Evidence.CreateRunDirectory(evidenceRoot, "resources");
         await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).WithCommand("-c", "max_connections=400").Build();
@@ -26,7 +26,7 @@ public static class ResourcesRun
         await Task.WhenAll(postgres.StartAsync(), redis.StartAsync(), rabbit.StartAsync());
         Evidence.WriteEnvironment(run,
             new Dictionary<string, string> { ["postgres"] = PostgreSqlFixture.Image, ["redis"] = RedisFixture.Image, ["rabbitmq"] = RabbitMqFixture.Image },
-            new { idleSeconds, loadSeconds, ratePerSecond });
+            new { idleSeconds, loadSeconds, ratePerSecond, profile = PocSiloProfile.Production.ToString(), directory = directory.ToString() });
 
         var results = new List<object>();
         foreach (var (scenario, siloPort, gatewayPort) in Hosts)
@@ -39,7 +39,9 @@ public static class ResourcesRun
                 redis.GetConnectionString(),
                 rabbit.GetConnectionString(),
                 siloPort,
-                gatewayPort);
+                gatewayPort,
+                profile: PocSiloProfile.Production,
+                directory: directory);
 
             await using var host = await PocHostProcess.StartAsync(scenario, environment);
             var process = Process.GetProcessById(host.ProcessId);
@@ -55,6 +57,7 @@ public static class ResourcesRun
             var result = new
             {
                 scenario,
+                directory = directory.ToString(),
                 idleRssMb = idle.Average(s => s.RssMb),
                 loadRssMb = load.Average(s => s.RssMb),
                 idleCpuSecondsPerSecond = idle.Count > 1 ? (idle[^1].CpuSeconds - idle[0].CpuSeconds) / (idle.Count - 1) : 0,

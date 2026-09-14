@@ -6,6 +6,7 @@ using Stratara.Abstractions.Session;
 using Stratara.Orleans.Projections;
 using Stratara.Orleans.Timers;
 using Stratara.Sagas.Abstractions;
+using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Sagas;
 
@@ -28,6 +29,7 @@ internal interface ISagaProcessGrain : IGrainWithStringKey
 /// turn, so a fact and a timeout never race. The fact itself is re-read from the store by stream and
 /// version rather than carried in the call: the store is the truth, the call is a hint.
 /// </summary>
+[GrainDirectory(GrainDirectories.Durable)]
 internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grain, ISagaProcessGrain
 {
     public Task HandleAsync(Guid streamId, long version) => RunAsync(async (process, state, context, services) =>

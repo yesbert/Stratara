@@ -61,6 +61,8 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.TryAddScoped<AggregateSendLane>();
         services.AddOptions<HeavyWorkOptions>();
         services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher, OrleansCommandDispatcher>();
+        services.TryAddSingleton<IntentCompletionQueue>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.Extensions.Hosting.IHostedService>(sp => sp.GetRequiredService<IntentCompletionQueue>()));
         return services;
     }
 

@@ -90,21 +90,25 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// One statement in the steady state: the row exists after the first write, and an update that
+    /// touches it is the whole round trip. Only a checkpoint that has never been written costs the
+    /// insert after it.
+    /// </remarks>
     public async Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var checkpoint = await context.Set<ProjectionCheckpoint>()
-            .SingleOrDefaultAsync(c => c.Projection == projection && c.Partition == partition, cancellationToken);
-        if (checkpoint is null)
+        var updated = await context.Set<ProjectionCheckpoint>()
+            .Where(c => c.Projection == projection && c.Partition == partition)
+            .ExecuteUpdateAsync(
+                set => set.SetProperty(c => c.Position, position).SetProperty(c => c.Reader, reader),
+                cancellationToken);
+        if (updated == 1)
         {
-            context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });
-        }
-        else
-        {
-            checkpoint.Position = position;
-            checkpoint.Reader = reader;
+            return;
         }
 
+        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });
         await context.SaveChangesAsync(cancellationToken);
     }
 }

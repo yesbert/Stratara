@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting;
+using Orleans.Hosting;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting;
@@ -79,7 +80,10 @@ public sealed record PocHostSettings(
     string RedisConnectionString,
     string RabbitConnectionString,
     int SiloPort,
-    int GatewayPort)
+    int GatewayPort,
+    PocSiloProfile Profile = PocSiloProfile.Test,
+    PocSiloDirectory Directory = PocSiloDirectory.RedisAsDefault,
+    PocSiloMembership Membership = PocSiloMembership.Default)
 {
     public static PocHostSettings FromEnvironment() => new(
         Require("POC_STORE"),
@@ -88,10 +92,22 @@ public sealed record PocHostSettings(
         Require("POC_REDIS"),
         Environment.GetEnvironmentVariable("POC_RABBIT") ?? string.Empty,
         int.Parse(Require("POC_SILO_PORT")),
-        int.Parse(Require("POC_GATEWAY_PORT")));
+        int.Parse(Require("POC_GATEWAY_PORT")),
+        Enum.Parse<PocSiloProfile>(Environment.GetEnvironmentVariable("POC_PROFILE") ?? nameof(PocSiloProfile.Test)),
+        Enum.Parse<PocSiloDirectory>(Environment.GetEnvironmentVariable("POC_DIRECTORY") ?? nameof(PocSiloDirectory.RedisAsDefault)),
+        Enum.Parse<PocSiloMembership>(Environment.GetEnvironmentVariable("POC_MEMBERSHIP") ?? nameof(PocSiloMembership.Default)));
 
     public static Dictionary<string, string> ToEnvironment(
-        string store, string orleans, string redis, string rabbit, int siloPort, int gatewayPort, string? read = null) => new()
+        string store,
+        string orleans,
+        string redis,
+        string rabbit,
+        int siloPort,
+        int gatewayPort,
+        string? read = null,
+        PocSiloProfile profile = PocSiloProfile.Test,
+        PocSiloDirectory directory = PocSiloDirectory.RedisAsDefault,
+        PocSiloMembership membership = PocSiloMembership.Default) => new()
     {
         ["POC_STORE"] = store,
         ["POC_READ"] = read ?? store,
@@ -100,7 +116,14 @@ public sealed record PocHostSettings(
         ["POC_RABBIT"] = rabbit,
         ["POC_SILO_PORT"] = siloPort.ToString(),
         ["POC_GATEWAY_PORT"] = gatewayPort.ToString(),
+        ["POC_PROFILE"] = profile.ToString(),
+        ["POC_DIRECTORY"] = directory.ToString(),
+        ["POC_MEMBERSHIP"] = membership.ToString(),
     };
+
+    /// <summary>The silo configured as these settings say.</summary>
+    public ISiloBuilder ConfigureSilo(ISiloBuilder silo) =>
+        PocSilo.Configure(silo, OrleansConnectionString, RedisConnectionString, SiloPort, GatewayPort, Profile, Directory, Membership);
 
     private static string Require(string name) =>
         Environment.GetEnvironmentVariable(name)

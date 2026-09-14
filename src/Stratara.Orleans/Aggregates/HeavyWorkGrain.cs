@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Polly;
 using Polly.Retry;
+using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -74,6 +75,7 @@ internal sealed class HeavyWorkGrain(IServiceScopeFactory scopeFactory, IOptions
 }
 
 /// <summary>The cluster-wide counter behind the permits: single activation, one call at a time.</summary>
+[GrainDirectory(GrainDirectories.Durable)]
 internal sealed class HeavyWorkPermitGrain(IOptions<HeavyWorkOptions> options) : Grain, IHeavyWorkPermitGrain
 {
     private readonly int _limit = options.Value.ClusterWideLimit;

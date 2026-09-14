@@ -31,7 +31,7 @@ public sealed class IntentScenario : IPocScenario
             ["ConnectionStrings:defaultdb"] = settings.StoreConnectionString,
             ["ConnectionStrings:rabbitmq"] = settings.RabbitConnectionString,
         });
-        builder.UseOrleans(silo => PocSilo.Configure(silo, settings.OrleansConnectionString, settings.RedisConnectionString, settings.SiloPort, settings.GatewayPort));
+        builder.UseOrleans(silo => settings.ConfigureSilo(silo));
         builder.AddBackendServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
@@ -43,8 +43,13 @@ public sealed class IntentScenario : IPocScenario
             .AddSingleton(new AppliedTable(settings.StoreConnectionString))
             .AddStrataraAggregateGrains()
             .AddStrataraOrleansCommandDispatcher(options => options.IntentGrace = TimeSpan.FromSeconds(2))
-            .AddStrataraSingletonWork<OutboxDrainWork>(options => options.KeepAlivePeriod = TimeSpan.FromSeconds(5))
-            .Configure<OutboxDrainOptions>(options => options.PollingInterval = TimeSpan.FromSeconds(1));
+            .AddStrataraSingletonWork<OutboxDrainWork>(options => options.KeepAlivePeriod = settings.Profile == PocSiloProfile.Test ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(1));
+
+        if (settings.Profile == PocSiloProfile.Test)
+        {
+            // The kill tests want a lost hand-off resumed within seconds; a deployed silo drains at the default interval.
+            builder.Services.Configure<OutboxDrainOptions>(options => options.PollingInterval = TimeSpan.FromSeconds(1));
+        }
 
         var host = builder.Build();
         await using (var scope = host.Services.CreateAsyncScope())

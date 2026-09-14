@@ -22,8 +22,8 @@ public interface IProjectionRebuilder
 {
     /// <summary>
     /// Pauses the projection's grains, empties its read model, resets its checkpoints and resumes the
-    /// grains, which read the store from the start. Returns when the grains are resumed, not when
-    /// they have caught up.
+    /// grains at once, which read the store from the start in parallel, one per partition. Returns
+    /// when the grains are resumed, not when they have caught up.
     /// </summary>
     /// <param name="projectionName">The projection, by the name the framework gives it.</param>
     /// <param name="cancellationToken">Propagated to the truncation and the checkpoint store.</param>
@@ -42,10 +42,7 @@ internal sealed class ProjectionRebuilder(
             .Select(partition => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(projectionName, partition)))
             .ToList();
 
-        foreach (var grain in partitions)
-        {
-            await grain.PauseAsync();
-        }
+        await Task.WhenAll(partitions.Select(grain => grain.PauseAsync()));
 
         try
         {
@@ -70,10 +67,7 @@ internal sealed class ProjectionRebuilder(
         }
         finally
         {
-            foreach (var grain in partitions)
-            {
-                await grain.ResumeAsync();
-            }
+            await Task.WhenAll(partitions.Select(grain => grain.ResumeAsync()));
         }
     }
 }

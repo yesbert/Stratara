@@ -35,7 +35,7 @@ public static class CommandsPerAggregateRun
     private static readonly (string Name, int Aggregates)[] Distributions = [("2000x1", 2000), ("20x100", 20), ("1x2000", 1)];
     private static readonly string[] Paths = ["bus-worker", "grain-intent", "grain-sync"];
 
-    public static async Task<int> RunAsync(string evidenceRoot, int commands, int repetitions)
+    public static async Task<int> RunAsync(string evidenceRoot, int commands, int repetitions, PocSiloDirectory directory)
     {
         var run = Evidence.CreateRunDirectory(evidenceRoot, "commands-per-aggregate");
         await using var postgres = new PostgreSqlBuilder(PostgreSqlFixture.Image).WithCommand("-c", "max_connections=400").Build();
@@ -44,7 +44,7 @@ public static class CommandsPerAggregateRun
         await Task.WhenAll(postgres.StartAsync(), redis.StartAsync(), rabbit.StartAsync());
         Evidence.WriteEnvironment(run,
             new Dictionary<string, string> { ["postgres"] = PostgreSqlFixture.Image, ["redis"] = RedisFixture.Image, ["rabbitmq"] = RabbitMqFixture.Image },
-            new { commands, repetitions, Distributions, Paths });
+            new { commands, repetitions, Distributions, Paths, profile = PocSiloProfile.Production.ToString(), directory = directory.ToString() });
 
         var results = new List<object>();
         var port = 0;
@@ -56,9 +56,9 @@ public static class CommandsPerAggregateRun
                 {
                     port++;
                     var store = Database(postgres.GetConnectionString(), $"b3_{path.Replace('-', '_')}_{distribution}_{repetition}");
-                    var (seconds, conflicts) = await MeasureAsync(path, aggregates, commands, store, postgres.GetConnectionString(), redis.GetConnectionString(), rabbit.GetConnectionString(), 11300 + port, 30200 + port);
+                    var (seconds, conflicts) = await MeasureAsync(path, aggregates, commands, store, postgres.GetConnectionString(), redis.GetConnectionString(), rabbit.GetConnectionString(), 11300 + port, 30200 + port, directory);
                     Console.WriteLine($"{path,-13} {distribution,-7} rep {repetition + 1}: {commands / seconds,8:F0} commands/s, {conflicts} conflicts");
-                    results.Add(new { path, distribution, aggregates, commands, repetition, seconds, commandsPerSecond = commands / seconds, conflicts });
+                    results.Add(new { path, distribution, aggregates, commands, repetition, seconds, commandsPerSecond = commands / seconds, conflicts, directory = directory.ToString() });
                 }
             }
         }
@@ -69,10 +69,10 @@ public static class CommandsPerAggregateRun
     }
 
     private static async Task<(double Seconds, long Conflicts)> MeasureAsync(
-        string path, int aggregates, int commands, string store, string adminConnectionString, string redis, string rabbit, int siloPort, int gatewayPort)
+        string path, int aggregates, int commands, string store, string adminConnectionString, string redis, string rabbit, int siloPort, int gatewayPort, PocSiloDirectory directory)
     {
         var completed = new CompletionCounter();
-        using var host = await StartAsync(path, store, adminConnectionString, redis, rabbit, siloPort, gatewayPort, completed);
+        using var host = await StartAsync(path, store, adminConnectionString, redis, rabbit, siloPort, gatewayPort, completed, directory);
         var aggregateIds = Enumerable.Range(0, aggregates).Select(_ => Guid.NewGuid()).ToList();
 
         long conflicts = 0;
@@ -121,7 +121,7 @@ public static class CommandsPerAggregateRun
         return (seconds, Interlocked.Read(ref conflicts));
     }
 
-    private static async Task<IHost> StartAsync(string path, string store, string adminConnectionString, string redis, string rabbit, int siloPort, int gatewayPort, CompletionCounter completed)
+    private static async Task<IHost> StartAsync(string path, string store, string adminConnectionString, string redis, string rabbit, int siloPort, int gatewayPort, CompletionCounter completed, PocSiloDirectory directory)
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
         builder.Logging.ClearProviders();
@@ -140,7 +140,7 @@ public static class CommandsPerAggregateRun
             var orleans = Database(adminConnectionString, "b3_orleans");
             await PocSilo.EnsureSchemaAsync(orleans);
             builder.AddBackendServices();
-            builder.UseOrleans(silo => PocSilo.Configure(silo, orleans, redis, siloPort, gatewayPort));
+            builder.UseOrleans(silo => PocSilo.Configure(silo, orleans, redis, siloPort, gatewayPort, PocSiloProfile.Production, directory));
             builder.Services.AddEventSourcing().AddStrataraAggregateGrains();
             if (path == "grain-intent")
             {

@@ -72,14 +72,18 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
 
         if (path != ProjectionPath.Bus)
         {
-            builder.UseOrleans(silo => PocSilo.Configure(silo, settings.OrleansConnectionString, settings.RedisConnectionString, settings.SiloPort, settings.GatewayPort));
+            builder.UseOrleans(silo => settings.ConfigureSilo(silo));
             builder.Services
                 .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
                 .AddStrataraProjectionGrains<PocReadDbContext>(
                     options =>
                     {
                         options.PollInterval = TimeSpan.FromSeconds(2);
-                        options.KeepAlivePeriod = TimeSpan.FromSeconds(5);
+                        if (settings.Profile == PocSiloProfile.Test)
+                        {
+                            // Below the production minimum reminder period, which the test profile lowers.
+                            options.KeepAlivePeriod = TimeSpan.FromSeconds(5);
+                        }
                     },
                     hybrid: path == ProjectionPath.Hybrid);
         }
