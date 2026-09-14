@@ -50,7 +50,7 @@ public partial class SiteMetadataTests
     {
         var layout = File.ReadAllText(Path.Combine(RepositoryRoot.Locate(), ForkedLayout));
 
-        var tags = Regex.Matches(layout, """<meta name="description""").Count;
+        var tags = layout.Split("""<meta name="description""").Length - 1;
         Assert.True(
             tags == 2,
             $"The layout writes {tags} description tags. There must be exactly two — the page's own "

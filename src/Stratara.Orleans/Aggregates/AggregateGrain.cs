@@ -11,18 +11,23 @@ using IRequest = Stratara.Abstractions.Mediator.IRequest;
 namespace Stratara.Orleans.Aggregates;
 
 /// <summary>One grain per aggregate, keyed by the aggregate id. Internal: commands reach it through the mediator or the dispatcher.</summary>
+[Alias("Stratara.Orleans.IAggregateGrain")]
 internal interface IAggregateGrain : IGrainWithGuidKey
 {
     /// <summary>Runs the command in the grain's turn; the caller waits for it.</summary>
+    [Alias("ExecuteAsync")]
     Task ExecuteAsync(AggregateCommandEnvelope envelope);
 
     /// <summary>Runs a recorded intent in the grain's turn and marks it complete afterwards.</summary>
+    [Alias("ExecuteIntentAsync")]
     Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope);
 }
 
 /// <summary>One grain per recorded intent that names no aggregate, keyed by the intent id.</summary>
+[Alias("Stratara.Orleans.ICommandRunnerGrain")]
 internal interface ICommandRunnerGrain : IGrainWithGuidKey
 {
+    [Alias("ExecuteIntentAsync")]
     Task ExecuteIntentAsync(AggregateCommandEnvelope envelope);
 }
 
