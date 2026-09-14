@@ -56,7 +56,7 @@ dotnet run --project samples/Stratara.Sample.TamperProof
 
 ## Building all samples
 
-Samples are excluded from `Stratara.Publish.slnf` and smoke-tested by the local gauntlet (`scripts/local-gauntlet.sh`) via [`tests/Stratara.Samples.SmokeTests/`](../tests/Stratara.Samples.SmokeTests): every console sample is run and its output asserted, the two web samples are started and probed over HTTP. The CI workflow does not run these tests; the gauntlet runs before every push.
+Samples are excluded from `Stratara.Publish.slnf` but smoke-tested on every pull request by the required CI check, and by the local gauntlet, via [`tests/Stratara.Samples.SmokeTests/`](../tests/Stratara.Samples.SmokeTests): every console sample is run and its output asserted, the two web samples are started and probed over HTTP. A sample that stops working fails the build rather than rotting silently.
 
 **What that does and does not cover.** The samples are deliberately self-contained, which means they reference four framework packages between them — `Stratara.Mediator`, `Stratara.Validation`, `Stratara.Identity.AspNetCore` and `Stratara.Identity.EntityFrameworkCore`. A breaking change in one of those fails a sample. A breaking change in the other twenty-one does not, because no sample calls into them: the event store, the outbox, the sagas, the projections and the encryption stack are written out by hand here rather than consumed. Those surfaces are covered by their own test projects and by the documentation checks, not by these samples.
 

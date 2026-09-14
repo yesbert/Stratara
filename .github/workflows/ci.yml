@@ -48,6 +48,13 @@ jobs:
       - name: Build (Release)
         run: dotnet build Stratara.Publish.slnf -c Release --no-restore --nologo
 
+      # The samples are not in the publish filter, so the build above leaves the samples smoke tests
+      # without a Release dll and the loop below would skip them. Building the project builds the ten
+      # samples it references, and the loop then runs it like any other test project: every console
+      # sample's output is asserted, the two web samples are started and probed over HTTP.
+      - name: Build the samples smoke tests (Release)
+        run: dotnet build tests/Stratara.Samples.SmokeTests/Stratara.Samples.SmokeTests.csproj -c Release --nologo
+
       - name: Unit tests (integration suites excluded — need Docker)
         shell: bash
         run: |
