@@ -37,7 +37,6 @@ handler runs.
 ## Wire-up cheat sheet
 
 ```csharp
-services.AddSingleton(TracerProvider.Default.GetTracer("Your.App"));  // Mediator depends on OTel Tracer
 
 services
     .AddMediator()

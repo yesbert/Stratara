@@ -88,7 +88,7 @@ internal static class ResilienceFactory
     /// optimistic-concurrency signal — so a handler that re-reads and re-applies on a version clash
     /// succeeds after a transient conflict. Any other exception is left to propagate. Short backoff
     /// (50ms exponential + jitter) because a concurrency conflict resolves as soon as the competing
-    /// writer commits; five attempts bound the in-process retry budget.
+    /// writer commits; five retries — six attempts in all — bound the in-process retry budget.
     /// </remarks>
     public static void CreateConcurrencyConflictPipeline(ResiliencePipelineBuilder pipelineBuilder) =>
         pipelineBuilder.AddRetry(new RetryStrategyOptions

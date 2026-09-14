@@ -24,7 +24,7 @@ public sealed class InMemoryEventStore
 
             foreach (var projection in _projections)
             {
-                await projection.HandleAsync(@event, cancellationToken).ConfigureAwait(false);
+                await projection.HandleAsync(@event, cancellationToken);
             }
         }
         _pending.Clear();

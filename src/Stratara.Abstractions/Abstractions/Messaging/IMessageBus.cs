@@ -51,7 +51,10 @@ public interface IMessageBus
     /// <see cref="MessageRetryOptions"/> — a concurrency conflict under
     /// <see cref="MessageRetryOptions.MaxConflictRequeues"/>, anything else under
     /// <see cref="MessageRetryOptions.MaxDeliveryAttempts"/> — and then moved to the subscription's
-    /// dead-letter destination, on every implementation the framework ships. It is never discarded.
+    /// dead-letter destination, on every implementation the framework ships. On a durable
+    /// subscription it is never discarded. A transient subscription — one that exists only while its
+    /// process listens, such as a RabbitMQ <c>default-</c> client subscription — has nobody to return
+    /// a message to: a conflict is requeued there, and any other failure is dropped.
     /// </remarks>
     Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default);
 }

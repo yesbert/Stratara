@@ -75,7 +75,7 @@ A package that another packable package `ProjectReferences` must itself be packa
 
 - **Stable Tier-A surface.** Consumers can pin Tier-A interfaces and let Tier-B/C bump independently within a major version.
 - **No consumer pollution.** Anything specific to a downstream consumer stays in the consumer — Stratara absorbs none of it.
-- **Composable workers.** `Stratara.EventSourcing.WorkerDefaults` provides 7 named worker composites (CommandHandling, HeavyCommandHandling, EventProjection, EventStreamHashing, OutboxHandling, SagaOrchestration, ServiceDefaults). Consumer hosts opt in à la carte.
+- **Composable workers.** `Stratara.EventSourcing.WorkerDefaults` provides eight host composites — `AddBackendServices`, `AddCommandWorkerServices`, `AddHeavyCommandWorkerServices`, `AddEventProjectionWorkerServices`, `AddSagaWorkerServices`, `AddEventStreamHashWorkerServices`, `AddOutboxWorkerServices`, `AddCommonFrameworkServices`. Consumer hosts opt in à la carte.
 
 ## Event flow (at a glance)
 

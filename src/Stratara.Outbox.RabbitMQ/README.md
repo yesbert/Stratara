@@ -5,16 +5,16 @@
 
 > **License:** [MIT](../../LICENSE).
 
-Outbox-pattern command + event dispatch for the Stratara event-sourced stack with a RabbitMQ message-bus implementation. Contains the write-side dispatchers, the outbox-retry worker, the read-side mediator command worker, the RabbitMQ bus, and the Redis-backed `ProjectionReplayState` that coordinates dispatch skip during projection replay. Azure Service Bus ships separately as `Stratara.Outbox.AzureServiceBus`.
+Outbox-pattern command + event dispatch for the Stratara event-sourced stack with a RabbitMQ message-bus implementation. Contains the write-side dispatchers, the outbox-retry worker, the read-side mediator command worker, the RabbitMQ bus, and the `ProjectionReplayState` that coordinates dispatch skip during projection replay — shared over Redis where a connection is registered, held in process otherwise. Azure Service Bus ships separately as `Stratara.Outbox.AzureServiceBus`.
 
 ## What's in the box
 
 | Folder | Contents |
 |---|---|
 | `Outbox/` | `OutboxOptions`, `CommandOutboxDispatcher` (write-side `ICommand` fan-out via `IMessageBus`, falls back to outbox table on bus failure), `EventBundleOutboxDispatcher` (same for `EventBundle`), `OutboxWorker` (hosted service that retries unpublished outbox rows on a polling interval), `NullOutboxLock` + `RedisOutboxLock` (`IOutboxLock` implementations — default no-op for single-instance deployments, Redis-leased distributed lock for multi-replica setups) |
-| `Messaging/` | `RabbitMqBus` — `IMessageBus` over RabbitMQ. Azure Service Bus ships as the sibling `Stratara.Outbox.AzureServiceBus` package. |
+| `Messaging/` | `RabbitMqBus` — `IMessageBus` over RabbitMQ. A worker subscription is a quorum queue `<subscription>.v2` with `<subscription>.dead-letter` beside it; a message a handler cannot take is redelivered under `MessageRetryOptions` and then dead-lettered. Azure Service Bus ships as the sibling `Stratara.Outbox.AzureServiceBus` package. |
 | `Mediator/` | `MediatorCommandWorker` (hosted service that subscribes to the command topic and dispatches into the in-process `IMediator`) |
-| `Projections/` | `ProjectionReplayState` (Redis-backed concrete `IProjectionReplayState`; dispatchers skip publishing while replay is active), `ProjectionReplayOptions` (how long the replay marking survives without renewal) |
+| `Projections/` | `ProjectionReplayState` (concrete `IProjectionReplayState`, Redis-backed where a connection is registered, in process otherwise; dispatchers skip publishing while replay is active), `ProjectionReplayOptions` (how long the replay marking survives without renewal) |
 | `DependencyInjection/` | `AddOutboxDispatcher()`, `AddOutboxWorker(IConfiguration)`, `AddRedisOutboxLock()` (opt-in distributed lock), `AddProjectionReplayState()`, `AddMediatorWorker()`, `AddMessaging()` |
 | `Diagnostics/Extensions/` | `LoggerOutboxExtensions`, `LoggerMessagingExtensions` (source-generated logger surfaces) |
 
@@ -59,7 +59,7 @@ The lease defaults to 60 s (`OutboxOptions.LockLeaseSeconds`). Tune it so it exc
 - `Stratara.Mediator` — `MediatorCommandWorker` dispatches into the in-process `IMediator`.
 - `Stratara.Sessions` — dispatcher hydrates `CommandEnvelope` from the current session context.
 - `Stratara.Shared` — for messaging primitives, resilience pipeline names, mapping helpers, and the diagnostics base.
-- `RabbitMQ.Client`, `StackExchange.Redis` (replay-state + optional outbox-lock).
+- `RabbitMQ.Client`, `StackExchange.Redis` (only used when a connection is registered: shared replay state, optional outbox lock).
 - `Microsoft.Extensions.Hosting.Abstractions` + `Microsoft.Extensions.Options.ConfigurationExtensions` — for hosted services + options binding.
 
 > The outbox dispatcher persists rows through `IWriteUnitOfWork.CreateOutboxRepository` — that interface lives in `Stratara.Abstractions`, but the concrete implementation comes from `Stratara.EventSourcing.EntityFrameworkCore`. Reference that package alongside this one to get a working stack.

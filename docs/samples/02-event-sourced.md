@@ -64,5 +64,5 @@ Expected output (abridged):
 
 ## What's missing (covered by later samples)
 
-- **No async dispatch** — the event store is consumed synchronously inside the command handler. Async fan-out to projections via the outbox is [Sample 3](03-outbox-worker.md).
+- **No async dispatch** — the event store is consumed synchronously inside the command handler. Async command dispatch through the outbox is [Sample 3](03-outbox-worker.md).
 - **No saga** — there's no second command issued in response to the first. [Sample 4](04-money-transfer-saga.md) shows fan-out via a saga.

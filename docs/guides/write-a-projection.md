@@ -112,7 +112,7 @@ var entry = await repository.GetAsync(@event.StreamId, cancellationToken)
     ?? throw new PrecedingFactMissingException(@event.StreamId, nameof(EntryProcessingStepStarted));
 ```
 
-`PrecedingFactMissingException` is the one exception the worker retries: five attempts, from 100 ms
+`PrecedingFactMissingException` is the one exception the worker retries: six attempts, from 100 ms
 doubling, about three seconds in all, with the aggregate lock **released between attempts** so the
 creating fact can land in the gap. Any other exception fails the bundle on the first attempt, as
 *A failing projection stops the bundle* requires. If the retries run out, the bundle fails the same

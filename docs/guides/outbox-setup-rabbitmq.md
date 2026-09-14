@@ -249,7 +249,8 @@ queue, and the broker refuses the attempt. The rollout is two steps:
 2. When the old queue is empty and no old consumer is left, delete it. It is still bound to the
    exchange and would otherwise fill with every message forever.
 
-Quorum queues need RabbitMQ 3.8 or later; the framework's integration tests run against 4.x.
+Quorum queues exist since RabbitMQ 3.8; the framework's floor is 3.13 (see
+[Prerequisites](../getting-started/prerequisites.md)) and its integration tests run against 4.x.
 
 **Client subscriptions** (`default-` prefix) are exclusive, auto-deleting queues for a process that is
 listening right now; they have no dead-letter queue. A conflict is requeued, any other failure is

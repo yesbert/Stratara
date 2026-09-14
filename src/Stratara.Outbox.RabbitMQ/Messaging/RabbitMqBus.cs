@@ -364,11 +364,29 @@ internal sealed class RabbitMqBus(
         };
     }
 
-    private async Task SettleFailedAsync(IChannel channel, BasicDeliverEventArgs args, string topic, string subscription, MessageFailureKind kind, CancellationToken cancellationToken)
+    /// <summary>
+    /// Records a conflict once the message is actually back on the queue, so a delivery that ends on
+    /// the dead-letter queue is logged as dead-lettered only, not first as requeued.
+    /// </summary>
+    private void LogConflictRequeued(Exception cause)
+    {
+        if (cause is ConcurrencyException conflict)
+        {
+            logger.LogConcurrencyConflictRequeued(conflict.StreamId, conflict.AggregateTypeName);
+        }
+    }
+
+    private async Task SettleFailedAsync(IChannel channel, BasicDeliverEventArgs args, string topic, string subscription, MessageFailureKind kind, Exception cause, CancellationToken cancellationToken)
     {
         if (IsClientSubscription(subscription))
         {
-            await channel.BasicNackAsync(args.DeliveryTag, false, kind == MessageFailureKind.Conflict, cancellationToken);
+            var requeue = kind == MessageFailureKind.Conflict;
+            await channel.BasicNackAsync(args.DeliveryTag, false, requeue, cancellationToken);
+            if (requeue)
+            {
+                LogConflictRequeued(cause);
+            }
+
             return;
         }
 
@@ -376,6 +394,7 @@ internal sealed class RabbitMqBus(
         if (_retryPolicy.Decide(attempt, kind) == MessageDisposition.Redeliver)
         {
             await channel.BasicNackAsync(args.DeliveryTag, false, true, cancellationToken);
+            LogConflictRequeued(cause);
             return;
         }
 
@@ -416,13 +435,12 @@ internal sealed class RabbitMqBus(
             }
             catch (ConcurrencyException ce)
             {
-                logger.LogConcurrencyConflictRequeued(ce.StreamId, ce.AggregateTypeName);
-                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, cancellationToken);
+                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, ce, cancellationToken);
             }
             catch (Exception e)
             {
                 logger.LogMessageProcessingFailed(topic, e);
-                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, cancellationToken);
+                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, e, cancellationToken);
             }
         };
 

@@ -57,7 +57,8 @@ dotnet run --project samples/Stratara.Sample.Identity
 - `GET /` — endpoint overview
 - `GET /login` — challenges the configured OpenID Connect provider
 - `GET /api/me` — requires a valid `Authorization: Bearer <token>`
-- `POST /admin/api-keys` — issues a machine key
+- `POST /admin/api-keys` — issues a machine key. **Open on purpose for the demo**; a real host puts it behind an administrator policy
+- `GET /login-failed` — where a refused sign-in lands, with the provisioning outcome as `reason`
 - `GET /api/whoami` — authenticates with the `X-Api-Key` header
 
 ## API keys and PATs — no live provider needed

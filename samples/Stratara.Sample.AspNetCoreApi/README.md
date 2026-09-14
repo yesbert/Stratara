@@ -23,12 +23,12 @@ That's the whole convention — encoded in [`Endpoints/AccountEndpoints.cs`](End
 |---|---|---|---|---|
 | `POST` | `/accounts` | `OpenAccountCommand : ICommand<Guid>` | `201 Created` + `{id}` | — |
 | `POST` | `/accounts/{id}/deposits` | `DepositCommand : ICommand` | `204 No Content` | — |
-| `POST` | `/accounts/{id}/withdrawals` | `WithdrawCommand : ICommand` | `204 No Content` | `409 Conflict` (RFC 9110 ProblemDetails) on `InsufficientBalanceException` |
+| `POST` | `/accounts/{id}/withdrawals` | `WithdrawCommand : ICommand` | `204 No Content` | `409 Conflict` (RFC 9457 ProblemDetails) on `InsufficientBalanceException` |
 | `GET` | `/accounts/{id}/balance` | `GetBalanceQuery : IQuery<decimal>` | `200 OK` + `{accountId, balance}` | — |
 
 ## What to look at, in order
 
-1. **`Program.cs`** — `WebApplication.CreateBuilder` instead of `Host.CreateApplicationBuilder`, otherwise identical DI: repository, `TimeProvider`, OTel tracer, `AddMediator` + handler discovery. One `app.MapAccountEndpoints()` and `app.Run()`.
+1. **`Program.cs`** — `WebApplication.CreateBuilder` instead of `Host.CreateApplicationBuilder`, otherwise identical DI: repository, `TimeProvider`, `AddMediator` + handler discovery. One `app.MapAccountEndpoints()` and `app.Run()`.
 
 2. **`Endpoints/AccountEndpoints.cs`** — one `IEndpointRouteBuilder` extension method, four lambdas, two request DTOs (`OpenAccountRequest`, `AmountRequest`). The `WithdrawCommand` endpoint shows the recommended pattern for mapping domain exceptions to HTTP problem responses.
 
@@ -75,6 +75,6 @@ curl -X POST http://localhost:5000/accounts/<id>/withdrawals \
 | Session context | none | `SessionContextMiddleware` from `Stratara.Sessions` populates Actor + Subject from JWT |
 | Health checks | none | `Stratara.ServiceDefaults.AspNetCore`'s `AddDefaultHealthChecks()` + `MapDefaultEndpoints()` |
 | OpenAPI | none | `Microsoft.AspNetCore.OpenApi` + `Scalar.AspNetCore` |
-| OTel | NoOp tracer | full OTel via `ServiceDefaults` (consumer host adds it) |
+| OTel | none | full OTel via `ServiceDefaults` (consumer host adds it) |
 
 This sample focuses on the **endpoint-to-mediator** routing only — the surrounding ASP.NET concerns are real-host setup that doesn't change the dispatch contract.

@@ -23,7 +23,7 @@ Sample #2 of the learning path. Replaces the in-memory aggregate from [`Stratara
 
 3. **`EventStore/InMemoryEventStore.cs`** — a tiny facade over a `Dictionary<Guid, List<object>>`. Demonstrates the lifecycle: `Append` queues, `SaveChangesAsync` commits the queue to the stream *and* dispatches the events to every registered projection. In real Stratara, `IEventSource` is more elaborate (see `Stratara.Abstractions/Abstractions/EventSourcing/IEventSource.cs`) — concurrency control, session-context Subject derivation, `IAggregateCreationEvent` handling, outbox coupling — but the lifecycle shape is the same.
 
-4. **`EventStore/AggregationService.cs`** — reflection-based aggregate rebuild. Iterates the stream's events and dispatches each to the matching `Apply(TEvent)` on a fresh aggregate instance. This is exactly what Stratara's `IAggregationService` does, minus the type-resolver / snapshot acceleration.
+4. **`EventStore/AggregationService.cs`** — reflection-based aggregate rebuild. Iterates the stream's events and dispatches each to the matching `Apply(TEvent)` on a fresh aggregate instance. This is the same idea as Stratara's `IAggregationService`, without its type resolution and snapshot acceleration.
 
 5. **`Projections/AccountBalanceProjection.cs`** — the read-side. Listens to all three events, materialises an `AccountBalanceView` per account. Queries read this, never the aggregate.
 
@@ -31,7 +31,7 @@ Sample #2 of the learning path. Replaces the in-memory aggregate from [`Stratara
 
 7. **`Queries/GetBalanceQuery.cs`** — returns the projection view, never touches the event stream or the aggregate.
 
-8. **`Program.cs`** — DI wiring + demo script. At the end it dumps the raw event stream so you can see what's actually stored: three events for a one-deposit-two-deposit-one-withdraw history.
+8. **`Program.cs`** — DI wiring + demo script. At the end it dumps the raw event stream so you can see what's actually stored: four events — the account opened, two deposits and one withdrawal.
 
 ## Run it
 

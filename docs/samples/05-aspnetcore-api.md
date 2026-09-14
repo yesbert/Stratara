@@ -21,7 +21,7 @@ description: "Minimal-API endpoints wired straight to the mediator — the same 
 1. **`WebApplication.CreateBuilder(args)`** + `app.MapAccountEndpoints()` — a vanilla minimal-API.
 2. Each endpoint delegates to `IMediator.HandleAsync(...)` — **no business logic in the endpoint**.
 3. **HTTP status codes mapped from the handler's outcome**: `201 Created` from `OpenAccountCommand`, `204 NoContent` from `DepositCommand`, `409 Conflict` from `InsufficientBalanceException`.
-4. The `RFC 7807 ProblemDetails`-style error response uses ASP.NET's built-in `Results.Problem(…)`.
+4. The `RFC 9457 ProblemDetails`-style error response uses ASP.NET's built-in `Results.Problem(…)`.
 
 ## Endpoints
 
@@ -57,7 +57,7 @@ curl -sS http://localhost:5000/accounts/$ID/balance
 
 ## Why this layout
 
-- **Endpoint = mediator dispatch + HTTP-status translation.** Nothing more. The endpoint never opens a DbContext, never speaks to the bus, never knows that `OpenAccountCommand` returns a `Guid`.
+- **Endpoint = mediator dispatch + HTTP-status translation.** Nothing more. The endpoint never opens a DbContext, never speaks to the bus.
 - **The mediator pipeline owns** auth, validation, audit, retry. The endpoint is just the HTTP-shape adapter.
 - This makes the same handler reusable from a console host, a worker, a gRPC service, or a CLI — without changing the handler.
 

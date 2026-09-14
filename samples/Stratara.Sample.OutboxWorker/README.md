@@ -18,7 +18,7 @@ Sample #3 of the learning path. Pushes commands through an **outbox** + **messag
 | Dispatch | `mediator.HandleAsync(cmd)` synchronous | `dispatcher.Enqueue(cmd)` returns immediately |
 | Handler runs… | inline on the calling thread | on a background worker, after the bus delivers the message |
 | Decoupling | none — caller blocks on the handler | full — caller can crash, worker still processes |
-| Failure modes | exceptions propagate to caller | persisted outbox entry until successful publish |
+| Failure modes | exceptions propagate to caller | the sample keeps it simple and drops an entry whose publish throws; the framework keeps the row until the broker accepted it, and redelivers and then dead-letters a message whose handler throws |
 
 ## The pipeline
 
@@ -49,15 +49,15 @@ Two hosted services run for the lifetime of the host: `OutboxDrainWorker` polls 
 
 2. **`Outbox/CommandOutboxDispatcher.cs`** — the public dispatch surface. Serialises the command + writes the outbox entry. **No bus publish** at the call site — that's the drain worker's job. (Stratara's real dispatcher tries a fast-path bus publish first and only falls back to the outbox on failure; the sample skips that for clarity.)
 
-3. **`Workers/OutboxDrainWorker.cs`** — `BackgroundService`, ticks every 50ms, drains pending entries → `IMessageBus.PublishAsync`. The drain is at-least-once: an entry stays in the queue until publish succeeds.
+3. **`Workers/OutboxDrainWorker.cs`** — `BackgroundService`, ticks every 50ms, drains pending entries → `IMessageBus.PublishAsync`. The sample dequeues an entry *before* it publishes it, so a publish that throws loses that entry — it is not at-least-once. The framework's `OutboxWorker` removes a row only after the broker has accepted it.
 
 4. **`Messaging/InMemoryMessageBus.cs`** — implements Stratara's `IMessageBus` (`PublishAsync` / `SubscribeAsync`) over `System.Threading.Channels`. One unbounded channel per topic.
 
-5. **`Workers/MediatorCommandWorker.cs`** — the read-side. Subscribes to the `commands` topic, deserialises each `OutboxEntry` back into its concrete command type via reflection, opens a DI scope, and dispatches through `IMediator.HandleAsync<TCommand>`. The reflective `MakeGenericMethod` trick is exactly what Stratara's `MediatorCommandWorker` does too.
+5. **`Workers/MediatorCommandWorker.cs`** — the read-side. Subscribes to the `commands` topic, deserialises each `OutboxEntry` back into its concrete command type via reflection, opens a DI scope, and dispatches through `IMediator.HandleAsync<TCommand>`. The framework's `MediatorCommandWorker` resolves the command type the same way and dispatches it dynamically rather than through `MakeGenericMethod`.
 
 6. **`Commands/`** — `OpenAccountCommand`, `DepositCommand`, `WithdrawCommand`. All are `ICommand` (no result) — async dispatch doesn't fit `ICommand<TResult>` because the caller doesn't wait. `OpenAccountCommand` carries the `AccountId` (the publisher generates it client-side).
 
-7. **`Program.cs`** — wires everything up, starts the host, enqueues three commands, waits 500 ms for the workers to catch up, queries the balance synchronously through `IMediator`.
+7. **`Program.cs`** — wires everything up, enqueues three commands, starts the host, waits 500 ms for the workers to catch up, queries the balance synchronously through `IMediator`.
 
 ## Run it
 
@@ -74,8 +74,8 @@ Expected: outbox holds 3 entries momentarily, then drops to 0 as the drain + wor
 | `InMemoryOutbox` | `IOutboxRepository` over EF Core (`outbox_entry` table) |
 | `CommandOutboxDispatcher` | `ICommandOutboxDispatcher` from `Stratara.Abstractions`, implemented in `Stratara.Outbox.RabbitMQ` |
 | `OutboxDrainWorker` | `OutboxWorker` hosted service in `Stratara.Outbox.RabbitMQ` |
-| `InMemoryMessageBus` | `RabbitMqBus` (dev) or `ServiceBus` (Azure prod) in `Stratara.Outbox.RabbitMQ/Messaging/` |
-| `MediatorCommandWorker` | `MediatorCommandWorker` in the same package |
+| `InMemoryMessageBus` | `RabbitMqBus` in `Stratara.Outbox.RabbitMQ`, or `AzureServiceBusBus` in `Stratara.Outbox.AzureServiceBus` |
+| `MediatorCommandWorker` | `MediatorCommandWorker` in `Stratara.Outbox.RabbitMQ` |
 
 The composition is the same: `services.AddOutboxWorker(builder.Configuration)` + `services.AddMediatorWorker()` + `builder.AddMessaging()` wires the whole production stack. Note the receivers differ — `AddMessaging` extends `IHostApplicationBuilder`, the other two extend `IServiceCollection`.
 

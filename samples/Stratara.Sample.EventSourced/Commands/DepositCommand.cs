@@ -12,6 +12,6 @@ public sealed class DepositCommandHandler(InMemoryEventStore store, TimeProvider
     public async Task HandleAsync(DepositCommand command, CancellationToken cancellationToken)
     {
         store.Append(command.AccountId, new AmountDeposited(command.AccountId, command.Amount, clock.GetUtcNow()));
-        await store.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await store.SaveChangesAsync(cancellationToken);
     }
 }

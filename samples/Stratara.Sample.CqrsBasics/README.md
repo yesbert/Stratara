@@ -7,7 +7,7 @@ The first sample in the Stratara learning path. Shows the **Mediator** wire-up �
 
 ## What to look at, in order
 
-1. **`Program.cs`** — the entry point. Reads top-down as a sequential script: DI wiring → open scope → 4 mediator calls. Demonstrates `IMediator.HandleAsync<TResult>` (for `ICommand<Guid>` and `IQuery<decimal>`) and the no-result overload (for `ICommand`).
+1. **`Program.cs`** — the entry point. Reads top-down as a sequential script: DI wiring → open scope → six mediator calls. Demonstrates `IMediator.HandleAsync<TResult>` (for `ICommand<Guid>` and `IQuery<decimal>`) and the no-result overload (for `ICommand`).
 
 2. **`Domain/Account.cs`** — a plain mutable aggregate. The whole sample's "state" lives in `Balance`. `Withdraw` throws `InsufficientBalanceException` to demonstrate that domain invariants live on the aggregate, not the handler.
 
@@ -33,7 +33,6 @@ Expected output: account opens with $100, deposit to $150, withdraw to $75, then
 ## Wire-up cheat sheet
 
 ```csharp
-services.AddSingleton(TracerProvider.Default.GetTracer("Your.App"));  // Mediator depends on OTel Tracer
 
 services
     .AddMediator()

@@ -117,7 +117,6 @@ internal sealed class AzureServiceBusBus(
             }
             catch (ConcurrencyException ce)
             {
-                logger.LogConcurrencyConflictRequeued(ce.StreamId, ce.AggregateTypeName);
                 await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, cancellationToken);
             }
             catch (Exception ex)
@@ -142,6 +141,11 @@ internal sealed class AzureServiceBusBus(
         if (retryPolicy.Decide(attempt, kind) == MessageDisposition.Redeliver)
         {
             await args.AbandonMessageAsync(args.Message, cancellationToken: cancellationToken);
+            if (cause is ConcurrencyException conflict)
+            {
+                logger.LogConcurrencyConflictRequeued(conflict.StreamId, conflict.AggregateTypeName);
+            }
+
             return;
         }
 

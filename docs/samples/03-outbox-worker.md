@@ -27,8 +27,8 @@ description: "What changes when commands stop running in the caller's thread: th
 1. **`InMemoryOutbox`** — the sample's stand-in for the `outbox_entry` table. Same semantics as the EF Core impl.
 2. **`InMemoryMessageBus`** — pub/sub on top of a `Channel<>`. Stands in for RabbitMQ / Azure Service Bus.
 3. **Two `IHostedService`s** running concurrently:
-   - **OutboxWorker** — polls the outbox, publishes pending commands to the bus.
-   - **CommandWorker** — subscribes to the bus, deserializes commands, dispatches them via `IMediator` to handlers.
+   - **`OutboxDrainWorker`** — polls the outbox, publishes pending commands to the bus.
+   - **`MediatorCommandWorker`** — subscribes to the bus, deserializes commands, dispatches them via `IMediator` to handlers.
 4. **Asynchronous semantics** — the caller doesn't `await` the handler. The producer is the *thing that enqueues to the outbox*; the consumer is the *thing that picks it up later*.
 
 ## Running
@@ -62,7 +62,7 @@ Done.
 | Sample 2 (sync event-sourced) | Sample 3 (async via outbox) |
 |---|---|
 | `mediator.HandleAsync(cmd)` runs the handler in the caller's thread | `dispatcher.Enqueue(cmd)` returns immediately after appending to the outbox — in the real framework that is `await dispatcher.EnqueueCommandAsync(cmd, ct)` on `ICommandOutboxDispatcher` |
-| Handler exceptions bubble back to the caller | Handler exceptions are caught + the outbox-entry retried (with backoff) |
+| Handler exceptions bubble back to the caller | A message whose handler throws is redelivered by the broker up to `MessageRetry:MaxDeliveryAttempts` times (a concurrency conflict up to `MessageRetry:MaxConflictRequeues`), then moved to the subscription's dead-letter destination — nothing is dropped |
 | Strict ordering — caller controls when the next command runs | At-least-once delivery — consumers must be idempotent |
 
 ## What's missing (covered by later samples)

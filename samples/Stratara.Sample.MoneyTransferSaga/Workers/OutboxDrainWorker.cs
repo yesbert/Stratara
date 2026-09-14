@@ -16,9 +16,9 @@ public sealed class OutboxDrainWorker(InMemoryOutbox outbox, IMessageBus bus) : 
         {
             while (outbox.TryDequeue(out var entry))
             {
-                await bus.PublishAsync(CommandsTopic, entry, stoppingToken).ConfigureAwait(false);
+                await bus.PublishAsync(CommandsTopic, entry, stoppingToken);
             }
-            await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+            await Task.Delay(PollInterval, stoppingToken);
         }
     }
 }

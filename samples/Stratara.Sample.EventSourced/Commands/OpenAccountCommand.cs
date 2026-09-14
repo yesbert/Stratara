@@ -13,7 +13,7 @@ public sealed class OpenAccountCommandHandler(InMemoryEventStore store, TimeProv
     {
         var accountId = Guid.NewGuid();
         store.Append(accountId, new AccountOpened(accountId, command.OwnerName, command.InitialBalance, clock.GetUtcNow()));
-        await store.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await store.SaveChangesAsync(cancellationToken);
         return accountId;
     }
 }

@@ -51,7 +51,7 @@ Domain analysis becomes possible. "How often do customers self-correct an addres
 
 ## 5. Concurrent business processes become tractable
 
-Event streams version their state. Append fails fast if another process appended in between (`OptimisticConcurrencyException`). Sagas coordinate cross-aggregate workflows — `MoneyTransferInitiated` triggers `WithdrawCommand` on one account, success triggers `DepositCommand` on the other, failure triggers compensation. Each step is a recorded event, replayable in isolation.
+Event streams version their state. Append fails fast if another process appended in between (`ConcurrencyException`). Sagas coordinate cross-aggregate workflows — `MoneyTransferInitiated` triggers `WithdrawCommand` on one account, success triggers `DepositCommand` on the other, failure triggers compensation. Each step is a recorded event, replayable in isolation.
 
 Compare to CRUD coordination: distributed transactions, locking, "did the second call actually happen?" debugging through opaque last-write-wins semantics.
 
@@ -78,5 +78,5 @@ Compare to CRUD coordination: distributed transactions, locking, "did the second
 ## Where to start
 
 - **[Stratara.Sample.EventSourced](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.EventSourced)** — the learning-path sample. Bank account, three events, a projection. ~250 lines, runs in a second.
-- **[First Stratara App](../getting-started/first-stratara-app.md)** — the 30-line walkthrough wiring `IEventSource` + `IAggregationService` into your own host.
+- **[First Stratara App](../getting-started/first-stratara-app.md)** — the 30-line console app that wires the mediator, dispatches a command and queries the result, explained block by block.
 - **[Routing Conventions](../reference/routing-conventions.md)** — when to use the outbox versus the in-process mediator, once you start handling commands.
