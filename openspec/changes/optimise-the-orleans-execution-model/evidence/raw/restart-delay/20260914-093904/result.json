@@ -1,0 +1,149 @@
+{
+  "measurement": "restart-delay",
+  "results": [
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 0,
+      "readySeconds": 0.8226113,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 1,
+      "readySeconds": 0.7196112,
+      "timerFiredSeconds": 2.9749389
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 2,
+      "readySeconds": 0.7308049,
+      "timerFiredSeconds": 3.0810265
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 3,
+      "readySeconds": 0.9178278,
+      "timerFiredSeconds": 3.0612265
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 0,
+      "readySeconds": 0.7214102,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 1,
+      "readySeconds": 0.7024626,
+      "timerFiredSeconds": 3.05597
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 2,
+      "readySeconds": 0.7365551,
+      "timerFiredSeconds": 3.1098966
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 3,
+      "readySeconds": 0.734609,
+      "timerFiredSeconds": 3.0823535
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 0,
+      "readySeconds": 0.7647201,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 1,
+      "readySeconds": 0.7918391,
+      "timerFiredSeconds": 3.0389384
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 2,
+      "readySeconds": 0.7680936,
+      "timerFiredSeconds": 3.0343305
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 3,
+      "readySeconds": 0.6964039,
+      "timerFiredSeconds": 3.0517334
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "join-after-kill",
+      "restart": 1,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "join-after-kill",
+      "restart": 2,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "join-after-kill",
+      "restart": 3,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "join-after-kill",
+      "restart": 1,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "join-after-kill",
+      "restart": 2,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "join-after-kill",
+      "restart": 3,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    }
+  ]
+}

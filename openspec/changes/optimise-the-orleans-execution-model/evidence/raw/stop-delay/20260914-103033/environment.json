@@ -1,0 +1,24 @@
+{
+  "commit": "9facd037d293e283cb5dbe0d5346dce4c9ca962c",
+  "recordedAt": "2026-09-14T10:30:38.881822+00:00",
+  "machine": {
+    "description": "macOS 26.6.2",
+    "architecture": "Arm64",
+    "processors": 24,
+    "runtime": ".NET 10.0.12"
+  },
+  "images": {
+    "postgres": "postgres:17-alpine",
+    "redis": "redis:7-alpine",
+    "rabbitmq": "rabbitmq:4-management-alpine"
+  },
+  "settings": {
+    "profile": "Test",
+    "scenarios": [
+      "timers",
+      "intent",
+      "saga",
+      "projection-grain"
+    ]
+  }
+}

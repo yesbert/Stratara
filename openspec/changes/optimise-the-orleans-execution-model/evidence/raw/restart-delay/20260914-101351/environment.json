@@ -1,0 +1,24 @@
+{
+  "commit": "776f03e896d3fcd1407a9bc1998e7d51437fb7be",
+  "recordedAt": "2026-09-14T10:13:56.852785+00:00",
+  "machine": {
+    "description": "macOS 26.6.2",
+    "architecture": "Arm64",
+    "processors": 24,
+    "runtime": ".NET 10.0.12"
+  },
+  "images": {
+    "postgres": "postgres:17-alpine",
+    "redis": "redis:7-alpine",
+    "rabbitmq": "rabbitmq:4-management-alpine"
+  },
+  "settings": {
+    "restarts": 3,
+    "dueInMs": 3000,
+    "settings": [
+      "Test/Default",
+      "Production/Default",
+      "Production/ShortIAmAlive"
+    ]
+  }
+}

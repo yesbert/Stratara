@@ -1,0 +1,117 @@
+{
+  "measurement": "restart-delay",
+  "results": [
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 0,
+      "readySeconds": 0.7653325,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 1,
+      "readySeconds": 0.7347099,
+      "timerFiredSeconds": 2.9903907
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 2,
+      "readySeconds": 0.7018328,
+      "timerFiredSeconds": 3.0559405
+    },
+    {
+      "profile": "Test",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 3,
+      "readySeconds": 0.737226,
+      "timerFiredSeconds": 3.0880956
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 0,
+      "readySeconds": 0.7122407,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 1,
+      "readySeconds": 0.7720635,
+      "timerFiredSeconds": 3.0214935
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 2,
+      "readySeconds": 0.8558722,
+      "timerFiredSeconds": 3.1164916
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "same-endpoint",
+      "restart": 3,
+      "readySeconds": 0.7309327,
+      "timerFiredSeconds": 3.0872716
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 0,
+      "readySeconds": 0.7423571,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 1,
+      "readySeconds": 0.7282331,
+      "timerFiredSeconds": 2.9728127
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 2,
+      "readySeconds": 0.707348,
+      "timerFiredSeconds": 3.0538855
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "same-endpoint",
+      "restart": 3,
+      "readySeconds": 0.7335413,
+      "timerFiredSeconds": 3.0901599
+    },
+    {
+      "profile": "Production",
+      "membership": "Default",
+      "shape": "join-after-kill",
+      "restart": 1,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    },
+    {
+      "profile": "Production",
+      "membership": "ShortIAmAlive",
+      "shape": "join-after-kill",
+      "restart": 1,
+      "readySeconds": null,
+      "timerFiredSeconds": null
+    }
+  ]
+}

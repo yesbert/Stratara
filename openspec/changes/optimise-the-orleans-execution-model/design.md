@@ -253,6 +253,19 @@ dead. The setting a shipped package would recommend is recorded with the number.
 *Rejected: shortening probe timeouts.* In a single-silo restart there is nobody left to probe; the
 stale entry is skipped through the `IAmAlive` timestamp, and that is the setting that decides.
 
+*Found while measuring (2026-09-14):* the archived reading was mislocated. A silo restarted on the
+**same** endpoint joins in under a second — Orleans 10.3.1 marks the older clone of itself dead on
+start ("Detected older version of myself") — and a reminder registered before the kill fires on its
+due time. What waits is a silo joining on **another** endpoint while a killed silo's entry is still
+Active: `MembershipAgent.ValidateInitialConnectivity` has to reach that silo and gives up on the
+entry only once it is stale (`NumMissedTableIAmAliveLimit` × `IAmAliveTablePublishTimeout`, 90 s by
+default). The integration suite hits this because every test class starts silos on its own ports
+against one shared membership table after earlier classes killed theirs; the archived kill tests
+paid it once per host, which is where their minutes went. The test cluster therefore runs the
+shortened setting by default, the benchmark silos keep Orleans' defaults, and R1 measures both
+shapes. `ValidateInitialConnectivity` is not a public option in 10.3.1, so the shortened `IAmAlive`
+settings are the lever.
+
 Evidence: Microsoft Learn, *Cluster management in Orleans* → membership protocol configuration and
 *IAmAlive writes*, read 2026-09-14; T5's duration in the archived `results.md`.
 

@@ -1,0 +1,21 @@
+{
+  "commit": "7da1ffde97ae8ab3e9dff162727c822e27ca60d1",
+  "recordedAt": "2026-09-14T08:33:41.976856+00:00",
+  "machine": {
+    "description": "macOS 26.6.2",
+    "architecture": "Arm64",
+    "processors": 24,
+    "runtime": ".NET 10.0.12"
+  },
+  "images": {
+    "postgres": "postgres:17-alpine",
+    "redis": "redis:7-alpine",
+    "rabbitmq": "rabbitmq:4-management-alpine"
+  },
+  "settings": {
+    "events": 100000,
+    "liveRatePerSecond": 20,
+    "projections": 3,
+    "profile": "Production"
+  }
+}

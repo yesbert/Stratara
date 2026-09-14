@@ -14,68 +14,68 @@
 
 ## 2. Rebuild (D1, D2)
 
-- [ ] 2.1 `ProjectionRebuilder.RebuildAsync` resumes every partition with one `Task.WhenAll`;
+- [x] 2.1 `ProjectionRebuilder.RebuildAsync` resumes every partition with one `Task.WhenAll`;
       `ProjectionGrain.ResumeAsync` clears the pause and requests a catch-up without awaiting it.
       Verify: `tests/Stratara.Orleans.Tests` unit test on the rebuilder's call pattern, and
       `ProjectionGrainTests` green.
-- [ ] 2.2 `StoreReaderLoop.CatchUpAsync` takes a batch applier returning the first unapplied index;
+- [x] 2.2 `StoreReaderLoop.CatchUpAsync` takes a batch applier returning the first unapplied index;
       `ProjectionGrain` and `SagaGrain` apply a batch under one scope with the projection, handler and
       relevant-set resolved once. Verify: `ProjectionGrainTests` (idempotent apply, genuine failure
       stops the checkpoint, missing prerequisite retried without advancing) and `SagaGrainTests` green.
-- [ ] 2.3 Run B4 under the production profile: `dotnet run --project tests/Stratara.Orleans.Benchmarks
+- [x] 2.3 Run B4 under the production profile: `dotnet run --project tests/Stratara.Orleans.Benchmarks
       -c Release -- --rebuild <evidence-dir>`. Verify: `evidence/raw/rebuild/<timestamp>/` exists and
       `results.md` compares the ratio with the archived 94 %.
-- [ ] 2.4 Only if 2.3 misses its expectation: a stored partition column with an index on
+- [x] 2.4 *Not needed:* 2.3 measured 17.6 % against the 40 % expectation. Only if 2.3 misses its expectation: a stored partition column with an index on
       (partition, transaction id) in `CommitOrderModel`, the reader filtering on it, and B4 re-run.
       Verify: a second `evidence/raw/rebuild/` directory and the delta in `results.md`.
 
 ## 3. Hint path (D3, D4)
 
-- [ ] 3.1 `NudgeAsync` is `[OneWay]` and `[AlwaysInterleave]` on the projection and saga grain
+- [x] 3.1 `NudgeAsync` is `[OneWay]` and `[AlwaysInterleave]` on the projection and saga grain
       interfaces; the grains run one single-flight loop that drains while dirty; poll timer, reminder
       and explicit `CatchUpAsync` go through it; `PauseAsync` awaits a running loop. Verify:
       `ProjectionGrainTests`, `SagaGrainTests`, `CommitPublishKillTests` (checkpoint path) green.
-- [ ] 3.2 `StoreReaderLoop` keeps its position between catch-ups and re-reads the store after a pause;
+- [x] 3.2 `StoreReaderLoop` keeps its position between catch-ups and re-reads the store after a pause;
       `ProjectionCheckpointStore.SetAsync` is one upsert. `ProjectionGrainTests` resets checkpoints
       through pause and resume. Verify: the tests above green and `ResetTests` green.
-- [ ] 3.3 Run B2 under the production profile: `-- --read-model-latency <evidence-dir>`. Verify:
+- [x] 3.3 Run B2 under the production profile: `-- --read-model-latency <evidence-dir>`. Verify:
       `evidence/raw/read-model-latency/<timestamp>/` and the comparison with the archived p50/p99.
 
 ## 4. Command path (D5, D6, D7, D8)
 
-- [ ] 4.1 `AggregateCommandEnvelope` is `[Immutable]`. Verify: `tests/Stratara.Orleans.Tests` builds and
+- [x] 4.1 `AggregateCommandEnvelope` is `[Immutable]`. Verify: `tests/Stratara.Orleans.Tests` builds and
       `ArrivalOrderTests` green.
-- [ ] 4.2 A per-silo intent completion queue flushes completed intent ids in one delete per bounded
+- [x] 4.2 A per-silo intent completion queue flushes completed intent ids in one delete per bounded
       window, and on host stop; `CommandExecution` enqueues instead of deleting; the window is an
       option on `OrleansDispatchOptions` documented against `IntentGrace`. Verify: a unit test on the
       queue's flush bounds in `tests/Stratara.Orleans.Tests`, and `DurableIntentTests` green (kill
       between hand-off and completion still resumes).
-- [ ] 4.3 `PocSilo.Configure` takes a profile (`Test`, `Production`) and a directory setting (Redis as
+- [x] 4.3 `PocSilo.Configure` takes a profile (`Test`, `Production`) and a directory setting (Redis as
       default, or Redis named for the long-lived grains with the built-in directory for aggregate and
       runner grains); the long-lived grains carry `[GrainDirectory]`. Tests keep `Test` and Redis as
       default. Verify: `CoHostingTests` and `SingletonWorkTests` green under both directory settings.
-- [ ] 4.4 Run B3 under the production profile, both directory settings: `-- --commands-per-aggregate
+- [x] 4.4 Run B3 under the production profile, both directory settings: `-- --commands-per-aggregate
       <evidence-dir>`. Verify: `evidence/raw/commands-per-aggregate/<timestamp>/` and the comparison
       with the archived 131 / 150 / 87 % (intent) and 166 / 223 / 99 % (synchronous).
-- [ ] 4.5 Run B5 under the production profile, both directory settings: `-- --resources <evidence-dir>`.
+- [x] 4.5 Run B5 under the production profile, both directory settings: `-- --resources <evidence-dir>`.
       Verify: `evidence/raw/resources/<timestamp>/` and the comparison with the archived 4.04 against
       2.54 CPU-s per 1 000 commands and 231 against 172 MB idle.
 
 ## 5. Restart delay (D9)
 
-- [ ] 5.1 A `--restart-delay <evidence-dir>` run: start the intent host, kill it, restart on the same
+- [x] 5.1 A `--restart-delay <evidence-dir>` run: start the intent host, kill it, restart on the same
       endpoint, measure restart to first successful grain call; default membership options and the
       shortened profile, three restarts each. Verify: `evidence/raw/restart-delay/<timestamp>/`.
-- [ ] 5.2 `HardKillTimerTests` runs once under the shortened profile. Verify: 10 of 10 kills as expected,
+- [x] 5.2 `HardKillTimerTests` runs once under the shortened profile. Verify: 10 of 10 kills as expected,
       no false death vote in the silo log, recorded in `results.md`.
 
 ## 6. Close
 
-- [ ] 6.1 Every integration test of the archived change is green on the final code:
+- [x] 6.1 Every integration test of the archived change is green on the final code:
       `dotnet test tests/Stratara.Orleans.IntegrationTests`. Verify: the run's summary in `results.md`.
-- [ ] 6.2 `evidence/results.md` states every number against its archived baseline and its expectation,
+- [x] 6.2 `evidence/results.md` states every number against its archived baseline and its expectation,
       names the profile and directory setting per number, records falsified expectations as such, and
       ends with what the numbers say about the two costs that decided the recommendation. Verify: every
       number cites its raw directory.
-- [ ] 6.3 `./scripts/local-gauntlet.sh` passes and the diff touches nothing under `src/` outside
+- [x] 6.3 `./scripts/local-gauntlet.sh` passes and the diff touches nothing under `src/` outside
       `src/Stratara.Orleans/`, no packable project, and no spec. Verify: `git diff --stat main`.

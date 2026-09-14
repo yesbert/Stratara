@@ -1,0 +1,1 @@
+Aborted at the very end: the cold start has no timer and its NaN could not be written as JSON. Every measurement completed and is in console.log: ready 0.7-0.9 s and the timer fired 3.0-3.1 s after the restart under Test/Default, Production/Default and Production/ShortIAmAlive alike. Re-run with the null fix follows.
