@@ -38,6 +38,12 @@ know about.
   persistence failure instead of a `ConcurrencyException`. Every detector now sees the exception
   as the save threw it, as its contract says.
 
+- **Proxy credentials and response cookies are redacted from traces in the form the semantic
+  conventions name them.** The HTTP client and ASP.NET Core enrichment callbacks replaced
+  `http.request.header.proxy_authorization` and `http.response.header.set_cookie`, but the
+  OpenTelemetry semantic conventions keep the dash — `proxy-authorization`, `set-cookie` — so a host
+  that captured headers under those names exported the values. Both forms are redacted now.
+
 ### Added
 
 - `LogEvents.Messaging.WorkerQueueDeclaredWithOtherArguments` (`108_112`).
