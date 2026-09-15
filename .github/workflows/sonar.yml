@@ -13,7 +13,9 @@
 # nightly run reported 0%. `--coverage --coverage-output-format xml` writes Visual-Studio-Coverage
 # XML, which is what sonar.cs.vscoveragexml.reportsPaths below reads.
 #
-# The integration suites are excluded — they need Testcontainers and run in integration.yml.
+# The integration suites are excluded — they need Testcontainers and run in integration.yml — with one
+# exception: the Orleans suite's in-process tests are collected too, because they are what verifies the
+# execution model. Its kill tests run the silo in a second process and are not run here.
 # Stratara.Benchmarks is excluded by the *.Tests.csproj glob.
 name: Analysis
 
@@ -33,7 +35,8 @@ jobs:
   analyse:
     name: Static analysis + coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The Orleans integration suite's in-process tests take around a quarter of an hour on top.
+    timeout-minutes: 90
     env:
       BUILD_CONFIGURATION: Debug
       COVERAGE_DIR: ${{ github.workspace }}/TestResults/coverage
@@ -67,12 +70,10 @@ jobs:
       # Sonar counts a file with no coverage data as 0% covered, so excluding the data-only ones is
       # what keeps the number about behaviour rather than about records.
       #
-      # src/Stratara.Orleans is out of the coverage measure, not out of the analysis. It is a proof of
-      # concept that is not packable, and what verifies it is the Testcontainers suite in
-      # integration.yml, whose kill-and-restart tests run the silo in a second process; unit-test
-      # coverage of it would read as roughly zero whatever that suite proves. Its issues are still
-      # reported. The change that ships it as a package (ship-the-orleans-execution-model) takes
-      # it back into the measure.
+      # src/Stratara.Orleans is in the coverage measure since it ships as a package. Unit tests alone
+      # would read as nearly nothing for it — the silo's grains are verified on a real cluster — so the
+      # Orleans integration suite's in-process tests contribute their coverage below. Its kill tests
+      # run the silo in a second process, whose coverage no collector here sees, and are left out.
       # sonar.sources and sonar.tests are deliberately absent: the .NET scanner derives both from
       # the MSBuild analysis, and the old pipeline never set them either.
       - name: Begin analysis
@@ -86,7 +87,7 @@ jobs:
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.host.url="${SONAR_HOST_URL}" \
             /d:sonar.exclusions='**/bin/**,**/obj/**,**/TestResults/**,artifacts/**,reports/**,samples/**,scripts/**,tools/**,**/*.g.cs,tmp/**,docs/**,.junie/**' \
-            /d:sonar.coverage.exclusions='src/Stratara.Contracts/**,src/Stratara.Diagnostics/**,src/Stratara.Identity.AspNetCore/**,src/Stratara.ServiceDefaults/**,src/Stratara.ServiceDefaults.AspNetCore/**,**/*Command.cs,**/*Query.cs,**/*Event.cs,**/*Events.cs,**/*DbContext.cs,**/*Dto.cs,**/*Options.cs,**/LogEvents.cs,**/Program.cs,**/Migrations/**,src/Stratara.Orleans/**' \
+            /d:sonar.coverage.exclusions='src/Stratara.Contracts/**,src/Stratara.Diagnostics/**,src/Stratara.Identity.AspNetCore/**,src/Stratara.ServiceDefaults/**,src/Stratara.ServiceDefaults.AspNetCore/**,**/*Command.cs,**/*Query.cs,**/*Event.cs,**/*Events.cs,**/*DbContext.cs,**/*Dto.cs,**/*Options.cs,**/LogEvents.cs,**/Program.cs,**/Migrations/**' \
             /d:sonar.cpd.exclusions='src/Stratara.Contracts/**/*.cs,**/*Dto.cs,**/*Options.cs,**/*Event.cs,**/*Events.cs' \
             /d:sonar.cs.file.suffixes=.cs \
             /d:sonar.sourceEncoding=UTF-8 \
@@ -129,6 +130,29 @@ jobs:
               || failed=1
           done
           exit ${failed}
+
+      # The Orleans integration project is not in the publish filter, so it is restored and built here.
+      - name: Build the Orleans integration tests
+        run: dotnet build tests/Stratara.Orleans.IntegrationTests/Stratara.Orleans.IntegrationTests.csproj -c "${BUILD_CONFIGURATION}" --nologo
+
+      # The in-process tests, on Testcontainers. A failing test is a warning here rather than a failed
+      # job: integration.yml is the gate for the suite, and a failure here must not skip the analysis.
+      - name: Orleans integration tests with coverage
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "${COVERAGE_DIR}"
+          suite=Stratara.Orleans.IntegrationTests
+          dotnet test "tests/${suite}/${suite}.csproj" --no-build -c "${BUILD_CONFIGURATION}" -- \
+            --coverage \
+            --coverage-output-format xml \
+            --coverage-output "${COVERAGE_DIR}/${suite}.coverage.xml" \
+            --filter-not-class "${suite}.Aggregates.DurableIntentTests" \
+            --filter-not-class "${suite}.HeavyWork.HeavyBurstTests" \
+            --filter-not-class "${suite}.Timers.HardKillTimerTests" \
+            --filter-not-class "${suite}.Projections.CommitPublishKillTests" \
+            --filter-not-class "${suite}.Sagas.SagaProcessTimeoutTests" \
+            || echo "::warning::The Orleans integration tests failed in the analysis run; integration.yml is the gate for them."
 
       # `end` submits the analysis and, because the begin step asked for it, waits for the server's
       # verdict rather than finishing at "uploaded". Without the wait this job is green whatever the

@@ -274,6 +274,11 @@
       analysis collects the Orleans integration suite's in-process coverage (D26). Verify: the first
       analysis of `main` after the merge reports the quality gate as passed with the package in the
       coverage measure.
+      Implemented, verification pending the merge: `sonar.yml` no longer excludes `src/Stratara.Orleans/**` from
+      coverage; it builds the Orleans integration project and runs it with `--coverage` beside the unit tests,
+      leaving out the five kill-test classes (`--filter-not-class`, checked on the unit project: 75 → 71 with one
+      class excluded). A failure there is a warning, since `integration.yml` gates the suite; the job timeout is 90
+      minutes.
 
 - [ ] 6.4 `README.md` presents the execution model as the headline feature, after 7.3 so real numbers
       exist (D13): a door beside the existing three that leads with the benefit the capability
