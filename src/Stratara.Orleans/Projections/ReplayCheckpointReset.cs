@@ -61,7 +61,7 @@ internal sealed class ReplayCheckpointResetTruncator(
             return;
         }
 
-        services.AddSingleton<ReplayCheckpointResetMarker>();
+        services.AddSingleton(ReplayCheckpointResetMarker.Instance);
         services.TryAddEnumerableHostedCheck();
         var existing = services.LastOrDefault(d => d.ServiceType == typeof(IProjectionViewTruncator));
         if (existing is null)
@@ -78,7 +78,10 @@ internal sealed class ReplayCheckpointResetTruncator(
 }
 
 /// <summary>Marks a service collection whose truncator the store-reading projections already wrapped.</summary>
-internal sealed class ReplayCheckpointResetMarker;
+internal sealed class ReplayCheckpointResetMarker
+{
+    public static readonly ReplayCheckpointResetMarker Instance = new();
+}
 
 /// <summary>
 /// Refuses to let a host start whose full replay would empty the read models without returning the store

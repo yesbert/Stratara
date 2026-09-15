@@ -25,6 +25,8 @@ namespace Stratara.Orleans.IntegrationTests.HeavyWork;
 [Collection(InfrastructureCollection.Name)]
 public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     private const int InteractiveCommands = 200;
     private const int HeavyUnits = 500;
     private const int HeavyDelayMs = 200;
@@ -241,6 +243,6 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
             baselineMs = baseline,
             underBurstMs = underBurst,
         };
-        File.WriteAllText(Path.Combine(run, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(Path.Combine(run, "result.json"), JsonSerializer.Serialize(result, IndentedJson));
     }
 }

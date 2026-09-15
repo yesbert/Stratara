@@ -115,7 +115,7 @@ internal sealed class ProjectionGrain(
     /// One scope, one projection instance and one relevant-event set for the batch; per entry, the
     /// recorded session and the retry policy, as the <c>projections</c> guarantees require.
     /// </summary>
-    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken batchToken)
+    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
         using var scope = ScopeFactory.CreateScope();
         var services = scope.ServiceProvider;
@@ -124,19 +124,19 @@ internal sealed class ProjectionGrain(
         var projection = ResolveProjection(services, handler);
         _relevant ??= new HashSet<string>(handler.GetRelevantEventTypeNames(projection), StringComparer.Ordinal);
 
-        return await Loop.ApplyEachAsync(batch, async (entry, cancellationToken) =>
+        return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
         {
             sessions.Set(RecordedSession.Of(entry));
 
-            var events = await eventMapperFactory.MapToEventsAsync([entry], cancellationToken);
+            var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
             var relevantEvents = events.Where(e => _relevant.Contains(e.EventTypeName)).ToList();
             if (relevantEvents.Count == 0)
             {
                 return;
             }
 
-            await handler.ProjectAsync(projection, relevantEvents, cancellationToken);
-        }, batchToken);
+            await handler.ProjectAsync(projection, relevantEvents, entryToken);
+        }, cancellationToken);
     }
 
     /// <summary>

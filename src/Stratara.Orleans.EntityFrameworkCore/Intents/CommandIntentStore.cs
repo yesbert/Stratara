@@ -18,7 +18,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     where TContext : DbContext, IWriteDbContext
 {
     private const int FailureLength = 2048;
-    private static readonly string CommandTypeName = typeof(CommandEnvelope).GetQualifiedTypeName();
+    private static string CommandTypeName => CommandIntentRecord.CommandTypeName;
 
     public async Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, CancellationToken cancellationToken)
     {
@@ -103,4 +103,10 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             .Where(e => e.Id == intentId && e.KeptAt == null)
             .ExecuteUpdateAsync(set => set.SetProperty(e => e.KeptAt, (DateTimeOffset?)now), cancellationToken);
     }
+}
+
+/// <summary>The type name a recorded command is stored under, shared by every closed store type.</summary>
+internal static class CommandIntentRecord
+{
+    public static readonly string CommandTypeName = typeof(CommandEnvelope).GetQualifiedTypeName();
 }

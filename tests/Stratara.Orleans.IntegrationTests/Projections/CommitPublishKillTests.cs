@@ -14,6 +14,8 @@ namespace Stratara.Orleans.IntegrationTests.Projections;
 [Collection(InfrastructureCollection.Name)]
 public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     private const int Kills = 20;
     private static readonly TimeSpan ExitTimeout = TimeSpan.FromSeconds(30);
     private const int ViewTimeoutMs = 15_000;
@@ -99,6 +101,6 @@ public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixt
 
         var run = Path.Combine(directory, measurement, DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(run);
-        File.WriteAllText(Path.Combine(run, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(Path.Combine(run, "result.json"), JsonSerializer.Serialize(result, IndentedJson));
     }
 }

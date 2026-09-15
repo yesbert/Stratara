@@ -57,7 +57,7 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
             options => options.MaintainPartitionCounter = reader.MaintainCounter);
 
     [Theory]
-    [MemberData(nameof(Readers))]
+    [MemberData(nameof(Readers), DisableDiscoveryEnumeration = true)]
     public async Task Deterministic_interleaving_fast(ReaderCase reader)
     {
         await using var store = await StoreFor(reader);
@@ -67,7 +67,7 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
     }
 
     [Theory]
-    [MemberData(nameof(Readers))]
+    [MemberData(nameof(Readers), DisableDiscoveryEnumeration = true)]
     public async Task Deterministic_interleaving_under_a_long_hold(ReaderCase reader)
     {
         await using var store = await StoreFor(reader);
@@ -83,7 +83,7 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
     /// id does not.
     /// </summary>
     [Theory]
-    [MemberData(nameof(Readers))]
+    [MemberData(nameof(Readers), DisableDiscoveryEnumeration = true)]
     public async Task Deterministic_interleaving_with_reversed_transaction_ids(ReaderCase reader)
     {
         await using var store = await StoreFor(reader);
@@ -125,7 +125,7 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
     }
 
     [Theory]
-    [MemberData(nameof(Readers))]
+    [MemberData(nameof(Readers), DisableDiscoveryEnumeration = true)]
     public async Task Randomised_interleavings(ReaderCase reader)
     {
         await using var store = await StoreFor(reader);

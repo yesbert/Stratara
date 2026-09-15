@@ -34,8 +34,10 @@ public sealed class DurableDirectoryCheckTests(RedisFixture redis)
         using var host = Build(siloPort: 11242, gatewayPort: 30132, withDirectory: true);
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
 
-        await host.StartAsync(timeout.Token);
+        var failure = await Record.ExceptionAsync(() => host.StartAsync(timeout.Token));
         await host.StopAsync();
+
+        Assert.Null(failure);
     }
 
     private IHost Build(int siloPort, int gatewayPort, bool withDirectory)
