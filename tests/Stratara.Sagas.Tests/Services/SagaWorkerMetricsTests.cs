@@ -60,7 +60,7 @@ public class SagaWorkerMetricsTests
     [Fact]
     public async Task ABundleRecordsAllThreeSagaInstruments()
     {
-        var eventType = $"MetricsProbe.{Guid.CreateVersion7():N}";
+        var eventType = $"Probe{Guid.CreateVersion7():N}";
         var harness = new MetricsHarness();
         var (listener, measurements) = Capture();
 
@@ -86,7 +86,7 @@ public class SagaWorkerMetricsTests
     [Fact]
     public async Task AFailingBundleIsRecordedAsFailure_AndStillLeavesTheInFlightGauge()
     {
-        var eventType = $"MetricsProbe.{Guid.CreateVersion7():N}";
+        var eventType = $"Probe{Guid.CreateVersion7():N}";
         var harness = new MetricsHarness(failing: true);
         var (listener, measurements) = Capture();
 
@@ -115,7 +115,7 @@ public class SagaWorkerMetricsTests
                 Version: 1,
                 DataJson: "{}",
                 StreamId: Guid.NewGuid(),
-                EventTypeName: eventTypeName,
+                EventTypeName: $"Stratara.MetricsProbe.{eventTypeName}, Stratara.MetricsProbe",
                 AggregateTypeName: "TestAggregate",
                 ActorTenantId: Guid.Empty,
                 ActorUserId: Guid.Empty,

@@ -1,6 +1,6 @@
 # Align observability names and values
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-15)
 
 ## Why
 

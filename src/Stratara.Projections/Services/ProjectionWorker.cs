@@ -135,7 +135,7 @@ internal sealed class ProjectionWorker(
             {
                 ApplicationDiagnostics.Metrics.ProjectionEventsProcessed.Add(
                     1,
-                    new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.EventType, @event.EventTypeName),
+                    new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.EventType, ApplicationDiagnostics.MetricTags.TypeNameValue(@event.EventTypeName)),
                     new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.Outcome, outcome));
             }
         }

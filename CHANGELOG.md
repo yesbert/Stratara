@@ -46,8 +46,19 @@ know about.
   register the projection and saga runtimes without their bus workers; `AddProjectionHandling` and
   `AddSagaHandling` do the same on `IServiceCollection`.
 
+- **Every instrument name is a published constant.** `ApplicationDiagnostics.Metrics` carries a
+  `…Name` constant beside each instrument — `EventsAppendedName`, `ProjectionEventsProcessedName`,
+  `SagasInFlightName` and the others — so a query or listener references the name instead of a literal.
+  `ApplicationDiagnostics.MetricTags.TypeNameValue` gives the value a type tag carries for a type name.
+
 ### Changed
 
+- **`event.type` and `aggregate.type` carry the simple type name on every instrument.** On
+  `projection.events.processed`, `saga.events.processed` and `event_source.append.conflicts` the tag
+  value changes from the assembly-qualified name (`Shop.Orders.OrderPlaced, Shop.Orders`) to the simple
+  name (`OrderPlaced`), the form `event_source.events.appended` already used, so write and read series
+  join on the same value. A dashboard or alert that filters those three series on the qualified name
+  needs its filter updated; no instrument or tag name changes.
 - **`AddAuthorizingCommandOutboxDispatcher()` decorates whichever command dispatcher is registered**, not
   only the RabbitMQ one, and composes with a dispatcher registered after it.
 
