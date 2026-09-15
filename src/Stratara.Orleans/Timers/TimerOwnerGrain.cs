@@ -21,9 +21,10 @@ internal sealed class TimerOwnerGrain(
 {
     private readonly TimeSpan _retryPeriod = options.Value.RetryPeriod;
 
-    public async Task RegisterAsync(string purpose, DateTimeOffset dueAt)
+    public async Task RegisterAsync(string purpose, DateTimeOffset dueAt, CancellationToken cancellationToken)
     {
-        await CancelAsync(purpose);
+        await CancelAsync(purpose, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var dueIn = dueAt - timeProvider.GetUtcNow();
         if (dueIn < TimeSpan.Zero)
@@ -34,10 +35,11 @@ internal sealed class TimerOwnerGrain(
         await this.RegisterOrUpdateReminder(ReminderName.Encode(purpose, dueAt), dueIn, _retryPeriod);
     }
 
-    public async Task CancelAsync(string purpose)
+    public async Task CancelAsync(string purpose, CancellationToken cancellationToken)
     {
         foreach (var reminder in await this.GetReminders())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (ReminderName.Decode(reminder.ReminderName).Purpose == purpose)
             {
                 await this.UnregisterReminder(reminder);
@@ -45,16 +47,20 @@ internal sealed class TimerOwnerGrain(
         }
     }
 
-    public async Task CancelAllAsync()
+    public async Task CancelAllAsync(CancellationToken cancellationToken)
     {
         foreach (var reminder in await this.GetReminders())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             await this.UnregisterReminder(reminder);
         }
     }
 
-    public async Task<List<string>> ListReminderNamesAsync() =>
-        [.. (await this.GetReminders()).Select(reminder => reminder.ReminderName)];
+    public async Task<List<string>> ListReminderNamesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return [.. (await this.GetReminders()).Select(reminder => reminder.ReminderName)];
+    }
 
     async Task IRemindable.ReceiveReminder(string reminderName, TickStatus status)
     {

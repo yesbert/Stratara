@@ -111,9 +111,13 @@
       Done: the singleton-work and store-reader starters subscribe to `ServiceLifecycleStage.Active`; the hosted-service
       starters are gone. `CoHostingTests` now registers singleton work with the durable directory and asserts it runs in
       both registration orders; `SingletonWorkTests`, `ProjectionGrainTests` and `SagaGrainTests` green (7/7).
-- [ ] 3.5 Cancellation reaches the store in the reader loop, the checkpoint store, the durable timers and
+- [x] 3.5 Cancellation reaches the store in the reader loop, the checkpoint store, the durable timers and
       the saga process grain. Verify: a unit test that a cancelled token stops a catch-up between batches
       without a checkpoint write.
+      Done: the reader loop passes its token to the reader, the checkpoint store, the preceding-fact pipeline and the
+      apply step and stops at the next batch boundary; the grain timer passes its token; the timer-owner grain and
+      `DurableTimers` carry the caller's token; the saga process grain passes its token to every store call.
+      `StoreReaderCancellationTests`; integration suite 45/45.
 
 ## 4. Registrations and composition (D2, D3, D11, D15, D16, D20)
 

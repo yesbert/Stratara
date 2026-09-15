@@ -22,7 +22,7 @@ public sealed class StoreReaderLoopTests
         var reader = new ScriptedReader("scripted/16", Entries(1, 3));
         var loop = LoopOver(reader, new MemoryCheckpoints(), batchSize: 10);
 
-        var applied = await loop.CatchUpAsync(batch => Task.FromResult(batch.Entries.Count));
+        var applied = await loop.CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count));
 
         Assert.Equal(3, applied);
         Assert.Equal(1, reader.Reads);
@@ -34,7 +34,7 @@ public sealed class StoreReaderLoopTests
         var reader = new ScriptedReader("scripted/16", Entries(1, 25));
         var loop = LoopOver(reader, new MemoryCheckpoints(), batchSize: 10);
 
-        var applied = await loop.CatchUpAsync(batch => Task.FromResult(batch.Entries.Count));
+        var applied = await loop.CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count));
 
         Assert.Equal(25, applied);
         Assert.Equal(3, reader.Reads);
@@ -45,10 +45,10 @@ public sealed class StoreReaderLoopTests
     {
         var checkpoints = new MemoryCheckpoints();
         var first = new ScriptedReader("scripted/16", Entries(1, 4));
-        await LoopOver(first, checkpoints, batchSize: 10).CatchUpAsync(batch => Task.FromResult(batch.Entries.Count));
+        await LoopOver(first, checkpoints, batchSize: 10).CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count));
 
         var renamed = new RenamedScriptedReader("scripted/16", Entries(1, 6));
-        var applied = await LoopOver(renamed, checkpoints, batchSize: 10).CatchUpAsync(batch => Task.FromResult(batch.Entries.Count));
+        var applied = await LoopOver(renamed, checkpoints, batchSize: 10).CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count));
 
         Assert.Equal(4, renamed.FirstReadAfter);
         Assert.Equal(2, applied);
@@ -59,11 +59,11 @@ public sealed class StoreReaderLoopTests
     {
         var checkpoints = new MemoryCheckpoints();
         await LoopOver(new ScriptedReader("scripted/16", Entries(1, 2)), checkpoints, batchSize: 10)
-            .CatchUpAsync(batch => Task.FromResult(batch.Entries.Count));
+            .CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             LoopOver(new ScriptedReader("scripted/32", Entries(1, 2)), checkpoints, batchSize: 10)
-                .CatchUpAsync(batch => Task.FromResult(batch.Entries.Count)));
+                .CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count)));
     }
 
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)

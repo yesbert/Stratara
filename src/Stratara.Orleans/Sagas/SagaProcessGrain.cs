@@ -17,15 +17,15 @@ internal interface ISagaProcessGrain : IGrainWithStringKey
 {
     /// <summary>Advances the process with the fact at <paramref name="version"/> of <paramref name="streamId"/>, read back from the store.</summary>
     [Alias("HandleAsync")]
-    Task HandleAsync(Guid streamId, long version);
+    Task HandleAsync(Guid streamId, long version, CancellationToken cancellationToken);
 
     /// <summary>A timeout the process scheduled is due.</summary>
     [Alias("OnTimeoutAsync")]
-    Task OnTimeoutAsync(string purpose);
+    Task OnTimeoutAsync(string purpose, CancellationToken cancellationToken);
 
     /// <summary>Whether the process exists and has not completed — the owner check for its timers.</summary>
     [Alias("IsAliveAsync")]
-    Task<bool> IsAliveAsync();
+    Task<bool> IsAliveAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -37,52 +37,52 @@ internal interface ISagaProcessGrain : IGrainWithStringKey
 [GrainDirectory(GrainDirectories.Durable)]
 internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grain, ISagaProcessGrain
 {
-    public Task HandleAsync(Guid streamId, long version) => RunAsync(async (process, state, context, services) =>
+    public Task HandleAsync(Guid streamId, long version, CancellationToken cancellationToken) => RunAsync(async (process, state, context, services) =>
     {
-        var entry = await ReadEntryAsync(services, streamId, version);
+        var entry = await ReadEntryAsync(services, streamId, version, cancellationToken);
         services.GetRequiredService<ISessionContextProvider>().Set(RecordedSession.Of(entry));
-        var events = await services.GetRequiredService<IEventMapperFactory>().MapToEventsAsync([entry]);
+        var events = await services.GetRequiredService<IEventMapperFactory>().MapToEventsAsync([entry], cancellationToken);
         foreach (var @event in events.Where(process.Handles))
         {
-            await process.HandleAsync(state, @event, context, CancellationToken.None);
+            await process.HandleAsync(state, @event, context, cancellationToken);
         }
-    });
+    }, cancellationToken);
 
     /// <summary>
     /// A timeout has no fact to take a session from; it runs under the session the process's own
     /// stream was created with, so what it emits is owned by the same tenant.
     /// </summary>
-    public Task OnTimeoutAsync(string purpose) => RunAsync(async (process, state, context, services) =>
+    public Task OnTimeoutAsync(string purpose, CancellationToken cancellationToken) => RunAsync(async (process, state, context, services) =>
     {
         var (_, stateStream) = ResolveProcess(services);
         var unitOfWork = services.GetRequiredService<IWriteUnitOfWork>();
-        await using (var transaction = await unitOfWork.StartAsync())
+        await using (var transaction = await unitOfWork.StartAsync(cancellationToken))
         {
-            var first = await unitOfWork.CreateEventStreamRepository(transaction).GetFirstOrDefaultAsync(stateStream)
+            var first = await unitOfWork.CreateEventStreamRepository(transaction).GetFirstOrDefaultAsync(stateStream, cancellationToken)
                         ?? throw new InvalidOperationException($"Process {this.GetPrimaryKeyString()} has no state stream to time out.");
             services.GetRequiredService<ISessionContextProvider>().Set(RecordedSession.Of(first));
         }
 
-        await process.OnTimeoutAsync(state, purpose, context, CancellationToken.None);
-    });
+        await process.OnTimeoutAsync(state, purpose, context, cancellationToken);
+    }, cancellationToken);
 
-    public async Task<bool> IsAliveAsync()
+    public async Task<bool> IsAliveAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var (process, stateStream) = ResolveProcess(scope.ServiceProvider);
-        var state = await StateLoaders.For(process.StateType).LoadAsync(scope.ServiceProvider, stateStream);
-        return state is { Completed: false } && await scope.ServiceProvider.GetRequiredService<IEventSource>().ExistsAsync(stateStream);
+        var state = await StateLoaders.For(process.StateType).LoadAsync(scope.ServiceProvider, stateStream, cancellationToken);
+        return state is { Completed: false } && await scope.ServiceProvider.GetRequiredService<IEventSource>().ExistsAsync(stateStream, cancellationToken);
     }
 
-    private async Task RunAsync(Func<ISagaProcess, object, SagaProcessContext, IServiceProvider, Task> step)
+    private async Task RunAsync(Func<ISagaProcess, object, SagaProcessContext, IServiceProvider, Task> step, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
         var (process, stateStream) = ResolveProcess(services);
         var loader = StateLoaders.For(process.StateType);
 
-        var exists = await services.GetRequiredService<IEventSource>().ExistsAsync(stateStream);
-        var state = (exists ? await loader.LoadAsync(services, stateStream) : null) ?? loader.Fresh();
+        var exists = await services.GetRequiredService<IEventSource>().ExistsAsync(stateStream, cancellationToken);
+        var state = (exists ? await loader.LoadAsync(services, stateStream, cancellationToken) : null) ?? loader.Fresh();
         var context = new SagaProcessContext();
 
         await step(process, state, context, services);
@@ -92,33 +92,33 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
             var events = services.GetRequiredService<IEventSource>();
             if (exists)
             {
-                await loader.AppendAsync(events, stateStream, context.Emitted);
+                await loader.AppendAsync(events, stateStream, context.Emitted, cancellationToken);
             }
             else
             {
-                await loader.CreateAsync(events, stateStream, context.Emitted);
+                await loader.CreateAsync(events, stateStream, context.Emitted, cancellationToken);
             }
 
-            await events.SaveChangesAsync();
-            state = await loader.LoadAsync(services, stateStream) ?? state;
+            await events.SaveChangesAsync(cancellationToken);
+            state = await loader.LoadAsync(services, stateStream, cancellationToken) ?? state;
         }
 
         var timers = services.GetRequiredService<IDurableTimers>();
         var owner = SagaProcessTimerHost.OwnerOf(this.GetPrimaryKeyString());
         if (state.Completed)
         {
-            await timers.CancelAllAsync(owner);
+            await timers.CancelAllAsync(owner, cancellationToken);
             return;
         }
 
         foreach (var purpose in context.Cancelled)
         {
-            await timers.CancelAsync(owner, purpose);
+            await timers.CancelAsync(owner, purpose, cancellationToken);
         }
 
         foreach (var (purpose, dueAt) in context.Scheduled)
         {
-            await timers.RegisterAsync(new TimerRegistration(owner, purpose, dueAt));
+            await timers.RegisterAsync(new TimerRegistration(owner, purpose, dueAt), cancellationToken);
         }
     }
 
@@ -130,11 +130,11 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
         return (process, SagaProcessKey.StateStreamOf(sagaType, correlationId));
     }
 
-    private static async Task<EventStreamEntry> ReadEntryAsync(IServiceProvider services, Guid streamId, long version)
+    private static async Task<EventStreamEntry> ReadEntryAsync(IServiceProvider services, Guid streamId, long version, CancellationToken cancellationToken)
     {
         var unitOfWork = services.GetRequiredService<IWriteUnitOfWork>();
-        await using var transaction = await unitOfWork.StartAsync();
-        var entries = await unitOfWork.CreateEventStreamRepository(transaction).GetManyAsync(streamId, version, version);
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        var entries = await unitOfWork.CreateEventStreamRepository(transaction).GetManyAsync(streamId, version, version, cancellationToken);
         return entries.SingleOrDefault()
                ?? throw new InvalidOperationException($"Stream {streamId} has no entry at version {version}.");
     }
@@ -190,11 +190,11 @@ internal interface IStateLoader
 {
     ISagaProcessState Fresh();
 
-    Task<ISagaProcessState?> LoadAsync(IServiceProvider services, Guid correlationId);
+    Task<ISagaProcessState?> LoadAsync(IServiceProvider services, Guid correlationId, CancellationToken cancellationToken);
 
-    Task CreateAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted);
+    Task CreateAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted, CancellationToken cancellationToken);
 
-    Task AppendAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted);
+    Task AppendAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted, CancellationToken cancellationToken);
 }
 
 internal static class StateLoaders
@@ -209,14 +209,14 @@ internal static class StateLoaders
     {
         public ISagaProcessState Fresh() => new TState();
 
-        public async Task<ISagaProcessState?> LoadAsync(IServiceProvider services, Guid correlationId) =>
-            await services.GetRequiredService<IAggregationService>().AggregateAsync<TState>(correlationId);
+        public async Task<ISagaProcessState?> LoadAsync(IServiceProvider services, Guid correlationId, CancellationToken cancellationToken) =>
+            await services.GetRequiredService<IAggregationService>().AggregateAsync<TState>(correlationId, cancellationToken: cancellationToken);
 
-        public Task CreateAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted) =>
-            events.CreateRangeAsync<TState>(correlationId, emitted);
+        public Task CreateAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted, CancellationToken cancellationToken) =>
+            events.CreateRangeAsync<TState>(correlationId, emitted, cancellationToken: cancellationToken);
 
-        public Task AppendAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted) =>
-            events.AppendRangeAsync<TState>(correlationId, emitted);
+        public Task AppendAsync(IEventSource events, Guid correlationId, IReadOnlyList<object> emitted, CancellationToken cancellationToken) =>
+            events.AppendRangeAsync<TState>(correlationId, emitted, cancellationToken: cancellationToken);
     }
 }
 
@@ -234,7 +234,7 @@ internal sealed class SagaProcessTimerHost(IGrainFactory grainFactory, HostTimer
     {
         if (ownerId.StartsWith(Prefix, StringComparison.Ordinal))
         {
-            return grainFactory.GetGrain<ISagaProcessGrain>(ownerId[Prefix.Length..]).IsAliveAsync();
+            return grainFactory.GetGrain<ISagaProcessGrain>(ownerId[Prefix.Length..]).IsAliveAsync(cancellationToken);
         }
 
         return host?.Owners.ExistsAsync(ownerId, cancellationToken) ?? Task.FromResult(false);
@@ -244,7 +244,7 @@ internal sealed class SagaProcessTimerHost(IGrainFactory grainFactory, HostTimer
     {
         if (due.OwnerId.StartsWith(Prefix, StringComparison.Ordinal))
         {
-            return grainFactory.GetGrain<ISagaProcessGrain>(due.OwnerId[Prefix.Length..]).OnTimeoutAsync(due.Purpose);
+            return grainFactory.GetGrain<ISagaProcessGrain>(due.OwnerId[Prefix.Length..]).OnTimeoutAsync(due.Purpose, cancellationToken);
         }
 
         return host?.Handler.OnDueAsync(due, cancellationToken) ?? Task.CompletedTask;

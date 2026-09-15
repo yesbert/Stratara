@@ -57,7 +57,7 @@ internal abstract class StoreReaderGrain(
         Partition = partition;
         _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger);
         _poll ??= this.RegisterGrainTimer(
-            _ => RequestCatchUp(),
+            cancellationToken => RequestCatchUp(cancellationToken),
             new GrainTimerCreationOptions
             {
                 DueTime = settings.PollInterval,
@@ -103,7 +103,7 @@ internal abstract class StoreReaderGrain(
     }
 
     /// <summary>Applies a batch in order and returns the index of the first entry that did not apply.</summary>
-    protected abstract Task<int> ApplyBatchAsync(CommittedBatch batch);
+    protected abstract Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken);
 
-    private Task<int> RequestCatchUp() => Loop.RequestCatchUp(ApplyBatchAsync, () => Suspended);
+    private Task<int> RequestCatchUp(CancellationToken cancellationToken = default) => Loop.RequestCatchUp(ApplyBatchAsync, () => Suspended, cancellationToken);
 }

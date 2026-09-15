@@ -66,7 +66,7 @@ internal sealed class SagaGrain(
     public const string ConsumerName = "sagas";
 
     /// <summary>One scope, one saga manager and one process list for the batch; per entry, the recorded session.</summary>
-    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch)
+    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken batchToken)
     {
         using var scope = ScopeFactory.CreateScope();
         var services = scope.ServiceProvider;
@@ -85,10 +85,10 @@ internal sealed class SagaGrain(
                 foreach (var @event in events.Where(process.Handles))
                 {
                     var key = SagaProcessKey.Of(process.GetType().Name, process.CorrelationOf(@event));
-                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version);
+                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version, cancellationToken);
                 }
             }
-        });
+        }, batchToken);
     }
 }
 
