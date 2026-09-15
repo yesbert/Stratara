@@ -60,7 +60,10 @@
 
 ## 4. Close
 
-- [ ] 4.1 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
+- [x] 4.1 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
       queued with the next release decision. Verify: the gauntlet's last line.
-- [ ] 4.2 Round-4 tracker entries R4-Arc-011 to R4-Arc-014 closed with the merge commit. Verify: the
+      Done: gauntlet and change validation green before #97; the owner chose on 2026-09-15 to ship this change
+      in 4.1.0 with the Orleans execution model, and the bump branch carries it.
+- [x] 4.2 Round-4 tracker entries R4-Arc-011 to R4-Arc-014 closed with the merge commit. Verify: the
       tracker.
+      Done: closed with `139c5e2` (#97) on 2026-09-15.

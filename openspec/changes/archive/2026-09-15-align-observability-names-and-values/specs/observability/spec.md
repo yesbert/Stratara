@@ -50,5 +50,7 @@ series with the projection and saga series on that value.
 #### Scenario: An operator asks how far behind a projection is
 
 - **WHEN** an operator looks for consumer lag — how far a projection or saga trails the event stream
-- **THEN** the framework does not answer it. There is no checkpoint store for projections or sagas,
-  so lag is not measurable from these instruments, and no instrument implies otherwise
+- **THEN** on the bus workers the framework does not answer it: they keep no checkpoint, so lag is not
+  measurable from their instruments, and no instrument implies otherwise
+- **AND** where a host runs its projections and sagas on the Orleans execution model, the model
+  publishes the age of the oldest unapplied entry per partition, as its own measurements state

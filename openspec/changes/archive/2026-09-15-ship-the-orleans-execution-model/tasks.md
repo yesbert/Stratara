@@ -270,7 +270,7 @@
       pin `Microsoft.CodeAnalysis.Workspaces.Common`, which the Orleans code generator otherwise resolves to 5.0.0),
       `llms-full.txt` is regenerated with the Orleans registrations, and `ConfigureStrataraHeavyWork` gained the
       `<example>` a registration must carry. Documentation tests 699/699; a repository search finds no page stating 25.
-- [ ] 6.3 The coverage exclusion for `src/Stratara.Orleans/**` leaves `.github/workflows/sonar.yml`, and the
+- [x] 6.3 The coverage exclusion for `src/Stratara.Orleans/**` leaves `.github/workflows/sonar.yml`, and the
       analysis collects the Orleans integration suite's in-process coverage (D26). Verify: the first
       analysis of `main` after the merge reports the quality gate as passed with the package in the
       coverage measure.
@@ -279,6 +279,10 @@
       leaving out the six kill-test classes (`--filter-not-class`, checked on the unit project: 75 → 71 with one
       class excluded). A failure there is a warning, since `integration.yml` gates the suite; the job timeout is 90
       minutes.
+      Done: the first analysis of `main` after #96 and #97 collected the Orleans packages' coverage but failed the gate
+      on 16 new issues, and three Orleans integration tests failed there on the test database's connection limit;
+      #98 resolved both. The analysis of `main` after #98 passed the quality gate: new-code coverage 88.4 %, 0 new
+      violations, every Orleans integration test in the analysis run passed.
 
 - [x] 6.4 `README.md` presents the execution model as the headline feature, after 7.3 so real numbers
       exist (D13): a door beside the existing three that leads with the benefit the capability
@@ -307,9 +311,13 @@
       Done: the page presents the execution model as recommended and the bus workers as supported, with a table of
       situations, links to the three pages, and a `toc.yml` entry after *DI Composition*; the cheatsheet and
       `docs/overview/packages.md` link to it. Documentation tests 699/699.
-- [ ] 6.7 The minor's `CHANGELOG.md` section opens with the execution model, since `release.yml` →
+- [x] 6.7 The minor's `CHANGELOG.md` section opens with the execution model, since `release.yml` →
       `announce` publishes that section as the GitHub release note (D13). Verify: a read of the section
       before the tag.
+      Done: on the bump branch the `[4.1.0]` section is opened undated; its lead paragraph and its first *Added*
+      entry are the execution model, followed by the store migration every Entity Framework host generates and the
+      changed telemetry tag values. The two *Added* headings are one. The section is read again, dated, when the
+      owner releases the tag.
 
 ## 7. Tests and evidence (D14, D25)
 
@@ -358,5 +366,8 @@
       Done: 56 / 56 (37 plus 19 new cases) in each of the three `integration.yml` runs on `fdb5c8e`, RabbitMQ 42 / 42
       alongside; after the pull-request review fixes, 57 / 57 with `SelfDispatchTests` on `8cd105e` (run
       `34982913485`). The summary and what the new cases cover are in `evidence/results.md` → *Correctness*.
-- [ ] 7.5 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
+- [x] 7.5 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
       queued for after the merge. Verify: the gauntlet's last line and `git diff --stat main`.
+      Done: after #96 merged, the bump branch `chore/bump-4.1.0` sets `<VersionPrefix>` to 4.1.0 and opens the
+      `[4.1.0]` section; the gauntlet is green on it (27 packages packed as 4.1.0) and the change validates strictly.
+      The tag stays with the owner's release decision.

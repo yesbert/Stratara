@@ -28,7 +28,9 @@
 
 ## 2. Close
 
-- [ ] 2.1 `openspec validate say-what-an-authenticated-request-sets --strict` green; after archive,
+- [x] 2.1 `openspec validate say-what-an-authenticated-request-sets --strict` green; after archive,
       `openspec validate --specs --strict` green. Verify: the command output.
       Change validation green on 2026-09-15; the specs validation follows the archive.
-- [ ] 2.2 Round-4 tracker entry R4-Arc-004 marked closed with the merge commit. Verify: the tracker.
+      Done: after the archive, `openspec validate --specs --strict` 24/24.
+- [x] 2.2 Round-4 tracker entry R4-Arc-004 marked closed with the merge commit. Verify: the tracker.
+      Done: closed with `139c5e2` (#97) on 2026-09-15.

@@ -25,7 +25,8 @@ duplicating string literals.
 
 #### Scenario: A consumer needs to reference a name in code
 
-- **WHEN** a consumer needs the activity source name, the meter name, an outcome value or a tag name
+- **WHEN** a consumer needs the activity source name, the meter name, an instrument name, an outcome
+  value or a tag name
 - **THEN** it is available as a published constant rather than only as a literal in emitted data
 
 ### Requirement: All framework telemetry originates from one source and one meter
@@ -47,25 +48,41 @@ The framework SHALL emit counters for events appended, outbox entries published,
 processed and saga events processed; histograms for command duration, projection bundle duration
 and saga bundle duration; a counter for optimistic-concurrency conflicts; and a gauge for sagas
 currently in flight. Measurements SHALL be dimensioned by the aggregate type, event type, request
-type, outcome and outbox kind they concern.
+type, outcome and outbox kind they concern; a gauge of work in flight SHALL NOT be dimensioned by
+outcome, because that work has none yet.
+
+A tag that names an event type or an aggregate type SHALL carry the same value form on every
+instrument that emits it — the type's simple name — so that a consumer can join the write side's
+series with the projection and saga series on that value.
 
 #### Scenario: An operator asks how much work the host is doing
 
 - **WHEN** an operator queries the framework's instruments
 - **THEN** throughput and latency are available for the command path, the event store, the outbox,
-  projections and sagas, broken down by outcome
+  projections and sagas, broken down by outcome where the operation has one
+
+#### Scenario: An operator joins write and read throughput for one event type
+
+- **WHEN** an operator filters the events-appended series and the projection and saga
+  events-processed series by the same event type
+- **THEN** all of them carry the same tag value for that event type, and the filter matches in each
 
 #### Scenario: An operator asks how far behind a projection is
 
 - **WHEN** an operator looks for consumer lag — how far a projection or saga trails the event stream
-- **THEN** the framework does not answer it. There is no checkpoint store for projections or sagas,
-  so lag is not measurable from these instruments, and no instrument implies otherwise
+- **THEN** on the bus workers the framework does not answer it: they keep no checkpoint, so lag is not
+  measurable from their instruments, and no instrument implies otherwise
+- **AND** where a host runs its projections and sagas on the Orleans execution model, the model
+  publishes the age of the oldest unapplied entry per partition, as its own measurements state
 
 ### Requirement: Log event ids follow a partitioned schema that reserves a consumer range
 
 Every log message the framework emits SHALL carry an event id from a published schema, partitioned
 by subsystem within a reserved range. Ids outside that range SHALL be left to consumer applications,
-so that a consumer's own ids can never collide with the framework's.
+so that a consumer's own ids can never collide with the framework's. The Orleans execution model
+SHALL have a band of its own in that schema, so that its messages — a stalled partition, a resumed
+command, a kept command, a released permit, a failed flush of completions — are as filterable as
+any other subsystem's.
 
 #### Scenario: An operator filters logs by event id
 
@@ -78,6 +95,11 @@ so that a consumer's own ids can never collide with the framework's.
 - **WHEN** a consumer application assigns event ids to its own log messages
 - **THEN** it can do so without consulting the framework's schema, because the framework's range and
   the consumer's range do not overlap
+
+#### Scenario: An operator filters the execution model's messages
+
+- **WHEN** an operator filters on the execution model's band
+- **THEN** every message the execution model emits is in it and no other subsystem's is
 
 ### Requirement: Sensitive request headers are redacted from traces
 
@@ -202,3 +224,23 @@ exporter rather than failing.
 - **WHEN** no OpenTelemetry endpoint is configured
 - **THEN** telemetry is still collected in-process and no exporter is registered — a host runs
   locally without an observability backend
+
+### Requirement: The execution model measures what it does
+
+The Orleans execution model SHALL publish, from the framework's one meter, the measurements an
+operator needs to see it working: entries applied per projection and partition, stalled partitions,
+commands recorded, resumed and kept, completions flushed and the flush's failures, heavy-work
+permits in use, and the age of the oldest unapplied entry per partition, measured from the time
+recorded with the entry.
+The names SHALL be part of the published instrument contract.
+
+#### Scenario: A partition falls behind
+
+- **WHEN** a projection's partition stops applying
+- **THEN** its stall counter rises and the age of its oldest unapplied entry grows, on the
+  framework's meter under the published names
+
+#### Scenario: Commands are kept for an operator
+
+- **WHEN** a resumed command exhausts its bound
+- **THEN** the kept counter rises and the kept command is identifiable from the log event

@@ -39,5 +39,11 @@ _None._
 - `openspec/specs/session-context/spec.md` — one requirement, one scenario.
 - `src/Stratara.Sessions/README.md` — the "Actor=Subject" wording (package README, ships in the
   nupkg; text only).
+- `src/Stratara.Sessions/Middlewares/SessionContextMiddleware.cs` — the XML remarks said "Actor = Subject"
+  as well (documentation only, ships in the package's XML file).
+- `docs/concepts/session-context.md` — the section on authenticated requests now says the data-owner user
+  is left unset, and why.
+- `tests/Stratara.Infrastructure.Tests/Middlewares/SessionContextMiddlewareTests.cs` — asserts the actor
+  tenant equals the data-owner tenant and the data-owner user is absent.
 - Round-4 findings tracker entry R4-Arc-004, closed by this change.
 - No version bump: a specification and README correction with no code change.

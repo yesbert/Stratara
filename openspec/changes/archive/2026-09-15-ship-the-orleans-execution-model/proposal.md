@@ -130,10 +130,15 @@ command-intent store). Both in
   `tests/Stratara.Orleans.Benchmarks/` follow the packages; the integration suite becomes the
   packages' suite; `tests/Stratara.EventSourcing.WorkerDefaults.Tests/`,
   `tests/Stratara.Infrastructure.Tests/` and `tests/Stratara.EntityFrameworkCore.Tests/` gain the cases
-  the tasks name.
+  the tasks name. As implemented, the scenarios, silo and store helpers and container fixtures moved into a new
+  library, `tests/Stratara.Orleans.Scenarios/`, which the integration tests and the benchmark host both reference
+  (task 7.1); `tests/Stratara.WriteStore.Tests/` gained the batch-removal test,
+  `tests/Stratara.Documentation.Tests/` and `tools/Stratara.ReferenceCatalogue/` reference the two packages so the
+  documentation checks see them, and the PostgreSQL test fixture raises its connection limit for all-class runs.
 - **CI:** `.github/workflows/sonar.yml` loses the coverage exclusion for `src/Stratara.Orleans/**` and
   collects the Orleans integration suite's coverage (D26); `.github/workflows/integration.yml` loses the
-  scenario-host build step once the test project builds the host (D25).
+  scenario-host build step once the test project builds the host (D25); `.github/workflows/ci.yml` and
+  `scripts/local-gauntlet.sh` skip the scenario library in their test loops, since it is not a test project.
 - **Documentation:** `docs/` gains the capability's pages, the migration note and the operations
   note, and `docs/getting-started/choose-an-execution-model.md`; `llms.txt` and `llms-full.txt` carry
   the core facts; `README.md` and the landing page present the execution model as the headline feature
