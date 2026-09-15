@@ -11,7 +11,7 @@ description: "A family of 25 lockstep-versioned NuGet packages for .NET 10 — m
 
 **Stratara takes the boring decisions for you so you can spend your time on aggregates and use-cases — not on wiring an outbox to a mediator to an event store.**
 
-It's a family of 25 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
+It's a family of 27 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
 
 What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is the **integration** plus two properties that none of the standalone libraries ship today:
 
@@ -30,6 +30,7 @@ What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is t
 - **Field-level encryption** with `[EncryptData]` — AES-GCM with tenant-bound AAD, transparent serialization-boundary seal.
 - **Production key store + envelope encryption** — the dependency-light `Stratara.Security` package (`EnvelopeFileKeyStore`) manages KEK-wrapped, versioned per-`KeyScope` keys with rotation, revoke, and whole-scope crypto-shredding (GDPR Article 17) — no EF Core, RabbitMQ, or cloud SDK required.
 - **Projection runtime** + **saga runtime** that consume event bundles from the bus.
+- **The Orleans execution model** — the same handlers, projections and sagas as virtual actors on an Orleans cluster: one writer per aggregate across the deployment, commands that survive a crash, projections and sagas that read the store in commit order and never miss a committed fact, durable timers and once-per-cluster work without a lock (`Stratara.Orleans`). See [The Orleans Execution Model](../concepts/orleans-execution-model.md).
 - **Channel-agnostic identity** (sign-in manager + auth-state provider abstractions usable from ASP.NET, MAUI, console).
 - **Identity directory** — user↔tenant membership with tenant-scoped roles, permission catalog + `[RequirePermission]` enforcement, scoped settings (global/tenant/user with fallback and transparent encryption), and API keys/PATs that flow through the same role/permission plane as human users (`Stratara.Identity.EntityFrameworkCore`).
 - **Observability defaults** — OpenTelemetry traces + metrics, Serilog log enrichment, source-generated `[LoggerMessage]` extensions.
@@ -63,12 +64,12 @@ The architecture is strict: **no consumer-specific code** lives in the framework
 
 ## How it's structured
 
-25 packages: 23 runtime packages organized into three tiers, plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
+27 packages: 25 runtime packages organized into three tiers, plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
 
 ## License + versioning
 
 - Licensed under the [MIT License](https://opensource.org/license/mit) — OSI-approved open source, free for any use including commercial.
-- Lockstep versioning — all 25 packages ship at the same `<VersionPrefix>`.
+- Lockstep versioning — all 27 packages ship at the same `<VersionPrefix>`.
 - See `CHANGELOG.md` in the repo root for release notes. Every published version is also announced
   on the repository's [releases page](https://github.com/yesbert/Stratara/releases), carrying that
   same changelog section — a prerelease is marked as one, so the version listed as latest is always

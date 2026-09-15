@@ -28,6 +28,10 @@
   href: api-keys-and-pats.md
 - name: External Login (OpenID Connect) + JIT Provisioning
   href: external-login-oidc.md
+- name: Migrate to the Orleans Execution Model
+  href: migrate-to-the-orleans-execution-model.md
+- name: Operate the Orleans Execution Model
+  href: operate-the-orleans-execution-model.md
 - name: Outbox — RabbitMQ
   href: outbox-setup-rabbitmq.md
 - name: Outbox — Azure Service Bus

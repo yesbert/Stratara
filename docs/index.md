@@ -210,7 +210,7 @@ await keyStore.EraseScopeAsync(scope, ct);
   <div class="st-cta">
     <a class="btn btn-primary" href="getting-started/first-stratara-app.md">Get started</a>
     <a class="btn btn-outline-secondary" href="samples/index.md">Run the samples</a>
-    <a class="btn btn-outline-secondary" href="overview/packages.md">See all 25 packages</a>
+    <a class="btn btn-outline-secondary" href="overview/packages.md">See all 27 packages</a>
   </div>
 </section>
 

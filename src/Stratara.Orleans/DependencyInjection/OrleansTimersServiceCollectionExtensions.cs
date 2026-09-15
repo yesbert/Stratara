@@ -22,6 +22,7 @@ public static class OrleansTimersServiceCollectionExtensions
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
     /// <code>
+    /// var cs = builder.Configuration.GetConnectionString("orleans")!;
     /// builder.UseOrleans(silo => silo.UseAdoNetReminderService(o => { o.Invariant = "Npgsql"; o.ConnectionString = cs; }));
     /// builder.Services
     ///     .AddStrataraDurableTimers()

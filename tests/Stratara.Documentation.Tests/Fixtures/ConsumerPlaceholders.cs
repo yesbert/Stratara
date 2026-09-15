@@ -173,6 +173,16 @@ public sealed class LoggingBehavior<TRequest, TResult> : Stratara.Abstractions.M
     public Task<TResult> HandleAsync(TRequest request, Func<Task<TResult>> next, CancellationToken cancellationToken) => next();
 }
 
+public sealed class OrderTimerOwners : Stratara.Abstractions.Timers.ITimerOwners
+{
+    public Task<bool> ExistsAsync(string ownerId, CancellationToken cancellationToken) => Task.FromResult(true);
+}
+
+public sealed class OrderTimerHandler : Stratara.Abstractions.Timers.ITimerHandler
+{
+    public Task OnDueAsync(Stratara.Abstractions.Timers.TimerDue due, CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
 public sealed class MyAuthorizationProvider : Stratara.Abstractions.Authorization.IAuthorizationProvider
 {
     public Task<bool> IsInRoleAsync(string role, CancellationToken cancellationToken = default) =>

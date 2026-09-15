@@ -29,9 +29,16 @@ public static class OrleansResetServiceCollectionExtensions
     /// <example>
     /// Run it while no silo of the cluster runs:
     /// <code>
+    /// var orleansConnectionString = builder.Configuration.GetConnectionString("orleans")!;
     /// builder.Services.AddStrataraExecutionModelReset&lt;AppReadDbContext&gt;(
     ///     orleansConnectionString,
-    ///     (services, cancellationToken) => Task.FromResult(0L));
+    ///     async (services, cancellationToken) =>
+    ///     {
+    ///         // With the Redis directory: remove the cluster's keys and report how many.
+    ///         var redis = services.GetRequiredService&lt;StackExchange.Redis.IConnectionMultiplexer&gt;();
+    ///         var keys = redis.GetServer(redis.GetEndPoints()[0]).Keys(pattern: "*my-cluster*").ToArray();
+    ///         return keys.Length == 0 ? 0 : await redis.GetDatabase().KeyDeleteAsync(keys);
+    ///     });
     ///
     /// var report = await app.Services.GetRequiredService&lt;IExecutionModelReset&gt;().ResetAsync();
     /// </code>

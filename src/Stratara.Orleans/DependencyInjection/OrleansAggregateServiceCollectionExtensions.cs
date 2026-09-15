@@ -122,10 +122,21 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher>(sp => sp.GetRequiredService<OrleansCommandDispatcher>());
     }
 
-    /// <summary>Settings for heavy work: the cluster-wide limit, the permit retry and the permit lease.</summary>
+    /// <summary>
+    /// Settings for heavy work: the cluster-wide limit, the permit retry and the permit lease. Binds no
+    /// configuration; the settings are validated when the host starts. Heavy commands reach the pool through
+    /// <c>AddStrataraOrleansCommandDispatcher()</c>.
+    /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">The settings.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// builder.Services
+    ///     .AddStrataraOrleansCommandDispatcher()
+    ///     .ConfigureStrataraHeavyWork(options => options.ClusterWideLimit = 4);
+    /// </code>
+    /// </example>
     public static IServiceCollection ConfigureStrataraHeavyWork(this IServiceCollection services, Action<HeavyWorkOptions> configure)
     {
         services.AddOptions<HeavyWorkOptions>().Configure(configure);

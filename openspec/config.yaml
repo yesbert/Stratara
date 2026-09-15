@@ -2,7 +2,7 @@ schema: spec-driven
 
 context: |
   Stratara is an application-agnostic CQRS / Event-Sourcing / Mediator framework for .NET 10,
-  shipped as a family of 25 NuGet packages at one lockstep version. It is a library, not an
+  shipped as a family of 27 NuGet packages at one lockstep version. It is a library, not an
   application: the surface a consumer relies on is the published API of those packages.
 
   Hard prohibitions:
@@ -11,7 +11,7 @@ context: |
   - Tier order is one-directional and cycle-free. Tier-A (Abstractions, Contracts, Diagnostics,
     Resilience) -> Tier-B (Mediator, Domain, Shared, Sessions, ServiceDefaults) -> Tier-C
     (EventSourcing.*, Validation, Projections, Sagas, Security, Outbox.*, Infrastructure,
-    Identity.*, ServiceDefaults.AspNetCore). Tier-N may reference only Tier-<=N.
+    Identity.*, ServiceDefaults.AspNetCore, Orleans.*). Tier-N may reference only Tier-<=N.
   - One <VersionPrefix> in Directory.Build.props governs every packable project. Never a
     per-project version.
   - IsPackable=false is the default; a packable csproj opts in explicitly and must then be
@@ -31,7 +31,7 @@ context: |
     summary of one held elsewhere.
   - Architecture and tier layout: docs/overview/architecture-at-a-glance.md, and the capability a
     given behaviour belongs to in openspec/specs/.
-  - Releases are lockstep, one VersionPrefix in Directory.Build.props for all 25 packages, and a
+  - Releases are lockstep, one VersionPrefix in Directory.Build.props for all 27 packages, and a
     stable v* tag is a deliberate decision rather than a consequence of merging. CHANGELOG.md
     records what shipped when.
   - Making a project packable: set IsPackable=true, add it to Stratara.Publish.slnf, and give every

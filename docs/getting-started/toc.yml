@@ -4,3 +4,5 @@
   href: first-stratara-app.md
 - name: DI Composition
   href: di-composition.md
+- name: Choose an Execution Model
+  href: choose-an-execution-model.md

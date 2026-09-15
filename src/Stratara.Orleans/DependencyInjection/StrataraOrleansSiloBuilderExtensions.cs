@@ -22,6 +22,9 @@ public static class StrataraOrleansSiloBuilderExtensions
     /// <exception cref="ArgumentNullException"><paramref name="silo"/> or <paramref name="addDurableDirectory"/> is <see langword="null"/>.</exception>
     /// <example>
     /// <code>
+    /// var orleansDb = builder.Configuration.GetConnectionString("orleans")!;
+    /// var redis = StackExchange.Redis.ConfigurationOptions.Parse(builder.Configuration.GetConnectionString("redis")!);
+    ///
     /// builder.UseOrleans(silo => silo
     ///     .UseAdoNetClustering(options => { options.Invariant = "Npgsql"; options.ConnectionString = orleansDb; })
     ///     .AddStrataraOrleans((s, name) => s.AddRedisGrainDirectory(name, options => options.ConfigurationOptions = redis)));

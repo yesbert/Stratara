@@ -49,15 +49,15 @@
 
 ## 2. Store schema and readers (D4, D7, D10, D23)
 
-- [ ] 2.1 The shipped write and read contexts in `Stratara.EventSourcing.EntityFrameworkCore` declare the
+- [x] 2.1 The shipped write and read contexts in `Stratara.EventSourcing.EntityFrameworkCore` declare the
       additions, with the provider switch for the commit-order column, and the counter and checkpoint
       entities move there (owner decision 2026-09-15): commit-order column, position
       column, counter table, outbox attempt count, kept state, last hand-over time, aggregate id and heavy
       flag, checkpoint table, with the readers' indexes. Verify: a new test in
       `tests/Stratara.EntityFrameworkCore.Tests` asserts the entity types, columns and indexes the
       extension adds to the write and read models; the migration page names every addition.
-      Code part done: `StoreSchemaAdditionsTests` in `tests/Stratara.EntityFrameworkCore.Tests`. Stays open
-      until the migration page of 6.1 names every addition.
+      Code part done: `StoreSchemaAdditionsTests` in `tests/Stratara.EntityFrameworkCore.Tests`. Closed with 6.1:
+      *Migrate to the Orleans Execution Model* → *Migrate the schema* names every addition by table and column.
 - [x] 2.2 Readers declare a stable name; the portable reader's name carries the partition count; the
       interceptor reads the count from `CommitOrderOptions`; the checkpoint store keys on the name.
       Verify: `InterleavedCommitTests` green for both readers; unit tests that a renamed reader class keeps
@@ -239,16 +239,37 @@
 
 ## 6. Documentation and gates (D13, D26)
 
-- [ ] 6.1 `docs/` pages: the capability; the migration page, with the portable reader's backfill and the
+- [x] 6.1 `docs/` pages: the capability; the migration page, with the portable reader's backfill and the
       full-replay note; the operations page, with the hard-death scenario and its three answers, the
       statement that returns a kept command, and the host code for a Redis-backed directory. Verify:
       `tests/Stratara.Documentation.Tests` green and every API the pages name exists.
-- [ ] 6.2 `llms.txt` core facts; `CHANGELOG.md`
+      Done: `docs/concepts/orleans-execution-model.md` (the capability), `docs/guides/migrate-to-the-orleans-execution-model.md`
+      (silo, every schema addition, native and portable reader with the backfill, one call per role, the full-replay
+      note, every setting with its default) and `docs/guides/operate-the-orleans-execution-model.md` (the hard death
+      and its three answers, the durable directory with Redis host code, finding and returning kept commands, stalled
+      partitions, `IExecutionModelReset`, reminder profile and due tolerance), each in its `toc.yml`. Their snippets
+      compile: the documentation tests now reference both Orleans packages and the ADO.NET clustering, reminder and
+      Redis directory providers, and the snippet compiler imports `Orleans.Hosting`. The doc-symbol scan's external
+      list names the three provider extensions. Documentation tests 699/699, scan 0 fabricated calls.
+- [x] 6.2 `llms.txt` core facts; `CHANGELOG.md`
       unreleased entry; the package count 25 to 27 everywhere D13 lists; the log-event range; a
       cheatsheet row per new registration; the pin comment in `Directory.Packages.props`; `llms-full.txt`
       regenerated with `dotnet run --project tools/Stratara.ReferenceCatalogue -- llms-full.txt`. Verify:
       `ReferenceCatalogueIsCurrentTests`, `DiCheatsheetCoverageTests`, `LogEventAllocationTests` and
       `PublishFilterCoverageTests` green, and no page states 25 packages.
+      Done: `llms.txt` gains a core fact on the two execution models, the two packages and the concept links;
+      `CHANGELOG.md` `[Unreleased]` gains *Added* (the execution model, the schema additions, the composites without
+      the bus-fed worker) and *Changed* (the authorizer decorates any dispatcher); 27 packages in `llms.txt`, `README.md`,
+      the `CHANGELOG.md` preamble, `docs/index.md`, `docs/overview/packages.md` (with both packages' rows),
+      `docs/overview/architecture-at-a-glance.md` (with both in Tier-C), `openspec/config.yaml` (with `Orleans.*` in
+      Tier-C) and `.github/copilot-instructions.md`, and beyond D13's list in `CONTRIBUTING.md`,
+      `docs/overview/what-is-stratara.md`, `docs/overview/index.md` and `release.yml`. The log-event range (117) and the
+      pin comment were already right from groups 1 and 3. A cheatsheet section *Orleans execution model* lists every
+      registration. The catalogue tool and the documentation tests did not load the Orleans assemblies at all, so
+      neither the catalogue nor the cheatsheet coverage saw them: both now reference the two packages (the tests also
+      pin `Microsoft.CodeAnalysis.Workspaces.Common`, which the Orleans code generator otherwise resolves to 5.0.0),
+      `llms-full.txt` is regenerated with the Orleans registrations, and `ConfigureStrataraHeavyWork` gained the
+      `<example>` a registration must carry. Documentation tests 699/699; a repository search finds no page stating 25.
 - [ ] 6.3 The coverage exclusion for `src/Stratara.Orleans/**` leaves `.github/workflows/sonar.yml`, and the
       analysis collects the Orleans integration suite's in-process coverage (D26). Verify: the first
       analysis of `main` after the merge reports the quality gate as passed with the package in the
@@ -262,9 +283,12 @@
 - [ ] 6.5 `docs/index.md`, the landing page, carries the same door, a `st-feature` card in *What is in
       the box*, and the same numbers (D13). Verify: `docfx build docs/docfx.json --warningsAsErrors`
       green; `SiteMetadataTests` green; the numbers identical to `README.md`.
-- [ ] 6.6 `docs/getting-started/choose-an-execution-model.md`, derived from `orleans-execution` and
+- [x] 6.6 `docs/getting-started/choose-an-execution-model.md`, derived from `orleans-execution` and
       `host-composition`, links the capability, migration and operations pages and is listed in its
       `toc.yml` (D13). Verify: `tests/Stratara.Documentation.Tests` green.
+      Done: the page presents the execution model as recommended and the bus workers as supported, with a table of
+      situations, links to the three pages, and a `toc.yml` entry after *DI Composition*; the cheatsheet and
+      `docs/overview/packages.md` link to it. Documentation tests 699/699.
 - [ ] 6.7 The minor's `CHANGELOG.md` section opens with the execution model, since `release.yml` →
       `announce` publishes that section as the GitHub release note (D13). Verify: a read of the section
       before the tag.
