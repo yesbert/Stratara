@@ -307,9 +307,13 @@
       Done: the page presents the execution model as recommended and the bus workers as supported, with a table of
       situations, links to the three pages, and a `toc.yml` entry after *DI Composition*; the cheatsheet and
       `docs/overview/packages.md` link to it. Documentation tests 699/699.
-- [ ] 6.7 The minor's `CHANGELOG.md` section opens with the execution model, since `release.yml` →
+- [x] 6.7 The minor's `CHANGELOG.md` section opens with the execution model, since `release.yml` →
       `announce` publishes that section as the GitHub release note (D13). Verify: a read of the section
       before the tag.
+      Done: on the bump branch the `[4.1.0]` section is opened undated; its lead paragraph and its first *Added*
+      entry are the execution model, followed by the store migration every Entity Framework host generates and the
+      changed telemetry tag values. The two *Added* headings are one. The section is read again, dated, when the
+      owner releases the tag.
 
 ## 7. Tests and evidence (D14, D25)
 
@@ -358,5 +362,8 @@
       Done: 56 / 56 (37 plus 19 new cases) in each of the three `integration.yml` runs on `fdb5c8e`, RabbitMQ 42 / 42
       alongside; after the pull-request review fixes, 57 / 57 with `SelfDispatchTests` on `8cd105e` (run
       `34982913485`). The summary and what the new cases cover are in `evidence/results.md` → *Correctness*.
-- [ ] 7.5 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
+- [x] 7.5 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
       queued for after the merge. Verify: the gauntlet's last line and `git diff --stat main`.
+      Done: after #96 merged, the bump branch `chore/bump-4.1.0` sets `<VersionPrefix>` to 4.1.0 and opens the
+      `[4.1.0]` section; the gauntlet is green on it (27 packages packed as 4.1.0) and the change validates strictly.
+      The tag stays with the owner's release decision.

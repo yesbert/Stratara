@@ -14,12 +14,15 @@ applies to the entire NuGet family.
 > The historical entries were originally written in German with internal-team identifiers;
 > they have been rewritten retroactively for public consumption.
 
-## [Unreleased]
+## [4.1.0] — unreleased
 
-The Orleans execution model ships as two packages, and three fixes land on the 4.0.4 retry and
-conflict work. A host on the Entity Framework store generates one migration whether or not it adopts
-the execution model; otherwise a host that does not adopt it changes nothing, with one new warning to
-know about.
+The Orleans execution model ships as two new packages, `Stratara.Orleans` and
+`Stratara.Orleans.EntityFrameworkCore`: one writer per aggregate across a cluster, accepted commands that
+survive a crash, and projections and sagas that never miss a committed fact. Every host on the Entity
+Framework store generates one migration when it upgrades, whether or not it adopts the execution model.
+Telemetry type tags now carry the simple type name on every instrument, so a dashboard that filters the
+projection, saga or conflict series on the qualified name needs its filter updated. Eight fixes land on
+the retry, conflict, redaction and encryption work of 4.0.4, with one new warning to know about.
 
 ### Added
 
@@ -45,11 +48,12 @@ know about.
 - **Composites without the bus-fed worker.** `AddEventProjectionServices()` and `AddSagaServices()`
   register the projection and saga runtimes without their bus workers; `AddProjectionHandling` and
   `AddSagaHandling` do the same on `IServiceCollection`.
-
 - **Every instrument name is a published constant.** `ApplicationDiagnostics.Metrics` carries a
   `…Name` constant beside each instrument — `EventsAppendedName`, `ProjectionEventsProcessedName`,
   `SagasInFlightName` and the others — so a query or listener references the name instead of a literal.
   `ApplicationDiagnostics.MetricTags.TypeNameValue` gives the value a type tag carries for a type name.
+- `LogEvents.Messaging.WorkerQueueDeclaredWithOtherArguments` (`108_112`), the warning a RabbitMQ
+  worker logs when it uses an existing queue declared with other arguments.
 
 ### Changed
 
@@ -80,7 +84,6 @@ know about.
   `DbUpdateException`, so a unit of work that surfaced the provider's exception unwrapped got a
   persistence failure instead of a `ConcurrencyException`. Every detector now sees the exception
   as the save threw it, as its contract says.
-
 - **Proxy credentials and response cookies are redacted from traces in the form the semantic
   conventions name them.** The HTTP client and ASP.NET Core enrichment callbacks replaced
   `http.request.header.proxy_authorization` and `http.response.header.set_cookie`, but the
@@ -100,14 +103,9 @@ know about.
   current key left the scope pointing at a key that no longer existed, so the next
   `GetOrCreateCurrentKeyAsync` threw. It now falls back to the highest remaining version, or creates
   a new one, as `EnvelopeFileKeyStore` does.
-
 - **`IAggregationService.AggregateAsync` no longer documents `fromVersion` as a start version.** The
   parameter has never been honoured: a rebuild starts from the stream's beginning, or from the latest
   snapshot at or below `toVersion`. Its documentation now says so; the signature is unchanged.
-
-### Added
-
-- `LogEvents.Messaging.WorkerQueueDeclaredWithOtherArguments` (`108_112`).
 
 ## [4.0.4] — 2026-09-14
 
@@ -3256,7 +3254,7 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.0.4...main
+[4.1.0]: https://github.com/yesbert/Stratara/compare/v4.0.4...main
 [4.0.4]: https://github.com/yesbert/Stratara/releases/tag/v4.0.4
 [4.0.3]: https://github.com/yesbert/Stratara/releases/tag/v4.0.3
 [4.0.2]: https://github.com/yesbert/Stratara/releases/tag/v4.0.2
