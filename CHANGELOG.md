@@ -14,7 +14,11 @@ applies to the entire NuGet family.
 > The historical entries were originally written in German with internal-team identifiers;
 > they have been rewritten retroactively for public consumption.
 
-## [4.1.0] — unreleased
+## [Unreleased]
+
+_No changes yet since `4.1.0`._
+
+## [4.1.0] — 2026-09-15
 
 The Orleans execution model ships as two new packages, `Stratara.Orleans` and
 `Stratara.Orleans.EntityFrameworkCore`: one writer per aggregate across a cluster, accepted commands that
@@ -3254,7 +3258,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[4.1.0]: https://github.com/yesbert/Stratara/compare/v4.0.4...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.1.0...main
+[4.1.0]: https://github.com/yesbert/Stratara/releases/tag/v4.1.0
 [4.0.4]: https://github.com/yesbert/Stratara/releases/tag/v4.0.4
 [4.0.3]: https://github.com/yesbert/Stratara/releases/tag/v4.0.3
 [4.0.2]: https://github.com/yesbert/Stratara/releases/tag/v4.0.2
