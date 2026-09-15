@@ -53,7 +53,7 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
     private async Task<bool> ResumeRecordedCommandsAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
-        if (scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>() is not Aggregates.OrleansCommandDispatcher dispatcher)
+        if (scope.ServiceProvider.GetService<Aggregates.OrleansCommandDispatcher>() is not { } dispatcher)
         {
             return false;
         }

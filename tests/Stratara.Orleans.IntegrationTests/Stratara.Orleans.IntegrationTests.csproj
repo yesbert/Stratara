@@ -30,5 +30,6 @@
         <ProjectReference Include="../../src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj"/>
         <ProjectReference Include="../../src/Stratara.Orleans/Stratara.Orleans.csproj"/>
         <ProjectReference Include="../../src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Validation/Stratara.Validation.csproj"/>
     </ItemGroup>
 </Project>

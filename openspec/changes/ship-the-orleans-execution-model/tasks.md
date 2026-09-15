@@ -157,13 +157,28 @@
       ended (the reset comes before the truncation, as D21 orders it for a rebuild). A truncator registered after the
       store readers fails the host at start. `ReplayCheckpointResetTests` and `ReplayWithStoreReadersTests` (checkpoints
       at 0 when the models are emptied, every read model refilled, readers advanced again) green.
-- [ ] 4.5 Commands on the execution model's path go through `IMediator`; the enqueue-time authorizer
+- [x] 4.5 Commands on the execution model's path go through `IMediator`; the enqueue-time authorizer
       decorates the registered dispatcher slot (D15). Verify: integration tests that a command failing
       validation is not handled on the intent path and that authorization applies in both registration
       orders; a unit test in `tests/Stratara.Infrastructure.Tests` for the decoration of an arbitrary
       registered dispatcher.
-- [ ] 4.6 The turn marker carries the aggregate id (D16). Verify: an integration test in which a handler
+      Done: a recorded intent (aggregate, runner and heavy grains) is dispatched through `IMediator` with a cached
+      generic invoker; the synchronous forward keeps invoking the handler directly, because its pipeline already ran
+      on the caller's side and would otherwise validate and audit twice. `AddAuthorizingCommandOutboxDispatcher`
+      moves the last registered dispatcher to a keyed slot (key `typeof(ICommandOutboxDispatcher)`) and decorates it;
+      `AddStrataraOrleansCommandDispatcher` replaces that keyed slot when it exists, the plain one otherwise;
+      `OutboxDrainWork` resolves the Orleans dispatcher by its own type. Deviation: authorization in both orders is
+      verified against the real registrations in `EnqueueAuthorizationCompositionTests` (Orleans unit tests), not on
+      a silo — a `[RequireRole]` command in the integration assembly fails the start of every host there that
+      registers the plain mediator (`AuthorizationStartupValidator` scans the AppDomain). `IntentPipelineTests`
+      (integration), `AuthorizingCommandOutboxDispatcherDecorationTests` (4) and `DurableIntentTests`/`ArrivalOrderTests`
+      as regression (10/10) green.
+- [x] 4.6 The turn marker carries the aggregate id (D16). Verify: an integration test in which a handler
       sends a command for a second aggregate while that aggregate runs another, and the two never overlap.
+      Done: the ambient turn holds the id of the command's aggregate (restoring the previous one on exit); the
+      forwarding behaviour lets through only a command for that aggregate. Heavy work marks its own command's
+      aggregate, so it still runs outside the aggregate's activation. `CrossAggregateSendTests` green, with
+      `ArrivalOrderTests`, `IntentPipelineTests`, `DurableIntentTests` and `HeavyBurstTests` as regression (13/13).
 - [ ] 4.7 Options validated at start; enumerable timer ports composed by prefix with the start-up check;
       singleton work placed only on silos that registered it (D20). Verify: unit tests per invalid setting
       that fail the host at start naming it; a test that timer owners registered after the model fire; a

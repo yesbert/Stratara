@@ -16,5 +16,6 @@
     <ItemGroup>
         <ProjectReference Include="../../src/Stratara.Orleans/Stratara.Orleans.csproj"/>
         <ProjectReference Include="../../src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Infrastructure/Stratara.Infrastructure.csproj"/>
     </ItemGroup>
 </Project>

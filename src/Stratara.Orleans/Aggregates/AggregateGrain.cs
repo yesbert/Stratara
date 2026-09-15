@@ -34,8 +34,9 @@ internal interface ICommandRunnerGrain : IGrainWithGuidKey
 /// <summary>
 /// The turn that replaces the bucket lock: the runtime hands this grain one call at a time, in
 /// arrival order, so two commands on one aggregate never run concurrently anywhere in the cluster.
-/// Each call restores the caller's session in a fresh scope and invokes the command's handler
-/// directly — the pipeline behaviours already ran on the caller's side, before the hand-off.
+/// Each call restores the caller's session in a fresh scope. A forwarded call invokes the command's
+/// handler directly — the pipeline behaviours already ran on the caller's side, before the hand-off; a
+/// recorded intent is dispatched through the mediator, whose pipeline never ran for it.
 /// </summary>
 internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain, IAggregateGrain
 {
@@ -74,7 +75,7 @@ internal static class CommandExecution
 
         using var scope = scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-        Func<Task> run = () => InvokeAsync(services, envelope);
+        Func<Task> run = () => InvokeAsync(services, envelope, throughMediator: intentId is not null);
         if (around is not null)
         {
             var inner = run;
@@ -103,7 +104,13 @@ internal static class CommandExecution
         await services.GetRequiredService<IntentCompletionQueue>().CompleteAsync(id);
     }
 
-    private static async Task InvokeAsync(IServiceProvider services, AggregateCommandEnvelope envelope)
+    /// <summary>
+    /// Rebuilds the command and runs it inside the turn. A recorded intent goes through the mediator, so
+    /// validation, authorization, tenant isolation, audit and resilience run for it as they do on the bus's
+    /// command worker; a synchronous forward already ran that pipeline on the caller's side and invokes the
+    /// handler directly, so no behaviour runs twice.
+    /// </summary>
+    private static async Task InvokeAsync(IServiceProvider services, AggregateCommandEnvelope envelope, bool throughMediator)
     {
         var session = JsonSerializer.Deserialize<SessionContext>(envelope.SessionContextJson)
                       ?? throw new InvalidOperationException("The aggregate command envelope carries no session context.");
@@ -114,23 +121,38 @@ internal static class CommandExecution
                           .DeserializeAsync(envelope.CommandJson, type, session.TenantId, session.ActorUserId)
                       ?? throw new InvalidOperationException($"The aggregate command envelope's command of type {type.FullName} deserialised to nothing.");
 
-        using (AggregateTurn.Enter())
+        using (AggregateTurn.Enter((command as IAggregateScopedCommand)?.AggregateId))
         {
-            var invoker = Invokers.GetOrAdd(type, static commandType =>
-                (IHandlerInvoker)(Activator.CreateInstance(typeof(HandlerInvoker<>).MakeGenericType(commandType))
-                                  ?? throw new InvalidOperationException($"Cannot build a handler invoker for {commandType.FullName}.")));
-            await invoker.InvokeAsync(services, command, CancellationToken.None);
+            var invoker = Invokers.GetOrAdd(type, BuildInvoker);
+            await (throughMediator
+                ? invoker.DispatchAsync(services, command, CancellationToken.None)
+                : invoker.InvokeHandlerAsync(services, command, CancellationToken.None));
         }
+    }
+
+    private static IHandlerInvoker BuildInvoker(Type commandType)
+    {
+        if (!commandType.IsClass || !typeof(IRequest).IsAssignableFrom(commandType))
+        {
+            throw new InvalidOperationException($"{commandType.FullName} is not a command class the mediator can dispatch.");
+        }
+
+        return (IHandlerInvoker)Activator.CreateInstance(typeof(HandlerInvoker<>).MakeGenericType(commandType))!;
     }
 
     private interface IHandlerInvoker
     {
-        Task InvokeAsync(IServiceProvider services, object command, CancellationToken cancellationToken);
+        Task DispatchAsync(IServiceProvider services, object command, CancellationToken cancellationToken);
+
+        Task InvokeHandlerAsync(IServiceProvider services, object command, CancellationToken cancellationToken);
     }
 
-    private sealed class HandlerInvoker<TCommand> : IHandlerInvoker where TCommand : IRequest
+    private sealed class HandlerInvoker<TCommand> : IHandlerInvoker where TCommand : class, IRequest
     {
-        public Task InvokeAsync(IServiceProvider services, object command, CancellationToken cancellationToken)
+        public Task DispatchAsync(IServiceProvider services, object command, CancellationToken cancellationToken) =>
+            services.GetRequiredService<IMediator>().HandleAsync((TCommand)command, cancellationToken);
+
+        public Task InvokeHandlerAsync(IServiceProvider services, object command, CancellationToken cancellationToken)
         {
             var handler = services.GetService<ICommandHandler<TCommand>>()
                           ?? throw new InvalidOperationException($"Handler for '{typeof(TCommand).Name}' not found on the silo.");
@@ -140,23 +162,27 @@ internal static class CommandExecution
 }
 
 /// <summary>
-/// Marks the ambient flow as running inside an aggregate grain's turn, so the forwarding behaviour
-/// lets a command through instead of forwarding it again.
+/// Marks the ambient flow as running inside the turn of one aggregate, so the forwarding behaviour lets a
+/// command for that aggregate through instead of forwarding it again. A command for any other aggregate is
+/// forwarded to that aggregate's activation like any other.
 /// </summary>
 internal static class AggregateTurn
 {
-    private static readonly AsyncLocal<bool> Inside = new();
+    private static readonly AsyncLocal<Guid?> Current = new();
 
-    public static bool IsInside => Inside.Value;
+    /// <summary>Whether the ambient flow runs inside the turn of <paramref name="aggregateId"/>.</summary>
+    public static bool IsInside(Guid aggregateId) => Current.Value == aggregateId;
 
-    public static IDisposable Enter()
+    /// <summary>Enters the turn of <paramref name="aggregateId"/>; <see langword="null"/> marks no aggregate.</summary>
+    public static IDisposable Enter(Guid? aggregateId)
     {
-        Inside.Value = true;
-        return new Exit();
+        var previous = Current.Value;
+        Current.Value = aggregateId;
+        return new Exit(previous);
     }
 
-    private sealed class Exit : IDisposable
+    private sealed class Exit(Guid? previous) : IDisposable
     {
-        public void Dispose() => Inside.Value = false;
+        public void Dispose() => Current.Value = previous;
     }
 }

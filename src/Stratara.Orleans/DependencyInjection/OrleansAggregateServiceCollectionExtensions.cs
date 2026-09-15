@@ -55,7 +55,9 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// <see cref="Stratara.Abstractions.Outbox.ICommandIntentStore"/> — for example
     /// <c>AddStrataraIntentStore&lt;TWriteContext&gt;()</c> — and the host fails at start without one.
     /// Register it after the composite that registered the bus dispatcher, and register
-    /// <c>OutboxDrainWork</c> as singleton work so something resumes the commands.
+    /// <c>OutboxDrainWork</c> as singleton work so something resumes the commands. It takes the undecorated
+    /// dispatcher slot, so <c>AddAuthorizingCommandOutboxDispatcher</c> authorizes every enqueue whether it is
+    /// registered before or after this call. Each command runs through the mediator pipeline in its grain.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
@@ -83,11 +85,38 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.TryAddScoped<IntentHandOver>();
         services.TryAddScoped<IntentResumer>();
         services.AddOptions<HeavyWorkOptions>();
-        services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher, OrleansCommandDispatcher>();
+        services.TryAddScoped<OrleansCommandDispatcher>();
+        ReplaceUndecoratedDispatcher(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IntentStoreStartupCheck>());
         Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         AddIntentCompletion(services);
         return services;
+    }
+
+    /// <summary>
+    /// Takes the undecorated dispatcher slot: the one an enqueue-time decorator registered under the key
+    /// <c>typeof(ICommandOutboxDispatcher)</c> when there is one, so the decorator keeps wrapping this
+    /// dispatcher, and otherwise the last plain registration. A decorator registered after this call wraps
+    /// this dispatcher in turn.
+    /// </summary>
+    private static void ReplaceUndecoratedDispatcher(IServiceCollection services)
+    {
+        var slot = typeof(Stratara.Abstractions.Outbox.ICommandOutboxDispatcher);
+        var decorated = services.LastOrDefault(d => d.ServiceType == slot && d.IsKeyedService && Equals(d.ServiceKey, slot));
+        if (decorated is not null)
+        {
+            services.Remove(decorated);
+            services.AddKeyedScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher>(slot, (sp, _) => sp.GetRequiredService<OrleansCommandDispatcher>());
+            return;
+        }
+
+        var plain = services.LastOrDefault(d => d.ServiceType == slot && !d.IsKeyedService);
+        if (plain is not null)
+        {
+            services.Remove(plain);
+        }
+
+        services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher>(sp => sp.GetRequiredService<OrleansCommandDispatcher>());
     }
 
     /// <summary>Settings for heavy work: the cluster-wide limit, the permit retry and the permit lease.</summary>
