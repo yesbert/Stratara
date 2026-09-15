@@ -5,9 +5,10 @@ description: "Every Add*Services extension Stratara exposes, by package, with wh
 
 # DI Extensions Cheatsheet
 
-> **Derived page.** The behaviour described here is specified by the `host-composition` capability
-> under `openspec/specs/`. That specification is the source; this page explains and
-> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+> **Derived page.** The behaviour described here is specified by the `host-composition` and
+> `event-sourcing-store` capabilities under `openspec/specs/`. Those specifications are the source;
+> this page explains and illustrates them. Where the two disagree, the specification is right and this
+> page is a bug.
 
 The full menu of `Add*Services()` extensions Stratara exposes, by package.
 
@@ -39,7 +40,7 @@ that dispatches commands but runs no worker, a test host, a migration runner.
 | `services.AddMapping()` | The mapper the event-sourcing stack uses to materialize typed events from persisted rows |
 | `services.AddSessionContext()` | The scoped session context and its accessor. Pair with `app.UseMiddleware<SessionContextMiddleware>()` in an ASP.NET host |
 | `services.AddIdentity()` | The scoped identity accessors that resolve from the ambient session context |
-| `services.AddBackgroundTasks()` | The in-process background-task queue and its hosted service (capacity 100 pending items) |
+| `services.AddBackgroundTasks()` | The in-process `IBackgroundTaskQueue` and its hosted service: capacity 100 pending items (queuing waits when full), each item in its own scope, status kept for the most recent 10 000 items. See [Queue Background Work](../guides/queue-background-work.md) |
 | `services.AddOutboxDispatcher()` | `ICommandOutboxDispatcher` + `IEventBundleOutboxDispatcher` (scoped) and the bus they publish through; binds `Outbox` (for `Outbox:DurableBundles`) when the host carries a configuration |
 | `services.AddAuthorizingCommandOutboxDispatcher()` | Wraps the dispatcher so `[RequireRole]` / `[RequirePermission]` are enforced on the outbox path too, keeping the inner dispatcher resolvable |
 | `services.AddPipelineBehaviorWithResult<T>()` | Registers an open-generic pipeline behaviour for the result-returning request shape |
@@ -130,6 +131,16 @@ transport, but registering both in one host is still a smell — pick one.
 | `services.AddNpgsqlIdentityDbContextFactory<TContext>()` | The same for an identity-store context, **plus** a scoped resolution of the context itself so ASP.NET Identity can inject it directly |
 | `services.AddWriteStore(configuration)` | Binds `EventSourcingOptions` from the `EventSourcing` section, which carries no settings today. Snapshot cadence is the registered `ISnapshotStrategy` — `VersionThresholdSnapshotStrategy` (every 50 events) unless you register another |
 | `services.AddCommandAuditing()` | `CommandAuditBehavior` for both command shapes — persists an audit row per dispatched command; queries pass through (`Stratara.EventSourcing.Pipeline.CommandAudit`) |
+
+**The schema comes with the context.** A context derived from `WriteDbContext<TContext>` carries
+the store's tables and their constraints, so a migration generated from it makes the database refuse a
+second event at the same stream version (unique over `bucket_id`, `stream_id`, `version` on
+`event_stream_entry`, and the same on `snapshot`) and a second integrity anchor at the same sequence
+number (unique over `bucket_id`, `sequence_number` on `event_chain_anchor`). The framework's write,
+read and identity contexts share one assembly and each filters `ApplyConfigurationsFromAssembly` by
+namespace; a context of yours that shares an assembly with its siblings needs the same predicate, or
+its model drifts from its migrations unnoticed until it meets a real database. See
+[The store declares its own schema](../getting-started/di-composition.md#the-store-declares-its-own-schema).
 
 ## Outbox coordination + projection replay (`Stratara.Outbox.RabbitMQ`)
 

@@ -244,6 +244,45 @@ sweep never leads to the key being shredded anyway. Resume from the named plane.
   whether to retain it is a decision only you can take for your jurisdiction.
 - **System-wide (`Confidential`) key material**, which is not subject-scoped and is never erased.
 
+## Tenants themselves are event-sourced
+
+The tenant a membership points at is not a row somebody inserts. `Stratara.Domain` ships the `Tenant`
+aggregate (`Stratara.Domain.Multitenancy`), and its whole lifecycle is recorded as events, each a
+distinct fact in the tenant's stream:
+
+| Lifecycle step | Event |
+|---|---|
+| Created | `TenantCreated` |
+| Renamed | `TenantRenamed` |
+| Activated | `TenantActivated` |
+| Deactivated | `TenantDeactivated` |
+| Assigned to a customer | `TenantAssignedToCustomer` |
+| Default locale changed | `TenantDefaultLocaleChanged` |
+| Deleted | `TenantDeleted` |
+
+`Stratara.Projections` ships the read model: `TenantProjection` keeps a `TenantView` per tenant up to
+date from those events, and `ITenantRepository` reads it. It also handles `CustomerTenantsDeleted`,
+which removes every tenant of a customer from the read model in one go. Register the aggregate and
+the projection like your own:
+
+```csharp
+builder.Services
+    .AddAggregatesFromAssemblyContaining<Tenant>()
+    .AddProjectionsFromAssemblyContaining<IStrataraProjectionsMarker>();
+```
+
+**A new tenant belongs to itself.** `TenantCreated` declares the tenant it creates as the event's
+owning tenant. A platform operator whose session belongs to a different tenant can create a tenant,
+and the recorded owner is still the new tenant, not the operator's.
+
+**The read model is forgiving about delivery, because delivery is at least once:**
+
+- A lifecycle event for a tenant the read model does not hold, such as a rename that arrives before
+  the creation was applied, is ignored rather than failing the bundle.
+- A `TenantCreated` delivered twice writes nothing the second time.
+- A deletion that finds its row already removed by another writer absorbs the concurrency failure
+  rather than failing the bundle.
+
 ## See also
 
 - The runnable `Stratara.Sample.IdentityDirectory` sample wires membership, permissions, and scoped

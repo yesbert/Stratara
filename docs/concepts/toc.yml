@@ -2,6 +2,8 @@
   href: index.md
 - name: Tamper-Evident Streams
   href: tamper-evident-streams.md
+- name: Session Context
+  href: session-context.md
 - name: Tenant-Aware Encryption
   href: tenant-aware-encryption.md
 - name: Why Event Sourcing

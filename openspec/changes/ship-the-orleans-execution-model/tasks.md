@@ -1,11 +1,13 @@
 ## 0. Gate
 
-- [ ] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
+- [x] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
       Nothing below starts before it.
-- [ ] 0.2 Before approval, the owner decides whether any decision may follow in a patch. A decision
+- [x] 0.2 Before approval, the owner decides whether any decision may follow in a patch. A decision
       that does takes its requirements and scenarios out of this change into a change of its own, so
       nothing is archived as a guarantee the packages do not keep. Verify: the decision recorded here
       with its date, and `openspec validate --strict` green after any split.
+      Decided 2026-09-14 by the owner: no decision follows in a patch; the change ships whole, in the
+      minor release after 4.0.5.
 
 ## 1. Packages (D1, D12, D24)
 

@@ -5,9 +5,10 @@ description: "Turning on AES-GCM field encryption with [EncryptData], choosing a
 
 # Encrypt Sensitive Data
 
-> **Derived page.** The behaviour described here is specified by the `data-encryption` capability
-> under `openspec/specs/`. That specification is the source; this page explains and
-> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+> **Derived page.** The behaviour described here is specified by the `data-encryption` and
+> `outbox-and-messaging` capabilities under `openspec/specs/`. Those specifications are the source;
+> this page explains and illustrates them. Where the two disagree, the specification is right and this
+> page is a bug.
 
 Stratara provides AES-GCM encryption at serialization time via the `[EncryptData]` attribute. Tenant-aware **Additional Authenticated Data (AAD)** binds each ciphertext to the tenant — so a leaked key in tenant A's ciphertext can't be replayed against tenant B's record.
 
@@ -44,6 +45,22 @@ builder.Services.AddStrataraFileKeyStore(builder.Configuration);
 ```
 
 `AddStrataraFileKeyStore` registers an `EnvelopeFileKeyStore` — it stores **KEK-wrapped, versioned per-`KeyScope` data-encryption keys** (the KEK comes from `IMasterKeyProvider`; the default `FileMasterKeyProvider` reads the base64 KEK from config). Generate the KEK with `openssl rand -base64 32` (it must decode to **exactly 32 bytes** — the KEK is used directly as an AES-256-GCM key) and supply it via a secret store, never source control. Prefer an HSM / Key Vault / KMS `IKeyStore` implementation for the KEK custody seam in regulated environments — register it the same way, before `AddSecurity()`.
+
+### Several processes, one key store
+
+Several processes can share one store file, for example containers that bind-mount the same host
+directory at `StorePath`. The file store is built for that:
+
+- **A key one process creates, another resolves.** A process that is already running and asked for a
+  key it has not seen reloads the file once and finds it. Nobody has to restart.
+- **Two processes creating a key for the same new scope at once end up with the same key.** Creation
+  serialises through a lock file beside the store (`<StorePath>.lock`) and re-reads the file before it
+  writes, so the second writer reuses the first writer's key instead of silently replacing it.
+- **Two processes creating keys for different scopes at once keep both.**
+
+Every process must use the same master key (`Stratara:KeyStore:MasterKeyBase64`), because the keys in
+the file are wrapped under it. A networked file system (NFS, SMB) is not supported: it guarantees
+neither an atomic rename nor a reliable lock file.
 
 ## Keys, scopes, and blobs
 
@@ -141,6 +158,43 @@ section (`StrataraBlobEncryptionOptions.SectionName`):
 The default is `false` — a legacy stream is read as carrying no purpose field, and `"blob"` is
 assumed. New streams are always written in the v2 format regardless of this setting, so this is a
 read-path compatibility switch and nothing else.
+
+## Revoking a version, and reading what it encrypted
+
+### Revoking a version destroys exactly that version
+
+`IKeyStore.RevokeAsync(keyId)` makes that one key version permanently unresolvable. From then on
+`GetDataEncryptionKeyAsync` returns `null` for it, and data encrypted under it cannot be recovered.
+Other versions of the same scope are untouched.
+
+The scope stays usable. The next write that asks for the scope's current key
+(`GetOrCreateCurrentKeyAsync`) gets the highest version that is left, or a new one when none is, so
+new writes keep succeeding. The file store and `InMemoryKeyStore` from `Stratara.Testing` behave the
+same way. A scope does not go
+dead because its latest version was revoked. To destroy *every* version of a scope, which is the
+GDPR Art. 17 crypto-shred of a subject, use `EraseScopeAsync(scope)`.
+
+### Unreadable encrypted fields degrade rather than fail
+
+Erasing a subject's key must not make every record that mentions the subject unreadable. When
+`ISecureJsonSerializer` deserializes an object whose `[EncryptData]` field was encrypted under a key
+that no longer exists, **that field reads as absent** and the object's other fields are recovered
+normally. An event carrying one shredded field still rehydrates, and a projection still
+sees everything else in it.
+
+Two consequences to design for:
+
+- **Give an encrypted field a type that can be absent**, such as a `string`, another reference type,
+  or a nullable value type like `decimal?`. Such a field comes back as `null`. A non-nullable value
+  type such as `decimal` comes back as its default, `0`, which a reader cannot tell apart from a
+  stored zero.
+- **`[EncryptData]` on a class encrypts the object as one unit.** If that key is gone, the whole
+  object reads as `null`, not just one field.
+
+**Data written before a type was marked for encryption stays readable.** If you add `[EncryptData]`
+to a type that already has ordinary serialized data, that data is read as ordinary data rather than
+rejected. A field that is stored in the clear is taken as it is, while a field stored encrypted is
+decrypted. New writes are encrypted from the moment the attribute is in place.
 
 ## EncryptionMetadataDriftGuard
 

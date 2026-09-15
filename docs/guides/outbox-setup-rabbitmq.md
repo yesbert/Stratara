@@ -5,9 +5,10 @@ description: "Wiring the RabbitMQ message bus with publisher confirms, automatic
 
 # Outbox + RabbitMQ Setup
 
-> **Derived page.** The behaviour described here is specified by the `outbox-and-messaging` capability
-> under `openspec/specs/`. That specification is the source; this page explains and
-> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+> **Derived page.** The behaviour described here is specified by the `outbox-and-messaging`,
+> `projections` and `sagas` capabilities under `openspec/specs/`. Those specifications are the source;
+> this page explains and illustrates them. Where the two disagree, the specification is right and this
+> page is a bug.
 
 `Stratara.Outbox.RabbitMQ` provides the `IMessageBus` implementation backed by a RabbitMQ broker. It uses **publisher confirms** + **automatic reconnect** + **mandatory routing** — failed-to-deliver messages are caught + retried from the outbox table.
 
@@ -263,6 +264,41 @@ The `OutboxWorker` polls the outbox table every `OutboxOptions.PollingIntervalSe
 **A cycle takes one batch of each kind and ends.** Rows the broker would not accept stay in the table and are retried on the next interval; a cycle never re-reads what it has just failed to publish. That bounds the work a cycle can do, and it is what stops an unreachable broker — or a suppressed drain during a projection replay — from turning a cycle into a loop over the same rows. The practical consequence: a large accumulated backlog drains at one batch per interval rather than in a single pass. With the defaults that is 20 000 rows a minute, and both knobs below are yours.
 
 `OutboxOptions.BatchSize` (default 10_000) caps how many rows the worker claims per cycle, and `LockLeaseSeconds` (default 60) is how long a claimed batch stays leased to one worker. Bind them under the `Outbox` configuration section.
+
+## Running more than one outbox worker
+
+Every poll cycle runs under a lease-based lock (`IOutboxLock`), so two replicas never drain the same
+rows at the same time. A replica that does not get the lock logs it (`106_005`, debug level) and
+skips the cycle entirely, then tries again at the next interval.
+
+The lock registered by default always grants. That is correct for exactly one outbox worker and
+unsafe for several. Before you scale out, replace it with the Redis-leased lock:
+
+```csharp
+builder.AddCaching();                    // IConnectionMultiplexer from ConnectionStrings:redis
+builder.Services.AddRedisOutboxLock();   // replaces the always-granting default
+```
+
+The lease is `LockLeaseSeconds` from the `Outbox` section. Choose one comfortably longer than your
+slowest drain. A holder that stalls past its lease can overlap with a peer, and at-least-once
+delivery is what absorbs the resulting duplicate publish.
+
+### The lock is released only by its holder
+
+A release affects only the lease the releasing instance acquired. Each acquisition stores a token
+that only that instance holds, and the release removes the lease only while it still carries that
+token.
+
+That matters for a replica whose lease ran out mid-cycle, whether from a long garbage-collection
+pause, a stalled disk or a network hiccup. By the time it finishes and releases, another replica may
+have taken the lock. The late release leaves that replica's lease alone and the lock stays held.
+
+**An unavailable lock service counts as "not acquired", and the worker keeps running.** If Redis
+cannot be reached when a replica tries to acquire, the failure is logged as a warning (`106_106`)
+and the cycle is skipped, exactly as if another replica held the lock. The rows stay in the outbox
+table and the next interval tries again. If Redis cannot be reached at release, that is logged as
+well (`106_107`) and the lease expires on its own once `LockLeaseSeconds` have passed. Neither
+failure propagates out of the worker.
 
 ## Connection health
 

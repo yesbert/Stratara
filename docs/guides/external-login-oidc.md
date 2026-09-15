@@ -5,9 +5,10 @@ description: "Wiring log in with Microsoft, Google or any other OpenID Connect p
 
 # External Login (OpenID Connect) + JIT Provisioning
 
-> **Derived page.** The behaviour described here is specified by the `external-identity` capability
-> under `openspec/specs/`. That specification is the source; this page explains and
-> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+> **Derived page.** The behaviour described here is specified by the `external-identity` and
+> `tenant-directory` capabilities under `openspec/specs/`. Those specifications are the source; this
+> page explains and illustrates them. Where the two disagree, the specification is right and this page
+> is a bug.
 
 `Stratara.Identity.AspNetCore` adds external identity providers — the "log in with Microsoft /
 Keycloak / Google" flow — as ordinary ASP.NET Core authentication schemes, and provisions a local
@@ -134,6 +135,32 @@ onboarding route that is deliberately reachable without a tenant claim, an invit
 creates the membership before the first login rather than after it, or a domain-matching rule in
 your own code that grants a membership at provisioning time. The framework deliberately picks none
 of them for you.
+
+## Identity messages are localisable
+
+The messages the framework itself shows a user about identity can be localised. These are the
+failure messages that `IStrataraSignInManager` returns in `StrataraSignInResult.LoginFailureMessage`
+for a lockout, invalid credentials, an invalid two-factor code or an invalid recovery code. They are
+registered by `AddAspNetIdentityWithSignInManager<TUser, TIdentityDbContext>()`, which also calls
+`AddLocalization()`.
+
+| Active UI culture | Messages come back in |
+|---|---|
+| English (the default) | English |
+| German (`de`) | German |
+| A culture with no resources, such as `fr` | English, the default language, never a resource key |
+
+The language follows `CultureInfo.CurrentUICulture`. On a web host, map it from the request:
+
+```csharp
+app.UseRequestLocalization("en", "de");   // the first culture is the default
+```
+
+The message resources are anchored on `IdentityResources` (`Stratara.Identity.AspNetCore.Resources`),
+with keys such as `Identity.SignIn.Lockout`. To serve a language the framework does not ship, register
+your own `IStringLocalizer<IdentityResources>` that answers those keys. A "not allowed" sign-in
+deliberately gets the invalid-credentials message, so the message never confirms that an account
+exists.
 
 ## See also
 

@@ -128,6 +128,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 
 ## Concepts
 
+- [Session context](https://stratara.tech/concepts/session-context.html): who acts and for which tenant — populated from the authenticated request, ambient for the rest of the call, and failing closed when the tenant cannot be resolved; the `SessionContext` section keeps the tenant header off unless `AllowTenantHeader` is set.
 - [Tamper-evident streams](https://stratara.tech/concepts/tamper-evident-streams.html): a background worker hash-chains each committed event and writes periodic external anchors. Direct-DB tampering breaks the chain at that sequence, but **the framework does not verify on its own** — recomputing the chain is a deliberate pass you schedule (audit job or anchor check). Do not tell users that Stratara detects tampering automatically.
 - [Tenant-aware encryption](https://stratara.tech/concepts/tenant-aware-encryption.html): AES-GCM with tenant-bound AAD + crypto-shredding for GDPR Art. 17 erasure.
 - [Enforce tenant isolation](https://stratara.tech/guides/enforce-tenant-isolation.html): mediator-entrance guard via the `ITenantScopedRequest` marker + strict-mode `ICrossTenantAuthorizer`.
@@ -137,6 +138,8 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [API keys and PATs](https://stratara.tech/guides/api-keys-and-pats.html): machine-to-machine keys that resolve through the same membership/role plane as human actors.
 - [External login (OIDC) + JIT provisioning](https://stratara.tech/guides/external-login-oidc.html): link by issuer `sub`, verified-email gate, fail-closed against nOAuth-class takeover.
 - [Performance & scaling](https://stratara.tech/concepts/performance-and-scaling.html): reflection-free hot paths, 4096-bucket stream partitioning, competing-consumer workers.
+- [Observe the framework](https://stratara.tech/guides/observe-the-framework.html): all framework telemetry comes from one activity source (`Stratara.Application`) and one meter (`Stratara.Service`); instrument names are published constants and a stable contract.
+- [Queue background work](https://stratara.tech/guides/queue-background-work.html): `IBackgroundTaskQueue` runs in-process work in the background and reports each item's outcome.
 
 ## Packages (25, lockstep)
 

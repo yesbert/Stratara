@@ -41,7 +41,7 @@ For reads, always `IQuery<T>` via `Mediator`.
 
 ## When this is enforced
 
-- The `Stratara.Mediator.AuthorizingMediator` enforces `[RequireRole]` at the marker level — `IMediator.HandleAsync(...)` checks every command/query.
+- The mediator's authorizing decorator enforces `[RequireRole]` at the marker level — `IMediator.HandleAsync(...)` checks every command/query.
 - `AuthorizationStartupValidator` walks every registered handler at host-start and verifies the role-check chain is intact (`IAuthorizingMediator` marker, since v3.0.2). Hosts with a broken decorator chain fail-fast.
 
 ## Consumer convention

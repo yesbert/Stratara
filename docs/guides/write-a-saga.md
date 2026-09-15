@@ -14,9 +14,9 @@ A saga (a.k.a. process manager) reacts to events by issuing more commands. Strat
 ## The contract
 
 `ISaga` (`Stratara.Sagas.Abstractions`) is an **empty marker**, exactly like `IProjection`. The
-runtime reflects over your class for `HandleAsync(IEvent<TEvent>, CancellationToken)` methods and
-routes matching events to them. The difference from a projection is semantic: a projection updates a
-read model; a saga issues more commands.
+runtime reflects over your class for `HandleAsync` methods whose first parameter is the event payload
+or an `IEvent<TEvent>`, and routes matching events to them. The difference from a projection is
+semantic: a projection updates a read model; a saga issues more commands.
 
 ## A minimal saga
 
@@ -48,6 +48,29 @@ public sealed class TransferSaga(
 Write one `HandleAsync(IEvent<TEvent>, CancellationToken)` per event you react to — the payload is
 `@event.Data`. Handlers may be private; mark them `[UsedImplicitly]` so analyzers don't flag them.
 Commands go out through `ICommandOutboxDispatcher.EnqueueCommandAsync`.
+
+### Payload or envelope
+
+The handler above takes the enveloped event. A saga that needs only the event can take the
+**payload** instead:
+
+```csharp
+using JetBrains.Annotations;
+using Stratara.Sagas.Abstractions;
+
+public sealed class WelcomeBonusSaga(ICommandOutboxDispatcher dispatcher) : ISaga
+{
+    private const decimal WelcomeBonus = 10m;
+
+    [UsedImplicitly]
+    private async Task HandleAsync(AccountOpened opened, CancellationToken ct) =>
+        await dispatcher.EnqueueCommandAsync(new DepositCommand(opened.AccountId, WelcomeBonus), ct);
+}
+```
+
+When a relevant event arrives, the handler taking its payload is invoked; where no payload handler
+matches, the one taking `IEvent<TEvent>` is invoked instead — reach for that when you need the stream,
+the version or the owning tenant. Declare one or the other per event, not both.
 
 ## Register
 
@@ -89,6 +112,16 @@ process resumes from there. See
 
 A host that needs strict order sets `Sagas:DegreeOfParallelism` to `1`; a value that is not a
 positive number means one consumer per processor.
+
+## Watch it run
+
+The saga worker measures itself on the `Stratara.Service` meter: `saga.inflight` is the number of
+bundles being processed right now, `saga.events.processed` counts the events handed to sagas, tagged
+with `event.type` and `outcome`, and `saga.bundle.duration` records how long each bundle took, in
+milliseconds, tagged with `outcome`. The outcome is `success` or `failure`, so a failing saga shows up
+as a rising failure series rather than only as a slower one; an in-flight count that keeps climbing
+means the saga lane is not keeping up. What to subscribe to and how to export it is in
+[Observe the Framework](observe-the-framework.md).
 
 ## Compensation is your job
 

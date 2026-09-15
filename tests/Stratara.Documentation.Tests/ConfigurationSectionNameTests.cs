@@ -59,4 +59,27 @@ public class ConfigurationSectionNameTests
 
         Assert.True(DocumentationCorpus.MentionsToken(after, "BusEnvelopeIntegrity"));
     }
+
+    [Fact]
+    public void AMemberAccessDoesNotCountAsNamingTheSection()
+    {
+        const string prose = "Encryption keys are resolved from `SessionContext.TenantId` for the current request.";
+
+        Assert.False(DocumentationCorpus.MentionsToken(prose, "SessionContext"));
+    }
+
+    [Fact]
+    public void TheSectionNameAtTheEndOfASentenceCounts()
+    {
+        const string block = """
+            ```json
+            { "SessionContext": { "AllowTenantHeader": false } }
+            ```
+
+            The section is named SessionContext.
+            """;
+
+        Assert.True(DocumentationCorpus.MentionsToken(block, "SessionContext"));
+        Assert.True(DocumentationCorpus.MentionsToken("The section is named SessionContext.", "SessionContext"));
+    }
 }

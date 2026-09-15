@@ -5,9 +5,10 @@ description: "The mediator-entrance guard that rejects a request naming another 
 
 # Enforce Tenant Isolation
 
-> **Derived page.** The behaviour described here is specified by the `tenant-isolation` capability
-> under `openspec/specs/`. That specification is the source; this page explains and
-> illustrates it. Where the two disagree, the specification is right and this page is a bug.
+> **Derived page.** The behaviour described here is specified by the `tenant-isolation` and
+> `authorization` capabilities under `openspec/specs/`. Those specifications are the source; this page
+> explains and illustrates them. Where the two disagree, the specification is right and this page is a
+> bug.
 
 `Stratara.Mediator` runs request-level tenant enforcement as a **mediator pipeline behavior**: a
 request that opts in is checked *before* the handler, so a command or query naming a tenant other
@@ -109,6 +110,60 @@ unchanged:
 builder.Services.AddStrataraProblemDetails();   // Stratara.ServiceDefaults.AspNetCore
 app.UseExceptionHandler();
 ```
+
+## Filter tenant-scoped rows at the database as well
+
+The entrance guard covers requests. It does not cover a query that reaches your database context some
+other way: a background job, a projection helper, a repository method a handler calls with the wrong
+id. The second layer, the tenant query filter, is independent on purpose. It constrains **every**
+query a tenant-scoped context issues, including the ones the guard never saw.
+
+Two declarations and one call switch it on:
+
+- **Mark the entity** with `IMultiTenant` (`Stratara.Abstractions.Entities`), which gives it a
+  `TenantId`. Marking is your decision: an entity that does not implement it gets no filter.
+- **Make the context tenant-scoped** by implementing `ITenantScopedDbContext`
+  (`Stratara.EventSourcing.EntityFrameworkCore.Abstractions`), whose `TenantId` is the ambient tenant.
+  Usually that is the data-owner tenant of the current session.
+- **Call `ApplyGlobalTenantQueryFilters(this)`** on the `ModelBuilder` in `OnModelCreating`, after
+  the entities are in the model. It installs a filter on every entity type that implements
+  `IMultiTenant` at that moment.
+
+```csharp
+using Stratara.Abstractions.Entities;
+using Stratara.Abstractions.Session;
+using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
+using Stratara.EventSourcing.EntityFrameworkCore.Extensions;
+
+public sealed class InvoiceView : IMultiTenant
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public decimal Total { get; set; }
+}
+
+public sealed class InvoiceReadContext(
+    DbContextOptions<InvoiceReadContext> options,
+    ISessionContextProvider sessions)
+    : DbContext(options), ITenantScopedDbContext
+{
+    public Guid TenantId => sessions.Current?.TenantId ?? Guid.Empty;
+
+    public DbSet<InvoiceView> Invoices => Set<InvoiceView>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<InvoiceView>();
+        modelBuilder.ApplyGlobalTenantQueryFilters(this);   // last: filters what is already mapped
+    }
+}
+```
+
+A query through that context returns only rows whose `TenantId` matches the context's `TenantId`.
+`context.Invoices.ToListAsync()` cannot return another tenant's invoice, whatever the calling code
+forgot to check. A context without a session resolves to the empty identifier and sees no tenant's
+rows. Entity Framework Core's own `IgnoreQueryFilters()` still switches the filter off for a single
+query, so treat that call the way you would treat any cross-tenant operation.
 
 ## Related
 
