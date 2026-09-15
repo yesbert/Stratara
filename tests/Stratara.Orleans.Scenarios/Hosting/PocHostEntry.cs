@@ -25,6 +25,7 @@ public static class PocHostEntry
         ["projection-grain"] = () => new ProjectionScenario(ProjectionPath.Grain),
         ["projection-hybrid"] = () => new ProjectionScenario(ProjectionPath.Hybrid),
         ["saga"] = () => new SagaScenario(),
+        ["singleton"] = () => new SingletonScenario(),
     };
 
     public static async Task<int> RunAsync(string scenarioName)

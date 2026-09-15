@@ -116,11 +116,34 @@ public sealed class PocHostProcess : IAsyncDisposable
             ?.Value;
 
     /// <summary>Sends one command line and returns the host's reply.</summary>
+    /// <exception cref="InvalidOperationException">The host has ended; the message carries its exit code and log.</exception>
     public async Task<string> SendAsync(string command)
     {
-        await _process.StandardInput.WriteLineAsync(command);
-        await _process.StandardInput.FlushAsync();
+        try
+        {
+            if (_process.HasExited)
+            {
+                throw Ended(command, null);
+            }
+
+            await _process.StandardInput.WriteLineAsync(command);
+            await _process.StandardInput.FlushAsync();
+        }
+        catch (IOException ex)
+        {
+            throw Ended(command, ex);
+        }
+
         return await ReadReplyAsync();
+    }
+
+    private InvalidOperationException Ended(string command, Exception? cause)
+    {
+        _process.WaitForExit(TimeSpan.FromSeconds(5));
+        var exitCode = _process.HasExited ? _process.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture) : "unknown";
+        return new InvalidOperationException(
+            $"The host ended before '{command}' (exit code {exitCode}). Log:{Environment.NewLine}{string.Join(Environment.NewLine, _log.TakeLast(80))}",
+            cause);
     }
 
     /// <summary>

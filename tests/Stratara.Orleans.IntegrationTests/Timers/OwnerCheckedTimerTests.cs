@@ -17,7 +17,7 @@ public sealed class OwnerCheckedTimerTests(PostgreSqlFixture postgres, RedisFixt
 {
     private const string OrleansDatabase = "poc_orleans";
     private const int Owners = 20;
-    private static readonly TimeSpan DueIn = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DueIn = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan RetryPeriod = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan SettleTimeout = TimeSpan.FromSeconds(20);
 
@@ -28,18 +28,20 @@ public sealed class OwnerCheckedTimerTests(PostgreSqlFixture postgres, RedisFixt
         using var app = await StartAsync(host, siloPort: 11131, gatewayPort: 30020);
         var timers = app.Services.GetRequiredService<IDurableTimers>();
         var owners = Enumerable.Range(0, Owners).Select(i => $"removed-{Guid.NewGuid():N}-{i}").ToList();
+        var dueAt = DateTimeOffset.UtcNow + DueIn;
 
         foreach (var owner in owners)
         {
             host.AddOwner(owner);
-            await timers.RegisterAsync(new TimerRegistration(owner, "expire", DateTimeOffset.UtcNow + DueIn));
+            await timers.RegisterAsync(new TimerRegistration(owner, "expire", dueAt));
         }
 
-        await Task.Delay(DueIn / 4);
         foreach (var owner in owners)
         {
             host.RemoveOwner(owner);
         }
+
+        Assert.True(DateTimeOffset.UtcNow < dueAt, "the owners were removed after their timers came due, so the run proves nothing");
 
         await WaitUntilNoTimersAsync(timers, owners);
 
@@ -55,12 +57,16 @@ public sealed class OwnerCheckedTimerTests(PostgreSqlFixture postgres, RedisFixt
         using var app = await StartAsync(host, siloPort: 11141, gatewayPort: 30030);
         var timers = app.Services.GetRequiredService<IDurableTimers>();
         var owners = Enumerable.Range(0, Owners).Select(i => $"kept-{Guid.NewGuid():N}-{i}").ToList();
+        var dueAt = DateTimeOffset.UtcNow + DueIn;
 
         foreach (var owner in owners)
         {
             host.AddOwner(owner);
-            await timers.RegisterAsync(new TimerRegistration(owner, "expire", DateTimeOffset.UtcNow + DueIn));
+            await timers.RegisterAsync(new TimerRegistration(owner, "expire", dueAt));
         }
+
+        Assert.True(DateTimeOffset.UtcNow < dueAt, "the timers came due while they were still being registered, so the run proves nothing");
+        Assert.Empty(host.Fired);
 
         await WaitUntilNoTimersAsync(timers, owners);
         await Task.Delay(RetryPeriod * 2);

@@ -10,7 +10,8 @@ namespace Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 /// <summary>
 /// A silo with the durable timers, whose owners and firings live in two PostgreSQL tables so that a
 /// kill loses neither. Commands: <c>add-owner id</c>, <c>remove-owner id</c>,
-/// <c>register owner purpose dueInMs</c>, <c>timers owner</c>, <c>firings owner</c>.
+/// <c>register owner purpose dueInMs</c>, <c>register-at owner purpose dueAtUnixMs</c>, <c>timers owner</c>,
+/// <c>firings owner</c>.
 /// </summary>
 public sealed class TimersScenario : IPocScenario
 {
@@ -48,6 +49,10 @@ public sealed class TimersScenario : IPocScenario
             case "register":
                 var dueIn = TimeSpan.FromMilliseconds(int.Parse(parts[3], CultureInfo.InvariantCulture));
                 await timers.RegisterAsync(new TimerRegistration(parts[1], parts[2], DateTimeOffset.UtcNow + dueIn));
+                return "ok";
+            case "register-at":
+                var dueAt = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(parts[3], CultureInfo.InvariantCulture));
+                await timers.RegisterAsync(new TimerRegistration(parts[1], parts[2], dueAt));
                 return "ok";
             case "timers":
                 return (await timers.ListAsync(parts[1])).Count.ToString(CultureInfo.InvariantCulture);
