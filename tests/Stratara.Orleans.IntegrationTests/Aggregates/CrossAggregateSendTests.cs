@@ -6,6 +6,7 @@ using Stratara.Abstractions.Session;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
 using IRequest = Stratara.Abstractions.Mediator.IRequest;
+using Stratara.Orleans.IntegrationTests.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.Aggregates;
 
@@ -52,7 +53,7 @@ public sealed class CrossAggregateSendTests(PostgreSqlFixture postgres, RedisFix
             .AddScoped<ICommandHandler<HoldTurn>, HoldTurnHandler>()
             .AddScoped<ICommandHandler<SendToOther>, SendToOtherHandler>()
             .AddScoped<ICommandHandler<MarkTurn>, MarkTurnHandler>()
-            .AddAggregatesFromAssemblyContaining<CrossAggregateSendTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<HoldTurn>()
             .AddTrustedType<SendToOther>()
             .AddTrustedType<MarkTurn>()

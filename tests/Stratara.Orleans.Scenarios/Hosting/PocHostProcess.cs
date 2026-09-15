@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Threading.Channels;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting;
@@ -12,6 +13,8 @@ namespace Stratara.Orleans.IntegrationTests.Hosting;
 public sealed class PocHostProcess : IAsyncDisposable
 {
     private const string HostAssembly = "Stratara.Orleans.Benchmarks";
+    private const string HostPathVariable = "STRATARA_SCENARIO_HOST";
+    private const string HostPathMetadata = "StrataraScenarioHost";
     private static readonly TimeSpan ReplyTimeout = TimeSpan.FromMinutes(2);
 
     private readonly Process _process;
@@ -90,20 +93,27 @@ public sealed class PocHostProcess : IAsyncDisposable
     }
 
     /// <summary>
-    /// The benchmark executable beside this test assembly's output: the same configuration and
-    /// framework, one project directory over.
+    /// The scenario host executable: where <see cref="HostPathVariable"/> says, or else where the build that
+    /// produced the running process recorded it as assembly metadata.
     /// </summary>
     private static string HostAssemblyPath()
     {
-        var testOutput = Path.GetDirectoryName(typeof(PocHostProcess).Assembly.Location)!;
-        var framework = Path.GetFileName(testOutput);
-        var configuration = Path.GetFileName(Path.GetDirectoryName(testOutput)!);
-        var testsRoot = Path.GetFullPath(Path.Combine(testOutput, "..", "..", "..", ".."));
-        var path = Path.Combine(testsRoot, HostAssembly, "bin", configuration, framework, HostAssembly + ".dll");
+        var path = Environment.GetEnvironmentVariable(HostPathVariable) is { Length: > 0 } configured
+            ? configured
+            : RecordedHostPath()
+              ?? throw new InvalidOperationException($"No build recorded where {HostAssembly} is. Build the integration tests, which build it, or set {HostPathVariable} to its assembly.");
         return File.Exists(path)
             ? path
-            : throw new FileNotFoundException($"The host executable is not built: {path}. Build {HostAssembly} in the same configuration first.");
+            : throw new FileNotFoundException($"The scenario host is not built: {path}. Build the integration tests, or set {HostPathVariable} to the host's assembly.");
     }
+
+    private static string? RecordedHostPath() =>
+        new[] { Assembly.GetEntryAssembly() }
+            .Concat(AppDomain.CurrentDomain.GetAssemblies())
+            .OfType<Assembly>()
+            .SelectMany(assembly => assembly.GetCustomAttributes<AssemblyMetadataAttribute>())
+            .FirstOrDefault(metadata => metadata.Key == HostPathMetadata && !string.IsNullOrEmpty(metadata.Value))
+            ?.Value;
 
     /// <summary>Sends one command line and returns the host's reply.</summary>
     public async Task<string> SendAsync(string command)

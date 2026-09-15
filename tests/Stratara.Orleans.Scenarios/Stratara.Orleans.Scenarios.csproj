@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+    <!-- The hosts the Orleans integration tests start, kill and restart, with what they stand on: the silo,
+         the stores, the probes and the container fixtures. The scenario host executable and the integration
+         tests both reference this library, so neither references the other and the tests can build the host.
+         The types keep the namespaces they had in the test project. -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Orleans.Clustering.AdoNet"/>
+        <PackageReference Include="Microsoft.Orleans.GrainDirectory.Redis"/>
+        <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting"/>
+        <PackageReference Include="Testcontainers.PostgreSql"/>
+        <PackageReference Include="Testcontainers.RabbitMq"/>
+        <PackageReference Include="Testcontainers.Redis"/>
+        <PackageReference Include="xunit.v3.extensibility.core"/>
+    </ItemGroup>
+    <ItemGroup>
+        <None Update="OrleansSql/*.sql">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="../../src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Orleans/Stratara.Orleans.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj"/>
+    </ItemGroup>
+</Project>

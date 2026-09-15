@@ -20,6 +20,7 @@
         <InternalsVisibleTo Include="Stratara.Orleans.Tests"/>
         <InternalsVisibleTo Include="Stratara.Orleans.IntegrationTests"/>
         <InternalsVisibleTo Include="Stratara.Orleans.Benchmarks"/>
+        <InternalsVisibleTo Include="Stratara.Orleans.Scenarios"/>
     </ItemGroup>
 
     <ItemGroup>

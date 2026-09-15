@@ -25,12 +25,3 @@ public sealed class RabbitMqFixture : IAsyncLifetime
         await _container.DisposeAsync();
     }
 }
-
-[CollectionDefinition(Name)]
-public sealed class InfrastructureCollection :
-    ICollectionFixture<PostgreSqlFixture>,
-    ICollectionFixture<RedisFixture>,
-    ICollectionFixture<RabbitMqFixture>
-{
-    public const string Name = nameof(InfrastructureCollection);
-}

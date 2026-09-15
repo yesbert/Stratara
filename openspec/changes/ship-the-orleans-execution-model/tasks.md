@@ -303,6 +303,16 @@
 - [ ] 7.1 The scenario host's path from build-time metadata with an environment fallback; the integration
       project builds the host; the scenario-host step leaves `.github/workflows/integration.yml`. Verify:
       the workflow green without the step, and the suite green when run from a custom output directory.
+      Implemented, workflow run pending with 7.2 (owner decision 2026-09-15: a scenario library). The scenarios, the
+      silo and store helpers, the probe projections, the heavy-work probes, `PostgresTimerHostSchema` and the container
+      fixtures moved from the test project into `tests/Stratara.Orleans.Scenarios`, keeping their namespaces; the
+      xUnit collection definition stays in the tests. The scenario host (`Stratara.Orleans.Benchmarks`) and the
+      integration tests both reference the library; the tests reference the host with `ReferenceOutputAssembly=false`,
+      so building them builds it, and an MSBuild target records the host's `TargetPath` as assembly metadata that
+      `PocHostProcess` reads, with `STRATARA_SCENARIO_HOST` overriding it. The tests' assembly scans name `Counter` and
+      `CounterViewProjection`, so they register what they did. The scenario-host step left `integration.yml`. Locally:
+      `SagaProcessTimeoutTests` 2/2 from a build with `-o /tmp/orleans-custom-out` (the host found through the
+      recorded path), `DurableDirectoryCheckTests` and `ArrivalOrderTests` 4/4 from the default output.
 - [ ] 7.2 Kill tests with due times relative to a start signal and asserted preconditions; singleton work
       taken over by the surviving silo; a timer across two silos. Verify: the integration workflow green
       three runs in a row on the branch.

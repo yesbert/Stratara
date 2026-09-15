@@ -74,7 +74,7 @@ public sealed class TimerReentrancyTests(PostgreSqlFixture postgres, RedisFixtur
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(postgres.ConnectionStringFor("poc_ticking_read"))
-            .AddAggregatesFromAssemblyContaining<TimerReentrancyTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<Counter>()
             .AddTrustedType<CounterCreated>()
             .AddTrustedType<CounterIncremented>()

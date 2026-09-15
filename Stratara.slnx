@@ -67,6 +67,7 @@
     <Project Path="tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj" />
     <Project Path="tests/Stratara.Orleans.Benchmarks/Stratara.Orleans.Benchmarks.csproj" />
     <Project Path="tests/Stratara.Orleans.IntegrationTests/Stratara.Orleans.IntegrationTests.csproj" />
+    <Project Path="tests/Stratara.Orleans.Scenarios/Stratara.Orleans.Scenarios.csproj" />
     <Project Path="tests/Stratara.Orleans.Tests/Stratara.Orleans.Tests.csproj" />
     <Project Path="tests/Stratara.Outbox.RabbitMQ.Tests/Stratara.Outbox.RabbitMQ.Tests.csproj" />
     <Project Path="tests/Stratara.Projections.Tests/Stratara.Projections.Tests.csproj" />

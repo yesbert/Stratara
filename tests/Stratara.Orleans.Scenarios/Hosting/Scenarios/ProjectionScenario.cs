@@ -231,7 +231,7 @@ public sealed class KillingBundleDispatcher(IEventBundleOutboxDispatcher inner, 
 }
 
 /// <summary>A read context on a connection string of its own, since the framework's registration reads only <c>defaultdb</c>.</summary>
-internal static class ReadStoreRegistration
+public static class ReadStoreRegistration
 {
     public static IServiceCollection AddNpgsqlReadDbContextFactoryOn<TContext>(this IServiceCollection services, string connectionString)
         where TContext : DbContext

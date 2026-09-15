@@ -59,7 +59,7 @@ public sealed class SagaGrainTests(PostgreSqlFixture postgres, RedisFixture redi
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(postgres.ConnectionStringFor("poc_saga_read"))
-            .AddAggregatesFromAssemblyContaining<SagaGrainTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<Counter>()
             .AddTrustedType<CounterCreated>()
             .AddTrustedType<CounterIncremented>()

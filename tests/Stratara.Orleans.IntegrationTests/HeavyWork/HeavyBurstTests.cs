@@ -13,6 +13,7 @@ using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Store;
+using Stratara.Orleans.IntegrationTests.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.HeavyWork;
 
@@ -194,7 +195,7 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<InteractiveProbe>, InteractiveProbeHandler>()
             .AddScoped<ICommandHandler<HeavyProbe>, HeavyProbeHandler>()
-            .AddAggregatesFromAssemblyContaining<HeavyBurstTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<InteractiveProbe>()
             .AddTrustedType<HeavyProbe>()
             .AddStrataraAggregateGrains()
@@ -242,18 +243,4 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
         };
         File.WriteAllText(Path.Combine(run, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
     }
-}
-
-public sealed record InteractiveProbe(Guid AggregateId) : ICommand, IAggregateScopedCommand;
-
-public sealed record HeavyProbe(Guid AggregateId, int DelayMs) : ICommand, IAggregateScopedCommand, IHeavyCommand;
-
-public sealed class InteractiveProbeHandler : ICommandHandler<InteractiveProbe>
-{
-    public Task HandleAsync(InteractiveProbe command, CancellationToken cancellationToken) => Task.CompletedTask;
-}
-
-public sealed class HeavyProbeHandler : ICommandHandler<HeavyProbe>
-{
-    public Task HandleAsync(HeavyProbe command, CancellationToken cancellationToken) => Task.Delay(command.DelayMs, cancellationToken);
 }

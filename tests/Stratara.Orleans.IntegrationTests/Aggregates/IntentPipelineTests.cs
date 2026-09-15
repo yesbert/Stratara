@@ -12,6 +12,7 @@ using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Store;
 using Stratara.Orleans.IntegrationTests.Timers;
+using Stratara.Orleans.IntegrationTests.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.Aggregates;
 
@@ -65,7 +66,7 @@ public sealed class IntentPipelineTests(PostgreSqlFixture postgres, RedisFixture
             .AddScoped<IValidator<RecordValidated>, RecordValidatedValidator>()
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<RecordValidated>, RecordValidatedHandler>()
-            .AddAggregatesFromAssemblyContaining<IntentPipelineTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<RecordValidated>()
             .AddSingleton(new AppliedTable(store))
             .AddStrataraAggregateGrains()

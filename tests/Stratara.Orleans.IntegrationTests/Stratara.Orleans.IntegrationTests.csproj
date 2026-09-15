@@ -22,14 +22,31 @@
         <PackageReference Include="coverlet.collector"/>
     </ItemGroup>
     <ItemGroup>
-        <None Update="OrleansSql/*.sql">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-    </ItemGroup>
-    <ItemGroup>
         <ProjectReference Include="../../src/Stratara.EventSourcing.WorkerDefaults/Stratara.EventSourcing.WorkerDefaults.csproj"/>
         <ProjectReference Include="../../src/Stratara.Orleans/Stratara.Orleans.csproj"/>
         <ProjectReference Include="../../src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj"/>
         <ProjectReference Include="../../src/Stratara.Validation/Stratara.Validation.csproj"/>
+        <ProjectReference Include="../Stratara.Orleans.Scenarios/Stratara.Orleans.Scenarios.csproj"/>
+        <!-- The scenario host the kill tests start: built with this project, never referenced as an assembly. -->
+        <ProjectReference Include="$(ScenarioHostProject)" ReferenceOutputAssembly="false"/>
     </ItemGroup>
+
+    <PropertyGroup>
+        <ScenarioHostProject>$(MSBuildThisFileDirectory)../Stratara.Orleans.Benchmarks/Stratara.Orleans.Benchmarks.csproj</ScenarioHostProject>
+    </PropertyGroup>
+
+    <!-- Records where the scenario host was built, as assembly metadata PocHostProcess reads; the environment
+         variable STRATARA_SCENARIO_HOST overrides it. The path follows the build's configuration and output
+         directory rather than the test output's layout. -->
+    <Target Name="EmbedScenarioHostPath" BeforeTargets="GetAssemblyAttributes">
+        <MSBuild Projects="$(ScenarioHostProject)" Targets="GetTargetPath" RemoveProperties="TargetFramework">
+            <Output TaskParameter="TargetOutputs" PropertyName="ScenarioHostTargetPath"/>
+        </MSBuild>
+        <ItemGroup>
+            <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+                <_Parameter1>StrataraScenarioHost</_Parameter1>
+                <_Parameter2>$(ScenarioHostTargetPath)</_Parameter2>
+            </AssemblyAttribute>
+        </ItemGroup>
+    </Target>
 </Project>

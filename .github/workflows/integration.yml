@@ -40,7 +40,8 @@ jobs:
           docker --version
           docker info | head -20
 
-      # The loop picks up every *IntegrationTests project, so adding one needs no edit here.
+      # The loop picks up every *IntegrationTests project, so adding one needs no edit here. The Orleans
+      # project builds the scenario host its kill tests spawn and records where it put it.
       - name: Build the integration test projects
         shell: bash
         run: |
@@ -50,13 +51,6 @@ jobs:
             echo "=== Building ${csproj} ==="
             dotnet build "${csproj}" -c Release --nologo
           done
-
-      # The Orleans kill-and-restart tests spawn a second process, the scenario host in
-      # Stratara.Orleans.Benchmarks, and look for its assembly beside their own output in the same
-      # configuration. The host references the test project, not the other way round, so the loop
-      # above never builds it; without this step every kill test fails before it starts.
-      - name: Build the scenario host the Orleans integration tests spawn
-        run: dotnet build tests/Stratara.Orleans.Benchmarks/Stratara.Orleans.Benchmarks.csproj -c Release --nologo
 
       - name: Run the integration tests
         shell: bash

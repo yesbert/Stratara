@@ -6,6 +6,7 @@ using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
+using Stratara.Orleans.IntegrationTests.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.Aggregates;
 
@@ -83,7 +84,7 @@ public sealed class ArrivalOrderTests(PostgreSqlFixture postgres, RedisFixture r
             .AddMediator()
             .AddScoped<ICommandHandler<Approve>, ApproveHandler>()
             .AddScoped<ICommandHandler<Cancel>, CancelHandler>()
-            .AddAggregatesFromAssemblyContaining<ArrivalOrderTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<Approve>()
             .AddTrustedType<Cancel>()
             .AddStrataraAggregateGrains()

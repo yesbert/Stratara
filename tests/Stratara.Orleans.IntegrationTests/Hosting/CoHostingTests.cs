@@ -12,6 +12,7 @@ using Stratara.Abstractions.Singleton;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Store;
+using Stratara.Orleans.IntegrationTests.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting;
 
@@ -99,7 +100,7 @@ public sealed class CoHostingTests(PostgreSqlFixture postgres, RedisFixture redi
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<PingCommand>, PingCommandHandler>()
             .AddTrustedType<PingCommand>()
-            .AddAggregatesFromAssemblyContaining<CoHostingTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddSingleton<CommandLog>()
             .AddSingleton<CoHostingWorkRuns>()
             .AddStrataraSingletonWork<CoHostingWork>(options => options.KeepAlivePeriod = TimeSpan.FromSeconds(5));

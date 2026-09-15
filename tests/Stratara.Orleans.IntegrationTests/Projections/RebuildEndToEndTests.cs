@@ -83,7 +83,7 @@ public sealed class RebuildEndToEndTests(PostgreSqlFixture postgres, RedisFixtur
             .AddEventSourcing()
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(read)
-            .AddAggregatesFromAssemblyContaining<RebuildEndToEndTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<Counter>()
             .AddTrustedType<CounterCreated>()
             .AddTrustedType<CounterIncremented>()
