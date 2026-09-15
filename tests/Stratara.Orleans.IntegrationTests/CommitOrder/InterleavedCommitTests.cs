@@ -5,6 +5,8 @@ using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Store;
 using Xunit.Sdk;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 
@@ -116,7 +118,7 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
 
         await transactionA.CommitAsync();
         await secondWriter;
-        await Task.Delay(store.Options.SafetyWindow + TimeSpan.FromMilliseconds(20));
+        await Task.Delay(SafetyWindowReader<PocCommitOrderWriteDbContext>.Window + TimeSpan.FromMilliseconds(20));
         await DrainAsync(sut, partition, position, seen);
 
         AssertSkipExpectation(reader.Name, expected: reader.SkipsInFastCase, skipped: !seen.Contains(entryA.Id));
@@ -192,7 +194,7 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
         await secondWriter;
 
         await Task.Delay(settle);
-        await Task.Delay(store.Options.SafetyWindow + TimeSpan.FromMilliseconds(20));
+        await Task.Delay(SafetyWindowReader<PocCommitOrderWriteDbContext>.Window + TimeSpan.FromMilliseconds(20));
         await DrainAsync(reader, partition, position, seen);
 
         return !seen.Contains(entryA.Id);

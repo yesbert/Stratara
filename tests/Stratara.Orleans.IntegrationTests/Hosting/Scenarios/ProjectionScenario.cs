@@ -12,6 +12,8 @@ using Stratara.Contracts.Session;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.IntegrationTests.Projections;
 using Stratara.Orleans.IntegrationTests.Store;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 
@@ -75,7 +77,8 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
             builder.UseOrleans(silo => settings.ConfigureSilo(silo));
             builder.Services
                 .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
-                .AddStrataraProjectionGrains<PocReadDbContext>(
+                .AddStrataraProjectionCheckpoints<PocReadDbContext>()
+                .AddStrataraProjectionGrains(
                     options =>
                     {
                         options.PollInterval = TimeSpan.FromSeconds(2);

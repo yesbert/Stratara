@@ -96,9 +96,6 @@ internal sealed class OrleansCommandDispatcher(
 /// <summary>Settings for the Orleans-backed command dispatcher.</summary>
 public sealed class OrleansDispatchOptions
 {
-    /// <summary>The configuration section the options bind from.</summary>
-    public const string SectionName = "Orleans:Dispatch";
-
     /// <summary>
     /// How long a recorded intent is assumed to be in flight before the drain hands it over again.
     /// Shorter than the slowest handler means that handler may run twice.

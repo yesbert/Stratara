@@ -5,29 +5,38 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <!-- Proof of concept of change prove-an-orleans-execution-model (Tier-C). Not packable and not in
-             Stratara.Publish.slnf: nothing here is published until a follow-up change decides so. -->
-        <IsPackable>false</IsPackable>
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Orleans</PackageId>
+        <Description>The Orleans execution model for the Stratara event-sourced stack — one activation per aggregate across the cluster, commands recorded before the call returns and resumed after a crash, projections and sagas that read the store in commit order from a checkpoint, singleton work, owner-checked durable timers and heavy work bounded across the cluster.</Description>
+        <PackageTags>orleans;virtual-actors;actors;event-sourcing;cqrs;projections;sagas;durable-timers;distributed;dotnet;stratara</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Stratara.Abstractions\Stratara.Abstractions.csproj"/>
-        <ProjectReference Include="..\Stratara.EventSourcing.EntityFrameworkCore\Stratara.EventSourcing.EntityFrameworkCore.csproj"/>
         <ProjectReference Include="..\Stratara.Projections\Stratara.Projections.csproj"/>
         <ProjectReference Include="..\Stratara.Resilience\Stratara.Resilience.csproj"/>
         <ProjectReference Include="..\Stratara.Sagas\Stratara.Sagas.csproj"/>
+        <ProjectReference Include="..\Stratara.Shared\Stratara.Shared.csproj"/>
     </ItemGroup>
 
+    <!-- A range bounded by the next Orleans major, so a host on a newer minor inside it is not moved by a
+         Stratara patch. The build resolves the floor, which is the central pin in Directory.Packages.props. -->
     <ItemGroup>
-        <PackageReference Include="Microsoft.Orleans.Reminders"/>
-        <PackageReference Include="Microsoft.Orleans.Sdk"/>
-        <PackageReference Include="Microsoft.Orleans.Server"/>
+        <PackageReference Include="Microsoft.Orleans.Reminders" VersionOverride="[10.3.1, 11.0.0)"/>
+        <PackageReference Include="Microsoft.Orleans.Runtime" VersionOverride="[10.3.1, 11.0.0)"/>
+        <PackageReference Include="Microsoft.Orleans.Sdk" VersionOverride="[10.3.1, 11.0.0)"/>
     </ItemGroup>
 
     <ItemGroup>
         <InternalsVisibleTo Include="Stratara.Orleans.Tests"/>
         <InternalsVisibleTo Include="Stratara.Orleans.IntegrationTests"/>
         <InternalsVisibleTo Include="Stratara.Orleans.Benchmarks"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
     </ItemGroup>
 
 </Project>

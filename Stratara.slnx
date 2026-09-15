@@ -24,6 +24,7 @@
     <Project Path="src/Stratara.Infrastructure/Stratara.Infrastructure.csproj" />
     <Project Path="src/Stratara.Mediator/Stratara.Mediator.csproj" />
     <Project Path="src/Stratara.Orleans/Stratara.Orleans.csproj" />
+    <Project Path="src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj" />
     <Project Path="src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj" />
     <Project Path="src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj" />
     <Project Path="src/Stratara.Projections/Stratara.Projections.csproj" />

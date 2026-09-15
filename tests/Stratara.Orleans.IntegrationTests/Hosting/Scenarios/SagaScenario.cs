@@ -11,6 +11,8 @@ using Stratara.Orleans.IntegrationTests.Projections;
 using Stratara.Orleans.IntegrationTests.Sagas;
 using Stratara.Orleans.IntegrationTests.Store;
 using Stratara.Sagas.Abstractions;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 
@@ -46,7 +48,8 @@ public sealed class SagaScenario : IPocScenario
             .AddScoped<ISaga, TimeoutSaga>()
             .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
-            .AddStrataraSagaGrains<PocReadDbContext>(options =>
+            .AddStrataraProjectionCheckpoints<PocReadDbContext>()
+            .AddStrataraSagaGrains(options =>
             {
                 options.PollInterval = TimeSpan.FromSeconds(2);
                 if (settings.Profile == PocSiloProfile.Test)

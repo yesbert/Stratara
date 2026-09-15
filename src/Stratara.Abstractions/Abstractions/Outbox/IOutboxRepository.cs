@@ -28,6 +28,25 @@ public interface IOutboxRepository
     /// <summary>Remove an entry once it has been published successfully.</summary>
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 
+    /// <summary>Removes a set of entries in one call.</summary>
+    /// <remarks>
+    /// The default removes the entries one at a time through <see cref="DeleteAsync"/>, so an
+    /// implementation written before this member keeps working unchanged. An implementation backed by
+    /// a database overrides it with a single statement.
+    /// </remarks>
+    /// <param name="ids">The identities of the entries; an identity that matches no entry is ignored.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>A task that completes when every entry is removed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="ids"/> is <see langword="null"/>.</exception>
+    async Task DeleteManyAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        foreach (var id in ids)
+        {
+            await DeleteAsync(id, cancellationToken);
+        }
+    }
+
     /// <summary>Return up to <paramref name="batchSizes"/> oldest entries of type <typeparamref name="T"/>.</summary>
     Task<IReadOnlyList<OutboxEntry>> GetManyAsync<T>(int batchSizes, CancellationToken cancellationToken);
 }

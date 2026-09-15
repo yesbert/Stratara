@@ -11,25 +11,30 @@
 
 ## 1. Packages (D1, D12, D24)
 
-- [ ] 1.1 `src/Stratara.Orleans/` becomes packable: `IsPackable=true`, the package metadata the other
+- [x] 1.1 `src/Stratara.Orleans/` becomes packable: `IsPackable=true`, the package metadata the other
       packages carry (id, description, tags, readme, icon), every public member documented, listed in
       `Stratara.Publish.slnf`. Verify: `dotnet pack src/Stratara.Orleans -c Release` produces a package
       and `PublishFilterCoverageTests` passes.
-- [ ] 1.2 `src/Stratara.Orleans.EntityFrameworkCore/` created from today's `CommitOrder/` readers, the
-      checkpoint store with `AddStrataraProjectionCheckpoints<TReadContext>()`, and the model extension
-      with its provider switch; the runtime package's registrations lose their `DbContext` type
-      parameter. Verify: the pack succeeds, and a test in `tests/Stratara.Orleans.Tests` asserts that
-      `Stratara.Orleans` references no Entity Framework assembly and not `Microsoft.Orleans.Server`.
-- [ ] 1.3 The ports move: timers, singleton work, readers, checkpoints and the rebuilder to
+- [x] 1.2 `src/Stratara.Orleans.EntityFrameworkCore/` created from today's `CommitOrder/` readers, the
+      checkpoint store with `AddStrataraProjectionCheckpoints<TReadContext>()` and the partition-counter
+      interceptor; the runtime package's registrations lose their `DbContext` type parameter. Verify: the
+      pack succeeds, and a test in `tests/Stratara.Orleans.Tests` asserts that `Stratara.Orleans`
+      references no Entity Framework assembly and not `Microsoft.Orleans.Server`.
+      Done: `PackageBoundaryTests` walks the runtime package's own dependency graph. The schema additions
+      are declared by the shipped store package instead (2.1; owner decision 2026-09-15).
+- [x] 1.3 The ports move: timers, singleton work, readers, checkpoints and the rebuilder to
       `Stratara.Abstractions`; the rebuildable projection to `Stratara.Projections`; the process to
       `Stratara.Sagas`. Verify: `tests/Stratara.Orleans.Tests/SurfaceTests.cs` asserts no public type in
       the runtime package exposes `IRemindable`, and a new test asserts the projection and saga packages
       reference no Orleans assembly.
-- [ ] 1.4 `VersionOverride="[10.3.1, 11.0.0)"` on the Orleans references of the two package projects;
+- [x] 1.4 `VersionOverride="[10.3.1, 11.0.0)"` on the Orleans references of the two package projects;
       the central pin in `Directory.Packages.props` stays 10.3.1. Verify: the produced nuspec declares
       the range, and a consumer project that restores the two packages from a local feed built by
       `dotnet pack` compiles.
-- [ ] 1.5 The published surface is trimmed (D24): the two non-promise readers move to
+      Done: only the runtime package references Orleans directly; the persistence package takes it
+      through `Stratara.Orleans`. Nuspec shows `[10.3.1, 11.0.0)` for Reminders, Runtime and Sdk; a
+      consumer on the local feed with `Microsoft.Orleans.Server` 10.3.1 compiles.
+- [x] 1.5 The published surface is trimmed (D24): the two non-promise readers move to
       `tests/Stratara.Orleans.Benchmarks`; the send lane is internal and releases completed tails; the
       native reader takes table and column names from the model; section names are bound or no longer
       claimed; a timer purpose over the column length is an `ArgumentException`; the process base class
@@ -40,7 +45,9 @@
 
 ## 2. Store schema and readers (D4, D7, D10, D23)
 
-- [ ] 2.1 The model extension joins the shipped write and read models: commit-order column, position
+- [ ] 2.1 The shipped write and read contexts in `Stratara.EventSourcing.EntityFrameworkCore` declare the
+      additions, with the provider switch for the commit-order column, and the counter and checkpoint
+      entities move there (owner decision 2026-09-15): commit-order column, position
       column, counter table, outbox attempt count, kept state, last hand-over time, aggregate id and heavy
       flag, checkpoint table, with the readers' indexes. Verify: a new test in
       `tests/Stratara.EntityFrameworkCore.Tests` asserts the entity types, columns and indexes the
@@ -82,9 +89,14 @@
 - [ ] 4.1 `AddStrataraOrleans` takes the durable directory factory and registers it; a lifecycle
       participant fails the silo when it is absent. Verify: a test that a host without the directory fails
       at start with the message, and `SingletonWorkTests` green.
-- [ ] 4.2 `IOutboxRepository.DeleteManyAsync` with a default loop and the EF override; the completion queue
+- [x] 4.2 `IOutboxRepository.DeleteManyAsync` with a default loop and the EF override; the completion queue
       goes through the port. Verify: `tests/Stratara.EntityFrameworkCore.Tests` covers the override; a fake
       repository without the override passes `IntentCompletionQueueTests`.
+      Done ahead of group 4, because the runtime package lost its Entity Framework reference in 1.2. The
+      override is covered by `OutboxRepositoryDeleteManyTests` in `tests/Stratara.WriteStore.Tests`, beside
+      the other repository tests and the SQLite setup they share (the in-memory provider of
+      `Stratara.EntityFrameworkCore.Tests` cannot execute a bulk delete); the fake repository is
+      `IntentCompletionThroughThePortTests`.
 - [ ] 4.3 `AddEventProjectionServices` and `AddSagaServices` in `Stratara.EventSourcing.WorkerDefaults`,
       the replay worker staying in the projection services composite; the worker composites call them; the
       execution model's registrations require them and remove nothing. Verify:

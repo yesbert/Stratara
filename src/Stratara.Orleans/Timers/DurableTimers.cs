@@ -1,3 +1,4 @@
+using Stratara.Abstractions.Timers;
 namespace Stratara.Orleans.Timers;
 
 /// <summary>The host-facing side of the timers: one call per owner grain.</summary>
@@ -6,6 +7,7 @@ internal sealed class DurableTimers(IGrainFactory grainFactory) : IDurableTimers
     public Task RegisterAsync(TimerRegistration registration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(registration);
+        ReminderName.EnsureValidPurpose(registration.Purpose);
         return Owner(registration.OwnerId).RegisterAsync(registration.Purpose, registration.DueAt);
     }
 

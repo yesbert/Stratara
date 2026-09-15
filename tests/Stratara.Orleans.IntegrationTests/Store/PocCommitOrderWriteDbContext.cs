@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 namespace Stratara.Orleans.IntegrationTests.Store;
 

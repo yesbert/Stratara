@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Orleans.Timers;
+using Stratara.Abstractions.Timers;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;

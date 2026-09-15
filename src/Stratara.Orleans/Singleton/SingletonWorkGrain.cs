@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
+using Stratara.Abstractions.Singleton;
 
 namespace Stratara.Orleans.Singleton;
 

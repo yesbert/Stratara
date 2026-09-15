@@ -21,7 +21,7 @@ namespace Stratara.Orleans.Aggregates;
 /// that interface's promise.
 /// </remarks>
 /// <typeparam name="TRequest">The command type the pipeline is running for.</typeparam>
-public sealed class AggregateGrainBehavior<TRequest>(
+internal sealed class AggregateGrainBehavior<TRequest>(
     IGrainFactory grainFactory,
     ISessionContextProvider sessionContextProvider,
     ISecureJsonSerializer serializer,

@@ -1,3 +1,5 @@
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.CommitOrder;
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -5,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Stratara.Abstractions.EventSourcing;
 
-namespace Stratara.Orleans.CommitOrder;
+namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 /// <summary>
 /// Maintains the partition counter inside the transaction that appends entries: before the entries

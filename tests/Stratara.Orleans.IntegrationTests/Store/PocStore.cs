@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 namespace Stratara.Orleans.IntegrationTests.Store;
 

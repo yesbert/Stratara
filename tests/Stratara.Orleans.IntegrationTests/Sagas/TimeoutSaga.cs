@@ -2,6 +2,7 @@ using JetBrains.Annotations;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Orleans.IntegrationTests.Projections;
 using Stratara.Orleans.Sagas;
+using Stratara.Sagas.Abstractions;
 
 namespace Stratara.Orleans.IntegrationTests.Sagas;
 

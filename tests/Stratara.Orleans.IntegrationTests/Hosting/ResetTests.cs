@@ -6,6 +6,9 @@ using Stratara.Orleans.IntegrationTests.Store;
 using Stratara.Orleans.IntegrationTests.Timers;
 using Stratara.Orleans.Projections;
 using Stratara.Orleans.Timers;
+using Stratara.Abstractions.Timers;
+using Stratara.Abstractions.Projections;
+using Stratara.Orleans.EntityFrameworkCore.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting;
 

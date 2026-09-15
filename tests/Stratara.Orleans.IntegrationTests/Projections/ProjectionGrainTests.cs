@@ -11,6 +11,9 @@ using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Store;
 using Stratara.Orleans.Projections;
 using Stratara.Shared.Partitioning;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Abstractions.Projections;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 namespace Stratara.Orleans.IntegrationTests.Projections;
 
@@ -159,7 +162,8 @@ public sealed class ProjectionGrainTests(PostgreSqlFixture postgres, RedisFixtur
             .AddSingleton(control)
             .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
-            .AddStrataraProjectionGrains<PocReadDbContext>(options =>
+            .AddStrataraProjectionCheckpoints<PocReadDbContext>()
+            .AddStrataraProjectionGrains(options =>
             {
                 options.PollInterval = TimeSpan.FromSeconds(2);
                 options.KeepAlivePeriod = TimeSpan.FromSeconds(5);

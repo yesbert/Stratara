@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Abstractions.Projections;
 
 namespace Stratara.Orleans.Projections;
 

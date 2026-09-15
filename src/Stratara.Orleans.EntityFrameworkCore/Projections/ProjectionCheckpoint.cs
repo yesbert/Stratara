@@ -1,6 +1,7 @@
+using Stratara.Abstractions.Projections;
 using Microsoft.EntityFrameworkCore;
 
-namespace Stratara.Orleans.Projections;
+namespace Stratara.Orleans.EntityFrameworkCore.Projections;
 
 /// <summary>
 /// Where one projection's grain resumes in one partition, and which reader's positions it holds. A
@@ -42,26 +43,6 @@ public static class ProjectionCheckpointModel
             checkpoint.Property(c => c.Reader).HasMaxLength(255);
         });
     }
-}
-
-/// <summary>Reads and writes projection checkpoints.</summary>
-public interface IProjectionCheckpointStore
-{
-    /// <summary>The stored position, or <c>0</c> where none exists.</summary>
-    /// <param name="projection">The projection.</param>
-    /// <param name="partition">The partition.</param>
-    /// <param name="reader">The reader whose positions are expected.</param>
-    /// <param name="cancellationToken">Propagated to the store.</param>
-    /// <exception cref="InvalidOperationException">A checkpoint exists but was written under a different reader.</exception>
-    Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default);
-
-    /// <summary>Stores a position, replacing the previous one.</summary>
-    /// <param name="projection">The projection.</param>
-    /// <param name="partition">The partition.</param>
-    /// <param name="reader">The reader whose position this is.</param>
-    /// <param name="position">The position to resume after.</param>
-    /// <param name="cancellationToken">Propagated to the store.</param>
-    Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Checkpoints in the read store, one row per projection and partition.</summary>

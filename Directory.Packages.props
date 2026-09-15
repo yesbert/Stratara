@@ -97,13 +97,16 @@
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
   </ItemGroup>
-  <!-- Orleans: referenced only by the non-packable proof-of-concept projects of change
-       prove-an-orleans-execution-model. One version for every Orleans package. -->
-  <ItemGroup Label="Orleans (proof of concept)">
+  <!-- Orleans: one version for every Orleans package. Stratara.Orleans declares the range
+       [10.3.1, 11.0.0) through VersionOverride and resolves this pin as its floor; test and benchmark
+       projects take the pin. Moving the pin is a dependency update, and shipping it is a patch unless
+       the wire format or a public Orleans type the packages expose changed. -->
+  <ItemGroup Label="Orleans">
     <PackageVersion Include="Microsoft.Orleans.Clustering.AdoNet" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.GrainDirectory.Redis" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Runtime" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.Server" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.TestingHost" Version="10.3.1" />

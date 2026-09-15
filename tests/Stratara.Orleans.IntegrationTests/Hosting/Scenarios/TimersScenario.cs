@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Stratara.Orleans.Timers;
+using Stratara.Abstractions.Timers;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 

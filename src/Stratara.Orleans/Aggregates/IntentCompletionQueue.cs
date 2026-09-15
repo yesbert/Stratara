@@ -1,10 +1,9 @@
 using System.Threading.Channels;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Outbox;
-using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
+using Stratara.Abstractions.Persistence;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -152,7 +151,9 @@ internal sealed class IntentCompletionQueue : IHostedService
     private static async Task DeleteAsync(IServiceScopeFactory scopeFactory, IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
-        var context = (DbContext)scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
-        await context.Set<OutboxEntry>().Where(entry => ids.Contains(entry.Id)).ExecuteDeleteAsync(cancellationToken);
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        await unitOfWork.CreateOutboxRepository(transaction).DeleteManyAsync(ids, cancellationToken);
+        await transaction.SaveChangesAsync(cancellationToken);
     }
 }

@@ -10,9 +10,6 @@ namespace Stratara.Orleans.Aggregates;
 /// <summary>Settings for heavy work.</summary>
 public sealed class HeavyWorkOptions
 {
-    /// <summary>The configuration section the options bind from.</summary>
-    public const string SectionName = "Orleans:HeavyWork";
-
     /// <summary>How many heavy units may run at once across the whole cluster.</summary>
     public int ClusterWideLimit { get; set; } = 8;
 

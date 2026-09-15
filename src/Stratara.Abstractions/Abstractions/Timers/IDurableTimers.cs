@@ -1,4 +1,4 @@
-namespace Stratara.Orleans.Timers;
+namespace Stratara.Abstractions.Timers;
 
 /// <summary>
 /// Durable, owner-checked, one-shot timers. A timer belongs to an owner — an aggregate, a process,
@@ -10,13 +10,15 @@ namespace Stratara.Orleans.Timers;
 /// The timers are stored in the cluster's reminder table and nowhere else. The due time is part of
 /// the timer's identity, so registering the same owner and purpose again replaces the earlier timer.
 /// Delivery is at least once: a handler that throws sees the timer again after
-/// <see cref="DurableTimerOptions.RetryPeriod"/>, and a handler must tolerate that.
+/// the retry period the host configured, and a handler must tolerate that.
 /// </remarks>
 public interface IDurableTimers
 {
     /// <summary>Registers a timer, replacing any timer with the same owner and purpose.</summary>
     /// <param name="registration">The owner, purpose and due time.</param>
     /// <param name="cancellationToken">Propagated to the registration.</param>
+    /// <returns>A task that completes when the timer is registered.</returns>
+    /// <exception cref="ArgumentException">The purpose is empty, contains <c>@</c>, or is longer than the timer store holds (130 characters).</exception>
     Task RegisterAsync(TimerRegistration registration, CancellationToken cancellationToken = default);
 
     /// <summary>Cancels one timer of an owner. Cancelling a timer that does not exist is not an error.</summary>

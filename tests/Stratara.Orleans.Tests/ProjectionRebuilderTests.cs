@@ -4,6 +4,8 @@ using Moq;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.Projections;
 using Stratara.Projections.Abstractions;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Abstractions.Projections;
 
 namespace Stratara.Orleans.Tests;
 

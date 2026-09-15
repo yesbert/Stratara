@@ -1,7 +1,9 @@
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.CommitOrder;
 using Microsoft.EntityFrameworkCore;
 using Stratara.Abstractions.EventSourcing;
 
-namespace Stratara.Orleans.CommitOrder;
+namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 /// <summary>
 /// The proof of concept's additions to the shipped write model: the columns the commit-order readers

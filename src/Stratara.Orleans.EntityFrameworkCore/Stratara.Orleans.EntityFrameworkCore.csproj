@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Orleans.EntityFrameworkCore</PackageId>
+        <Description>Entity Framework Core persistence for the Stratara Orleans execution model — the commit-order readers (native PostgreSQL and a portable per-partition counter), the projection checkpoint store and the store-schema additions they need.</Description>
+        <PackageTags>orleans;virtual-actors;event-sourcing;cqrs;efcore;ef-core;entity-framework;postgresql;commit-order;checkpoints;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.EventSourcing.EntityFrameworkCore\Stratara.EventSourcing.EntityFrameworkCore.csproj"/>
+        <ProjectReference Include="..\Stratara.Orleans\Stratara.Orleans.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Orleans.Tests"/>
+        <InternalsVisibleTo Include="Stratara.Orleans.IntegrationTests"/>
+        <InternalsVisibleTo Include="Stratara.Orleans.Benchmarks"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

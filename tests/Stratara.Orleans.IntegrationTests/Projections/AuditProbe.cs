@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Orleans.IntegrationTests.Store;
 using Stratara.Orleans.Projections;
+using Stratara.Projections.Abstractions;
 
 namespace Stratara.Orleans.IntegrationTests.Projections;
 

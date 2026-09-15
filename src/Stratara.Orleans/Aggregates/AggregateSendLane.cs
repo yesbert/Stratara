@@ -11,12 +11,25 @@ namespace Stratara.Orleans.Aggregates;
 /// <remarks>
 /// Scoped: the order is a promise between dispatches from one scope — one request, one handler,
 /// one unit of work. Across scopes the framework promises nothing, as it never has. Commands to
-/// different aggregates from one scope run in parallel.
+/// different aggregates from one scope run in parallel. A key whose last call has completed is
+/// forgotten, so a scope that dispatches to many aggregates holds only the ones still in flight.
 /// </remarks>
-public sealed class AggregateSendLane
+internal sealed class AggregateSendLane
 {
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Task> _tails = new();
+
+    /// <summary>How many keys still have a call in flight.</summary>
+    public int InFlight
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _tails.Count;
+            }
+        }
+    }
 
     /// <summary>
     /// Issues the call after every earlier call to <paramref name="key"/> from this scope has
@@ -36,7 +49,7 @@ public sealed class AggregateSendLane
             _tails[key] = completed.Task;
         }
 
-        return RunAsync(previous, prepare, issue, completed);
+        return RunAsync(key, previous, prepare, issue, completed);
     }
 
     /// <summary>
@@ -44,7 +57,7 @@ public sealed class AggregateSendLane
     /// failed does not hold back the ones after it — then prepares and issues this one. The lane's
     /// tail is released when the call completes, or at once if it could not be issued.
     /// </summary>
-    private static async Task<Task> RunAsync(Task previous, Task<AggregateCommandEnvelope> prepare, Func<AggregateCommandEnvelope, Task> issue, TaskCompletionSource completed)
+    private async Task<Task> RunAsync(Guid key, Task previous, Task<AggregateCommandEnvelope> prepare, Func<AggregateCommandEnvelope, Task> issue, TaskCompletionSource completed)
     {
         await Task.WhenAny(previous);
 
@@ -58,11 +71,24 @@ public sealed class AggregateSendLane
         {
             if (call is null)
             {
-                completed.TrySetResult();
+                Release(key, completed);
             }
         }
 
-        _ = call.ContinueWith(_ => completed.TrySetResult(), TaskContinuationOptions.ExecuteSynchronously);
+        _ = call.ContinueWith(_ => Release(key, completed), TaskContinuationOptions.ExecuteSynchronously);
         return call;
+    }
+
+    /// <summary>Completes this call's tail and forgets the key when no later call has queued behind it.</summary>
+    private void Release(Guid key, TaskCompletionSource completed)
+    {
+        completed.TrySetResult();
+        lock (_gate)
+        {
+            if (_tails.TryGetValue(key, out var tail) && ReferenceEquals(tail, completed.Task))
+            {
+                _tails.Remove(key);
+            }
+        }
     }
 }

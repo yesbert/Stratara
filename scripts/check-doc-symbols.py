@@ -46,7 +46,7 @@ EXTERNAL = {
     "IConnectionMultiplexer", "IEmailSender", "IStringLocalizer", "IAsyncDisposable",
     "AddHttpContextAccessor", "IUserClaimsPrincipalFactory", "AddAsync",
     "UseExceptionHandler", "AddProblemDetails", "AddExceptionHandler", "ProblemDetails",
-    "ValidationProblemDetails", "IExceptionHandler", "UseAuthentication", "AddOpenTelemetry",
+    "ValidationProblemDetails", "IExceptionHandler", "UseAuthentication", "AddOpenTelemetry", "UseOrleans",
 }
 
 # Placeholder tokens and sample-local type names that legitimately appear in docs

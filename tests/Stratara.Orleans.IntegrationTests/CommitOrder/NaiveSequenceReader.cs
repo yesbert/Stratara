@@ -1,9 +1,12 @@
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 
-namespace Stratara.Orleans.CommitOrder;
+namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 
 /// <summary>
 /// The baseline every checkpoint reader in the framework uses today: entries with a sequence number

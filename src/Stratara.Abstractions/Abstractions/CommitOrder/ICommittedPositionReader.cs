@@ -1,6 +1,6 @@
 using Stratara.Abstractions.EventSourcing;
 
-namespace Stratara.Orleans.CommitOrder;
+namespace Stratara.Abstractions.CommitOrder;
 
 /// <summary>
 /// Reads the event store in commit order, one partition at a time. The promise that distinguishes
@@ -21,7 +21,7 @@ public interface ICommittedPositionReader
     /// after <paramref name="afterPosition"/> in commit order, together with the position to resume
     /// from.
     /// </summary>
-    /// <param name="partition">The partition to read, from <c>0</c> to <see cref="CommitOrderOptions.PartitionCount"/> − 1.</param>
+    /// <param name="partition">The partition to read, from <c>0</c> to the configured partition count − 1.</param>
     /// <param name="afterPosition">The position returned by the previous batch, or <c>0</c> to start from the beginning.</param>
     /// <param name="batchSize">The maximum number of entries to return.</param>
     /// <param name="cancellationToken">Propagated to the store.</param>

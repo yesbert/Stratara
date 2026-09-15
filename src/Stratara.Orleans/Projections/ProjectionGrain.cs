@@ -2,16 +2,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
-using Orleans.Runtime;
+using Orleans.GrainDirectory;
 using Polly.Registry;
+using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Projections.Abstractions;
-using Stratara.Resilience;
-using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Projections;
 
@@ -25,9 +24,6 @@ internal sealed record InnerBundleDispatcher(Stratara.Abstractions.Outbox.IEvent
 /// <summary>Settings for the projection grains.</summary>
 public sealed class ProjectionGrainOptions
 {
-    /// <summary>The configuration section the options bind from.</summary>
-    public const string SectionName = "Orleans:Projections";
-
     /// <summary>How many entries one read from the store returns.</summary>
     public int BatchSize { get; set; } = 500;
 
@@ -73,11 +69,9 @@ internal interface IProjectionGrain : IGrainWithStringKey
 /// <summary>
 /// Reads its partition of the event store in commit order from its checkpoint and applies each
 /// entry to its projection through the framework's projection handler, under the session recorded
-/// with the entry. One catch-up loop runs at a time per grain — the loop's single-flight guard, not
-/// the turn, is the serialisation, which is what lets a nudge interleave — so two facts about one
-/// aggregate never apply concurrently. The checkpoint moves only past entries that applied; an
-/// entry that fails — a missing prerequisite past the retry policy, or any other failure — stops the
-/// batch where it is, and the next nudge or poll tries again from there.
+/// with the entry. The checkpoint moves only past entries that applied; an entry that fails — a
+/// missing prerequisite past the retry policy, or any other failure — stops the batch where it is,
+/// and the next nudge or poll tries again from there.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 internal sealed class ProjectionGrain(
@@ -85,48 +79,15 @@ internal sealed class ProjectionGrain(
     IEventMapperFactory eventMapperFactory,
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
-    IOptions<ProjectionGrainOptions> options) : Grain, IProjectionGrain, IRemindable
+    IOptions<ProjectionGrainOptions> options)
+    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod)),
+        IProjectionGrain
 {
-    private const string KeepAliveReminder = "keep-alive";
-
-    private readonly ProjectionGrainOptions _options = options.Value;
-    private string _projection = string.Empty;
-    private StoreReaderLoop? _loop;
-    private IGrainTimer? _poll;
     private HashSet<string>? _relevant;
     private Type? _projectionType;
     private bool _paused;
 
-    private StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
-
-    public override Task OnActivateAsync(CancellationToken cancellationToken)
-    {
-        var (projection, partition) = StoreReaderGrainKey.Parse(this.GetPrimaryKeyString());
-        _projection = projection;
-        _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), projection, partition, _options.BatchSize);
-        _poll ??= this.RegisterGrainTimer(
-            _ => CatchUpAsync(),
-            new GrainTimerCreationOptions
-            {
-                DueTime = _options.PollInterval,
-                Period = _options.PollInterval,
-                Interleave = false,
-                KeepAlive = true,
-            });
-        return base.OnActivateAsync(cancellationToken);
-    }
-
-    public Task EnsureRunningAsync() => this.RegisterOrUpdateReminder(KeepAliveReminder, _options.KeepAlivePeriod, _options.KeepAlivePeriod);
-
-    public Task NudgeAsync()
-    {
-        RequestCatchUp();
-        return Task.CompletedTask;
-    }
-
-    public Task<int> CatchUpAsync() => RequestCatchUp();
-
-    public Task<long> PositionAsync() => Loop.PositionAsync();
+    protected override bool Suspended => _paused || base.Suspended;
 
     /// <summary>
     /// Pauses, waits for a running loop to end, and forgets the cached position: whoever pauses is
@@ -139,30 +100,19 @@ internal sealed class ProjectionGrain(
         Loop.Invalidate();
     }
 
-    /// <summary>A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.</summary>
-    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
-    {
-        await Loop.WaitForRunningAsync(cancellationToken);
-        await base.OnDeactivateAsync(reason, cancellationToken);
-    }
-
     public Task ResumeAsync()
     {
         _paused = false;
         return NudgeAsync();
     }
 
-    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => RequestCatchUp();
-
-    private Task<int> RequestCatchUp() => Loop.RequestCatchUp(ApplyBatchAsync, () => _paused || replayState.IsReplayActive);
-
     /// <summary>
     /// One scope, one projection instance and one relevant-event set for the batch; per entry, the
     /// recorded session and the retry policy, as the <c>projections</c> guarantees require.
     /// </summary>
-    private async Task<int> ApplyBatchAsync(CommittedBatch batch)
+    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch)
     {
-        using var scope = scopeFactory.CreateScope();
+        using var scope = ScopeFactory.CreateScope();
         var services = scope.ServiceProvider;
         var sessions = services.GetRequiredService<ISessionContextProvider>();
         var handler = services.GetRequiredService<IProjectionHandler>();
@@ -184,7 +134,6 @@ internal sealed class ProjectionGrain(
         });
     }
 
-
     /// <summary>
     /// The first batch finds the projection among every registered one and remembers its type; every
     /// later batch builds only that one, instead of every projection the silo has for the name of one.
@@ -197,8 +146,8 @@ internal sealed class ProjectionGrain(
             return (IProjection)ActivatorUtilities.CreateInstance(services, type);
         }
 
-        var projection = services.GetServices<IProjection>().FirstOrDefault(p => handler.GetProjectionName(p) == _projection)
-                         ?? throw new InvalidOperationException($"No projection named '{_projection}' is registered on this silo.");
+        var projection = services.GetServices<IProjection>().FirstOrDefault(p => handler.GetProjectionName(p) == Consumer)
+                         ?? throw new InvalidOperationException($"No projection named '{Consumer}' is registered on this silo.");
         _projectionType = projection.GetType();
         return projection;
     }

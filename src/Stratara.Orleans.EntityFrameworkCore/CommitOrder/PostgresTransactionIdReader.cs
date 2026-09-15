@@ -1,10 +1,15 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
+using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
+using Stratara.Orleans.CommitOrder;
 
-namespace Stratara.Orleans.CommitOrder;
+namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 /// <summary>
 /// PostgreSQL only: orders by the transaction id the database stamped on each entry and returns only
@@ -26,7 +31,11 @@ namespace Stratara.Orleans.CommitOrder;
 /// </para>
 /// <para>
 /// A long-running transaction that never writes an entry still holds the horizon back, so this
-/// reader delays rather than skips under one — the benchmarks record the delay.
+/// reader delays rather than skips under one.
+/// </para>
+/// <para>
+/// The table and column names come from the context's model, so a model that does not follow the
+/// snake-case convention is read the same way.
 /// </para>
 /// </remarks>
 /// <typeparam name="TContext">The write context, with <see cref="CommitOrderModel"/> applied for PostgreSQL.</typeparam>
@@ -35,22 +44,17 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     where TContext : DbContext, IWriteDbContext
 {
     private readonly int _partitionCount = options.Value.PartitionCount;
+    private Statements? _statements;
 
     /// <inheritdoc/>
     public async Task<CommittedBatch> ReadAfterAsync(int partition, long afterPosition, int batchSize, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var statements = _statements ??= Statements.For(context);
         var after = ((ulong)afterPosition).ToString(CultureInfo.InvariantCulture);
 
         var projected = await context.Set<EventStreamEntry>()
-            .FromSql($"""
-                SELECT * FROM event_stream_entry
-                WHERE bucket_id % {_partitionCount} = {partition}
-                  AND commit_transaction_id > CAST({after} AS xid8)
-                  AND commit_transaction_id < pg_snapshot_xmin(pg_current_snapshot())
-                ORDER BY commit_transaction_id, sequence_number
-                LIMIT {batchSize + 1}
-                """)
+            .FromSqlRaw(statements.ReadAfter, _partitionCount, partition, after, batchSize + 1)
             .AsNoTracking()
             .Select(e => new { Entry = e, TransactionId = EF.Property<ulong>(e, CommitOrderModel.TransactionIdColumn) })
             .ToListAsync(cancellationToken);
@@ -77,23 +81,18 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
 
             if (rows.Count > batchSize)
             {
-                rows = await ReadWholeTransactionAsync(context, partition, lastCompleteId, cancellationToken);
+                rows = await ReadWholeTransactionAsync(context, statements, partition, lastCompleteId, cancellationToken);
             }
         }
 
         return new CommittedBatch([.. rows.Select(row => new CommittedEntry(row.Entry, (long)row.TransactionId))], (long)rows[^1].TransactionId);
     }
 
-    private async Task<List<Row>> ReadWholeTransactionAsync(TContext context, int partition, ulong transactionId, CancellationToken cancellationToken)
+    private async Task<List<Row>> ReadWholeTransactionAsync(TContext context, Statements statements, int partition, ulong transactionId, CancellationToken cancellationToken)
     {
         var id = transactionId.ToString(CultureInfo.InvariantCulture);
         var rows = await context.Set<EventStreamEntry>()
-            .FromSql($"""
-                SELECT * FROM event_stream_entry
-                WHERE bucket_id % {_partitionCount} = {partition}
-                  AND commit_transaction_id = CAST({id} AS xid8)
-                ORDER BY sequence_number
-                """)
+            .FromSqlRaw(statements.ReadTransaction, _partitionCount, partition, id)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
@@ -101,4 +100,47 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     }
 
     private sealed record Row(EventStreamEntry Entry, ulong TransactionId);
+
+    /// <summary>The two statements, with the table and columns named as the context's model maps them.</summary>
+    private sealed record Statements(string ReadAfter, string ReadTransaction)
+    {
+        /// <exception cref="InvalidOperationException">The model maps no event stream table, or lacks the commit-order column.</exception>
+        public static Statements For(DbContext context)
+        {
+            var entity = context.Model.FindEntityType(typeof(EventStreamEntry))
+                         ?? throw new InvalidOperationException($"The model of {context.GetType().Name} has no {nameof(EventStreamEntry)}.");
+            var tableName = entity.GetTableName()
+                            ?? throw new InvalidOperationException($"{nameof(EventStreamEntry)} is not mapped to a table in {context.GetType().Name}.");
+            var table = StoreObjectIdentifier.Table(tableName, entity.GetSchema());
+            var sql = context.GetService<ISqlGenerationHelper>();
+
+            string Column(string property)
+            {
+                var name = entity.FindProperty(property)?.GetColumnName(table)
+                           ?? throw new InvalidOperationException($"{nameof(EventStreamEntry)}.{property} is not mapped in {context.GetType().Name}; apply {nameof(CommitOrderModel)} with postgres enabled.");
+                return sql.DelimitIdentifier(name);
+            }
+
+            var from = sql.DelimitIdentifier(tableName, entity.GetSchema());
+            var bucket = Column(nameof(EventStreamEntry.BucketId));
+            var sequence = Column(nameof(EventStreamEntry.SequenceNumber));
+            var transaction = Column(CommitOrderModel.TransactionIdColumn);
+
+            return new Statements(
+                $$"""
+                SELECT * FROM {{from}}
+                WHERE {{bucket}} % {0} = {1}
+                  AND {{transaction}} > CAST({2} AS xid8)
+                  AND {{transaction}} < pg_snapshot_xmin(pg_current_snapshot())
+                ORDER BY {{transaction}}, {{sequence}}
+                LIMIT {3}
+                """,
+                $$"""
+                SELECT * FROM {{from}}
+                WHERE {{bucket}} % {0} = {1}
+                  AND {{transaction}} = CAST({2} AS xid8)
+                ORDER BY {{sequence}}
+                """);
+        }
+    }
 }

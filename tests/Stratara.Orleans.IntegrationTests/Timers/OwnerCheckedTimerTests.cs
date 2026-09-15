@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.Timers;
+using Stratara.Abstractions.Timers;
 
 namespace Stratara.Orleans.IntegrationTests.Timers;
 

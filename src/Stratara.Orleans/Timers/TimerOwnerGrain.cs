@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
+using Stratara.Abstractions.Timers;
 
 namespace Stratara.Orleans.Timers;
 
@@ -93,15 +94,33 @@ internal sealed class TimerOwnerGrain(
 /// <summary>Encodes a timer's purpose and due time into a reminder name and back.</summary>
 internal static class ReminderName
 {
+    /// <summary>
+    /// The longest purpose a reminder name holds: the reminder table's name column is 150 characters,
+    /// and the separator and the due time's ticks take up to twenty of them.
+    /// </summary>
+    public const int MaxPurposeLength = 130;
+
     private const char Separator = '@';
 
-    public static string Encode(string purpose, DateTimeOffset dueAt)
+    /// <summary>Refuses a purpose the reminder table cannot hold or the name cannot be decoded from.</summary>
+    /// <exception cref="ArgumentException">The purpose is empty, contains <c>@</c>, or is longer than <see cref="MaxPurposeLength"/>.</exception>
+    public static void EnsureValidPurpose(string purpose)
     {
+        ArgumentException.ThrowIfNullOrEmpty(purpose);
         if (purpose.Contains(Separator))
         {
             throw new ArgumentException($"A timer purpose must not contain '{Separator}'.", nameof(purpose));
         }
 
+        if (purpose.Length > MaxPurposeLength)
+        {
+            throw new ArgumentException($"A timer purpose holds at most {MaxPurposeLength} characters; '{purpose[..20]}…' has {purpose.Length}.", nameof(purpose));
+        }
+    }
+
+    public static string Encode(string purpose, DateTimeOffset dueAt)
+    {
+        EnsureValidPurpose(purpose);
         return string.Concat(purpose, Separator, dueAt.UtcTicks.ToString(CultureInfo.InvariantCulture));
     }
 

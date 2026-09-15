@@ -14,6 +14,8 @@
       "src/Stratara.Identity.Core/Stratara.Identity.Core.csproj",
       "src/Stratara.Infrastructure/Stratara.Infrastructure.csproj",
       "src/Stratara.Mediator/Stratara.Mediator.csproj",
+      "src/Stratara.Orleans/Stratara.Orleans.csproj",
+      "src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj",
       "src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj",
       "src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj",
       "src/Stratara.Projections/Stratara.Projections.csproj",

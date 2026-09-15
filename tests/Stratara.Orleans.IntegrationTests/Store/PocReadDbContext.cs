@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
 using Stratara.Orleans.Projections;
+using Stratara.Orleans.EntityFrameworkCore.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.Store;
 

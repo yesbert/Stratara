@@ -83,9 +83,16 @@ SDK and runtime packages — not the server meta-package, which the host brings 
 Tier-A and Tier-B packages plus `Stratara.Projections` and `Stratara.Sagas`, and no Entity Framework
 assembly: its registrations lose the `TReadContext : DbContext` type parameter the proof of concept
 has. `Stratara.Orleans.EntityFrameworkCore` holds the commit-order readers (native PostgreSQL and
-portable), the checkpoint store and its registration (`AddStrataraProjectionCheckpoints<TReadContext>()`),
-the model extension with its provider switch, and the interceptor that maintains the partition
-counter; it references `Stratara.EventSourcing.EntityFrameworkCore` and `Stratara.Orleans`.
+portable), the interceptor that maintains the partition counter, the checkpoint store and its
+registration (`AddStrataraProjectionCheckpoints<TReadContext>()`), and the portable reader's backfill;
+it references `Stratara.EventSourcing.EntityFrameworkCore` and `Stratara.Orleans`.
+
+The schema additions are not in it. The shipped write and read contexts in
+`Stratara.EventSourcing.EntityFrameworkCore` declare the commit-order column (PostgreSQL only, behind
+the provider switch there), the position column, the counter table, the outbox record's resume
+bookkeeping and the checkpoint table, and the entities for the counter and the checkpoint live beside
+them — because *The store declares its own schema* requires the shipped model to carry them, and that
+package cannot reference the Orleans persistence package. (Owner decision, 2026-09-15, during apply.)
 
 The ports a consumer implements or calls without hosting a silo — `IDurableTimers`,
 `ITimerOwners`, `ITimerHandler`, `ISingletonWork`, `IRebuildableProjection`, `ISagaProcess` and
@@ -102,6 +109,9 @@ when a provider is added.
 
 *Rejected: the ports staying in `Stratara.Orleans`.* A projection assembly would reference the
 runtime to implement `IRebuildableProjection`, which is what the tier rule exists to prevent.
+
+*Rejected: an opt-in model extension in the Orleans persistence package.* A consumer who does not call
+it would migrate a schema that lacks what the store is specified to declare.
 
 Evidence: `package-distribution` → *Dependencies flow one way and never cycle*; the proof of
 concept's project references and `OrleansProjectionServiceCollectionExtensions.cs:40-44,90,149`
@@ -422,8 +432,8 @@ migration's transaction id, which is below every later one.
 *Rejected: positioning lazily on first read.* Every partition's reader would race the interceptor for
 the counter lock at once, on the host's first start after the upgrade.
 
-Evidence: `PortableCounterReader.cs:15-17` (unpositioned entries are invisible); `CommitOrderModel.cs`
-(the column default).
+Evidence: `PortableCounterReader.cs:15-17` (unpositioned entries are invisible); the write model's
+commit-order column default.
 
 ### D24 — The published surface is what a consumer should use
 
