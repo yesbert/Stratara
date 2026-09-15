@@ -77,8 +77,8 @@ does not install the new packages notices nothing except the additions to the st
 next migration — the commit-order and position columns, the counter table, the outbox record's resume
 bookkeeping and the checkpoint table — none of which changes behaviour. The published surface gains
 two packages, one registration per role, one optional interface for stateful processes, one for
-rebuildable projections, the timer port, the reset port, members on the outbox record, and one
-default-implemented member on the outbox repository port. This is a **minor** bump after the
+rebuildable projections, the timer port, the reset port, the command-intent port with its registration, members on
+the outbox record, and one default-implemented member on the outbox repository port. This is a **minor** bump after the
 merge: new packable projects.
 
 ## Capabilities
@@ -115,11 +115,12 @@ merge: new packable projects.
 
 - **New, packable:** `src/Stratara.Orleans/` (today the proof of concept, made packable in place)
   and `src/Stratara.Orleans.EntityFrameworkCore/` (new; today's `CommitOrder/` readers, the
-  partition-counter interceptor, the checkpoint store and the portable reader's backfill). Both in
+  partition-counter interceptor, the checkpoint store, the portable reader's backfill and the
+command-intent store). Both in
   `Stratara.Publish.slnf`.
 - **Modified, packable:** `src/Stratara.Abstractions/` (a default-implemented member on the outbox
   repository port, the outbox record's resume bookkeeping, and the timer, singleton-work, reader,
-  checkpoint and rebuilder ports — design D1); `src/Stratara.EventSourcing.EntityFrameworkCore/` (the
+  checkpoint, rebuilder and command-intent ports — design D1, D4); `src/Stratara.EventSourcing.EntityFrameworkCore/` (the
   batch delete, and the schema additions declared by the shipped write and read contexts, with the
   counter and checkpoint entities); `src/Stratara.Projections/` and `src/Stratara.Sagas/` (the
   rebuildable projection and the process); `src/Stratara.EventSourcing.WorkerDefaults/` (the sibling

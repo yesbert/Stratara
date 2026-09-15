@@ -96,8 +96,9 @@ package cannot reference the Orleans persistence package. (Owner decision, 2026-
 
 The ports a consumer implements or calls without hosting a silo — `IDurableTimers`,
 `ITimerOwners`, `ITimerHandler`, `ISingletonWork`, `IRebuildableProjection`, `ISagaProcess` and
-`SagaProcess<TState>`, `ICommittedPositionReader`, `IProjectionCheckpointStore`, `IProjectionRebuilder`
-— move to `Stratara.Abstractions` (timers, singleton work, readers, checkpoints, rebuilder) and
+`SagaProcess<TState>`, `ICommittedPositionReader`, `IProjectionCheckpointStore`, `IProjectionRebuilder`,
+`ICommandIntentStore` — move to `Stratara.Abstractions` (timers, singleton work, readers, checkpoints,
+rebuilder, command intents) and
 `Stratara.Projections` / `Stratara.Sagas` (the rebuildable projection and the process), so that a
 consumer's projection assembly does not reference the runtime to declare that it can be rebuilt.
 This follows the rule the tier layout already states: every SPI lives in Abstractions, even where
@@ -146,13 +147,21 @@ already issues the same statement for one id.
 
 ### D4 — A resumed command is bounded, then kept
 
-The outbox record gains an attempt count, a kept state, the time of its last hand-over, and the
-aggregate id and heavy flag the dispatcher already knows when it records the command. The drain
-resumes a stored command only while its attempts are below the bound the host already configures for
-bus messages (`MessageRetryOptions.MaxDeliveryAttempts`) and its last hand-over is older than the
-grace; it stamps the hand-over and increments the count before handing the command over, and on the
-bound marks the record kept with the last failure — it is then invisible to the drain. A command
-whose handler is still running is therefore not handed over again on every pass. The aggregate is
+The outbox record gains an attempt count, a kept state, the time of its last hand-over, the last
+failure, and the aggregate id and heavy flag the dispatcher already knows when it records the command.
+The operations on that bookkeeping sit behind a port of their own, `ICommandIntentStore` in
+`Stratara.Abstractions`: record a command with its aggregate and heavy flag, list the recorded commands
+due for resumption, claim a hand-over atomically (stamping its time and incrementing the count), renew
+the hand-over while the handler runs, record a failure, and keep a command.
+`Stratara.Orleans.EntityFrameworkCore` implements it and registers it with
+`AddStrataraIntentStore<TWriteContext>()`; the execution model's dispatcher requires it, and a host
+without it fails at start. `IOutboxRepository` gains only the batch removal of D3.
+
+The drain resumes a stored command only while its attempts are below the bound the host already
+configures for bus messages (`MessageRetryOptions.MaxDeliveryAttempts`) and its last hand-over is older
+than the grace. A running handler renews its hand-over at half the grace, so it is not handed over
+again however long it runs. On the bound the drain marks the record kept with the last failure; it is
+then invisible to the drain. The aggregate is
 read from the record, not from the command's JSON, so a command whose payload is protected keeps its
 per-aggregate order when resumed. An operator finds kept commands by the log event and the counter of
 D5 and returns one by clearing its kept state and attempt count, a single statement the operations
@@ -161,6 +170,10 @@ aborts the pass: the drain records the failure and continues with the next recor
 
 *Rejected: a separate dead-letter table.* One record, one state; the outbox is already the durable
 record and the bus path's dead-letter semantics are the ones to match.
+
+*Rejected: default-implemented members on `IOutboxRepository`.* A consumer's own repository would keep
+compiling and silently lose the bound, because a default cannot persist the bookkeeping; a missing port
+fails at start instead. (Owner decision, 2026-09-15, during apply.)
 
 *Rejected: reading the aggregate id from the payload.* A payload sealed with `[EncryptData]` or a
 command that implements the id explicitly hides it, and the command then runs beside live commands
@@ -390,7 +403,8 @@ Every options type the packages bind is validated at start: positive batch sizes
 counts, periods at or above the runtime's reminder minimum, and an intent grace longer than the
 completion window. The host's timer owners and handlers are collected as enumerable ports and composed
 by owner prefix, so their registration order relative to the execution model does not matter, and
-start-up fails when stateful processes are registered and no owner claims their prefix. Singleton work
+start-up fails when stateful processes are registered and no owner claims their prefix, and when the
+command dispatcher is registered and no `ICommandIntentStore` is. Singleton work
 is placed only on silos that registered it, through the runtime's placement filtering on silo
 metadata.
 
