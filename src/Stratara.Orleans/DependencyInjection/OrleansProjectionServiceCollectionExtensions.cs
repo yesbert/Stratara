@@ -147,7 +147,7 @@ public static class OrleansProjectionServiceCollectionExtensions
     private static void AddStoreReaderCore(IServiceCollection services, bool hybrid)
     {
         services.AddOptions<CommitOrderOptions>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, StoreReaderGrainStarter>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, StoreReaderGrainStarter>());
         if (!services.Any(d => d.ServiceType == typeof(OrleansEventBundleDispatcher)))
         {
             ReplaceBundleDispatcher(services, hybrid);

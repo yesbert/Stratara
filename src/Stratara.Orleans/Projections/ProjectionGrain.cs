@@ -211,13 +211,20 @@ internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler
     }
 }
 
-/// <summary>Brings every store-reading grain up when the silo starts, one per target and partition.</summary>
+/// <summary>
+/// Brings every store-reading grain up once the silo is active, one per target and partition — a stage
+/// of the silo's own lifecycle, so the order in which the host registered the silo and the composites
+/// does not matter.
+/// </summary>
 internal sealed class StoreReaderGrainStarter(
     IServiceScopeFactory scopeFactory,
     IGrainFactory grainFactory,
-    IOptions<CommitOrderOptions> commitOrder) : IHostedService
+    IOptions<CommitOrderOptions> commitOrder) : ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public void Participate(global::Orleans.Runtime.ISiloLifecycle lifecycle) =>
+        lifecycle.Subscribe(nameof(StoreReaderGrainStarter), ServiceLifecycleStage.Active, StartAsync);
+
+    private async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         foreach (var target in scope.ServiceProvider.GetServices<INudgeTarget>())
@@ -229,5 +236,4 @@ internal sealed class StoreReaderGrainStarter(
         }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

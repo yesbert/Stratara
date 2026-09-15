@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Stratara.Orleans.Singleton;
 using Stratara.Abstractions.Singleton;
 
@@ -12,7 +11,8 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <typeparamref name="TWork"/> to run once per cluster on its period. Every silo that
-    /// registers it asks its grain to run at start-up; the grain runs on exactly one of them.
+    /// registers it asks its grain to run once the silo is active, whatever order the silo and this call
+    /// were registered in; the grain runs on exactly one of them.
     /// </summary>
     /// <typeparam name="TWork">The work.</typeparam>
     /// <param name="services">The service collection.</param>
@@ -34,7 +34,7 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
 
         services.AddOptions<OutboxDrainOptions>();
         services.AddScoped<ISingletonWork, TWork>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SingletonWorkStarter>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, SingletonWorkStarter>());
         return services;
     }
 }

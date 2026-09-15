@@ -106,8 +106,11 @@
       holder the cluster declared dead, on every acquisition and on its own timer; `HeavyWorkOptions.PermitLease`,
       renewal at half the lease. `HeavyBurstTests` kills a worker process holding every permit while the permit grain
       lives on the surviving silo; the bound is whole again after the lease. 2/2.
-- [ ] 3.4 Starters as silo lifecycle participants. Verify: `CoHostingTests` green in both orders with the
+- [x] 3.4 Starters as silo lifecycle participants. Verify: `CoHostingTests` green in both orders with the
       hosted-service starters deleted.
+      Done: the singleton-work and store-reader starters subscribe to `ServiceLifecycleStage.Active`; the hosted-service
+      starters are gone. `CoHostingTests` now registers singleton work with the durable directory and asserts it runs in
+      both registration orders; `SingletonWorkTests`, `ProjectionGrainTests` and `SagaGrainTests` green (7/7).
 - [ ] 3.5 Cancellation reaches the store in the reader loop, the checkpoint store, the durable timers and
       the saga process grain. Verify: a unit test that a cancelled token stops a catch-up between batches
       without a checkpoint write.

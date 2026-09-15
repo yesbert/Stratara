@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
@@ -93,12 +92,17 @@ internal sealed class SingletonWorkGrain(
 }
 
 /// <summary>
-/// Asks every registered work's grain to run when the silo starts. Idempotent across silos: a grain
-/// that already runs elsewhere just re-arms its reminder.
+/// Asks every registered work's grain to run once the silo is active — a stage of the silo's own
+/// lifecycle, so it runs when the silo can take a call, whatever order the host registered the silo and
+/// the framework's composites in. Idempotent across silos: a grain that already runs elsewhere just
+/// re-arms its reminder.
 /// </summary>
-internal sealed class SingletonWorkStarter(IServiceScopeFactory scopeFactory, IGrainFactory grainFactory) : IHostedService
+internal sealed class SingletonWorkStarter(IServiceScopeFactory scopeFactory, IGrainFactory grainFactory) : ILifecycleParticipant<ISiloLifecycle>
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public void Participate(ISiloLifecycle lifecycle) =>
+        lifecycle.Subscribe(nameof(SingletonWorkStarter), ServiceLifecycleStage.Active, StartAsync);
+
+    private async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         foreach (var work in scope.ServiceProvider.GetServices<ISingletonWork>())
@@ -106,6 +110,4 @@ internal sealed class SingletonWorkStarter(IServiceScopeFactory scopeFactory, IG
             await grainFactory.GetGrain<ISingletonWorkGrain>(work.Name).EnsureRunningAsync();
         }
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
