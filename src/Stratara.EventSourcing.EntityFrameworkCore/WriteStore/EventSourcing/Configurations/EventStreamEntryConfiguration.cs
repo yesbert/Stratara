@@ -3,6 +3,7 @@ using Stratara.Abstractions.EventSourcing;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Stratara.Shared.EventSourcing;
 using System.Diagnostics.CodeAnalysis;
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Configurations;
 
@@ -25,5 +26,7 @@ internal sealed class EventStreamEntryConfiguration : IEntityTypeConfiguration<E
         b.Property(e => e.CorrelationId).IsRequired().HasMaxLength(128);
         b.Property(e => e.EventTypeName).IsRequired().HasMaxLength(255);
         b.Property(e => e.AggregateTypeName).IsRequired().HasMaxLength(255);
+        b.Property<long?>(CommitOrderSchema.PartitionPositionColumn);
+        b.HasIndex(CommitOrderSchema.PartitionPositionColumn);
     }
 }

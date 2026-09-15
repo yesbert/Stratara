@@ -12,8 +12,8 @@ public static class OrleansCheckpointServiceCollectionExtensions
     /// <summary>
     /// Keeps the checkpoints of the store-reading projections and sagas in
     /// <typeparamref name="TReadContext"/>. Binds no configuration. Requires a registered
-    /// <see cref="IDbContextFactory{TContext}"/> for the read context, whose model applies
-    /// <see cref="ProjectionCheckpointModel"/>. A checkpoint store registered before this call is kept.
+    /// <see cref="IDbContextFactory{TContext}"/> for a read context derived from the framework's read
+    /// context, which declares the checkpoint table. A checkpoint store registered before this call is kept.
     /// </summary>
     /// <typeparam name="TReadContext">The read context that holds the checkpoint table.</typeparam>
     /// <param name="services">The service collection.</param>

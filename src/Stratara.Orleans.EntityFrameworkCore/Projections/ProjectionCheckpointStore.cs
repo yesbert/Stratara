@@ -1,52 +1,11 @@
 using Stratara.Abstractions.Projections;
 using Microsoft.EntityFrameworkCore;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
 
 namespace Stratara.Orleans.EntityFrameworkCore.Projections;
 
-/// <summary>
-/// Where one projection's grain resumes in one partition, and which reader's positions it holds. A
-/// position from one reader means nothing to another, so a checkpoint written under a different
-/// reader is refused rather than misread.
-/// </summary>
-public sealed class ProjectionCheckpoint
-{
-    /// <summary>The projection, by the name the framework gives it.</summary>
-    public required string Projection { get; set; }
-
-    /// <summary>The partition.</summary>
-    public int Partition { get; set; }
-
-    /// <summary>The position to resume after.</summary>
-    public long Position { get; set; }
-
-    /// <summary>The reader whose positions these are.</summary>
-    public required string Reader { get; set; }
-}
-
-/// <summary>Adds the checkpoint table to a read-store model.</summary>
-public static class ProjectionCheckpointModel
-{
-    /// <summary>The checkpoint table.</summary>
-    public const string Table = "projection_checkpoint";
-
-    /// <summary>Adds the checkpoint entity to <paramref name="modelBuilder"/>.</summary>
-    /// <param name="modelBuilder">The read context's model builder, after the base model.</param>
-    public static void Apply(ModelBuilder modelBuilder)
-    {
-        ArgumentNullException.ThrowIfNull(modelBuilder);
-
-        modelBuilder.Entity<ProjectionCheckpoint>(checkpoint =>
-        {
-            checkpoint.ToTable(Table);
-            checkpoint.HasKey(c => new { c.Projection, c.Partition });
-            checkpoint.Property(c => c.Projection).HasMaxLength(255);
-            checkpoint.Property(c => c.Reader).HasMaxLength(255);
-        });
-    }
-}
-
 /// <summary>Checkpoints in the read store, one row per projection and partition.</summary>
-/// <typeparam name="TContext">The read context, with <see cref="ProjectionCheckpointModel"/> applied.</typeparam>
+/// <typeparam name="TContext">A read context derived from the framework's read context, which declares the checkpoint table.</typeparam>
 public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TContext> contextFactory) : IProjectionCheckpointStore
     where TContext : DbContext
 {

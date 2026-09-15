@@ -1,3 +1,4 @@
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.EventSourcing;
@@ -73,12 +74,11 @@ public sealed class PascalCaseWriteDbContext(DbContextOptions<PascalCaseWriteDbC
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        CommitOrderModel.Apply(modelBuilder, postgres: true);
 
         var entry = modelBuilder.Entity<EventStreamEntry>();
         entry.ToTable("EventStreamEntries");
         entry.Property(e => e.BucketId).HasColumnName("BucketId");
         entry.Property(e => e.SequenceNumber).HasColumnName("SequenceNumber");
-        entry.Property<ulong>(CommitOrderModel.TransactionIdColumn).HasColumnName("CommitTransactionId");
+        entry.Property<ulong>(CommitOrderSchema.TransactionIdColumn).HasColumnName("CommitTransactionId");
     }
 }

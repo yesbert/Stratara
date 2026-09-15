@@ -1,3 +1,4 @@
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
@@ -14,7 +15,7 @@ namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 /// lower sequence number than one already returned is never seen again — and it exists so the tests
 /// can show that happening.
 /// </summary>
-/// <typeparam name="TContext">The write context, with <see cref="CommitOrderModel"/> applied.</typeparam>
+/// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 public sealed class NaiveSequenceReader<TContext>(IDbContextFactory<TContext> contextFactory, IOptions<CommitOrderOptions> options)
     : ICommittedPositionReader
     where TContext : DbContext, IWriteDbContext

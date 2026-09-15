@@ -1,3 +1,4 @@
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

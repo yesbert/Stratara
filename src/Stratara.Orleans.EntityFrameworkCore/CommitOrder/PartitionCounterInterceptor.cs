@@ -1,3 +1,4 @@
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Orleans.CommitOrder;
 using System.Runtime.CompilerServices;
@@ -97,7 +98,7 @@ public sealed class PartitionCounterInterceptor(int partitionCount) : SaveChange
         if (updated != 1)
         {
             throw new InvalidOperationException(
-                $"Partition {partition} has no counter row in {CommitOrderModel.PartitionPositionTable}; seed one row per partition before appending.");
+                $"Partition {partition} has no counter row in {CommitOrderSchema.PartitionPositionTable}; seed one row per partition before appending.");
         }
 
         var last = await context.Set<PartitionPosition>().AsNoTracking()
@@ -109,7 +110,7 @@ public sealed class PartitionCounterInterceptor(int partitionCount) : SaveChange
         foreach (var entry in entries)
         {
             position++;
-            entry.Property(CommitOrderModel.PartitionPositionColumn).CurrentValue = position;
+            entry.Property(CommitOrderSchema.PartitionPositionColumn).CurrentValue = position;
         }
     }
 }

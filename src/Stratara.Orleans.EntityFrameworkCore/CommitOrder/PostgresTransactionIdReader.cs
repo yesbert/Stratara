@@ -1,3 +1,4 @@
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -38,7 +39,7 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// snake-case convention is read the same way.
 /// </para>
 /// </remarks>
-/// <typeparam name="TContext">The write context, with <see cref="CommitOrderModel"/> applied for PostgreSQL.</typeparam>
+/// <typeparam name="TContext">A write context derived from the framework's write context on PostgreSQL.</typeparam>
 public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TContext> contextFactory, IOptions<CommitOrderOptions> options)
     : ICommittedPositionReader
     where TContext : DbContext, IWriteDbContext
@@ -56,7 +57,7 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
         var projected = await context.Set<EventStreamEntry>()
             .FromSqlRaw(statements.ReadAfter, _partitionCount, partition, after, batchSize + 1)
             .AsNoTracking()
-            .Select(e => new { Entry = e, TransactionId = EF.Property<ulong>(e, CommitOrderModel.TransactionIdColumn) })
+            .Select(e => new { Entry = e, TransactionId = EF.Property<ulong>(e, CommitOrderSchema.TransactionIdColumn) })
             .ToListAsync(cancellationToken);
         var rows = projected.Select(row => new Row(row.Entry, row.TransactionId)).ToList();
 
@@ -117,14 +118,14 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
             string Column(string property)
             {
                 var name = entity.FindProperty(property)?.GetColumnName(table)
-                           ?? throw new InvalidOperationException($"{nameof(EventStreamEntry)}.{property} is not mapped in {context.GetType().Name}; apply {nameof(CommitOrderModel)} with postgres enabled.");
+                           ?? throw new InvalidOperationException($"{nameof(EventStreamEntry)}.{property} is not mapped in {context.GetType().Name}; the framework's write context declares it on PostgreSQL.");
                 return sql.DelimitIdentifier(name);
             }
 
             var from = sql.DelimitIdentifier(tableName, entity.GetSchema());
             var bucket = Column(nameof(EventStreamEntry.BucketId));
             var sequence = Column(nameof(EventStreamEntry.SequenceNumber));
-            var transaction = Column(CommitOrderModel.TransactionIdColumn);
+            var transaction = Column(CommitOrderSchema.TransactionIdColumn);
 
             return new Statements(
                 $$"""

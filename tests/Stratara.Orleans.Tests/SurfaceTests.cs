@@ -33,13 +33,9 @@ public class SurfaceTests
     private static readonly string[] PersistenceSurface =
     [
         "Microsoft.Extensions.DependencyInjection.OrleansCheckpointServiceCollectionExtensions",
-        "Stratara.Orleans.EntityFrameworkCore.CommitOrder.CommitOrderModel",
         "Stratara.Orleans.EntityFrameworkCore.CommitOrder.PartitionCounterInterceptor",
-        "Stratara.Orleans.EntityFrameworkCore.CommitOrder.PartitionPosition",
         "Stratara.Orleans.EntityFrameworkCore.CommitOrder.PortableCounterReader`1",
         "Stratara.Orleans.EntityFrameworkCore.CommitOrder.PostgresTransactionIdReader`1",
-        "Stratara.Orleans.EntityFrameworkCore.Projections.ProjectionCheckpoint",
-        "Stratara.Orleans.EntityFrameworkCore.Projections.ProjectionCheckpointModel",
         "Stratara.Orleans.EntityFrameworkCore.Projections.ProjectionCheckpointStore`1",
     ];
 

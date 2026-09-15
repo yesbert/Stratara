@@ -20,7 +20,6 @@ public sealed class PocReadDbContext(DbContextOptions<PocReadDbContext> options)
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        ProjectionCheckpointModel.Apply(modelBuilder);
         modelBuilder.Entity<CounterView>(view =>
         {
             view.ToTable("poc_counter_view");

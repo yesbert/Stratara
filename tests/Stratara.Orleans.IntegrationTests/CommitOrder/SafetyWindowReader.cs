@@ -1,3 +1,4 @@
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
@@ -14,7 +15,7 @@ namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 /// transaction that stays open longer than the window breaks the assumption, which is why this is a
 /// baseline and not a candidate.
 /// </summary>
-/// <typeparam name="TContext">The write context, with <see cref="CommitOrderModel"/> applied.</typeparam>
+/// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 public sealed class SafetyWindowReader<TContext>(
     IDbContextFactory<TContext> contextFactory,
     IOptions<CommitOrderOptions> options,

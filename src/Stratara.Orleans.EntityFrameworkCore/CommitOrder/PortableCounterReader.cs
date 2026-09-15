@@ -1,3 +1,4 @@
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Orleans.CommitOrder;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +18,7 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// Entries written without the interceptor carry no position and are invisible to this reader; a
 /// store that adopts the counter backfills them once.
 /// </remarks>
-/// <typeparam name="TContext">The write context, with <see cref="CommitOrderModel"/> applied.</typeparam>
+/// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> contextFactory, IOptions<CommitOrderOptions> options)
     : ICommittedPositionReader
     where TContext : DbContext, IWriteDbContext
@@ -31,9 +32,9 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
 
         var entries = await context.Set<EventStreamEntry>().AsNoTracking()
             .Where(e => e.BucketId % _partitionCount == partition
-                        && EF.Property<long?>(e, CommitOrderModel.PartitionPositionColumn) > afterPosition)
-            .OrderBy(e => EF.Property<long?>(e, CommitOrderModel.PartitionPositionColumn))
-            .Select(e => new { Entry = e, Position = EF.Property<long?>(e, CommitOrderModel.PartitionPositionColumn) })
+                        && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) > afterPosition)
+            .OrderBy(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn))
+            .Select(e => new { Entry = e, Position = EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) })
             .Take(batchSize)
             .ToListAsync(cancellationToken);
 

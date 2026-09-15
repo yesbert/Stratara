@@ -52,6 +52,8 @@
       flag, checkpoint table, with the readers' indexes. Verify: a new test in
       `tests/Stratara.EntityFrameworkCore.Tests` asserts the entity types, columns and indexes the
       extension adds to the write and read models; the migration page names every addition.
+      Code part done: `StoreSchemaAdditionsTests` in `tests/Stratara.EntityFrameworkCore.Tests`. Stays open
+      until the migration page of 6.1 names every addition.
 - [ ] 2.2 Readers declare a stable name; the portable reader's name carries the partition count; the
       interceptor reads the count from `CommitOrderOptions`; the checkpoint store keys on the name.
       Verify: `InterleavedCommitTests` green for both readers; unit tests that a renamed reader class keeps
