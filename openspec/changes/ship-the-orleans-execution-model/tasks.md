@@ -356,6 +356,7 @@
 - [x] 7.4 `tests/Stratara.Orleans.IntegrationTests` green on the packaged projects, 37 tests plus the new
       cases. Verify: the run's summary in `evidence/results.md`.
       Done: 56 / 56 (37 plus 19 new cases) in each of the three `integration.yml` runs on `fdb5c8e`, RabbitMQ 42 / 42
-      alongside; the summary and what the new cases cover are in `evidence/results.md` → *Correctness*.
+      alongside; after the pull-request review fixes, 57 / 57 with `SelfDispatchTests` on `8cd105e` (run
+      `34982913485`). The summary and what the new cases cover are in `evidence/results.md` → *Correctness*.
 - [ ] 7.5 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
       queued for after the merge. Verify: the gauntlet's last line and `git diff --stat main`.

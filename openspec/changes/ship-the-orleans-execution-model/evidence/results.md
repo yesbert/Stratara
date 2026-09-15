@@ -74,6 +74,7 @@ three runs in a row on the hosted Ubuntu runner:
 | `34969157789` | 24m37s | 56 / 56 | 42 / 42 |
 | `34971671299` | 25m36s | 56 / 56 | 42 / 42 |
 | `34974373060` | 24m37s | 56 / 56 | 42 / 42 |
+| `34982913485`, at `8cd105e` after the review fixes | 25m36s | 57 / 57 (with `SelfDispatchTests`) | 42 / 42 |
 
 The archived suite had 37 Orleans tests. The 19 added cases cover:
 - the mediator pipeline on the intent path, and a command a handler sends for another aggregate;
