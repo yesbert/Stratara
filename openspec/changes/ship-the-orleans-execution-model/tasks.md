@@ -42,6 +42,10 @@
       the block shared by the saga and projection grains is written once. Verify: `SurfaceTests` lists
       every public type of both packages and fails on an addition; a unit test for the purpose length; a
       test that the native reader works under a non-snake-case model.
+      Done. The two non-promise readers live in `tests/Stratara.Orleans.IntegrationTests/CommitOrder/`,
+      which the benchmarks reference: `InterleavedCommitTests` needs the naive reader to prove it still
+      provokes the interleaving. Section names are no longer claimed. `SurfaceTrimTests` covers the purpose
+      length and the drain; `NativeReaderModelNamesTests` the non-snake-case model.
 
 ## 2. Store schema and readers (D4, D7, D10, D23)
 
@@ -67,9 +71,12 @@
       catch-up, and `ProjectionGrainTests` green.
       Done: `StoreReaderLoopTests` counts one read for a catch-up shorter than a batch and three for 25 entries
       at a batch of 10; `ProjectionGrainTests` 3/3 and `SagaGrainTests` green.
-- [ ] 2.4 The portable reader's backfill and its start-up refusal (D23). Verify: an integration test on a
+- [x] 2.4 The portable reader's backfill and its start-up refusal (D23). Verify: an integration test on a
       store with entries written before the counter — the reader refuses to start, the backfill positions
       them, and a reader started afterwards applies every entry in commit order within its partition.
+      Done: `PartitionCounterBackfill.RunAsync` positions unpositioned entries per partition ahead of those
+      appended since, under the partition's counter row; `AddStrataraPortableCounterReader<TWriteContext>()`
+      registers the reader with a start-up check that names the backfill. `PartitionCounterBackfillTests` green.
 
 ## 3. Known limitations closed (D4, D5, D6, D8, D9)
 
