@@ -73,7 +73,10 @@ time, and neither sees the other's effects.
 ### Requirement: Sagas consume the event stream through their own subscription
 
 Saga processing SHALL subscribe to the event-bundle topic under a subscription of its own, separate
-from the projection side's, so that each receives every bundle independently.
+from the projection side's, so that each receives every bundle independently. On the Orleans
+execution model sagas SHALL instead be fed from the event store in commit order from a checkpoint of
+their own per partition, independent of the projections' checkpoints, so that each side still
+receives every fact whether or not the other is deployed.
 
 #### Scenario: A bundle is published
 
@@ -84,6 +87,12 @@ from the projection side's, so that each receives every bundle independently.
 
 - **WHEN** a host runs the saga worker and no projection worker
 - **THEN** sagas still receive every bundle
+
+#### Scenario: Sagas read the store on the Orleans execution model
+
+- **WHEN** events are committed on a host with store-reading sagas and no projection readers
+- **THEN** every saga receives every fact, in commit order within a stream, under the recorded
+  session — verified on the PostgreSQL store with an unchanged saga
 
 ### Requirement: Sagas are discovered by assembly
 
@@ -130,7 +139,8 @@ while bundles about different aggregates continue to be dispatched in parallel.
 The requirement *Sagas run in parallel with each other, and in order within themselves* speaks about
 the sagas inside one bundle. This one speaks about bundles across consumers: the second fact about an
 aggregate does not reach a saga while the first is still being handled next door. The guarantee is
-per process.
+per process. On the Orleans execution model it holds across the cluster: one reader per partition
+dispatches one batch at a time.
 
 #### Scenario: Two bundles about the same aggregate arrive concurrently
 
@@ -149,6 +159,11 @@ per process.
 - **WHEN** more distinct aggregates are in flight than the framework holds locks for
 - **THEN** correctness is preserved — two unrelated aggregates may serialise against each other, but
   two bundles about the same aggregate never dispatch concurrently
+
+#### Scenario: Two silos dispatch facts about one aggregate on the Orleans execution model
+
+- **WHEN** two silos run the saga readers and facts about one aggregate are committed
+- **THEN** the sagas receive them from one reader, one batch at a time, never concurrently
 
 ### Requirement: A saga can report that a fact's prerequisite has not been applied yet
 
@@ -223,3 +238,31 @@ nobody would ever take; keeping the bundle is the only way that process can stil
 
 - **WHEN** the command a saga issues in reaction to a bundle reports a concurrency conflict
 - **THEN** the bundle is redelivered under the conflict bound rather than the failure bound
+
+### Requirement: A saga can be a stateful process with a correlation and a timeout
+
+On the Orleans execution model a saga MAY opt in to state: it declares which events it handles and
+how it correlates them, and the framework SHALL keep its state per correlation in an event stream of
+its own, so that it needs no storage of its own to configure, SHALL rehydrate it from that stream, and
+SHALL let it register a timeout that fires once per cluster on or after its due time and survives a
+restart. A fact MAY reach a process more than once, and a timeout MAY reach it for a step whose events
+were not recorded; the framework SHALL hand every delivery the state as recorded, so that the process
+decides from it. A saga that does not opt in SHALL keep running unchanged and stateless, as the
+contract says.
+
+#### Scenario: A process times out after a restart
+
+- **WHEN** a process registers a timeout and the silo is killed before it is due
+- **THEN** the timeout fires after the restart, once, and the process handles it with its
+  rehydrated state — verified with three kills on the PostgreSQL store
+
+#### Scenario: A stateless saga is registered beside a process
+
+- **WHEN** a host registers an existing stateless saga and a stateful process
+- **THEN** the stateless saga behaves as it did on the bus, one instance per fact, no state kept
+
+#### Scenario: A fact reaches a process twice
+
+- **WHEN** a fact is delivered to a process again after a crash
+- **THEN** the process receives it with state that already reflects its first handling, if that
+  handling was recorded

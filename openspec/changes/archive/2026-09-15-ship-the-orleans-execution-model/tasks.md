@@ -270,7 +270,7 @@
       pin `Microsoft.CodeAnalysis.Workspaces.Common`, which the Orleans code generator otherwise resolves to 5.0.0),
       `llms-full.txt` is regenerated with the Orleans registrations, and `ConfigureStrataraHeavyWork` gained the
       `<example>` a registration must carry. Documentation tests 699/699; a repository search finds no page stating 25.
-- [ ] 6.3 The coverage exclusion for `src/Stratara.Orleans/**` leaves `.github/workflows/sonar.yml`, and the
+- [x] 6.3 The coverage exclusion for `src/Stratara.Orleans/**` leaves `.github/workflows/sonar.yml`, and the
       analysis collects the Orleans integration suite's in-process coverage (D26). Verify: the first
       analysis of `main` after the merge reports the quality gate as passed with the package in the
       coverage measure.
@@ -279,6 +279,10 @@
       leaving out the six kill-test classes (`--filter-not-class`, checked on the unit project: 75 → 71 with one
       class excluded). A failure there is a warning, since `integration.yml` gates the suite; the job timeout is 90
       minutes.
+      Done: the first analysis of `main` after #96 and #97 collected the Orleans packages' coverage but failed the gate
+      on 16 new issues, and three Orleans integration tests failed there on the test database's connection limit;
+      #98 resolved both. The analysis of `main` after #98 passed the quality gate: new-code coverage 88.4 %, 0 new
+      violations, every Orleans integration test in the analysis run passed.
 
 - [x] 6.4 `README.md` presents the execution model as the headline feature, after 7.3 so real numbers
       exist (D13): a door beside the existing three that leads with the benefit the capability
