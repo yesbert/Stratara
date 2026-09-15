@@ -27,7 +27,7 @@ namespace Stratara.Orleans.IntegrationTests.Projections;
 public sealed class ProjectionGrainTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
 {
     private const string ProjectionName = nameof(CounterViewProjection);
-    private static readonly string ReaderName = typeof(PostgresTransactionIdReader<PocCommitOrderWriteDbContext>).Name;
+    private static readonly string ReaderName = $"postgres-transaction-id/{new CommitOrderOptions().PartitionCount}";
     private static readonly TimeSpan ApplyTimeout = TimeSpan.FromSeconds(30);
 
     [Fact]

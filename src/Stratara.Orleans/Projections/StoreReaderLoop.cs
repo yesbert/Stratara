@@ -110,7 +110,7 @@ internal sealed class StoreReaderLoop(
 
         using var scope = scopeFactory.CreateScope();
         var (reader, checkpoints) = Resolve(scope.ServiceProvider);
-        return await checkpoints.GetAsync(consumer, partition, reader.GetType().Name);
+        return await checkpoints.GetAsync(consumer, partition, reader.Name);
     }
 
     /// <summary>
@@ -124,7 +124,7 @@ internal sealed class StoreReaderLoop(
     public Task<int> CatchUpAsync(Func<CommittedBatch, Task<int>> applyBatch) => CatchUpAsync(applyBatch, static () => false);
 
     /// <summary>
-    /// Reads and applies until the store has nothing newer, a batch applies only partly, or
+    /// Reads and applies until a batch says the store had nothing more, a batch applies only partly, or
     /// <paramref name="suspended"/> says to stop at the next batch boundary — a pause does not wait
     /// for a partition that is far behind to catch up first.
     /// </summary>
@@ -132,7 +132,7 @@ internal sealed class StoreReaderLoop(
     {
         using var scope = scopeFactory.CreateScope();
         var (reader, checkpoints) = Resolve(scope.ServiceProvider);
-        var readerName = reader.GetType().Name;
+        var readerName = reader.Name;
 
         if (!_positionKnown)
         {
@@ -167,6 +167,10 @@ internal sealed class StoreReaderLoop(
 
             await checkpoints.SetAsync(consumer, partition, readerName, batch.Position);
             _position = batch.Position;
+            if (!batch.HasMore)
+            {
+                return total;
+            }
         }
 
         return total;

@@ -24,6 +24,9 @@ public sealed class SafetyWindowReader<TContext>(
     where TContext : DbContext, IWriteDbContext
 {
     private readonly int _partitionCount = options.Value.PartitionCount;
+
+    /// <inheritdoc/>
+    public string Name => $"safety-window/{_partitionCount}";
     /// <summary>How much older than the moment of reading an entry must be before it is returned.</summary>
     public static readonly TimeSpan Window = TimeSpan.FromMilliseconds(100);
 

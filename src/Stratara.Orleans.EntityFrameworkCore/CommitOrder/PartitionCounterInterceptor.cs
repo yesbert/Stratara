@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 using Stratara.Abstractions.EventSourcing;
 
 namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
@@ -21,10 +22,12 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// Where the save runs outside a transaction the interceptor opens one and commits it after the
 /// save, so the counter update and the insert always share a transaction. The write path itself is
 /// unchanged: this is an EF Core interceptor the context registers, not a change to how entries are
-/// added. The cost of the lock is the throughput ceiling the benchmarks measure.
+/// added. The cost of the lock is the throughput ceiling the benchmarks measure. The partition count is
+/// the one every reader is configured with, read from the same options.
 /// </remarks>
-public sealed class PartitionCounterInterceptor(int partitionCount) : SaveChangesInterceptor
+public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> options) : SaveChangesInterceptor
 {
+    private readonly int _partitionCount = options.Value.PartitionCount;
     private readonly ConditionalWeakTable<DbContext, IDbContextTransaction> _ownedTransactions = new();
 
     /// <inheritdoc/>
@@ -52,7 +55,7 @@ public sealed class PartitionCounterInterceptor(int partitionCount) : SaveChange
             _ownedTransactions.Add(context, await context.Database.BeginTransactionAsync(cancellationToken));
         }
 
-        foreach (var group in added.GroupBy(entry => PartitionMap.PartitionOf(entry.Entity.BucketId, partitionCount)).OrderBy(group => group.Key))
+        foreach (var group in added.GroupBy(entry => PartitionMap.PartitionOf(entry.Entity.BucketId, _partitionCount)).OrderBy(group => group.Key))
         {
             await StampPositionsAsync(context, group.Key, [.. group], cancellationToken);
         }

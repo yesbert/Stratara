@@ -15,14 +15,12 @@ public sealed class PocCommitOrderWriteDbContext(
     IOptions<CommitOrderOptions> commitOrder)
     : WriteDbContext<PocCommitOrderWriteDbContext>(options)
 {
-    private readonly CommitOrderOptions _commitOrder = commitOrder.Value;
-
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
-        if (_commitOrder.MaintainPartitionCounter)
+        if (commitOrder.Value.MaintainPartitionCounter)
         {
-            optionsBuilder.AddInterceptors(new PartitionCounterInterceptor(_commitOrder.PartitionCount));
+            optionsBuilder.AddInterceptors(new PartitionCounterInterceptor(commitOrder));
         }
     }
 }

@@ -22,11 +22,29 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
 
         if (checkpoint.Reader != reader)
         {
-            throw new InvalidOperationException(
-                $"The checkpoint of {projection}/{partition} was written by reader '{checkpoint.Reader}', not '{reader}'. Positions are not comparable across readers; reset the checkpoint before switching.");
+            throw new InvalidOperationException(Refusal(projection, partition, checkpoint.Reader, reader));
         }
 
         return checkpoint.Position;
+    }
+
+    /// <summary>
+    /// Names what differs: the partition count, when the same reader wrote the checkpoint under
+    /// another count, or the two readers otherwise.
+    /// </summary>
+    private static string Refusal(string projection, int partition, string written, string expected)
+    {
+        var (writtenKind, writtenCount) = Split(written);
+        var (expectedKind, expectedCount) = Split(expected);
+        return writtenKind == expectedKind && writtenCount != expectedCount
+            ? $"The checkpoint of {projection}/{partition} was written under a partition count of {writtenCount}, and the host now reads under {expectedCount}. Positions are not comparable across partition counts; reset the checkpoints before changing the count."
+            : $"The checkpoint of {projection}/{partition} was written by reader '{written}', not '{expected}'. Positions are not comparable across readers; reset the checkpoint before switching.";
+    }
+
+    private static (string Kind, string Count) Split(string readerName)
+    {
+        var separator = readerName.LastIndexOf('/');
+        return separator < 0 ? (readerName, string.Empty) : (readerName[..separator], readerName[(separator + 1)..]);
     }
 
     /// <inheritdoc/>

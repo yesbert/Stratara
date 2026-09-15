@@ -48,6 +48,9 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     private Statements? _statements;
 
     /// <inheritdoc/>
+    public string Name => $"postgres-transaction-id/{_partitionCount}";
+
+    /// <inheritdoc/>
     public async Task<CommittedBatch> ReadAfterAsync(int partition, long afterPosition, int batchSize, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -86,7 +89,10 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
             }
         }
 
-        return new CommittedBatch([.. rows.Select(row => new CommittedEntry(row.Entry, (long)row.TransactionId))], (long)rows[^1].TransactionId);
+        return new CommittedBatch([.. rows.Select(row => new CommittedEntry(row.Entry, (long)row.TransactionId))], (long)rows[^1].TransactionId)
+        {
+            HasMore = projected.Count > batchSize,
+        };
     }
 
     private async Task<List<Row>> ReadWholeTransactionAsync(TContext context, Statements statements, int partition, ulong transactionId, CancellationToken cancellationToken)

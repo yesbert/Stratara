@@ -23,6 +23,9 @@ public sealed class NaiveSequenceReader<TContext>(IDbContextFactory<TContext> co
     private readonly int _partitionCount = options.Value.PartitionCount;
 
     /// <inheritdoc/>
+    public string Name => $"naive-sequence/{_partitionCount}";
+
+    /// <inheritdoc/>
     public async Task<CommittedBatch> ReadAfterAsync(int partition, long afterPosition, int batchSize, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);

@@ -17,6 +17,13 @@ namespace Stratara.Abstractions.CommitOrder;
 public interface ICommittedPositionReader
 {
     /// <summary>
+    /// The stable name positions are stored under. It names the ordering the positions belong to and
+    /// the partition count they were written under, so a checkpoint is refused by a reader of another
+    /// kind or under another count, and renaming a class changes nothing a checkpoint is keyed on.
+    /// </summary>
+    string Name { get; }
+
+    /// <summary>
     /// Returns up to <paramref name="batchSize"/> entries of <paramref name="partition"/> that come
     /// after <paramref name="afterPosition"/> in commit order, together with the position to resume
     /// from.
@@ -46,6 +53,12 @@ public sealed record CommittedBatch(IReadOnlyList<CommittedEntry> Entries, long 
     /// <param name="position">The position the read was asked for.</param>
     /// <returns>A batch with no entries and <paramref name="position"/> unchanged.</returns>
     public static CommittedBatch Empty(long position) => new([], position);
+
+    /// <summary>
+    /// Whether the partition held more entries after this batch when it was read. A consumer that has
+    /// applied a batch without more stops reading until the next wake-up instead of issuing an empty read.
+    /// </summary>
+    public bool HasMore { get; init; }
 
     /// <summary>
     /// The position to resume from when the entries before <paramref name="firstUnappliedIndex"/>

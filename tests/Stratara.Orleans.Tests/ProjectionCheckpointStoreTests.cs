@@ -1,0 +1,63 @@
+using Microsoft.EntityFrameworkCore;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
+using Stratara.Orleans.EntityFrameworkCore.Projections;
+
+namespace Stratara.Orleans.Tests;
+
+/// <summary>
+/// A checkpoint is refused rather than misread when it was written under another partition count or
+/// by another reader, and the refusal names what differs.
+/// </summary>
+public sealed class ProjectionCheckpointStoreTests
+{
+    [Fact]
+    public async Task A_checkpoint_written_under_another_partition_count_is_refused_naming_both_counts()
+    {
+        var store = await StoreWithCheckpointAsync("partition-counter/16");
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => store.GetAsync("View", 2, "partition-counter/32"));
+
+        Assert.Contains("partition count of 16", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("under 32", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_checkpoint_written_by_another_reader_is_refused_naming_both_readers()
+    {
+        var store = await StoreWithCheckpointAsync("partition-counter/16");
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => store.GetAsync("View", 2, "postgres-transaction-id/16"));
+
+        Assert.Contains("'partition-counter/16'", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("'postgres-transaction-id/16'", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_checkpoint_written_by_the_same_reader_is_returned()
+    {
+        var store = await StoreWithCheckpointAsync("partition-counter/16");
+
+        Assert.Equal(42, await store.GetAsync("View", 2, "partition-counter/16"));
+    }
+
+    private static async Task<ProjectionCheckpointStore<CheckpointContext>> StoreWithCheckpointAsync(string reader)
+    {
+        var factory = new ContextFactory($"checkpoints-{Guid.NewGuid():N}");
+        await using (var context = factory.CreateDbContext())
+        {
+            context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = "View", Partition = 2, Position = 42, Reader = reader });
+            await context.SaveChangesAsync();
+        }
+
+        return new ProjectionCheckpointStore<CheckpointContext>(factory);
+    }
+
+    public sealed class CheckpointContext(DbContextOptions<CheckpointContext> options) : ReadDbContext<CheckpointContext>(options);
+
+    private sealed class ContextFactory(string database) : IDbContextFactory<CheckpointContext>
+    {
+        public CheckpointContext CreateDbContext() =>
+            new(new DbContextOptionsBuilder<CheckpointContext>().UseInMemoryDatabase(database).Options);
+    }
+}

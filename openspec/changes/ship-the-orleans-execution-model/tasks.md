@@ -54,13 +54,19 @@
       extension adds to the write and read models; the migration page names every addition.
       Code part done: `StoreSchemaAdditionsTests` in `tests/Stratara.EntityFrameworkCore.Tests`. Stays open
       until the migration page of 6.1 names every addition.
-- [ ] 2.2 Readers declare a stable name; the portable reader's name carries the partition count; the
+- [x] 2.2 Readers declare a stable name; the portable reader's name carries the partition count; the
       interceptor reads the count from `CommitOrderOptions`; the checkpoint store keys on the name.
       Verify: `InterleavedCommitTests` green for both readers; unit tests that a renamed reader class keeps
       its checkpoints and that a changed partition count is refused with a message naming both counts.
-- [ ] 2.3 `CommittedBatch.HasMore`, set by both readers, the portable one now reading one row past the
+      Done: both shipped readers carry the partition count in their name (`postgres-transaction-id/16`,
+      `partition-counter/16`) — the spec refuses a position under another count for either reader, not only
+      the portable one. `InterleavedCommitTests` green for both readers; `StoreReaderLoopTests` (renamed class,
+      changed count) and `ProjectionCheckpointStoreTests` (both counts named) in `tests/Stratara.Orleans.Tests`.
+- [x] 2.3 `CommittedBatch.HasMore`, set by both readers, the portable one now reading one row past the
       batch; the loop stops after an uncut batch. Verify: a unit test on the loop's read count per
       catch-up, and `ProjectionGrainTests` green.
+      Done: `StoreReaderLoopTests` counts one read for a catch-up shorter than a batch and three for 25 entries
+      at a batch of 10; `ProjectionGrainTests` 3/3 and `SagaGrainTests` green.
 - [ ] 2.4 The portable reader's backfill and its start-up refusal (D23). Verify: an integration test on a
       store with entries written before the counter — the reader refuses to start, the backfill positions
       them, and a reader started afterwards applies every entry in commit order within its partition.

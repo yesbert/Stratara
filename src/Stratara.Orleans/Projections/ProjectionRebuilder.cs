@@ -35,7 +35,7 @@ internal sealed class ProjectionRebuilder(
             await rebuildable.TruncateAsync(cancellationToken);
 
             var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
-            var reader = services.GetRequiredService<ICommittedPositionReader>().GetType().Name;
+            var reader = services.GetRequiredService<ICommittedPositionReader>().Name;
             await Task.WhenAll(Enumerable.Range(0, commitOrder.Value.PartitionCount)
                 .Select(partition => checkpoints.SetAsync(projectionName, partition, reader, 0, cancellationToken)));
         }
