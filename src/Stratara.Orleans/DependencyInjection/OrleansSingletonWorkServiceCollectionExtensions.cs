@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Stratara.Orleans.Singleton;
+using Stratara.Abstractions.Singleton;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -11,7 +11,9 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <typeparamref name="TWork"/> to run once per cluster on its period. Every silo that
-    /// registers it asks its grain to run at start-up; the grain runs on exactly one of them.
+    /// registers it asks its grain to run once the silo is active, whatever order the silo and this call
+    /// were registered in; the grain runs on exactly one of them, and never on a silo that did not register
+    /// the work. Its settings are validated when the host starts.
     /// </summary>
     /// <typeparam name="TWork">The work.</typeparam>
     /// <param name="services">The service collection.</param>
@@ -32,8 +34,11 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
         }
 
         services.AddOptions<OutboxDrainOptions>();
+        Stratara.Orleans.Hosting.OrleansOptionsValidator.Register<SingletonWorkOptions>(services);
+        Stratara.Orleans.Hosting.OrleansOptionsValidator.Register<OutboxDrainOptions>(services);
         services.AddScoped<ISingletonWork, TWork>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SingletonWorkStarter>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, SingletonWorkStarter>());
+        Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         return services;
     }
 }

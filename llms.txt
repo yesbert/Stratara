@@ -1,7 +1,7 @@
 # Stratara
 
 > Integrated CQRS, Event Sourcing, and audit stack for .NET 10 — mediator, outbox, event
-> store, sagas, projections, and identity wired together and lockstep-versioned across 25
+> store, sagas, projections, and identity wired together and lockstep-versioned across 27
 > NuGet packages. Distinguishing properties: hash-chained tamper-evident event streams,
 > tenant-aware AES-GCM encryption with tenant-bound associated data, and GDPR Art. 17
 > crypto-shredding. MIT-licensed. Opt in à la carte.
@@ -21,7 +21,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 ## Core facts (anchor before generating code)
 
 - **Target framework:** .NET 10. C# with nullable enabled, `TreatWarningsAsErrors=true`.
-- **Versioning:** one `<VersionPrefix>` in `Directory.Build.props` controls all 25 packages
+- **Versioning:** one `<VersionPrefix>` in `Directory.Build.props` controls all 27 packages
   (Microsoft.Extensions.* lockstep convention). Never assume per-package versions diverge.
 - **Tier order (dependency direction):** Tier-A → Tier-B → Tier-C. A Tier-N package may only
   reference Tier-(≤N). Tier-A (`Abstractions`, `Contracts`, `Diagnostics`, `Resilience`) has
@@ -117,6 +117,19 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   stores them KEK-wrapped. `EraseScopeAsync` crypto-shreds a scope (GDPR Art. 17). `[EncryptData]`
   fields are AES-GCM sealed with tenant-bound associated data. Register with
   `AddStrataraFileKeyStore(configuration)` before `AddSecurity()`.
+- **Two execution models, same handlers.** The bus workers (RabbitMQ / Azure Service Bus) are
+  supported; the Orleans execution model (`Stratara.Orleans`, Orleans 10.3) is recommended for hosts
+  that can run a cluster. On it, one aggregate has one writer across the cluster
+  (`AddStrataraAggregateGrains`), `ICommandOutboxDispatcher` records a command before returning and
+  resumes it after a crash up to `MessageRetry:MaxDeliveryAttempts` times, then keeps it
+  (`AddStrataraOrleansCommandDispatcher` + `AddStrataraIntentStore<TWriteContext>`), projections and
+  sagas read the store in commit order from checkpoints instead of taking bundles from the bus
+  (`AddEventProjectionServices()` / `AddSagaServices()` then `AddStrataraProjectionGrains` /
+  `AddStrataraSagaGrains`), and singleton work runs once per cluster (`AddStrataraSingletonWork<T>`).
+  The silo needs a storage-backed grain directory registered with `silo.AddStrataraOrleans(...)` or it
+  fails at start; every setting is validated at start. A failing entry stops its partition and is
+  retried — it is not dead-lettered. Handlers must stay idempotent: a command completed just before a
+  crash runs again.
 - **Source-generated logging only** (`[LoggerMessage]`) for new code — never `logger.LogInformation(...)`.
 
 ## Getting started
@@ -137,11 +150,12 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [Scoped settings](https://stratara.tech/guides/scoped-settings.html): global/tenant/user/user-in-tenant settings with a fixed fallback chain and optional at-rest encryption.
 - [API keys and PATs](https://stratara.tech/guides/api-keys-and-pats.html): machine-to-machine keys that resolve through the same membership/role plane as human actors.
 - [External login (OIDC) + JIT provisioning](https://stratara.tech/guides/external-login-oidc.html): link by issuer `sub`, verified-email gate, fail-closed against nOAuth-class takeover.
+- [The Orleans execution model](https://stratara.tech/concepts/orleans-execution-model.html): what running commands, projections, sagas, timers and singleton work on an Orleans cluster guarantees and costs; with [choose an execution model](https://stratara.tech/getting-started/choose-an-execution-model.html), [migrate](https://stratara.tech/guides/migrate-to-the-orleans-execution-model.html) and [operate](https://stratara.tech/guides/operate-the-orleans-execution-model.html).
 - [Performance & scaling](https://stratara.tech/concepts/performance-and-scaling.html): reflection-free hot paths, 4096-bucket stream partitioning, competing-consumer workers.
 - [Observe the framework](https://stratara.tech/guides/observe-the-framework.html): all framework telemetry comes from one activity source (`Stratara.Application`) and one meter (`Stratara.Service`); instrument names are published constants and a stable contract.
 - [Queue background work](https://stratara.tech/guides/queue-background-work.html): `IBackgroundTaskQueue` runs in-process work in the background and reports each item's outcome.
 
-## Packages (25, lockstep)
+## Packages (27, lockstep)
 
 - [Stratara.Abstractions](https://www.nuget.org/packages/Stratara.Abstractions) (Tier-A): contract interfaces + POCO records — Mediator, EventSourcing, Persistence, Outbox, Messaging, Session, Security, Authorization. No EF Core or message-bus runtime.
 - [Stratara.Contracts](https://www.nuget.org/packages/Stratara.Contracts) (Tier-A): wire-level POCO contracts — command/event envelopes, paged-request records, `SessionContext` shape.
@@ -166,6 +180,8 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [Stratara.Identity.AspNetCore](https://www.nuget.org/packages/Stratara.Identity.AspNetCore) (Tier-C): channel-agnostic ASP.NET Core identity wiring + `IStrataraSignInManager`, membership tenant-claim bridge (`stratara:tenant_id` at issuance or per request), permission policies, API-key scheme + auth-scheme selector, external-login OIDC/JWT-bearer helpers, hardened JIT external-login provisioning (link by issuer `sub`, verified-email gate, fail-closed).
 - [Stratara.Identity.EntityFrameworkCore](https://www.nuget.org/packages/Stratara.Identity.EntityFrameworkCore) (Tier-C): identity directory — user↔tenant membership (many-to-many, tenant-scoped roles, active-tenant selection), membership-backed `IAuthorizationProvider`, permission catalog + resolvers, scoped settings store (global/tenant/user/user-in-tenant with fallback chain).
 - [Stratara.ServiceDefaults.AspNetCore](https://www.nuget.org/packages/Stratara.ServiceDefaults.AspNetCore) (Tier-C): ASP.NET health checks + `/health` / `/alive` endpoints + request OpenTelemetry.
+- [Stratara.Orleans](https://www.nuget.org/packages/Stratara.Orleans) (Tier-C): the Orleans execution model — aggregate grains, the durable-intent command dispatcher, store-reading projection and saga grains, durable timers, singleton work, bounded heavy work; `AddStrataraOrleans` on the silo.
+- [Stratara.Orleans.EntityFrameworkCore](https://www.nuget.org/packages/Stratara.Orleans.EntityFrameworkCore) (Tier-C): the execution model's persistence — commit-order readers (native PostgreSQL, portable counter with backfill), checkpoint store, command-intent store, `IExecutionModelReset`.
 - [Stratara.Testing](https://www.nuget.org/packages/Stratara.Testing) (test-support): in-memory `IKeyStore` / `IMessageBus` / `ISessionContextProvider` doubles + given/when/then `AggregateTestHarness<T>`.
 - [Stratara.Testing.EntityFrameworkCore](https://www.nuget.org/packages/Stratara.Testing.EntityFrameworkCore) (test-support): `EventStoreTestHost` — the real event-sourcing write stack on in-memory SQLite, no Postgres/Docker.
 

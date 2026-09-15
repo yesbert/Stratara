@@ -11,6 +11,12 @@
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
+        <!-- The Orleans code generator brings Workspaces.Common 5.0.0, which demands Common at exactly 5.0.0. -->
+        <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common"/>
+        <!-- The silo providers the Orleans pages and examples use, so their snippets compile. -->
+        <PackageReference Include="Microsoft.Orleans.Clustering.AdoNet"/>
+        <PackageReference Include="Microsoft.Orleans.GrainDirectory.Redis"/>
+        <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet"/>
         <PackageReference Include="Moq"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite"/>
         <PackageReference Include="xunit.v3"/>
@@ -31,6 +37,8 @@
         <ProjectReference Include="../../src/Stratara.Identity.Core/Stratara.Identity.Core.csproj" />
         <ProjectReference Include="../../src/Stratara.Infrastructure/Stratara.Infrastructure.csproj" />
         <ProjectReference Include="../../src/Stratara.Mediator/Stratara.Mediator.csproj" />
+        <ProjectReference Include="../../src/Stratara.Orleans/Stratara.Orleans.csproj" />
+        <ProjectReference Include="../../src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj" />
         <ProjectReference Include="../../src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj" />
         <ProjectReference Include="../../src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj" />
         <ProjectReference Include="../../src/Stratara.Projections/Stratara.Projections.csproj" />

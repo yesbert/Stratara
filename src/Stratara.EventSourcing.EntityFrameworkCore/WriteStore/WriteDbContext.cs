@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 
@@ -16,6 +17,11 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 /// co-hosted in the same assembly do not leak into the write model. Missing the namespace
 /// predicate yields <c>PendingModelChangesWarning</c> at runtime — a regression that escapes
 /// unit tests and only surfaces against a real Postgres in the consumer's E2E pipeline.
+/// <para>
+/// The model also declares what reading the event stream in commit order needs: a per-partition
+/// position on every entry with its counter table, and on PostgreSQL the id of the inserting
+/// transaction. A host that does not read in commit order migrates these and never fills them.
+/// </para>
 /// </remarks>
 /// <param name="options">Options bound by the host's <c>AddNpgsqlWriteDbContextFactory</c> registration.</param>
 public class WriteDbContext<TContext>(DbContextOptions<TContext> options) : DbContext(options), IWriteDbContext where TContext : DbContext
@@ -27,5 +33,9 @@ public class WriteDbContext<TContext>(DbContextOptions<TContext> options) : DbCo
         modelBuilder.ApplyConfigurationsFromAssembly(
             Assembly.GetAssembly(typeof(IWriteStoreMarker)) ?? throw new InvalidOperationException(),
             t => t.Namespace?.StartsWith("Stratara.EventSourcing.EntityFrameworkCore.WriteStore", StringComparison.Ordinal) == true);
+        if (Database.IsNpgsql())
+        {
+            CommitOrderSchema.ApplyPostgresTransactionId(modelBuilder);
+        }
     }
 }

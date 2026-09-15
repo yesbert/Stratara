@@ -10,6 +10,8 @@ using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Projections;
 using Stratara.Orleans.IntegrationTests.Store;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 
 namespace Stratara.Orleans.IntegrationTests.Sagas;
 
@@ -53,11 +55,11 @@ public sealed class SagaGrainTests(PostgreSqlFixture postgres, RedisFixture redi
             ["ConnectionStrings:rabbitmq"] = rabbit.ConnectionString,
         });
         builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));
-        builder.AddSagaWorkerServices();
+        builder.AddSagaServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(postgres.ConnectionStringFor("poc_saga_read"))
-            .AddAggregatesFromAssemblyContaining<SagaGrainTests>()
+            .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<Counter>()
             .AddTrustedType<CounterCreated>()
             .AddTrustedType<CounterIncremented>()
@@ -65,7 +67,8 @@ public sealed class SagaGrainTests(PostgreSqlFixture postgres, RedisFixture redi
             .AddSingleton(log)
             .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
-            .AddStrataraSagaGrains<PocReadDbContext>(options =>
+            .AddStrataraProjectionCheckpoints<PocReadDbContext>()
+            .AddStrataraSagaGrains(options =>
             {
                 options.PollInterval = TimeSpan.FromSeconds(2);
                 options.KeepAlivePeriod = TimeSpan.FromSeconds(5);

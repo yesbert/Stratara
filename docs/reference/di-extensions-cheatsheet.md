@@ -23,6 +23,8 @@ These wire entire worker / host concerns in one call. **Pick one per host.**
 | `builder.AddHeavyCommandWorkerServices(dop?)` | Common framework + dedicated heavy-command worker | Worker hosts that drain long-running `IHeavyCommand` commands on a separate lane, so they don't starve interactive commands |
 | `builder.AddEventProjectionWorkerServices()` | Common framework + projection worker | Worker hosts that update read-models |
 | `builder.AddSagaWorkerServices()` | Common framework + saga worker | Worker hosts that orchestrate processes |
+| `builder.AddEventProjectionServices()` | The projection worker stack without the bus-fed worker; the replay worker stays | Hosts whose projections read the store, such as the Orleans execution model |
+| `builder.AddSagaServices()` | The saga worker stack without the bus-fed worker | Hosts whose sagas read the store, such as the Orleans execution model |
 | `builder.AddEventStreamHashWorkerServices()` | Common framework + event-stream-hash worker | Worker hosts that hash event streams for tamper-evidence |
 | `builder.AddOutboxWorkerServices()` | Common framework + outbox-drain worker | Worker hosts that publish from `outbox_entry` to the bus |
 
@@ -61,6 +63,8 @@ already has the framework services and needs a second lane.
 | `services.AddOutboxWorker(configuration)` | The outbox-drain hosted service; binds `OutboxOptions` from configuration |
 | `services.AddProjectionWorker(configuration)` | The projection runtime and its hosted service; binds `ProjectionOptions` |
 | `services.AddSagaWorker(configuration)` | The saga runtime and its hosted service; binds `SagaOptions` |
+| `services.AddProjectionHandling(configuration)` | The projection runtime and the replay worker, without the bus-fed worker; binds `ProjectionOptions` |
+| `services.AddSagaHandling(configuration)` | The saga runtime without its hosted service; binds `SagaOptions` |
 | `services.AddEventStreamHashWorker()` | The event-stream hashing worker and the anchor services behind it |
 
 ## Domain registration (`IServiceCollection`)
@@ -148,6 +152,29 @@ its model drifts from its migrations unnoticed until it meets a real database. S
 |---|---|
 | `services.AddRedisOutboxLock()` | Replaces the no-op `NullOutboxLock` with the Redis-backed one, which is what makes **more than one outbox-worker replica** safe. Needs an `IConnectionMultiplexer` — `AddCaching()` from `Stratara.Infrastructure` registers one. Lease it via `OutboxOptions.LockLeaseSeconds` |
 | `services.AddProjectionReplayState()` | Registers the projection-replay state — shared over Redis where an `IConnectionMultiplexer` is registered, held in process otherwise (warning `104_012`) — **and** `ProjectionReplayOptions` with its defaults, so the replay marking is leased (`LeaseSeconds`, default 300) rather than outliving a crashed replay. Idempotent |
+
+## Orleans execution model (`Stratara.Orleans`, `Stratara.Orleans.EntityFrameworkCore`)
+
+Each role is adopted with one call after the composite the host already has; the host's silo is
+registered with `UseOrleans`. See [Choose an Execution Model](../getting-started/choose-an-execution-model.md).
+
+| Extension | What it does |
+|---|---|
+| `silo.AddStrataraOrleans((s, name) => …)` | Extends `ISiloBuilder`. Registers the storage-backed grain directory the model's single-activation grains use, under the name it passes, and publishes the silo's singleton work in its metadata. A silo that runs the model's grains without it fails at start naming this call |
+| `services.AddStrataraAggregateGrains()` | Runs every command that names an aggregate in that aggregate's grain. Register it after every other pipeline behaviour |
+| `services.AddStrataraOrleansCommandDispatcher(opts?)` | Replaces the undecorated `ICommandOutboxDispatcher` with the durable-intent one: a command is recorded before the call returns and resumed after a crash, a bounded number of times. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order. Needs an intent store |
+| `services.AddStrataraIntentStore<TWriteContext>()` | The `ICommandIntentStore` in the write context's outbox table. The dispatcher's host fails at start without an intent store |
+| `services.ConfigureStrataraHeavyWork(o => …)` | The cluster-wide limit, the permit retry and the permit lease of heavy work |
+| `services.AddStrataraProjectionGrains(opts?, hybrid?)` | Runs every projection in grains that read the store in commit order from a checkpoint. Call after `builder.AddEventProjectionServices()`; register the host's `IProjectionViewTruncator` before it |
+| `services.AddStrataraSagaGrains(opts?, hybrid?)` | Runs every saga, and every stateful process, in grains that read the store. Call after `builder.AddSagaServices()` |
+| `services.AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the store readers' checkpoints in the read context |
+| `services.AddStrataraPortableCounterReader<TWriteContext>()` | The commit-order reader for any relational provider, and a start check that refuses a store holding an entry without a position. The write context adds `PartitionCounterInterceptor` itself, and a store with existing entries runs `PartitionCounterBackfill.RunAsync` once before the first start |
+| `services.AddStrataraDurableTimers(opts?)` | `IDurableTimers` over the silo's reminder service. The host supplies one `ITimerOwners` and one `ITimerHandler`, before or after this call |
+| `services.AddStrataraSingletonWork<TWork>(opts?)` | Runs an `ISingletonWork` once per cluster at its period, only on silos that registered it |
+| `services.AddStrataraExecutionModelReset<TReadContext>(runtimeConnectionString, clearDirectory)` | `IExecutionModelReset`: clears the reminders and membership of the host's deployment, every checkpoint, and the grain directory through the host's callback. Run it while no silo of the cluster runs |
+
+Every setting these calls bind is validated when the host starts, and an invalid one fails the start
+naming itself.
 
 ## Observability (`Stratara.ServiceDefaults`)
 

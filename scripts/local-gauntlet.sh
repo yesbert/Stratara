@@ -54,6 +54,7 @@ for test_proj in tests/*/*.csproj; do
     case "${name}" in
         Stratara.Benchmarks) continue ;;  # benchmark project, not a test runner
         *IntegrationTests) continue ;;    # require Docker; run via the integration workflow
+        Stratara.Orleans.Scenarios) continue ;;  # library the Orleans integration tests and their host share
     esac
     dll="${ROOT_DIR}/tests/${name}/bin/Release/net10.0/${name}.dll"
     if [[ ! -f "${dll}" ]]; then

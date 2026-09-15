@@ -44,10 +44,10 @@ description: "Start with a lean mediator and grow into event sourcing, an outbox
 
 <section class="st-section">
   <h2>Pick your door</h2>
-  <p class="st-sub">Three reasons people arrive here. Each one is a real entry point, not a teaser for the whole stack.</p>
+  <p class="st-sub">Four reasons people arrive here. Each one is a real entry point, not a teaser for the whole stack.</p>
   <div class="row g-4">
 
-<div class="col-md-4">
+<div class="col-md-6">
 <div class="st-door">
 <div class="st-icon"><i class="bi bi-lightning-charge" aria-hidden="true"></i></div>
 <h3>I need a mediator</h3>
@@ -80,7 +80,7 @@ builder.Services
 </div>
 </div>
 
-<div class="col-md-4">
+<div class="col-md-6">
 <div class="st-door">
 <div class="st-icon"><i class="bi bi-layers" aria-hidden="true"></i></div>
 <h3>I want event sourcing without the plumbing</h3>
@@ -118,7 +118,7 @@ await events.SaveChangesAsync(ct);
 </div>
 </div>
 
-<div class="col-md-4">
+<div class="col-md-6">
 <div class="st-door">
 <div class="st-icon"><i class="bi bi-shield-lock" aria-hidden="true"></i></div>
 <h3>I run a multi-tenant SaaS and get audited</h3>
@@ -147,6 +147,39 @@ await keyStore.EraseScopeAsync(scope, ct);
 </div>
 </div>
 
+<div class="col-md-6">
+<div class="st-door">
+<div class="st-icon"><i class="bi bi-diagram-3" aria-hidden="true"></i></div>
+<h3>I scale out and cannot lose a command</h3>
+<p class="st-who">Handlers, projections, sagas and timers as virtual actors on an Orleans cluster. A committed fact is never lost to a crash, one aggregate has one writer across the deployment, and once-per-cluster work needs no lock.</p>
+
+```bash
+dotnet add package Stratara.Orleans
+dotnet add package Stratara.Orleans.EntityFrameworkCore
+```
+
+<!-- stratara-snippet-ignore: landing-page excerpt without the silo's providers; the compilable registration is docs/guides/migrate-to-the-orleans-execution-model.md -->
+```csharp
+builder.UseOrleans(silo => silo
+    .UseAdoNetClustering(…)
+    .UseAdoNetReminderService(…)
+    .AddStrataraOrleans(…));
+
+builder.Services
+    // one writer per aggregate
+    .AddStrataraAggregateGrains()
+    // recorded before the call returns
+    .AddStrataraOrleansCommandDispatcher()
+    .AddStrataraIntentStore<AppWriteDbContext>()
+    // once per cluster, no lock
+    .AddStrataraSingletonWork<OutboxDrainWork>();
+```
+
+<p class="st-not"><strong>You do not need:</strong> to rewrite a handler, or a distributed lock for work that must run once.</p>
+<a class="st-go" href="getting-started/choose-an-execution-model.md">Choose an execution model →</a>
+</div>
+</div>
+
   </div>
 </section>
 
@@ -163,6 +196,7 @@ await keyStore.EraseScopeAsync(scope, ct);
   <h2>What is in the box</h2>
   <p class="st-sub">Integrated, not assembled. Every part below is versioned together and tested against the others.</p>
   <div class="row g-4">
+    <div class="col-12"><div class="st-feature"><h3>The Orleans execution model</h3><p>Commands, projections, sagas, timers and singleton work as virtual actors on a cluster. One writer per aggregate across the deployment, an accepted command recorded before the call returns and resumed after a crash, projections and sagas that read the store in commit order and never miss a committed fact. Recommended; the bus workers stay supported. <a href="concepts/orleans-execution-model.md">What it guarantees &rarr;</a></p></div></div>
     <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Mediator and pipeline</h3><p>Commands, queries, open-generic behaviors in registration order, authorization and tenant isolation at the entrance.</p></div></div>
     <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Event store on PostgreSQL</h3><p>Streams, snapshots, optimistic concurrency, event upcasting, command audit — through EF Core you already run.</p></div></div>
     <div class="col-md-6 col-lg-3"><div class="st-feature"><h3>Outbox and messaging</h3><p>At-least-once dispatch over RabbitMQ or Azure Service Bus, publisher confirms, a heavy-command lane.</p></div></div>
@@ -184,6 +218,13 @@ await keyStore.EraseScopeAsync(scope, ct);
     <div class="st-number"><div class="st-big">&lt; 1 µs</div><div class="st-what">per event for tamper-evident chain hashing</div></div>
   </div>
   <p class="st-sub" style="margin-top:1.25rem"><a href="concepts/performance-and-scaling.md">Methodology and caveats →</a></p>
+  <p class="st-sub" style="margin-top:2rem">The Orleans execution model against the bus workers: same machine, one process each, PostgreSQL, Redis and RabbitMQ in containers, every command appending to its aggregate's stream. Medians of three runs of 2,000 commands; the bus workers' own numbers moved by up to 23 % between runs on the same day, so read the ratios as approximate.</p>
+  <div class="st-numbers">
+    <div class="st-number"><div class="st-big">1,443/s</div><div class="st-what">commands to 2,000 aggregates, each recorded durably before the call returns &mdash; 487/s on the bus workers</div></div>
+    <div class="st-number"><div class="st-big">1,320/s</div><div class="st-what">commands to 20 aggregates, 100 each &mdash; 506/s on the bus workers</div></div>
+    <div class="st-number"><div class="st-big">316/s</div><div class="st-what">2,000 commands to one aggregate, where a single writer is the limit &mdash; 321/s on the bus workers</div></div>
+    <div class="st-number"><div class="st-big">+7 %</div><div class="st-what">processor time per 1,000 commands on a silo against a bus host (2.44 against 2.27 CPU-s)</div></div>
+  </div>
 </section>
 
 <section class="st-section st-compare">
@@ -210,7 +251,7 @@ await keyStore.EraseScopeAsync(scope, ct);
   <div class="st-cta">
     <a class="btn btn-primary" href="getting-started/first-stratara-app.md">Get started</a>
     <a class="btn btn-outline-secondary" href="samples/index.md">Run the samples</a>
-    <a class="btn btn-outline-secondary" href="overview/packages.md">See all 25 packages</a>
+    <a class="btn btn-outline-secondary" href="overview/packages.md">See all 27 packages</a>
   </div>
 </section>
 

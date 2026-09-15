@@ -16,5 +16,6 @@ internal sealed class OutboxEntryConfiguration : IEntityTypeConfiguration<Outbox
     public void Configure(EntityTypeBuilder<OutboxEntry> b)
     {
         b.HasIndex(e => e.BucketId);
+        b.Property(e => e.LastFailure).HasMaxLength(2048);
     }
 }

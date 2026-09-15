@@ -83,14 +83,22 @@ SDK and runtime packages — not the server meta-package, which the host brings 
 Tier-A and Tier-B packages plus `Stratara.Projections` and `Stratara.Sagas`, and no Entity Framework
 assembly: its registrations lose the `TReadContext : DbContext` type parameter the proof of concept
 has. `Stratara.Orleans.EntityFrameworkCore` holds the commit-order readers (native PostgreSQL and
-portable), the checkpoint store and its registration (`AddStrataraProjectionCheckpoints<TReadContext>()`),
-the model extension with its provider switch, and the interceptor that maintains the partition
-counter; it references `Stratara.EventSourcing.EntityFrameworkCore` and `Stratara.Orleans`.
+portable), the interceptor that maintains the partition counter, the checkpoint store and its
+registration (`AddStrataraProjectionCheckpoints<TReadContext>()`), and the portable reader's backfill;
+it references `Stratara.EventSourcing.EntityFrameworkCore` and `Stratara.Orleans`.
+
+The schema additions are not in it. The shipped write and read contexts in
+`Stratara.EventSourcing.EntityFrameworkCore` declare the commit-order column (PostgreSQL only, behind
+the provider switch there), the position column, the counter table, the outbox record's resume
+bookkeeping and the checkpoint table, and the entities for the counter and the checkpoint live beside
+them — because *The store declares its own schema* requires the shipped model to carry them, and that
+package cannot reference the Orleans persistence package. (Owner decision, 2026-09-15, during apply.)
 
 The ports a consumer implements or calls without hosting a silo — `IDurableTimers`,
 `ITimerOwners`, `ITimerHandler`, `ISingletonWork`, `IRebuildableProjection`, `ISagaProcess` and
-`SagaProcess<TState>`, `ICommittedPositionReader`, `IProjectionCheckpointStore`, `IProjectionRebuilder`
-— move to `Stratara.Abstractions` (timers, singleton work, readers, checkpoints, rebuilder) and
+`SagaProcess<TState>`, `ICommittedPositionReader`, `IProjectionCheckpointStore`, `IProjectionRebuilder`,
+`ICommandIntentStore` — move to `Stratara.Abstractions` (timers, singleton work, readers, checkpoints,
+rebuilder, command intents) and
 `Stratara.Projections` / `Stratara.Sagas` (the rebuildable projection and the process), so that a
 consumer's projection assembly does not reference the runtime to declare that it can be rebuilt.
 This follows the rule the tier layout already states: every SPI lives in Abstractions, even where
@@ -102,6 +110,9 @@ when a provider is added.
 
 *Rejected: the ports staying in `Stratara.Orleans`.* A projection assembly would reference the
 runtime to implement `IRebuildableProjection`, which is what the tier rule exists to prevent.
+
+*Rejected: an opt-in model extension in the Orleans persistence package.* A consumer who does not call
+it would migrate a schema that lacks what the store is specified to declare.
 
 Evidence: `package-distribution` → *Dependencies flow one way and never cycle*; the proof of
 concept's project references and `OrleansProjectionServiceCollectionExtensions.cs:40-44,90,149`
@@ -136,13 +147,24 @@ already issues the same statement for one id.
 
 ### D4 — A resumed command is bounded, then kept
 
-The outbox record gains an attempt count, a kept state, the time of its last hand-over, and the
-aggregate id and heavy flag the dispatcher already knows when it records the command. The drain
-resumes a stored command only while its attempts are below the bound the host already configures for
-bus messages (`MessageRetryOptions.MaxDeliveryAttempts`) and its last hand-over is older than the
-grace; it stamps the hand-over and increments the count before handing the command over, and on the
-bound marks the record kept with the last failure — it is then invisible to the drain. A command
-whose handler is still running is therefore not handed over again on every pass. The aggregate is
+The outbox record gains an attempt count, a kept state, the time of its last hand-over, the last
+failure, and the aggregate id and heavy flag the dispatcher already knows when it records the command.
+The operations on that bookkeeping sit behind a port of their own, `ICommandIntentStore` in
+`Stratara.Abstractions`: record a command with its aggregate and heavy flag, list the recorded commands
+due for resumption, claim a hand-over atomically (stamping its time and incrementing the count), renew
+the hand-over while the handler runs, record a failure, and keep a command.
+`Stratara.Orleans.EntityFrameworkCore` implements it and registers it with
+`AddStrataraIntentStore<TWriteContext>()`; the execution model's dispatcher requires it, and a host
+without it fails at start. `IOutboxRepository` gains only the batch removal of D3.
+
+The drain resumes a stored command only while its attempts are below the bound the host already
+configures for bus messages (`MessageRetryOptions.MaxDeliveryAttempts`) and its last hand-over is older
+than the grace. A running handler renews its hand-over every third of the grace, so it is not handed over
+again however long it runs and a single failed renewal does not let the hand-over lapse; a failed renewal is
+logged. A command handed over within a sixth of the grace of its recording is not renewed when execution
+starts — its record time holds it past the first two renewals — because that renewal, one statement per command
+inside the aggregate's turn, cost the durable-intent shape 13 % of its throughput on one aggregate. On the bound the drain marks the record kept with the last failure; it is
+then invisible to the drain. The aggregate is
 read from the record, not from the command's JSON, so a command whose payload is protected keeps its
 per-aggregate order when resumed. An operator finds kept commands by the log event and the counter of
 D5 and returns one by clearing its kept state and attempt count, a single statement the operations
@@ -151,6 +173,10 @@ aborts the pass: the drain records the failure and continues with the next recor
 
 *Rejected: a separate dead-letter table.* One record, one state; the outbox is already the durable
 record and the bus path's dead-letter semantics are the ones to match.
+
+*Rejected: default-implemented members on `IOutboxRepository`.* A consumer's own repository would keep
+compiling and silently lose the bound, because a default cannot persist the bookkeeping; a missing port
+fails at start instead. (Owner decision, 2026-09-15, during apply.)
 
 *Rejected: reading the aggregate id from the payload.* A payload sealed with `[EncryptData]` or a
 command that implements the id explicitly hides it, and the command then runs beside live commands
@@ -380,7 +406,8 @@ Every options type the packages bind is validated at start: positive batch sizes
 counts, periods at or above the runtime's reminder minimum, and an intent grace longer than the
 completion window. The host's timer owners and handlers are collected as enumerable ports and composed
 by owner prefix, so their registration order relative to the execution model does not matter, and
-start-up fails when stateful processes are registered and no owner claims their prefix. Singleton work
+start-up fails when stateful processes are registered and no owner claims their prefix, and when the
+command dispatcher is registered and no `ICommandIntentStore` is. Singleton work
 is placed only on silos that registered it, through the runtime's placement filtering on silo
 metadata.
 
@@ -422,13 +449,14 @@ migration's transaction id, which is below every later one.
 *Rejected: positioning lazily on first read.* Every partition's reader would race the interceptor for
 the counter lock at once, on the host's first start after the upgrade.
 
-Evidence: `PortableCounterReader.cs:15-17` (unpositioned entries are invisible); `CommitOrderModel.cs`
-(the column default).
+Evidence: `PortableCounterReader.cs:15-17` (unpositioned entries are invisible); the write model's
+commit-order column default.
 
 ### D24 — The published surface is what a consumer should use
 
 Before the packages ship: the two readers that deliberately do not keep the commit-order promise move to
-the benchmarks; the send lane becomes internal and releases a scope's tail once it completes; the native
+the benchmarks; the send lane becomes internal and releases a scope's tail once it completes (a recorded
+command's call completes at acceptance, D27); the native
 reader takes its table and column names from the model instead of assuming the snake-case convention;
 every options type's section name is bound by its registration or no longer claims to be; a timer purpose
 longer than the store's column is refused with an argument exception, not a provider exception; the
@@ -465,6 +493,31 @@ for a package that ships.
 
 Evidence: `.github/workflows/sonar.yml` (the exclusion and its comment, #83).
 
+### D27 — An aggregate accepts a command before it runs it
+
+The aggregate's grain takes a command through a call that interleaves with whatever the grain is running and
+only queues it; a turn of the grain's own runs the queue one command at a time, in the order the commands were
+accepted. A recorded command's call returns once it is accepted, so the send lane releases that aggregate at
+acceptance; a forwarded command's call returns once it has run, as before. A handler that dispatches to its own
+aggregate is accepted behind itself instead of waiting for itself, and a second dispatch to one aggregate from a
+scope no longer waits for the first command's handler. Order per scope is kept as the capability states: both
+kinds of command join the same queue, in the order the lane issues them. A recorded command's lease starts when it
+is accepted, not when it runs, so a command waiting behind a long handler is not handed over again; an intent the
+drain hands over while the activation still holds it is not queued a second time. An activation that ends with
+commands still queued fails the forwarded ones back to their callers and stops renewing the recorded ones, which
+the drain resumes after the grace.
+
+*Rejected: releasing the lane when the call is sent.* The runtime promises no delivery order for calls in flight
+at the same time, which is the reason the lane exists.
+
+*Rejected: bypassing the lane only inside the target aggregate's own turn.* It removes the stall and leaves every
+other second dispatch to an aggregate waiting for a handler.
+
+Evidence: owner decision 2026-09-15 on a pull-request review finding — a handler that dispatched two commands to
+its own aggregate stalled until the runtime's response timeout, because the lane released an aggregate only when
+the previous call, and so its handler, completed (`AggregateSendLane.cs`, `OrleansCommandDispatcher.cs`
+`EnqueueCommandAsync`); `SelfDispatchTests`.
+
 ## Risks / Trade-offs
 
 - **[A consumer migration touches the outbox and event stream tables]** → Additive columns with
@@ -477,12 +530,17 @@ Evidence: `.github/workflows/sonar.yml` (the exclusion and its comment, #83).
   duration; measured in the heavy-burst test's latency bounds.
 - **[Single-silo deployments and a hard death]** → Not fixable here; the operations page states it
   and the capability says so in a scenario.
-- **[Scope]** → Twenty-six decisions and eight spec deltas. No decision is a tail: each closes a
+- **[Scope]** → Twenty-seven decisions and eight spec deltas. No decision is a tail: each closes a
   requirement a delta states, so a decision deferred to a patch takes its requirements and scenarios
   out of this change into a change of its own before approval (task 0.2), rather than archiving a
   guarantee the packages do not keep.
-- **[A reentrant timer owner]** → Its state is the reminder table and register and cancel are
-  idempotent by name; D17's test is the collision of a fact and a timeout.
+- **[A reentrant timer owner]** → Its state is the reminder table; changes to the table run one at a time,
+  so two reschedules of one purpose leave one timer, and a tick holds that gate only to unregister itself, so a
+  handler that reschedules its owner does not wait on its own tick. D17's test is the collision of a fact and a
+  timeout.
+- **[Accepted commands wait in the activation (D27)]** → An activation that ends before running them fails the
+  forwarded ones back to their callers, who see the failure as they would a failed call, and leaves the recorded
+  ones in the store, where the drain resumes them after the grace — later, never lost.
 - **[Timers registered before the append]** → A timeout may reach a process for a step whose events
   were not recorded; the process contract says `OnTimeoutAsync` decides from state.
 

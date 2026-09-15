@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.Singleton;
+using Stratara.Abstractions.Singleton;
 
 namespace Stratara.Orleans.IntegrationTests.Singleton;
 

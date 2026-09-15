@@ -24,6 +24,7 @@
     <Project Path="src/Stratara.Infrastructure/Stratara.Infrastructure.csproj" />
     <Project Path="src/Stratara.Mediator/Stratara.Mediator.csproj" />
     <Project Path="src/Stratara.Orleans/Stratara.Orleans.csproj" />
+    <Project Path="src/Stratara.Orleans.EntityFrameworkCore/Stratara.Orleans.EntityFrameworkCore.csproj" />
     <Project Path="src/Stratara.Outbox.AzureServiceBus/Stratara.Outbox.AzureServiceBus.csproj" />
     <Project Path="src/Stratara.Outbox.RabbitMQ/Stratara.Outbox.RabbitMQ.csproj" />
     <Project Path="src/Stratara.Projections/Stratara.Projections.csproj" />
@@ -66,6 +67,7 @@
     <Project Path="tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj" />
     <Project Path="tests/Stratara.Orleans.Benchmarks/Stratara.Orleans.Benchmarks.csproj" />
     <Project Path="tests/Stratara.Orleans.IntegrationTests/Stratara.Orleans.IntegrationTests.csproj" />
+    <Project Path="tests/Stratara.Orleans.Scenarios/Stratara.Orleans.Scenarios.csproj" />
     <Project Path="tests/Stratara.Orleans.Tests/Stratara.Orleans.Tests.csproj" />
     <Project Path="tests/Stratara.Outbox.RabbitMQ.Tests/Stratara.Outbox.RabbitMQ.Tests.csproj" />
     <Project Path="tests/Stratara.Projections.Tests/Stratara.Projections.Tests.csproj" />

@@ -1,6 +1,6 @@
 ---
 title: "Architecture at a glance"
-description: "How the 25 packages are cut into three tiers, which tier may reference which, and why the contracts stay adoptable without the infrastructure."
+description: "How the 27 packages are cut into three tiers, which tier may reference which, and why the contracts stay adoptable without the infrastructure."
 ---
 
 # Architecture at a glance
@@ -9,7 +9,7 @@ description: "How the 25 packages are cut into three tiers, which tier may refer
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
-Stratara ships **25 packages**: 23 runtime packages organized into three tiers (below), plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
+Stratara ships **27 packages**: 25 runtime packages organized into three tiers (below), plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
 
 ## Tier layout
 
@@ -42,7 +42,9 @@ Tier-C  (builds on Tier-B + Tier-A)
 ├── Stratara.Identity.Core                           Channel-agnostic identity primitives
 ├── Stratara.Identity.AspNetCore                     ASP.NET Core identity wiring + tenant-claim bridge
 ├── Stratara.Identity.EntityFrameworkCore            Identity directory: membership, permissions, scoped settings, API keys
-└── Stratara.ServiceDefaults.AspNetCore              ASP.NET OTel + health + endpoints
+├── Stratara.ServiceDefaults.AspNetCore              ASP.NET OTel + health + endpoints
+├── Stratara.Orleans                                 Orleans execution model: aggregate, store-reader, timer and singleton grains
+└── Stratara.Orleans.EntityFrameworkCore             Commit-order readers, checkpoint and intent stores, reset
 ```
 
 ## Read the tiers as a dependency-direction promise

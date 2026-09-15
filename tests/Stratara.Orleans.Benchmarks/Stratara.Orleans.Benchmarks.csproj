@@ -6,10 +6,16 @@
         <IsPackable>false</IsPackable>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <!-- The test project this executable hosts scenarios for brings xunit's generated entry point
-             along; this names the real one. -->
         <StartupObject>Stratara.Orleans.Benchmarks.Program</StartupObject>
     </PropertyGroup>
+
+    <!-- A benchmark run that starts scenario hosts starts this executable; PocHostProcess finds it here. -->
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+            <_Parameter1>StrataraScenarioHost</_Parameter1>
+            <_Parameter2>$(TargetPath)</_Parameter2>
+        </AssemblyAttribute>
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="BenchmarkDotNet"/>
@@ -23,9 +29,10 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\Stratara.Orleans\Stratara.Orleans.csproj"/>
-        <!-- The scenarios the integration tests kill and restart live in the test project; this
-             executable hosts them because a test assembly cannot host itself. -->
-        <ProjectReference Include="..\Stratara.Orleans.IntegrationTests\Stratara.Orleans.IntegrationTests.csproj"/>
+        <ProjectReference Include="..\..\src\Stratara.Orleans.EntityFrameworkCore\Stratara.Orleans.EntityFrameworkCore.csproj"/>
+        <!-- The scenarios the integration tests kill and restart; this executable hosts them because a test
+             assembly cannot host itself. -->
+        <ProjectReference Include="..\Stratara.Orleans.Scenarios\Stratara.Orleans.Scenarios.csproj"/>
     </ItemGroup>
 
 </Project>

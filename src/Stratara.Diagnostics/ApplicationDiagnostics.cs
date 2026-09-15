@@ -42,6 +42,37 @@ public static class ApplicationDiagnostics
         /// <summary>The meter name — <c>"Stratara.Service"</c>.</summary>
         public const string MeterName = "Stratara.Service";
 
+        /// <summary>Instrument name <c>orleans.reader.applied</c>; see <see cref="OrleansReaderApplied"/>.</summary>
+        public const string OrleansReaderAppliedName = "orleans.reader.applied";
+
+        /// <summary>Instrument name <c>orleans.reader.stalled</c>; see <see cref="OrleansReaderStalled"/>.</summary>
+        public const string OrleansReaderStalledName = "orleans.reader.stalled";
+
+        /// <summary>
+        /// Instrument name <c>orleans.reader.lag</c> — an observable gauge the Orleans execution model publishes
+        /// on this meter: the seconds since the time recorded with the oldest entry a store reader has not
+        /// applied, tagged with <see cref="MetricTags.Projection"/> and <see cref="MetricTags.Partition"/>.
+        /// </summary>
+        public const string OrleansReaderLagName = "orleans.reader.lag";
+
+        /// <summary>Instrument name <c>orleans.intent.recorded</c>; see <see cref="OrleansIntentRecorded"/>.</summary>
+        public const string OrleansIntentRecordedName = "orleans.intent.recorded";
+
+        /// <summary>Instrument name <c>orleans.intent.resumed</c>; see <see cref="OrleansIntentResumed"/>.</summary>
+        public const string OrleansIntentResumedName = "orleans.intent.resumed";
+
+        /// <summary>Instrument name <c>orleans.intent.kept</c>; see <see cref="OrleansIntentKept"/>.</summary>
+        public const string OrleansIntentKeptName = "orleans.intent.kept";
+
+        /// <summary>Instrument name <c>orleans.completion.flushed</c>; see <see cref="OrleansCompletionFlushed"/>.</summary>
+        public const string OrleansCompletionFlushedName = "orleans.completion.flushed";
+
+        /// <summary>Instrument name <c>orleans.completion.failed</c>; see <see cref="OrleansCompletionFailed"/>.</summary>
+        public const string OrleansCompletionFailedName = "orleans.completion.failed";
+
+        /// <summary>Instrument name <c>orleans.heavy.permits_in_use</c>; see <see cref="OrleansHeavyPermitsInUse"/>.</summary>
+        public const string OrleansHeavyPermitsInUseName = "orleans.heavy.permits_in_use";
+
         /// <summary>The shared <see cref="Metrics.Meter"/> instance.</summary>
         public static readonly Meter Meter = new(MeterName, "1.0.0");
 
@@ -151,6 +182,61 @@ public static class ApplicationDiagnostics
             "saga.inflight",
             unit: "{bundle}",
             description: "Number of saga event-bundles currently being processed.");
+
+        /// <summary>
+        /// Counter of store entries a reader of the Orleans execution model applied. Tagged with
+        /// <see cref="MetricTags.Projection"/> (the consumer) and <see cref="MetricTags.Partition"/>.
+        /// </summary>
+        public static readonly Counter<long> OrleansReaderApplied = Meter.CreateCounter<long>(
+            OrleansReaderAppliedName,
+            unit: "{entry}",
+            description: "Number of store entries applied by the Orleans execution model's readers, by consumer and partition.");
+
+        /// <summary>
+        /// Up/down counter of partitions whose reader stopped at an entry it could not apply. Tagged with
+        /// <see cref="MetricTags.Projection"/> and <see cref="MetricTags.Partition"/>; it rises when a
+        /// partition stalls and falls when it advances again.
+        /// </summary>
+        public static readonly UpDownCounter<long> OrleansReaderStalled = Meter.CreateUpDownCounter<long>(
+            OrleansReaderStalledName,
+            unit: "{partition}",
+            description: "Number of store-reader partitions stopped at an entry they could not apply, by consumer and partition.");
+
+        /// <summary>Counter of commands recorded as durable intents before their dispatch returned.</summary>
+        public static readonly Counter<long> OrleansIntentRecorded = Meter.CreateCounter<long>(
+            OrleansIntentRecordedName,
+            unit: "{command}",
+            description: "Number of commands recorded as durable intents by the Orleans execution model.");
+
+        /// <summary>Counter of recorded commands handed over again after their hand-over was lost.</summary>
+        public static readonly Counter<long> OrleansIntentResumed = Meter.CreateCounter<long>(
+            OrleansIntentResumedName,
+            unit: "{command}",
+            description: "Number of recorded commands resumed by the Orleans execution model's drain.");
+
+        /// <summary>Counter of recorded commands kept for an operator after exhausting their resume bound.</summary>
+        public static readonly Counter<long> OrleansIntentKept = Meter.CreateCounter<long>(
+            OrleansIntentKeptName,
+            unit: "{command}",
+            description: "Number of recorded commands kept for an operator by the Orleans execution model.");
+
+        /// <summary>Counter of completed intents removed from durable storage.</summary>
+        public static readonly Counter<long> OrleansCompletionFlushed = Meter.CreateCounter<long>(
+            OrleansCompletionFlushedName,
+            unit: "{command}",
+            description: "Number of completed intents removed by the Orleans execution model.");
+
+        /// <summary>Counter of removals of completed intents that failed and were left to the drain.</summary>
+        public static readonly Counter<long> OrleansCompletionFailed = Meter.CreateCounter<long>(
+            OrleansCompletionFailedName,
+            unit: "{flush}",
+            description: "Number of failed removals of completed intents in the Orleans execution model.");
+
+        /// <summary>Up/down counter of heavy-work permits currently held across the cluster.</summary>
+        public static readonly UpDownCounter<long> OrleansHeavyPermitsInUse = Meter.CreateUpDownCounter<long>(
+            OrleansHeavyPermitsInUseName,
+            unit: "{permit}",
+            description: "Number of heavy-work permits held in the Orleans execution model.");
     }
 
     /// <summary>
@@ -210,5 +296,11 @@ public static class ApplicationDiagnostics
 
         /// <summary>Tag name <c>reason</c> — why a message was dead-lettered: <c>conflict</c> or <c>failure</c>.</summary>
         public const string Reason = "reason";
+
+        /// <summary>Tag name <c>projection</c> — the consumer a store reader applies for: a projection's name, or <c>sagas</c>.</summary>
+        public const string Projection = "projection";
+
+        /// <summary>Tag name <c>partition</c> — the store partition a reader reads.</summary>
+        public const string Partition = "partition";
     }
 }

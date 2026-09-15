@@ -52,7 +52,7 @@ public class AuthorizationServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddAuthorizingCommandOutboxDispatcher();
 
-        var descriptor = services.Single(d => d.ServiceType == typeof(ICommandOutboxDispatcher));
+        var descriptor = services.Single(d => d.ServiceType == typeof(ICommandOutboxDispatcher) && !d.IsKeyedService);
         Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
     }
 

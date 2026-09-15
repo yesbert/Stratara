@@ -1,0 +1,213 @@
+using System.Diagnostics;
+using System.Reflection;
+using System.Threading.Channels;
+
+namespace Stratara.Orleans.IntegrationTests.Hosting;
+
+/// <summary>
+/// A separately started host under the test's control: the benchmark executable in its
+/// <c>--poc-host</c> mode, which runs a scenario from this assembly. Commands go in on stdin, one
+/// line each; replies come back on stdout. <see cref="Kill"/> is a real process kill — the state a
+/// crash leaves is what the tests after it are about.
+/// </summary>
+public sealed class PocHostProcess : IAsyncDisposable
+{
+    private const string HostAssembly = "Stratara.Orleans.Benchmarks";
+    private const string HostPathVariable = "STRATARA_SCENARIO_HOST";
+    private const string HostPathMetadata = "StrataraScenarioHost";
+    private static readonly TimeSpan ReplyTimeout = TimeSpan.FromMinutes(2);
+
+    private readonly Process _process;
+    private readonly Channel<string> _replies = Channel.CreateUnbounded<string>();
+    private readonly List<string> _log = [];
+
+    private PocHostProcess(Process process)
+    {
+        _process = process;
+    }
+
+    public bool HasExited => _process.HasExited;
+
+    public int ProcessId => _process.Id;
+
+    public IReadOnlyList<string> Log => _log;
+
+    public static async Task<PocHostProcess> StartAsync(string scenario, IReadOnlyDictionary<string, string> environment, TimeSpan? readyTimeout = null)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            ArgumentList = { HostAssemblyPath(), "--poc-host", scenario },
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var (key, value) in environment)
+        {
+            start.Environment[key] = value;
+        }
+
+        var process = new Process { StartInfo = start, EnableRaisingEvents = true };
+        var host = new PocHostProcess(process);
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (args.Data is null)
+            {
+                return;
+            }
+
+            host._log.Add(args.Data);
+            if (args.Data.StartsWith(PocHostEntry.ReplyPrefix, StringComparison.Ordinal))
+            {
+                host._replies.Writer.TryWrite(args.Data[PocHostEntry.ReplyPrefix.Length..]);
+            }
+        };
+        process.ErrorDataReceived += (_, args) =>
+        {
+            if (args.Data is not null)
+            {
+                host._log.Add("stderr: " + args.Data);
+            }
+        };
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        try
+        {
+            var ready = await host.ReadReplyAsync(readyTimeout ?? ReplyTimeout);
+            if (ready != "ready")
+            {
+                throw new InvalidOperationException($"The host did not come up; first reply was '{ready}'. Log:{Environment.NewLine}{string.Join(Environment.NewLine, host._log)}");
+            }
+        }
+        catch (Exception)
+        {
+            host.Kill();
+            process.Dispose();
+            throw;
+        }
+
+        return host;
+    }
+
+    /// <summary>
+    /// The scenario host executable: where <see cref="HostPathVariable"/> says, or else where the build that
+    /// produced the running process recorded it as assembly metadata.
+    /// </summary>
+    private static string HostAssemblyPath()
+    {
+        var path = Environment.GetEnvironmentVariable(HostPathVariable) is { Length: > 0 } configured
+            ? configured
+            : RecordedHostPath()
+              ?? throw new InvalidOperationException($"No build recorded where {HostAssembly} is. Build the integration tests, which build it, or set {HostPathVariable} to its assembly.");
+        return File.Exists(path)
+            ? path
+            : throw new FileNotFoundException($"The scenario host is not built: {path}. Build the integration tests, or set {HostPathVariable} to the host's assembly.");
+    }
+
+    private static string? RecordedHostPath() =>
+        new[] { Assembly.GetEntryAssembly() }
+            .Concat(AppDomain.CurrentDomain.GetAssemblies())
+            .OfType<Assembly>()
+            .SelectMany(assembly => assembly.GetCustomAttributes<AssemblyMetadataAttribute>())
+            .FirstOrDefault(metadata => metadata.Key == HostPathMetadata && !string.IsNullOrEmpty(metadata.Value))
+            ?.Value;
+
+    /// <summary>Sends one command line and returns the host's reply.</summary>
+    /// <exception cref="InvalidOperationException">The host has ended; the message carries its exit code and log.</exception>
+    public async Task<string> SendAsync(string command)
+    {
+        try
+        {
+            if (_process.HasExited)
+            {
+                throw Ended(command, null);
+            }
+
+            await _process.StandardInput.WriteLineAsync(command);
+            await _process.StandardInput.FlushAsync();
+        }
+        catch (IOException ex)
+        {
+            throw Ended(command, ex);
+        }
+
+        return await ReadReplyAsync();
+    }
+
+    private InvalidOperationException Ended(string command, Exception? cause)
+    {
+        _process.WaitForExit(TimeSpan.FromSeconds(5));
+        var exitCode = _process.HasExited ? _process.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture) : "unknown";
+        return new InvalidOperationException(
+            $"The host ended before '{command}' (exit code {exitCode}). Log:{Environment.NewLine}{string.Join(Environment.NewLine, _log.TakeLast(80))}",
+            cause);
+    }
+
+    /// <summary>
+    /// Sends a command that is expected to end the process from the inside, and waits for the exit
+    /// instead of a reply.
+    /// </summary>
+    public async Task SendExpectingExitAsync(string command, TimeSpan timeout)
+    {
+        await _process.StandardInput.WriteLineAsync(command);
+        await _process.StandardInput.FlushAsync();
+        using var exitTimeout = new CancellationTokenSource(timeout);
+        try
+        {
+            await _process.WaitForExitAsync(exitTimeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException($"The host did not exit within {timeout} after '{command}'. Log:{Environment.NewLine}{string.Join(Environment.NewLine, _log)}");
+        }
+    }
+
+    /// <summary>Kills the process outright. Nothing in it gets to clean up.</summary>
+    public void Kill()
+    {
+        if (!_process.HasExited)
+        {
+            _process.Kill(entireProcessTree: true);
+            _process.WaitForExit();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_process.HasExited)
+        {
+            try
+            {
+                // "exit" is answered by the process ending, not by a reply line.
+                await _process.StandardInput.WriteLineAsync("exit");
+                await _process.StandardInput.FlushAsync();
+                using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await _process.WaitForExitAsync(exitTimeout.Token);
+            }
+            catch (Exception)
+            {
+                Kill();
+            }
+        }
+
+        _process.Dispose();
+    }
+
+    private Task<string> ReadReplyAsync() => ReadReplyAsync(ReplyTimeout);
+
+    private async Task<string> ReadReplyAsync(TimeSpan replyTimeout)
+    {
+        using var timeout = new CancellationTokenSource(replyTimeout);
+        try
+        {
+            return await _replies.Reader.ReadAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException($"No reply from the host within {replyTimeout}. Log:{Environment.NewLine}{string.Join(Environment.NewLine, _log)}");
+        }
+    }
+}

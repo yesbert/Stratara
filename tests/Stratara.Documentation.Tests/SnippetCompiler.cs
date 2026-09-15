@@ -35,6 +35,7 @@ public static class SnippetCompiler
         "Microsoft.Extensions.Logging",
         "Microsoft.Extensions.Options",
         "Microsoft.Extensions.Diagnostics.HealthChecks",
+        "Orleans.Hosting",
         "Moq",
     ];
 

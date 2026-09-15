@@ -8,9 +8,11 @@ using StackExchange.Redis;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Session;
+using Stratara.Abstractions.Singleton;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Store;
+using Stratara.Orleans.IntegrationTests.Projections;
 
 namespace Stratara.Orleans.IntegrationTests.Hosting;
 
@@ -67,11 +69,28 @@ public sealed class CoHostingTests(PostgreSqlFixture postgres, RedisFixture redi
             await DispatchThroughMediatorAsync(host.Services);
             await CallGrainAsync(host.Services);
             await TouchStoreAsync(host.Services);
+            await SingletonWorkRunsAsync(host.Services);
         }
         finally
         {
             await host.StopAsync();
         }
+    }
+
+    /// <summary>
+    /// The framework's singleton work is started by a participant in the silo's lifecycle, not a hosted
+    /// service, so registered before the silo or after it, the work runs once the silo is active.
+    /// </summary>
+    private static async Task SingletonWorkRunsAsync(IServiceProvider services)
+    {
+        var runs = services.GetRequiredService<CoHostingWorkRuns>();
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(15);
+        while (runs.Count == 0 && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        Assert.True(runs.Count > 0, "The singleton work never ran, so its starter did not run once the silo was active.");
     }
 
     private static void AddStratara(HostApplicationBuilder builder)
@@ -81,8 +100,10 @@ public sealed class CoHostingTests(PostgreSqlFixture postgres, RedisFixture redi
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<PingCommand>, PingCommandHandler>()
             .AddTrustedType<PingCommand>()
-            .AddAggregatesFromAssemblyContaining<CoHostingTests>()
-            .AddSingleton<CommandLog>();
+            .AddAggregatesFromAssemblyContaining<Counter>()
+            .AddSingleton<CommandLog>()
+            .AddSingleton<CoHostingWorkRuns>()
+            .AddStrataraSingletonWork<CoHostingWork>(options => options.KeepAlivePeriod = TimeSpan.FromSeconds(5));
     }
 
     private void AddOrleans(HostApplicationBuilder builder, int siloPort, int gatewayPort)
@@ -92,6 +113,9 @@ public sealed class CoHostingTests(PostgreSqlFixture postgres, RedisFixture redi
         {
             silo.UseLocalhostClustering(siloPort, gatewayPort);
             silo.UseRedisGrainDirectoryAsDefault(options => options.ConfigurationOptions = redisOptions);
+            silo.AddRedisGrainDirectory(GrainDirectories.Durable, options => options.ConfigurationOptions = redisOptions);
+            silo.UseInMemoryReminderService();
+            silo.Configure<ReminderOptions>(options => options.MinimumReminderPeriod = TimeSpan.FromSeconds(1));
         });
     }
 
@@ -162,6 +186,28 @@ public sealed class PingCommandHandler(CommandLog log) : ICommandHandler<PingCom
     public Task HandleAsync(PingCommand command, CancellationToken cancellationToken)
     {
         log.Handled.Add(command.AggregateId);
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class CoHostingWorkRuns
+{
+    private int _count;
+
+    public int Count => _count;
+
+    public void Increment() => Interlocked.Increment(ref _count);
+}
+
+public sealed class CoHostingWork(CoHostingWorkRuns runs) : ISingletonWork
+{
+    public string Name => "co-hosting";
+
+    public TimeSpan Period => TimeSpan.FromMilliseconds(500);
+
+    public Task RunAsync(CancellationToken cancellationToken)
+    {
+        runs.Increment();
         return Task.CompletedTask;
     }
 }

@@ -1,9 +1,11 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Outbox;
+using Stratara.Abstractions.Projections;
+using Stratara.Abstractions.Timers;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Hosting;
 using Stratara.Orleans.Projections;
 using Stratara.Orleans.Sagas;
 
@@ -15,12 +17,12 @@ public static class OrleansProjectionServiceCollectionExtensions
 {
     /// <summary>
     /// Runs every registered projection in grains that read the store in commit order from a
-    /// checkpoint kept in <typeparamref name="TReadContext"/>, and turns the bundle dispatcher into
-    /// the wake-up hint. The host registers the <c>ICommittedPositionReader</c> of its choice and
-    /// applies <c>ProjectionCheckpointModel</c> to its read context. Call it after the projection
-    /// composite: the bus-fed projection worker and the full-replay worker it registered are removed.
+    /// checkpoint, and turns the bundle dispatcher into the wake-up hint. The host registers the
+    /// <c>ICommittedPositionReader</c> of its choice and a checkpoint store, for example with
+    /// <c>AddStrataraProjectionCheckpoints&lt;TReadContext&gt;()</c>. Call it after
+    /// <c>AddEventProjectionServices</c>, which registers the projection runtime and the replay worker without the
+    /// bus-fed worker; this call removes nothing. After <c>AddEventProjectionWorkerServices</c> both paths run.
     /// </summary>
-    /// <typeparam name="TReadContext">The read context holding the checkpoint table.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
     /// <param name="hybrid">
@@ -30,18 +32,18 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
     /// <code>
-    /// builder.AddEventProjectionWorkerServices();
+    /// builder.AddEventProjectionServices();
     /// builder.Services
     ///     .AddProjectionsFromAssemblyContaining&lt;IAppMarker&gt;()
     ///     .AddSingleton&lt;ICommittedPositionReader, PostgresTransactionIdReader&lt;AppWriteDbContext&gt;&gt;()
-    ///     .AddStrataraProjectionGrains&lt;AppReadDbContext&gt;();
+    ///     .AddStrataraProjectionCheckpoints&lt;AppReadDbContext&gt;()
+    ///     .AddStrataraProjectionGrains();
     /// </code>
     /// </example>
-    public static IServiceCollection AddStrataraProjectionGrains<TReadContext>(
+    public static IServiceCollection AddStrataraProjectionGrains(
         this IServiceCollection services,
         Action<ProjectionGrainOptions>? configure = null,
         bool hybrid = false)
-        where TReadContext : DbContext
     {
         var options = services.AddOptions<ProjectionGrainOptions>();
         if (configure is not null)
@@ -49,45 +51,39 @@ public static class OrleansProjectionServiceCollectionExtensions
             options.Configure(configure);
         }
 
-        AddStoreReaderCore<TReadContext>(services, hybrid);
+        OrleansOptionsValidator.Register<ProjectionGrainOptions>(services);
+        AddStoreReaderCore(services, hybrid);
         services.AddScoped<INudgeTarget, ProjectionNudgeTarget>();
         services.TryAddSingleton<IProjectionRebuilder, ProjectionRebuilder>();
-        if (hybrid)
-        {
-            RemoveHostedServices(services, "Stratara.Projections.Services.ProjectionReplayWorker");
-        }
-        else
-        {
-            RemoveHostedServices(services, "Stratara.Projections.Services.ProjectionWorker", "Stratara.Projections.Services.ProjectionReplayWorker");
-        }
+        ReplayCheckpointResetTruncator.Decorate(services, Instantiate);
 
         return services;
     }
 
     /// <summary>
     /// Runs every registered saga in a grain per partition that reads the store in commit order from
-    /// a checkpoint kept in <typeparamref name="TReadContext"/>. Existing sagas run unchanged. Call
-    /// it after the saga composite: the bus-fed saga worker it registered is removed.
+    /// a checkpoint. Existing sagas run unchanged. The host registers the <c>ICommittedPositionReader</c>
+    /// of its choice and a checkpoint store. Call it after <c>AddSagaServices</c>, which registers the saga
+    /// runtime without the bus-fed worker; this call removes nothing.
     /// </summary>
-    /// <typeparam name="TReadContext">The read context holding the checkpoint table.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
     /// <param name="hybrid">Whether bundles are still published through the previously registered dispatcher.</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
     /// <code>
-    /// builder.AddSagaWorkerServices();
+    /// builder.AddSagaServices();
     /// builder.Services
     ///     .AddSagasFromAssemblyContaining&lt;IAppMarker&gt;()
     ///     .AddSingleton&lt;ICommittedPositionReader, PostgresTransactionIdReader&lt;AppWriteDbContext&gt;&gt;()
-    ///     .AddStrataraSagaGrains&lt;AppReadDbContext&gt;();
+    ///     .AddStrataraProjectionCheckpoints&lt;AppReadDbContext&gt;()
+    ///     .AddStrataraSagaGrains();
     /// </code>
     /// </example>
-    public static IServiceCollection AddStrataraSagaGrains<TReadContext>(
+    public static IServiceCollection AddStrataraSagaGrains(
         this IServiceCollection services,
         Action<SagaGrainOptions>? configure = null,
         bool hybrid = false)
-        where TReadContext : DbContext
     {
         var options = services.AddOptions<SagaGrainOptions>();
         if (configure is not null)
@@ -95,36 +91,28 @@ public static class OrleansProjectionServiceCollectionExtensions
             options.Configure(configure);
         }
 
-        AddStoreReaderCore<TReadContext>(services, hybrid);
+        OrleansOptionsValidator.Register<SagaGrainOptions>(services);
+        AddStoreReaderCore(services, hybrid);
         services.AddScoped<INudgeTarget, SagaNudgeTarget>();
-        RemoveHostedServices(services, "Stratara.Sagas.Services.SagaWorker");
         AddSagaProcessTimers(services);
         return services;
     }
 
     /// <summary>
-    /// Processes own timers. Their owner check and handler take over the timer port; a host that
-    /// registered its own before this call keeps them for every owner that is not a process.
+    /// Processes own timers under a prefix of their own. The host's owner check and handler serve every
+    /// other owner, whether they were registered before or after this call.
     /// </summary>
     private static void AddSagaProcessTimers(IServiceCollection services)
     {
-        var owners = services.LastOrDefault(d => d.ServiceType == typeof(Stratara.Orleans.Timers.ITimerOwners));
-        var handler = services.LastOrDefault(d => d.ServiceType == typeof(Stratara.Orleans.Timers.ITimerHandler));
-        if (owners is not null && handler is not null && owners.ImplementationType != typeof(SagaProcessTimerHost))
+        services.AddStrataraDurableTimers();
+        if (services.Any(d => d.ServiceType == typeof(SagaProcessTimerHost)))
         {
-            services.Remove(owners);
-            services.Remove(handler);
-            services.Add(ServiceDescriptor.Describe(typeof(HostTimerServices),
-                sp => new HostTimerServices(
-                    (Stratara.Orleans.Timers.ITimerOwners)Instantiate(sp, owners),
-                    (Stratara.Orleans.Timers.ITimerHandler)Instantiate(sp, handler)),
-                ServiceLifetime.Scoped));
+            return;
         }
 
-        services.AddStrataraDurableTimers();
         services.AddScoped<SagaProcessTimerHost>();
-        services.AddScoped<Stratara.Orleans.Timers.ITimerOwners>(sp => sp.GetRequiredService<SagaProcessTimerHost>());
-        services.AddScoped<Stratara.Orleans.Timers.ITimerHandler>(sp => sp.GetRequiredService<SagaProcessTimerHost>());
+        services.AddScoped<ITimerOwners>(sp => sp.GetRequiredService<SagaProcessTimerHost>());
+        services.AddScoped<ITimerHandler>(sp => sp.GetRequiredService<SagaProcessTimerHost>());
     }
 
     private static object Instantiate(IServiceProvider services, ServiceDescriptor descriptor)
@@ -144,30 +132,15 @@ public static class OrleansProjectionServiceCollectionExtensions
         return ActivatorUtilities.CreateInstance(services, implementationType);
     }
 
-    private static void AddStoreReaderCore<TReadContext>(IServiceCollection services, bool hybrid) where TReadContext : DbContext
+    private static void AddStoreReaderCore(IServiceCollection services, bool hybrid)
     {
         services.AddOptions<CommitOrderOptions>();
-        services.TryAddScoped<IProjectionCheckpointStore, ProjectionCheckpointStore<TReadContext>>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, StoreReaderGrainStarter>());
+        OrleansOptionsValidator.Register<CommitOrderOptions>(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, StoreReaderGrainStarter>());
+        Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         if (!services.Any(d => d.ServiceType == typeof(OrleansEventBundleDispatcher)))
         {
             ReplaceBundleDispatcher(services, hybrid);
-        }
-    }
-
-    /// <summary>
-    /// The store-reading grains take the same composite registration a bus host uses and remove the
-    /// bus-fed workers it registered, by name, because those services are internal and registered in
-    /// one call. Splitting that registration is a change to a shipped package — a productisation
-    /// item, not a proof-of-concept one.
-    /// </summary>
-    private static void RemoveHostedServices(IServiceCollection services, params string[] implementationTypeNames)
-    {
-        foreach (var descriptor in services
-                     .Where(d => d.ServiceType == typeof(IHostedService) && implementationTypeNames.Contains(d.ImplementationType?.FullName))
-                     .ToList())
-        {
-            services.Remove(descriptor);
         }
     }
 

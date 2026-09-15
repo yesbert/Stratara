@@ -13,7 +13,8 @@ namespace Stratara.Orleans.Aggregates;
 /// that aggregate's grain and the caller waits for it to complete, so the caller sees the result of
 /// its own command — including a concurrency conflict — the way an in-process dispatch would. Register
 /// it last, so every other behaviour has run before the hand-off; inside the grain the handler is
-/// invoked directly.
+/// invoked directly. A command for the aggregate whose turn is running is let through; a command a
+/// handler sends for another aggregate is forwarded to that aggregate's grain.
 /// </summary>
 /// <remarks>
 /// This does not implement <c>ICommandOutboxDispatcher</c>: a grain call is a remote call and is lost
@@ -21,7 +22,7 @@ namespace Stratara.Orleans.Aggregates;
 /// that interface's promise.
 /// </remarks>
 /// <typeparam name="TRequest">The command type the pipeline is running for.</typeparam>
-public sealed class AggregateGrainBehavior<TRequest>(
+internal sealed class AggregateGrainBehavior<TRequest>(
     IGrainFactory grainFactory,
     ISessionContextProvider sessionContextProvider,
     ISecureJsonSerializer serializer,
@@ -31,7 +32,7 @@ public sealed class AggregateGrainBehavior<TRequest>(
     /// <inheritdoc/>
     public async Task HandleAsync(TRequest request, Func<Task> next, CancellationToken cancellationToken)
     {
-        if (request is not IAggregateScopedCommand scoped || AggregateTurn.IsInside)
+        if (request is not IAggregateScopedCommand scoped || AggregateTurn.IsInside(scoped.AggregateId))
         {
             await next();
             return;

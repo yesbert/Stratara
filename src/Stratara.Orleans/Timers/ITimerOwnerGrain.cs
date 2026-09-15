@@ -1,3 +1,5 @@
+using Stratara.Abstractions.Timers;
+
 namespace Stratara.Orleans.Timers;
 
 /// <summary>
@@ -8,14 +10,14 @@ namespace Stratara.Orleans.Timers;
 internal interface ITimerOwnerGrain : IGrainWithStringKey
 {
     [Alias("RegisterAsync")]
-    Task RegisterAsync(string purpose, DateTimeOffset dueAt);
+    Task RegisterAsync(string purpose, DateTimeOffset dueAt, CancellationToken cancellationToken);
 
     [Alias("CancelAsync")]
-    Task CancelAsync(string purpose);
+    Task CancelAsync(string purpose, CancellationToken cancellationToken);
 
     [Alias("CancelAllAsync")]
-    Task CancelAllAsync();
+    Task CancelAllAsync(CancellationToken cancellationToken);
 
     [Alias("ListReminderNamesAsync")]
-    Task<List<string>> ListReminderNamesAsync();
+    Task<List<string>> ListReminderNamesAsync(CancellationToken cancellationToken);
 }

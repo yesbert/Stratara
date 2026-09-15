@@ -120,11 +120,35 @@ public static class WorkerDefaultsHostBuilderExtensions
     /// </example>
     public static IHostApplicationBuilder AddEventProjectionWorkerServices(this IHostApplicationBuilder builder)
     {
+        builder.AddEventProjectionServices();
+        builder.Services.AddProjectionWorker(builder.Configuration);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the event-projection stack without the bus-fed projection worker: common framework services +
+    /// write store + projection replay state + the projection runtime and the replay worker, so a full replay
+    /// still runs. For a host whose projections are fed by something other than the bus — the Orleans execution
+    /// model's store readers register after this call and remove nothing.
+    /// </summary>
+    /// <param name="builder">The host application builder.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// var builder = Host.CreateApplicationBuilder(args);
+    /// builder.AddEventProjectionServices();
+    /// builder.Services
+    ///     .AddProjectionsFromAssemblyContaining&lt;IAppMarker&gt;();
+    /// builder.Build().Run();
+    /// </code>
+    /// </example>
+    public static IHostApplicationBuilder AddEventProjectionServices(this IHostApplicationBuilder builder)
+    {
         builder.AddCommonFrameworkServices();
         builder.Services
             .AddWriteStore(builder.Configuration)
             .AddProjectionReplayState()
-            .AddProjectionWorker(builder.Configuration);
+            .AddProjectionHandling(builder.Configuration);
         return builder;
     }
 
@@ -145,12 +169,35 @@ public static class WorkerDefaultsHostBuilderExtensions
     /// </example>
     public static IHostApplicationBuilder AddSagaWorkerServices(this IHostApplicationBuilder builder)
     {
+        builder.AddSagaServices();
+        builder.Services.AddSagaWorker(builder.Configuration);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the saga stack without the bus-fed saga worker: common framework services + write store + event
+    /// sourcing + outbox dispatcher + the saga runtime. For a host whose sagas are fed by something other than the
+    /// bus — the Orleans execution model's store readers register after this call and remove nothing.
+    /// </summary>
+    /// <param name="builder">The host application builder.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// var builder = Host.CreateApplicationBuilder(args);
+    /// builder.AddSagaServices();
+    /// builder.Services
+    ///     .AddSagasFromAssemblyContaining&lt;IAppMarker&gt;();
+    /// builder.Build().Run();
+    /// </code>
+    /// </example>
+    public static IHostApplicationBuilder AddSagaServices(this IHostApplicationBuilder builder)
+    {
         builder.AddCommonFrameworkServices();
         builder.Services
             .AddWriteStore(builder.Configuration)
             .AddEventSourcing()
             .AddOutboxDispatcher()
-            .AddSagaWorker(builder.Configuration);
+            .AddSagaHandling(builder.Configuration);
         return builder;
     }
 

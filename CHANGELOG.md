@@ -5,7 +5,7 @@ All notable changes to the Stratara framework are documented in this file.
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning 2.0.0](https://semver.org/).
 
-Stratara is versioned **lockstep** — all 25 packable packages share the same version
+Stratara is versioned **lockstep** — all 27 packable packages share the same version
 number, controlled by `<VersionPrefix>` in `Directory.Build.props`. A single entry here
 applies to the entire NuGet family.
 
@@ -16,8 +16,40 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-Three fixes to the 4.0.4 retry and conflict work. Nothing to change in a host; one new warning to
+The Orleans execution model ships as two packages, and three fixes land on the 4.0.4 retry and
+conflict work. A host on the Entity Framework store generates one migration whether or not it adopts
+the execution model; otherwise a host that does not adopt it changes nothing, with one new warning to
 know about.
+
+### Added
+
+- **The Orleans execution model: `Stratara.Orleans` and `Stratara.Orleans.EntityFrameworkCore`.**
+  Commands, projections, sagas, durable timers and singleton work run as virtual actors on an Orleans
+  10.3 cluster. One aggregate has one writer across the deployment; a command the execution model's
+  dispatcher accepts is recorded before the call returns and resumed after a crash, a bounded number of
+  times, through the same mediator pipeline as on the bus; projections and sagas read the store in
+  commit order from a checkpoint, so a crash costs latency and never a committed fact; singleton work
+  runs once per cluster without a lock; a failing entry stops its partition and is retried instead of
+  being dropped. Handlers, projections and sagas are unchanged, each role is adopted with one
+  registration after its composite, and both models can run side by side during a rollout. Every
+  setting is validated at start. See *Choose an Execution Model*, *Migrate to the Orleans Execution
+  Model* and *Operate the Orleans Execution Model* on the documentation site.
+- **Schema additions — every host on the Entity Framework store generates a migration.** The framework's
+  write context declares `event_stream_entry.partition_position`, the `partition_position` table, on
+  PostgreSQL `event_stream_entry.commit_transaction_id`, and the `outbox_entry` columns `aggregate_id`,
+  `heavy`, `attempt_count`, `last_handed_over_at`, `kept_at` and `last_failure`; the read context declares
+  `projection_checkpoint`. They are part of the model whether or not a host adopts the execution model, so
+  every host on `Stratara.EventSourcing.EntityFrameworkCore` generates and applies a migration after
+  upgrading — without it, appends and outbox writes fail on the missing columns. A store that never runs
+  the execution model carries them unfilled; on PostgreSQL an append also reads back the transaction id.
+- **Composites without the bus-fed worker.** `AddEventProjectionServices()` and `AddSagaServices()`
+  register the projection and saga runtimes without their bus workers; `AddProjectionHandling` and
+  `AddSagaHandling` do the same on `IServiceCollection`.
+
+### Changed
+
+- **`AddAuthorizingCommandOutboxDispatcher()` decorates whichever command dispatcher is registered**, not
+  only the RabbitMQ one, and composes with a dispatcher registered after it.
 
 ### Fixed
 

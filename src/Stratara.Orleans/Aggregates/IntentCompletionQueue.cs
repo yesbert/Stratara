@@ -1,10 +1,12 @@
 using System.Threading.Channels;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Stratara.Abstractions.Outbox;
-using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
+using Stratara.Abstractions.Persistence;
+using Stratara.Diagnostics;
+using Stratara.Orleans.Diagnostics;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -20,26 +22,29 @@ namespace Stratara.Orleans.Aggregates;
 /// </summary>
 /// <remarks>
 /// A flush that fails leaves its rows in the store, where the drain finds and resumes them; nothing
-/// is retried here, because the drain is the retry. On host stop the queue flushes what it holds.
+/// is retried here, because the drain is the retry. A failed flush is logged and counted. On host
+/// stop the queue flushes what it holds.
 /// </remarks>
 internal sealed class IntentCompletionQueue : IHostedService
 {
-    private static readonly TimeSpan LongestWindow = TimeSpan.FromSeconds(10);
+    /// <summary>The longest completion window the queue accepts; the settings validator refuses a longer one at start.</summary>
+    internal static readonly TimeSpan LongestWindow = TimeSpan.FromSeconds(10);
 
     private readonly Channel<Guid> _completed = Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = true });
     private readonly TimeSpan _window;
     private readonly int _batchSize;
     private readonly Func<IReadOnlyList<Guid>, CancellationToken, Task> _flush;
+    private readonly ILogger _logger;
     private Task? _loop;
 
-    public IntentCompletionQueue(IServiceScopeFactory scopeFactory, IOptions<OrleansDispatchOptions> options)
-        : this(options.Value.CompletionWindow, options.Value.CompletionBatchSize, (ids, ct) => DeleteAsync(scopeFactory, ids, ct))
+    public IntentCompletionQueue(IServiceScopeFactory scopeFactory, IOptions<OrleansDispatchOptions> options, ILogger<IntentCompletionQueue> logger)
+        : this(options.Value.CompletionWindow, options.Value.CompletionBatchSize, (ids, ct) => DeleteAsync(scopeFactory, ids, ct), logger)
     {
     }
 
     /// <summary>The batching alone, with what a flush does supplied — for a test of the bounds.</summary>
     /// <exception cref="ArgumentOutOfRangeException">The window is negative or longer than ten seconds, or the batch size is not positive.</exception>
-    internal IntentCompletionQueue(TimeSpan window, int batchSize, Func<IReadOnlyList<Guid>, CancellationToken, Task> flush)
+    internal IntentCompletionQueue(TimeSpan window, int batchSize, Func<IReadOnlyList<Guid>, CancellationToken, Task> flush, ILogger? logger = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(window, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(window, LongestWindow);
@@ -47,6 +52,7 @@ internal sealed class IntentCompletionQueue : IHostedService
         _window = window;
         _batchSize = batchSize;
         _flush = flush;
+        _logger = logger ?? NullLogger.Instance;
     }
 
     /// <summary>
@@ -128,9 +134,8 @@ internal sealed class IntentCompletionQueue : IHostedService
 
     /// <summary>
     /// A flush that fails — for any reason, including the store's own timeout — is left to the
-    /// drain: the rows are still there, and the handlers tolerate a second run. Nothing is logged,
-    /// which the proof of concept's known limitation on diagnostics already records; and nothing
-    /// escapes, so the loop that calls this never faults.
+    /// drain: the rows are still there, and the handlers tolerate a second run. It is logged and
+    /// counted, and nothing escapes, so the loop that calls this never faults.
     /// </summary>
     private async Task FlushAsync(List<Guid> ids, CancellationToken cancellationToken)
     {
@@ -142,17 +147,21 @@ internal sealed class IntentCompletionQueue : IHostedService
         try
         {
             await _flush(ids, cancellationToken);
+            ApplicationDiagnostics.Metrics.OrleansCompletionFlushed.Add(ids.Count);
         }
         catch (Exception ex)
         {
-            _ = ex;
+            ApplicationDiagnostics.Metrics.OrleansCompletionFailed.Add(1);
+            _logger.LogCompletionFlushFailed(ex, ids.Count);
         }
     }
 
     private static async Task DeleteAsync(IServiceScopeFactory scopeFactory, IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
-        var context = (DbContext)scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
-        await context.Set<OutboxEntry>().Where(entry => ids.Contains(entry.Id)).ExecuteDeleteAsync(cancellationToken);
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        await unitOfWork.CreateOutboxRepository(transaction).DeleteManyAsync(ids, cancellationToken);
+        await transaction.SaveChangesAsync(cancellationToken);
     }
 }

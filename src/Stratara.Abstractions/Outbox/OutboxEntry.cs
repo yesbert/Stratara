@@ -28,4 +28,22 @@ public sealed class OutboxEntry : IEntity, IBucket, IHasRowVersion
 
     /// <inheritdoc/>
     public uint RowVersion { get; set; }
+
+    /// <summary>How many times the entry has been handed over for execution since it was stored or returned.</summary>
+    public int AttemptCount { get; set; }
+
+    /// <summary>When the entry was last handed over for execution; <see langword="null"/> until it first is.</summary>
+    public DateTimeOffset? LastHandedOverAt { get; set; }
+
+    /// <summary>When the entry was kept for an operator after its attempts ran out; <see langword="null"/> while it is still resumed.</summary>
+    public DateTimeOffset? KeptAt { get; set; }
+
+    /// <summary>The failure of the last attempt, recorded when the entry is kept.</summary>
+    public string? LastFailure { get; set; }
+
+    /// <summary>The aggregate the stored command names, recorded with it so resuming does not read the payload; <see langword="null"/> for a command that names none and for a bundle.</summary>
+    public Guid? AggregateId { get; set; }
+
+    /// <summary>Whether the stored command declared itself long-running.</summary>
+    public bool Heavy { get; set; }
 }

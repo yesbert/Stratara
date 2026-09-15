@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Stratara.Orleans.Timers;
+using Stratara.Abstractions.Timers;
 
 namespace Stratara.Orleans.IntegrationTests.Timers;
 

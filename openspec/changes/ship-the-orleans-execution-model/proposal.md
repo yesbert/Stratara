@@ -20,7 +20,8 @@ proof of concept that no consumer can install. This change ships it.
 - **Two new packages in the lockstep family**, Tier-C, packable and in the publish filter: the
   execution model — aggregate grain, durable-intent dispatcher, projection and saga grains,
   singleton work, durable timers, bounded heavy work — and its Entity Framework Core persistence —
-  the commit-order readers, the checkpoint store and the store-schema addition. Working names
+  the commit-order readers and the checkpoint store; the store-schema additions are declared by the
+  shipped store package. Working names
   `Stratara.Orleans` and `Stratara.Orleans.EntityFrameworkCore`. Orleans is pinned to the range
   `[10.3.1, 11.0.0)`; an Orleans minor upgrade is a Stratara patch unless the wire format changes.
 - **A new capability, `orleans-execution`**, stating what a consumer of those packages observes:
@@ -76,8 +77,8 @@ does not install the new packages notices nothing except the additions to the st
 next migration — the commit-order and position columns, the counter table, the outbox record's resume
 bookkeeping and the checkpoint table — none of which changes behaviour. The published surface gains
 two packages, one registration per role, one optional interface for stateful processes, one for
-rebuildable projections, the timer port, the reset port, members on the outbox record, and one
-default-implemented member on the outbox repository port. This is a **minor** bump after the
+rebuildable projections, the timer port, the reset port, the command-intent port with its registration, members on
+the outbox record, and one default-implemented member on the outbox repository port. This is a **minor** bump after the
 merge: new packable projects.
 
 ## Capabilities
@@ -114,11 +115,14 @@ merge: new packable projects.
 
 - **New, packable:** `src/Stratara.Orleans/` (today the proof of concept, made packable in place)
   and `src/Stratara.Orleans.EntityFrameworkCore/` (new; today's `CommitOrder/` readers, the
-  checkpoint store and the model extension move there). Both in `Stratara.Publish.slnf`.
+  partition-counter interceptor, the checkpoint store, the portable reader's backfill and the
+command-intent store). Both in
+  `Stratara.Publish.slnf`.
 - **Modified, packable:** `src/Stratara.Abstractions/` (a default-implemented member on the outbox
   repository port, the outbox record's resume bookkeeping, and the timer, singleton-work, reader,
-  checkpoint and rebuilder ports — design D1); `src/Stratara.EventSourcing.EntityFrameworkCore/` (the
-  batch delete, the schema addition); `src/Stratara.Projections/` and `src/Stratara.Sagas/` (the
+  checkpoint, rebuilder and command-intent ports — design D1, D4); `src/Stratara.EventSourcing.EntityFrameworkCore/` (the
+  batch delete, and the schema additions declared by the shipped write and read contexts, with the
+  counter and checkpoint entities); `src/Stratara.Projections/` and `src/Stratara.Sagas/` (the
   rebuildable projection and the process); `src/Stratara.EventSourcing.WorkerDefaults/` (the sibling
   composites, D11); `src/Stratara.Infrastructure/` (the enqueue-time authorizer decorates the registered
   dispatcher, D15); `src/Stratara.Diagnostics/` (the log event band and the instruments).

@@ -6,14 +6,16 @@ namespace Stratara.Orleans.IntegrationTests.Timers;
 /// <summary>
 /// T5 of the expectations: a host with open timers is killed and restarted, ten times. Before each
 /// kill, five owners are kept and five removed. After the restart every kept owner's timer fires
-/// exactly once within two refresh periods, and no removed owner's timer fires at all.
+/// exactly once, and no removed owner's timer fires at all. The due time is fixed by a start signal
+/// before the first registration, and the kill is asserted to land before it with every timer registered
+/// and none fired — so a slow run fails instead of passing on timers that fired before the kill.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture redis)
 {
     private const int Kills = 10;
     private const int OwnersPerKind = 5;
-    private const int DueInMs = 3_000;
+    private static readonly TimeSpan DueIn = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan SettleAfterRestart = PocSilo.RefreshReminderListPeriod * 2 + TimeSpan.FromSeconds(5);
 
     [Fact]
@@ -38,11 +40,12 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
             var kept = Enumerable.Range(0, OwnersPerKind).Select(i => $"kept-{kill}-{i}-{Guid.NewGuid():N}").ToList();
             var removed = Enumerable.Range(0, OwnersPerKind).Select(i => $"removed-{kill}-{i}-{Guid.NewGuid():N}").ToList();
 
-            var host = await PocHostProcess.StartAsync("timers", environment);
+            await using var host = await PocHostProcess.StartAsync("timers", environment);
+            var dueAt = DateTimeOffset.UtcNow + DueIn;
             foreach (var owner in kept.Concat(removed))
             {
                 Assert.Equal("ok", await host.SendAsync($"add-owner {owner}"));
-                Assert.Equal("ok", await host.SendAsync($"register {owner} expire {DueInMs}"));
+                Assert.Equal("ok", await host.SendAsync($"register-at {owner} expire {dueAt.ToUnixTimeMilliseconds()}"));
             }
 
             foreach (var owner in removed)
@@ -50,12 +53,23 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
                 Assert.Equal("ok", await host.SendAsync($"remove-owner {owner}"));
             }
 
+            foreach (var owner in kept)
+            {
+                Assert.Equal("1", await host.SendAsync($"timers {owner}"));
+                Assert.Equal("0", await host.SendAsync($"firings {owner}"));
+            }
+
+            Assert.True(DateTimeOffset.UtcNow < dueAt, $"Kill {kill + 1}: the timers came due before the kill, so a firing after the restart would prove nothing.");
             host.Kill();
             var killedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             await using var restarted = await PocHostProcess.StartAsync("timers", environment);
             var restartSeconds = System.Diagnostics.Stopwatch.GetElapsedTime(killedAt).TotalSeconds;
-            await Task.Delay(SettleAfterRestart);
+            var settleUntil = dueAt + SettleAfterRestart;
+            if (settleUntil > DateTimeOffset.UtcNow)
+            {
+                await Task.Delay(settleUntil - DateTimeOffset.UtcNow);
+            }
 
             foreach (var owner in kept)
             {
@@ -74,25 +88,5 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
 
         TestContext.Current.TestOutputHelper?.WriteLine(string.Join(Environment.NewLine, report));
         Console.WriteLine(string.Join(Environment.NewLine, report));
-    }
-}
-
-/// <summary>Creates the store database the timers host writes its owners and firings to.</summary>
-internal static class PostgresTimerHostSchema
-{
-    public static async Task EnsureDatabaseAsync(string connectionString)
-    {
-        var builder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
-        var database = builder.Database!;
-        builder.Database = "postgres";
-        await using var connection = new Npgsql.NpgsqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var exists = new Npgsql.NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", database);
-        if (await exists.ExecuteScalarAsync() is null)
-        {
-            await using var create = new Npgsql.NpgsqlCommand($"CREATE DATABASE \"{database}\"", connection);
-            await create.ExecuteNonQueryAsync();
-        }
     }
 }

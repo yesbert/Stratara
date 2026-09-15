@@ -26,6 +26,9 @@ internal sealed class OrleansEventBundleDispatcher(
     /// <summary>The hybrid shape keeps the inner dispatcher's durability; the grain-only shape needs none, the store being the truth.</summary>
     public bool StoresBundlesWithCommit => inner?.StoresBundlesWithCommit ?? false;
 
+    /// <summary>Whether a bundle can ever be stored for the drain: only the hybrid shape's inner dispatcher stores one.</summary>
+    public bool StoresBundles => inner is not null;
+
     public Task StoreEventBundleAsync(EventBundle eventBundle, Stratara.Abstractions.Persistence.ITransaction transaction, CancellationToken cancellationToken = default) =>
         inner?.StoreEventBundleAsync(eventBundle, transaction, cancellationToken)
         ?? throw new NotSupportedException("The grain-only dispatcher does not store bundles with the commit; the store itself is what the grains read.");

@@ -8,5 +8,7 @@
   href: tenant-aware-encryption.md
 - name: Why Event Sourcing
   href: why-event-sourcing.md
+- name: The Orleans Execution Model
+  href: orleans-execution-model.md
 - name: Performance and Scaling
   href: performance-and-scaling.md

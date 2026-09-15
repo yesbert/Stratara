@@ -9,7 +9,7 @@ namespace Stratara.Orleans.Aggregates;
 [GenerateSerializer]
 [Alias("Stratara.Orleans.AggregateCommandEnvelope")]
 [Immutable]
-public sealed record AggregateCommandEnvelope(
+internal sealed record AggregateCommandEnvelope(
     [property: Id(0)] string CommandTypeName,
     [property: Id(1)] string CommandJson,
     [property: Id(2)] string SessionContextJson);

@@ -9,7 +9,7 @@ description: "Every Stratara package with what it does and what it pulls in, plu
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
-Stratara ships as **25 NuGet packages at one lockstep version** — every package below carries the
+Stratara ships as **27 NuGet packages at one lockstep version** — every package below carries the
 same `<VersionPrefix>`, bumped together, the way the `Microsoft.Extensions.*` family does. Take one
 package or take twenty; they never disagree about which version of each other they expect.
 
@@ -43,6 +43,8 @@ a consumer can adopt the contracts without any infrastructure.
 | C | `Stratara.Identity.AspNetCore` | ASP.NET Core identity wiring: sign-in manager wrapper, membership tenant-claim bridge, i18n, email-sender stub |
 | C | `Stratara.Identity.EntityFrameworkCore` | Identity directory: user↔tenant membership, membership-backed authorization (roles + permissions), scoped settings store |
 | C | `Stratara.ServiceDefaults.AspNetCore` | ASP.NET health checks + request OpenTelemetry |
+| C | `Stratara.Orleans` | The Orleans execution model: commands, projections, sagas, timers and singleton work as virtual actors |
+| C | `Stratara.Orleans.EntityFrameworkCore` | The execution model's persistence: commit-order readers, checkpoint store, intent store, reset |
 | — | `Stratara.Testing` | Test doubles (in-memory key store / message bus / session) + given/when/then aggregate harness — reference from test projects only |
 | — | `Stratara.Testing.EntityFrameworkCore` | The real event-sourcing write stack on in-memory SQLite (`EventStoreTestHost`) — reference from test projects only |
 
@@ -54,6 +56,7 @@ a consumer can adopt the contracts without any infrastructure.
 | Request validation as a pipeline behavior | `+ Stratara.Validation` |
 | Event sourcing on PostgreSQL with outbox, projections and sagas over RabbitMQ | `Stratara.EventSourcing.WorkerDefaults` (pulls the stack transitively) `+ Stratara.Abstractions` `+ Stratara.Sessions` |
 | The same over Azure Service Bus | swap `Stratara.Outbox.RabbitMQ` for `Stratara.Outbox.AzureServiceBus` |
+| Commands, projections, sagas and timers on an Orleans cluster | `+ Stratara.Orleans` `+ Stratara.Orleans.EntityFrameworkCore` — see [Choose an Execution Model](../getting-started/choose-an-execution-model.md) |
 | Field-level encryption and crypto-shredding without the event store | `Stratara.Security` |
 | Tenant membership, permissions, API keys | `Stratara.Identity.EntityFrameworkCore` `+ Stratara.Identity.AspNetCore` |
 | Tests | `Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore` (test projects only) |

@@ -47,6 +47,18 @@ internal sealed class OutboxRepository(IWriteDbContext context) : IOutboxReposit
         context.Set<OutboxEntry>().Where(o => o.Id == id).ExecuteDeleteAsync(cancellationToken);
 
     /// <inheritdoc/>
+    public async Task DeleteManyAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        await context.Set<OutboxEntry>().Where(o => ids.Contains(o.Id)).ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<OutboxEntry>> GetManyAsync<T>(int batchSizes, CancellationToken cancellationToken)
     {
         var dataTypeName = typeof(T).GetQualifiedTypeName();
