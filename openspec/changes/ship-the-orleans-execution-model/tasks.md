@@ -90,13 +90,16 @@
       (added to `ObservabilityMetricsTests`); the lag gauge is created by the runtime package on the same meter
       under the published `OrleansReaderLagName`. Ids for kept commands, released permits and the directory check
       are allocated here and emitted by 3.2, 3.3 and 4.1. `DiagnosticsTests` in `tests/Stratara.Orleans.Tests`.
-- [ ] 3.2 Bounded resume behind `ICommandIntentStore` (Abstractions) with its implementation and
+- [x] 3.2 Bounded resume behind `ICommandIntentStore` (Abstractions) with its implementation and
       `AddStrataraIntentStore<TWriteContext>()` in the persistence package (owner decision 2026-09-15), kept
       state, the hand-over lease, the aggregate id read from the record, and the operator's return. Verify:
       `DurableIntentTests` gains a handler that always throws (kept after the bound, the next command still
       resumed), a handler that outlives the grace (runs once, heavy variant included), an encrypted command
       resumed after a kill (runs in its aggregate's order), and a returned kept command (resumed with its
       count starting over); a host with the dispatcher and without the intent store fails at start naming it.
+      Done: `DurableIntentTests` (bound and kept, long handler plain and heavy, order by the recorded aggregate for a
+      command that names it only through the interface and seals a note, operator's return) and
+      `IntentStoreStartupCheckTests`; integration suite 44/44.
 - [ ] 3.3 Permits as leases reconciled against membership. Verify: `HeavyBurstTests` gains a case where a
       worker silo is killed holding permits and the bound is whole after the lease.
 - [ ] 3.4 Starters as silo lifecycle participants. Verify: `CoHostingTests` green in both orders with the

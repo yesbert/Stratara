@@ -118,6 +118,7 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
             .AddTrustedType<HeavyProbe>()
             .AddStrataraAggregateGrains()
             .AddStrataraOrleansCommandDispatcher()
+            .AddStrataraIntentStore<PocWriteDbContext>()
             .ConfigureStrataraHeavyWork(options => options.ClusterWideLimit = ClusterWideLimit);
 
         var app = builder.Build();

@@ -1,9 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
+using Orleans.GrainDirectory;
 using Polly;
 using Polly.Retry;
-using Orleans.GrainDirectory;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -43,8 +43,9 @@ internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
 /// Heavy work runs here rather than in the aggregate's grain, so a long unit does not hold an
 /// aggregate's turn, and here rather than anywhere, so the number running is bounded: per silo by
 /// the worker pool, and across the cluster by the permit grain — the limit a stateless worker's
-/// pool alone cannot give. The intent was recorded before the hand-off and is completed after the
-/// handler, so a crash in between is resumed like any other intent.
+/// pool alone cannot give. The intent's hand-over is renewed from the moment it arrives, while it
+/// waits for a permit and while it runs, and it is completed after the handler, so a crash in between
+/// is resumed like any other intent.
 /// </summary>
 [StatelessWorker(HeavyWorkGrain.MaxLocalWorkers)]
 internal sealed class HeavyWorkGrain(IServiceScopeFactory scopeFactory, IOptions<HeavyWorkOptions> options) : Grain, IHeavyWorkGrain
@@ -61,14 +62,17 @@ internal sealed class HeavyWorkGrain(IServiceScopeFactory scopeFactory, IOptions
         })
         .Build();
 
-    public async Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope)
+    public Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope) =>
+        CommandExecution.RunAsync(scopeFactory, envelope, intentId, UnderPermitAsync);
+
+    private async Task UnderPermitAsync(Func<Task> run)
     {
         var permits = GrainFactory.GetGrain<IHeavyWorkPermitGrain>(0);
         await _acquirePermit.ExecuteAsync(async _ => await permits.TryAcquireAsync());
 
         try
         {
-            await CommandExecution.RunAsync(scopeFactory, envelope, intentId);
+            await run();
         }
         finally
         {

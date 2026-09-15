@@ -52,21 +52,59 @@ internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory) : Gr
 
 /// <summary>
 /// What every grain-side execution does: restore the session, rebuild the command, invoke its
-/// handler inside the turn, and — for a recorded intent — hand the record to the completion queue
-/// once the handler has completed, so a crash before that point leaves the record for the drain to
-/// resume.
+/// handler inside the turn, and — for a recorded intent — renew its hand-over while it runs, record the
+/// failure of an attempt that throws, and hand the record to the completion queue once the handler has
+/// completed, so a crash before that point leaves the record for the drain to resume.
 /// </summary>
 internal static class CommandExecution
 {
     private static readonly ConcurrentDictionary<Type, IHandlerInvoker> Invokers = new();
 
-    public static async Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId)
+    public static Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId) =>
+        RunAsync(scopeFactory, envelope, intentId, around: null);
+
+    /// <summary>
+    /// Runs the command. <paramref name="around"/> wraps the handler's run — heavy work acquires its
+    /// permit there — inside the intent's lease, so a command waiting for a permit is not handed over
+    /// again either.
+    /// </summary>
+    public static async Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId, Func<Func<Task>, Task>? around)
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
         using var scope = scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
+        Func<Task> run = () => InvokeAsync(services, envelope);
+        if (around is not null)
+        {
+            var inner = run;
+            run = () => around(inner);
+        }
 
+        if (intentId is not { } id)
+        {
+            await run();
+            return;
+        }
+
+        await using (var lease = await IntentLease.StartAsync(services, id))
+        {
+            try
+            {
+                await run();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                await lease.RecordFailureAsync(ex);
+                throw;
+            }
+        }
+
+        await services.GetRequiredService<IntentCompletionQueue>().CompleteAsync(id);
+    }
+
+    private static async Task InvokeAsync(IServiceProvider services, AggregateCommandEnvelope envelope)
+    {
         var session = JsonSerializer.Deserialize<SessionContext>(envelope.SessionContextJson)
                       ?? throw new InvalidOperationException("The aggregate command envelope carries no session context.");
         services.GetRequiredService<ISessionContextProvider>().Set(session);
@@ -82,11 +120,6 @@ internal static class CommandExecution
                 (IHandlerInvoker)(Activator.CreateInstance(typeof(HandlerInvoker<>).MakeGenericType(commandType))
                                   ?? throw new InvalidOperationException($"Cannot build a handler invoker for {commandType.FullName}.")));
             await invoker.InvokeAsync(services, command, CancellationToken.None);
-        }
-
-        if (intentId is { } id)
-        {
-            await services.GetRequiredService<IntentCompletionQueue>().CompleteAsync(id);
         }
     }
 

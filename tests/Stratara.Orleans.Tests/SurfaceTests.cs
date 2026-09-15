@@ -34,6 +34,7 @@ public class SurfaceTests
     [
         "Microsoft.Extensions.DependencyInjection.OrleansCheckpointServiceCollectionExtensions",
         "Microsoft.Extensions.DependencyInjection.OrleansCommitOrderServiceCollectionExtensions",
+        "Microsoft.Extensions.DependencyInjection.OrleansIntentStoreServiceCollectionExtensions",
         "Stratara.Orleans.EntityFrameworkCore.CommitOrder.PartitionCounterBackfill",
         "Stratara.Orleans.EntityFrameworkCore.CommitOrder.PartitionCounterInterceptor",
         "Stratara.Orleans.EntityFrameworkCore.CommitOrder.PortableCounterReader`1",

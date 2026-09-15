@@ -27,8 +27,8 @@ internal static partial class OrleansLog
     [LoggerMessage(
         EventId = LogEvents.Orleans.CommandResumed,
         Level = LogLevel.Information,
-        Message = "Command {IntentId} was handed over again after its hand-over was lost.")]
-    public static partial void LogCommandResumed(this ILogger logger, Guid intentId);
+        Message = "Command {IntentId} was handed over again after its hand-over lapsed; attempt {Attempt}.")]
+    public static partial void LogCommandResumed(this ILogger logger, Guid intentId, int attempt);
 
     [LoggerMessage(
         EventId = LogEvents.Orleans.PartitionStalled,
@@ -47,6 +47,12 @@ internal static partial class OrleansLog
         Level = LogLevel.Error,
         Message = "A catch-up started by a wake-up failed for {Consumer} on partition {Partition}; the next wake-up or poll reads again.")]
     public static partial void LogCatchUpFaulted(this ILogger logger, Exception exception, string consumer, int partition);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.CommandKept,
+        Level = LogLevel.Warning,
+        Message = "Command {IntentId} was kept for an operator after {Attempts} attempts; last failure: {LastFailure}.")]
+    public static partial void LogCommandKept(this ILogger logger, Guid intentId, int attempts, string lastFailure);
 
     [LoggerMessage(
         EventId = LogEvents.Orleans.CompletionFlushFailed,

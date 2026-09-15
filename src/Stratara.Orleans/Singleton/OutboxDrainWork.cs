@@ -26,6 +26,15 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
     /// <inheritdoc/>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        if (await ResumeRecordedCommandsAsync(cancellationToken))
+        {
+            await DrainAsync<EventBundle, IEventBundleOutboxDispatcher>(
+                (dispatcher, entries, ct) => dispatcher.EnqueueOutboxEntriesAsync(entries, ct),
+                static dispatcher => dispatcher is OrleansEventBundleDispatcher { StoresBundles: false },
+                cancellationToken);
+            return;
+        }
+
         await DrainAsync<CommandEnvelope, ICommandOutboxDispatcher>(
             (dispatcher, entries, ct) => dispatcher.EnqueueOutboxEntriesAsync(entries, ct),
             static _ => false,
@@ -34,6 +43,23 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
             (dispatcher, entries, ct) => dispatcher.EnqueueOutboxEntriesAsync(entries, ct),
             static dispatcher => dispatcher is OrleansEventBundleDispatcher { StoresBundles: false },
             cancellationToken);
+    }
+
+    /// <summary>
+    /// On the execution model the commands are resumed from the intent store, which knows which are due
+    /// and how often each has been handed over; the store is not read for them as plain entries.
+    /// </summary>
+    /// <returns><see langword="true"/> when the registered command dispatcher is the execution model's.</returns>
+    private async Task<bool> ResumeRecordedCommandsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        if (scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>() is not Aggregates.OrleansCommandDispatcher dispatcher)
+        {
+            return false;
+        }
+
+        await dispatcher.ResumeDueAsync(_options.BatchSize, cancellationToken);
+        return true;
     }
 
     /// <summary>

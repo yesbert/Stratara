@@ -144,7 +144,7 @@ public static class CommandsPerAggregateRun
             builder.Services.AddEventSourcing().AddStrataraAggregateGrains();
             if (path == "grain-intent")
             {
-                builder.Services.AddStrataraOrleansCommandDispatcher();
+                builder.Services.AddStrataraOrleansCommandDispatcher().AddStrataraIntentStore<PocWriteDbContext>();
             }
         }
 
