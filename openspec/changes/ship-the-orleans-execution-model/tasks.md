@@ -149,9 +149,14 @@
       registrations remove nothing; the grain hosts use the services composites, the hybrid scenario the worker composite.
       `WorkerDefaultsCompositesTests` (14), `ProjectionGrainTests` and `SagaGrainTests` (4/4); cheatsheet rows added and
       `llms-full.txt` regenerated.
-- [ ] 4.4 A full replay on a host with store-reading projections pauses their readers, returns their
+- [x] 4.4 A full replay on a host with store-reading projections pauses their readers, returns their
       checkpoints to the beginning after truncating, and resumes them (D11). Verify: an integration test
       that replays while store readers run and finds every read model refilled.
+      Done: `AddStrataraProjectionGrains` wraps the host's `IProjectionViewTruncator`: the projection grains are paused,
+      their checkpoints returned to the beginning, the read models emptied, the grains resumed however the truncation
+      ended (the reset comes before the truncation, as D21 orders it for a rebuild). A truncator registered after the
+      store readers fails the host at start. `ReplayCheckpointResetTests` and `ReplayWithStoreReadersTests` (checkpoints
+      at 0 when the models are emptied, every read model refilled, readers advanced again) green.
 - [ ] 4.5 Commands on the execution model's path go through `IMediator`; the enqueue-time authorizer
       decorates the registered dispatcher slot (D15). Verify: integration tests that a command failing
       validation is not handled on the intent path and that authorization applies in both registration
