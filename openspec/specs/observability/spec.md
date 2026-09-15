@@ -25,7 +25,8 @@ duplicating string literals.
 
 #### Scenario: A consumer needs to reference a name in code
 
-- **WHEN** a consumer needs the activity source name, the meter name, an outcome value or a tag name
+- **WHEN** a consumer needs the activity source name, the meter name, an instrument name, an outcome
+  value or a tag name
 - **THEN** it is available as a published constant rather than only as a literal in emitted data
 
 ### Requirement: All framework telemetry originates from one source and one meter
@@ -47,19 +48,32 @@ The framework SHALL emit counters for events appended, outbox entries published,
 processed and saga events processed; histograms for command duration, projection bundle duration
 and saga bundle duration; a counter for optimistic-concurrency conflicts; and a gauge for sagas
 currently in flight. Measurements SHALL be dimensioned by the aggregate type, event type, request
-type, outcome and outbox kind they concern.
+type, outcome and outbox kind they concern; a gauge of work in flight SHALL NOT be dimensioned by
+outcome, because that work has none yet.
+
+A tag that names an event type or an aggregate type SHALL carry the same value form on every
+instrument that emits it — the type's simple name — so that a consumer can join the write side's
+series with the projection and saga series on that value.
 
 #### Scenario: An operator asks how much work the host is doing
 
 - **WHEN** an operator queries the framework's instruments
 - **THEN** throughput and latency are available for the command path, the event store, the outbox,
-  projections and sagas, broken down by outcome
+  projections and sagas, broken down by outcome where the operation has one
+
+#### Scenario: An operator joins write and read throughput for one event type
+
+- **WHEN** an operator filters the events-appended series and the projection and saga
+  events-processed series by the same event type
+- **THEN** all of them carry the same tag value for that event type, and the filter matches in each
 
 #### Scenario: An operator asks how far behind a projection is
 
 - **WHEN** an operator looks for consumer lag — how far a projection or saga trails the event stream
-- **THEN** the framework does not answer it. There is no checkpoint store for projections or sagas,
-  so lag is not measurable from these instruments, and no instrument implies otherwise
+- **THEN** on the bus workers the framework does not answer it: they keep no checkpoint, so lag is not
+  measurable from their instruments, and no instrument implies otherwise
+- **AND** where a host runs its projections and sagas on the Orleans execution model, the model
+  publishes the age of the oldest unapplied entry per partition, as its own measurements state
 
 ### Requirement: Log event ids follow a partitioned schema that reserves a consumer range
 
