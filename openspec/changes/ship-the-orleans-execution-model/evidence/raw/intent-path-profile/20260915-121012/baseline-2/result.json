@@ -1,0 +1,104 @@
+{
+  "measurement": "commands-per-aggregate",
+  "results": [
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 2.8597852,
+      "commandsPerSecond": 699.3532241512404,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.7279562,
+      "commandsPerSecond": 1157.4367452137965,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.5081203,
+      "commandsPerSecond": 1326.154153617586,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.7664935,
+      "commandsPerSecond": 1132.1864473319602,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.7434158,
+      "commandsPerSecond": 1147.173267559007,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.6660631,
+      "commandsPerSecond": 1200.4347254314678,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 7.5200028,
+      "commandsPerSecond": 265.95734778183856,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 7.2038819,
+      "commandsPerSecond": 277.6280938198057,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 7.6903425,
+      "commandsPerSecond": 260.06644047388005,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    }
+  ]
+}

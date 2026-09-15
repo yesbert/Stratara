@@ -1,0 +1,31 @@
+{
+  "commit": "e38c50cf2f19a5da40570cd5d039ac6e685afed1",
+  "recordedAt": "2026-09-15T12:11:14.812086+00:00",
+  "machine": {
+    "description": "macOS 26.6.2",
+    "architecture": "Arm64",
+    "processors": 24,
+    "runtime": ".NET 10.0.12"
+  },
+  "images": {
+    "postgres": "postgres:17-alpine",
+    "redis": "redis:7-alpine",
+    "rabbitmq": "rabbitmq:4-management-alpine"
+  },
+  "settings": {
+    "commands": 2000,
+    "repetitions": 3,
+    "Distributions": [
+      {},
+      {},
+      {}
+    ],
+    "Paths": [
+      "bus-worker",
+      "grain-intent",
+      "grain-sync"
+    ],
+    "profile": "Production",
+    "directory": "BuiltInDefault"
+  }
+}

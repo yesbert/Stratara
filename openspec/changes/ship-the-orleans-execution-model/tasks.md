@@ -316,10 +316,20 @@
 - [ ] 7.2 Kill tests with due times relative to a start signal and asserted preconditions; singleton work
       taken over by the surviving silo; a timer across two silos. Verify: the integration workflow green
       three runs in a row on the branch.
-- [ ] 7.3 B3 and B5 on the packaged code, production profile, built-in directory, diagnostics on; compared
+- [x] 7.3 B3 and B5 on the packaged code, production profile, built-in directory, diagnostics on; compared
       with the archived optimised numbers in `evidence/results.md`. Verify:
       `evidence/raw/commands-per-aggregate/` and `evidence/raw/resources/` exist and the comparison is
       within 10 % or explained.
+      Done: the first B3 run (`raw/commands-per-aggregate/20260915-114629/`) put the durable-intent shape 12–13 %
+      below the archived numbers. Profiled with the lease, its renewal at the start and the mediator switched off in
+      turn (`raw/intent-path-profile/20260915-121012/`): the renewal at the start, one statement per command inside
+      the turn, was the cost; the mediator cost nothing measurable. The lease now skips that renewal for a command
+      started within a quarter of the grace of its recording (`IntentLeaseTests`; `DurableIntentTests` 7/7). B3
+      after the fix (`raw/commands-per-aggregate/20260915-122442/`): grain-intent 1 389 / 1 268 / 303 = −4 / −7 /
+      −2 %, grain-sync −10 / +3 / −5 %, 0 conflicts; the bus control's −21 % on 2000×1 is the machine's (unchanged
+      code, 600 an hour earlier). B5
+      (`raw/resources/20260915-114914/`) holds: silo 190 / 217 MB, 0.028 idle CPU-s per s, 2.44 CPU-s per 1 000
+      commands = +7 % of the bus host (archived +12 %). Both in `evidence/results.md`.
 - [ ] 7.4 `tests/Stratara.Orleans.IntegrationTests` green on the packaged projects, 37 tests plus the new
       cases. Verify: the run's summary in `evidence/results.md`.
 - [ ] 7.5 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
