@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 using Polly.Registry;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.Projections;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Resilience;
 
 namespace Stratara.Orleans.Projections;
@@ -24,7 +26,8 @@ internal abstract class StoreReaderGrain(
     IServiceScopeFactory scopeFactory,
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
-    StoreReaderSettings settings) : Grain, IRemindable
+    StoreReaderSettings settings,
+    ILogger logger) : Grain, IRemindable
 {
     private const string KeepAliveReminder = "keep-alive";
 
@@ -33,6 +36,9 @@ internal abstract class StoreReaderGrain(
 
     /// <summary>The consumer this grain reads for, from its key.</summary>
     protected string Consumer { get; private set; } = string.Empty;
+
+    /// <summary>The partition this grain reads, from its key.</summary>
+    protected int Partition { get; private set; }
 
     /// <summary>Where each batch resolves its services.</summary>
     protected IServiceScopeFactory ScopeFactory => scopeFactory;
@@ -48,7 +54,8 @@ internal abstract class StoreReaderGrain(
     {
         var (consumer, partition) = StoreReaderGrainKey.Parse(this.GetPrimaryKeyString());
         Consumer = consumer;
-        _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize);
+        Partition = partition;
+        _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger);
         _poll ??= this.RegisterGrainTimer(
             _ => RequestCatchUp(),
             new GrainTimerCreationOptions
@@ -58,14 +65,25 @@ internal abstract class StoreReaderGrain(
                 Interleave = false,
                 KeepAlive = true,
             });
+        logger.LogStoreReaderStarted(consumer, partition);
         return base.OnActivateAsync(cancellationToken);
     }
 
     public Task EnsureRunningAsync() => this.RegisterOrUpdateReminder(KeepAliveReminder, settings.KeepAlivePeriod, settings.KeepAlivePeriod);
 
+    /// <summary>Requests a catch-up without waiting for it; a catch-up that fails is logged, and the next wake-up or poll reads again.</summary>
     public Task NudgeAsync()
     {
-        RequestCatchUp();
+        RequestCatchUp().ContinueWith(
+            static (faulted, state) =>
+            {
+                var (grainLogger, consumer, partition) = ((ILogger, string, int))state!;
+                grainLogger.LogCatchUpFaulted(faulted.Exception!.GetBaseException(), consumer, partition);
+            },
+            (logger, Consumer, Partition),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Current);
         return Task.CompletedTask;
     }
 
@@ -79,6 +97,8 @@ internal abstract class StoreReaderGrain(
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
         await Loop.WaitForRunningAsync(cancellationToken);
+        Loop.Withdraw();
+        logger.LogStoreReaderStopped(Consumer, Partition);
         await base.OnDeactivateAsync(reason, cancellationToken);
     }
 

@@ -58,8 +58,9 @@ internal sealed class SagaGrain(
     IEventMapperFactory eventMapperFactory,
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
-    IOptions<SagaGrainOptions> options)
-    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod)),
+    IOptions<SagaGrainOptions> options,
+    Microsoft.Extensions.Logging.ILogger<SagaGrain> logger)
+    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod), logger),
         ISagaGrain
 {
     public const string ConsumerName = "sagas";

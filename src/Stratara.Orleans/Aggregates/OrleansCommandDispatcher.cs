@@ -30,7 +30,8 @@ internal sealed class OrleansCommandDispatcher(
     IProjectionReplayState replayState,
     AggregateSendLane lane,
     IOptions<OrleansDispatchOptions> options,
-    TimeProvider timeProvider) : ICommandOutboxDispatcher
+    TimeProvider timeProvider,
+    Microsoft.Extensions.Logging.ILogger<OrleansCommandDispatcher> logger) : ICommandOutboxDispatcher
 {
     private readonly TimeSpan _grace = options.Value.IntentGrace;
 
@@ -64,6 +65,8 @@ internal sealed class OrleansCommandDispatcher(
             var envelope = entry.MapTo<CommandEnvelope>();
             var payload = new AggregateCommandEnvelope(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson);
             await HandOver(entry.Id, payload, envelope.Heavy, AggregateIdOf(envelope));
+            Stratara.Diagnostics.ApplicationDiagnostics.Metrics.OrleansIntentResumed.Add(1);
+            Stratara.Orleans.Diagnostics.OrleansLog.LogCommandResumed(logger, entry.Id);
         }
     }
 

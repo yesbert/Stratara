@@ -29,6 +29,7 @@ internal sealed class IntentRecorder(IWriteUnitOfWork unitOfWork, ISecureJsonSer
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         await unitOfWork.CreateOutboxRepository(transaction).AddAsync(envelope, cancellationToken);
         await transaction.SaveChangesAsync(cancellationToken);
+        Stratara.Diagnostics.ApplicationDiagnostics.Metrics.OrleansIntentRecorded.Add(1);
 
         return new AggregateCommandEnvelope(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson);
     }

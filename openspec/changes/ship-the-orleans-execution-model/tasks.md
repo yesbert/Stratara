@@ -80,12 +80,16 @@
 
 ## 3. Known limitations closed (D4, D5, D6, D8, D9)
 
-- [ ] 3.1 `LogEvents.Orleans` band `117_000` and the instruments of D5 on the framework's meter,
+- [x] 3.1 `LogEvents.Orleans` band `117_000` and the instruments of D5 on the framework's meter,
       including the faulted catch-up and the lag from the entry's recorded time; source-generated logging
       throughout. Verify: `tests/Stratara.Orleans.Tests` asserts every id is in the band and every
       instrument name is in the published list; `docs/reference/log-events-schema.md` names the new upper
       bound and `LogEventAllocationTests` is green; `ProjectionGrainTests` asserts a stalled partition logs
       and counts.
+      Done: the counters and up-down counters are fields with name constants on `ApplicationDiagnostics.Metrics`
+      (added to `ObservabilityMetricsTests`); the lag gauge is created by the runtime package on the same meter
+      under the published `OrleansReaderLagName`. Ids for kept commands, released permits and the directory check
+      are allocated here and emitted by 3.2, 3.3 and 4.1. `DiagnosticsTests` in `tests/Stratara.Orleans.Tests`.
 - [ ] 3.2 Bounded resume, kept state, the hand-over lease, the aggregate id read from the record, and the
       operator's return. Verify: `DurableIntentTests` gains a handler that always throws (kept after the
       bound, the next command still resumed), a handler that outlives the grace (runs once, heavy variant

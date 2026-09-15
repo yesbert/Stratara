@@ -4,7 +4,7 @@ namespace Stratara.Diagnostics;
 /// Event-ID schema for Stratara's source-generated <c>[LoggerMessage]</c> extensions. Even
 /// hundreds = info/debug, <c>_1xx</c> = error. Consumer apps should pick non-overlapping
 /// ranges; Stratara reserves the whole 100_000–199_999 block and currently allocates
-/// 100_000–116_999. Start consumer event-IDs at 200_000.
+/// 100_000–117_999. Start consumer event-IDs at 200_000.
 /// </summary>
 public static class LogEvents
 {
@@ -269,5 +269,32 @@ public static class LogEvents
         public const int KeyImportNoOp = 116_002;
         /// <summary>An import repeated an already-stored key with different parameters; the stored key was left untouched (warning).</summary>
         public const int KeyImportDiffers = 116_103;
+    }
+
+    /// <summary>Orleans execution model event-IDs (117_000s) — emitted by the store readers, the durable-intent dispatcher, heavy work and the silo start-up checks.</summary>
+    public static class Orleans
+    {
+        /// <summary>A store reader was activated for its consumer and partition.</summary>
+        public const int StoreReaderStarted = 117_001;
+        /// <summary>A store reader was deactivated.</summary>
+        public const int StoreReaderStopped = 117_002;
+        /// <summary>A command was recorded as a durable intent before its dispatch returned (debug).</summary>
+        public const int CommandRecorded = 117_003;
+        /// <summary>A recorded command whose hand-over was lost was handed over again.</summary>
+        public const int CommandResumed = 117_004;
+        /// <summary>A store reader stopped at an entry it could not apply; its checkpoint stays before the entry (warning).</summary>
+        public const int PartitionStalled = 117_101;
+        /// <summary>One attempt to apply an entry failed and is retried under the preceding-fact policy (warning).</summary>
+        public const int EntryAttemptFailed = 117_102;
+        /// <summary>A catch-up started by a wake-up failed; the next wake-up or poll reads again (error).</summary>
+        public const int CatchUpFaulted = 117_103;
+        /// <summary>A recorded command exhausted its resume bound and was kept for an operator (warning).</summary>
+        public const int CommandKept = 117_104;
+        /// <summary>Removing completed intents failed; the drain resumes them, and their handlers may run again (warning).</summary>
+        public const int CompletionFlushFailed = 117_105;
+        /// <summary>A heavy-work permit was released because its holder left the cluster or its lease lapsed (warning).</summary>
+        public const int PermitReleasedByExpiry = 117_106;
+        /// <summary>The storage-backed grain directory the execution model requires is not registered; the silo does not start (error).</summary>
+        public const int DirectoryCheckFailed = 117_107;
     }
 }

@@ -79,8 +79,9 @@ internal sealed class ProjectionGrain(
     IEventMapperFactory eventMapperFactory,
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
-    IOptions<ProjectionGrainOptions> options)
-    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod)),
+    IOptions<ProjectionGrainOptions> options,
+    Microsoft.Extensions.Logging.ILogger<ProjectionGrain> logger)
+    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod), logger),
         IProjectionGrain
 {
     private HashSet<string>? _relevant;

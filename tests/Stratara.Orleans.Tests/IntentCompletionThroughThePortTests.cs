@@ -29,7 +29,8 @@ public sealed class IntentCompletionThroughThePortTests
             .BuildServiceProvider();
         var queue = new IntentCompletionQueue(
             services.GetRequiredService<IServiceScopeFactory>(),
-            Options.Create(new OrleansDispatchOptions { CompletionWindow = TimeSpan.FromMilliseconds(20), CompletionBatchSize = 8 }));
+            Options.Create(new OrleansDispatchOptions { CompletionWindow = TimeSpan.FromMilliseconds(20), CompletionBatchSize = 8 }),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IntentCompletionQueue>.Instance);
         await queue.StartAsync(CancellationToken.None);
 
         var ids = Enumerable.Range(0, 20).Select(_ => Guid.NewGuid()).ToList();

@@ -72,7 +72,7 @@ public sealed class StoreReaderLoopTests
             .AddSingleton(reader)
             .AddSingleton(checkpoints)
             .BuildServiceProvider();
-        return new StoreReaderLoop(services.GetRequiredService<IServiceScopeFactory>(), ResiliencePipeline.Empty, Consumer, Partition, batchSize);
+        return new StoreReaderLoop(services.GetRequiredService<IServiceScopeFactory>(), ResiliencePipeline.Empty, Consumer, Partition, batchSize, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
     }
 
     private static List<CommittedEntry> Entries(long from, long to) =>
