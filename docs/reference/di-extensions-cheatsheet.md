@@ -23,6 +23,8 @@ These wire entire worker / host concerns in one call. **Pick one per host.**
 | `builder.AddHeavyCommandWorkerServices(dop?)` | Common framework + dedicated heavy-command worker | Worker hosts that drain long-running `IHeavyCommand` commands on a separate lane, so they don't starve interactive commands |
 | `builder.AddEventProjectionWorkerServices()` | Common framework + projection worker | Worker hosts that update read-models |
 | `builder.AddSagaWorkerServices()` | Common framework + saga worker | Worker hosts that orchestrate processes |
+| `builder.AddEventProjectionServices()` | The projection worker stack without the bus-fed worker; the replay worker stays | Hosts whose projections read the store, such as the Orleans execution model |
+| `builder.AddSagaServices()` | The saga worker stack without the bus-fed worker | Hosts whose sagas read the store, such as the Orleans execution model |
 | `builder.AddEventStreamHashWorkerServices()` | Common framework + event-stream-hash worker | Worker hosts that hash event streams for tamper-evidence |
 | `builder.AddOutboxWorkerServices()` | Common framework + outbox-drain worker | Worker hosts that publish from `outbox_entry` to the bus |
 
@@ -61,6 +63,8 @@ already has the framework services and needs a second lane.
 | `services.AddOutboxWorker(configuration)` | The outbox-drain hosted service; binds `OutboxOptions` from configuration |
 | `services.AddProjectionWorker(configuration)` | The projection runtime and its hosted service; binds `ProjectionOptions` |
 | `services.AddSagaWorker(configuration)` | The saga runtime and its hosted service; binds `SagaOptions` |
+| `services.AddProjectionHandling(configuration)` | The projection runtime and the replay worker, without the bus-fed worker; binds `ProjectionOptions` |
+| `services.AddSagaHandling(configuration)` | The saga runtime without its hosted service; binds `SagaOptions` |
 | `services.AddEventStreamHashWorker()` | The event-stream hashing worker and the anchor services behind it |
 
 ## Domain registration (`IServiceCollection`)

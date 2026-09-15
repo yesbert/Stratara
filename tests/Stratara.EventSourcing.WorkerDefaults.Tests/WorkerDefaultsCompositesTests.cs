@@ -82,6 +82,53 @@ public class WorkerDefaultsCompositesTests
     }
 
     [Fact]
+    public void AddEventProjectionServices_RegistersTheReplayWorkerButNoBusFedWorker()
+    {
+        var builder = NewBuilder();
+
+        builder.AddEventProjectionServices();
+
+        AssertRegistered<IProjectionReplayState>(builder);
+        Assert.Contains(builder.Services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationType?.Name == "ProjectionReplayWorker");
+        Assert.DoesNotContain(builder.Services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationType?.Name == "ProjectionWorker");
+    }
+
+    [Fact]
+    public void AddEventProjectionWorkerServices_StillRegistersTheBusFedWorkerAndTheReplayWorker()
+    {
+        var builder = NewBuilder();
+
+        builder.AddEventProjectionWorkerServices();
+
+        Assert.Contains(builder.Services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationType?.Name == "ProjectionWorker");
+        Assert.Contains(builder.Services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationType?.Name == "ProjectionReplayWorker");
+        Assert.Single(builder.Services, d => d.ServiceType == typeof(Stratara.Projections.Abstractions.IProjectionHandler));
+    }
+
+    [Fact]
+    public void AddSagaServices_RegistersTheSagaRuntimeButNoSagaWorker()
+    {
+        var builder = NewBuilder();
+
+        builder.AddSagaServices();
+
+        AssertRegistered<Stratara.Sagas.Abstractions.ISagaManager>(builder);
+        AssertRegistered<ICommandOutboxDispatcher>(builder);
+        Assert.DoesNotContain(builder.Services, d => d.ImplementationType == typeof(SagaWorker));
+    }
+
+    [Fact]
+    public void AddSagaWorkerServices_StillRegistersTheSagaWorkerOnce()
+    {
+        var builder = NewBuilder();
+
+        builder.AddSagaWorkerServices();
+
+        Assert.Single(builder.Services, d => d.ImplementationType == typeof(SagaWorker));
+        Assert.Single(builder.Services, d => d.ServiceType == typeof(Stratara.Sagas.Abstractions.ISagaManager));
+    }
+
+    [Fact]
     public void AddEventStreamHashWorkerServices_RegistersEventStreamHashWorker()
     {
         var builder = NewBuilder();

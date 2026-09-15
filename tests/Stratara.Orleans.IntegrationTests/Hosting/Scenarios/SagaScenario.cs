@@ -34,7 +34,7 @@ public sealed class SagaScenario : IPocScenario
             ["ConnectionStrings:rabbitmq"] = settings.RabbitConnectionString,
         });
         builder.UseOrleans(silo => settings.ConfigureSilo(silo));
-        builder.AddSagaWorkerServices();
+        builder.AddSagaServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(settings.ReadStoreConnectionString)

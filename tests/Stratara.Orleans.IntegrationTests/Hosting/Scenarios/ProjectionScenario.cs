@@ -53,7 +53,14 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
             ["Outbox:PollingIntervalSeconds"] = "1",
         });
 
-        builder.AddEventProjectionWorkerServices();
+        if (path == ProjectionPath.Grain)
+        {
+            builder.AddEventProjectionServices();
+        }
+        else
+        {
+            builder.AddEventProjectionWorkerServices();
+        }
         if (durableBundles)
         {
             builder.AddOutboxWorkerServices();

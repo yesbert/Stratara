@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Sagas.Abstractions;
 using Stratara.Sagas.Services;
@@ -28,10 +29,31 @@ public static class SagaServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddSagaWorker(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddScoped<ISagaManager, SagaManager>();
-        services.AddScoped<ISagaHandler, SagaHandler>();
-        services.AddScoped<ISagaMethodInvoker, SagaMethodInvoker>();
+        services.AddSagaHandling(configuration);
         services.AddHostedService<SagaWorker>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the saga runtime services (<see cref="ISagaManager"/>, <see cref="ISagaHandler"/>,
+    /// <see cref="ISagaMethodInvoker"/>) without the hosted <c>SagaWorker</c>, and binds <c>SagaOptions</c> from
+    /// the <c>Sagas</c> configuration section. For a host whose sagas are fed by something other than the bus,
+    /// such as the Orleans execution model's store readers. Calling it more than once registers each service once.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration root used to bind <c>SagaOptions</c>.</param>
+    /// <returns>The same service collection for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddSagasFromAssemblyContaining&lt;TransferSaga&gt;();
+    /// services.AddSagaHandling(configuration);
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddSagaHandling(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.TryAddScoped<ISagaManager, SagaManager>();
+        services.TryAddScoped<ISagaHandler, SagaHandler>();
+        services.TryAddScoped<ISagaMethodInvoker, SagaMethodInvoker>();
 
         services.AddOptions<SagaOptions>()
             .Bind(configuration.GetSection(SagaOptions.SectionName));

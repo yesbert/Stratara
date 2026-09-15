@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Projections.Abstractions;
 using Stratara.Projections.Services;
@@ -20,6 +21,8 @@ public static class ProjectionServiceCollectionExtensions
     /// Registers the projection runtime — <see cref="ProjectionManager"/>, <see cref="ProjectionHandler"/>,
     /// <see cref="ProjectionMethodInvoker"/>, <see cref="ProjectionWorker"/>, and
     /// <see cref="ProjectionReplayWorker"/> — and binds <see cref="ProjectionOptions"/> from configuration.
+    /// Everything <see cref="AddProjectionHandling"/> registers, plus the worker that consumes the event-bundle
+    /// subscription.
     /// </summary>
     /// <param name="services">The service collection to register against.</param>
     /// <param name="configuration">The configuration root used to bind <see cref="ProjectionOptions"/>.</param>
@@ -34,10 +37,33 @@ public static class ProjectionServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddProjectionWorker(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddScoped<IProjectionManager, ProjectionManager>();
-        services.AddScoped<IProjectionHandler, ProjectionHandler>();
-        services.AddScoped<IProjectionMethodInvoker, ProjectionMethodInvoker>();
+        services.AddProjectionHandling(configuration);
         services.AddHostedService<ProjectionWorker>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the projection runtime without the worker that consumes the event-bundle subscription —
+    /// <see cref="ProjectionManager"/>, <see cref="ProjectionHandler"/>, <see cref="ProjectionMethodInvoker"/>
+    /// and the <see cref="ProjectionReplayWorker"/>, so a full replay still runs — and binds
+    /// <see cref="ProjectionOptions"/> from the <c>Projections</c> section. For a host whose projections are fed
+    /// by something other than the bus, such as the Orleans execution model's store readers. Calling it
+    /// more than once registers each service once.
+    /// </summary>
+    /// <param name="services">The service collection to register against.</param>
+    /// <param name="configuration">The configuration root used to bind <see cref="ProjectionOptions"/>.</param>
+    /// <returns>The service collection for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddProjectionsFromAssemblyContaining&lt;AccountBalanceProjection&gt;();
+    /// services.AddProjectionHandling(configuration);
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddProjectionHandling(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.TryAddScoped<IProjectionManager, ProjectionManager>();
+        services.TryAddScoped<IProjectionHandler, ProjectionHandler>();
+        services.TryAddScoped<IProjectionMethodInvoker, ProjectionMethodInvoker>();
         services.AddHostedService<ProjectionReplayWorker>();
 
         services.AddOptions<ProjectionOptions>()

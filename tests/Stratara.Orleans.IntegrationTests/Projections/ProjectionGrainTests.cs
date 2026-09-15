@@ -167,7 +167,7 @@ public sealed class ProjectionGrainTests(PostgreSqlFixture postgres, RedisFixtur
         });
         builder.Logging.AddProvider(logs);
         builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));
-        builder.AddEventProjectionWorkerServices();
+        builder.AddEventProjectionServices();
         builder.Services
             .AddEventSourcing()
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()

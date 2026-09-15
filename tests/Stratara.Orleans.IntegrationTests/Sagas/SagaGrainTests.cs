@@ -55,7 +55,7 @@ public sealed class SagaGrainTests(PostgreSqlFixture postgres, RedisFixture redi
             ["ConnectionStrings:rabbitmq"] = rabbit.ConnectionString,
         });
         builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));
-        builder.AddSagaWorkerServices();
+        builder.AddSagaServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(postgres.ConnectionStringFor("poc_saga_read"))

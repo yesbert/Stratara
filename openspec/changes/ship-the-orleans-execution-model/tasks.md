@@ -138,12 +138,17 @@
       the other repository tests and the SQLite setup they share (the in-memory provider of
       `Stratara.EntityFrameworkCore.Tests` cannot execute a bulk delete); the fake repository is
       `IntentCompletionThroughThePortTests`.
-- [ ] 4.3 `AddEventProjectionServices` and `AddSagaServices` in `Stratara.EventSourcing.WorkerDefaults`,
+- [x] 4.3 `AddEventProjectionServices` and `AddSagaServices` in `Stratara.EventSourcing.WorkerDefaults`,
       the replay worker staying in the projection services composite; the worker composites call them; the
       execution model's registrations require them and remove nothing. Verify:
       `tests/Stratara.EventSourcing.WorkerDefaults.Tests` asserts the services composites register no bus
       worker and keep the replay worker and the worker composites are unchanged; `ProjectionGrainTests`
       and `SagaGrainTests` green.
+      Done: the runtime without the bus-fed worker is registered by `AddProjectionHandling` and `AddSagaHandling` in the
+      projection and saga packages (idempotent); the worker registrations and composites build on them. The Orleans
+      registrations remove nothing; the grain hosts use the services composites, the hybrid scenario the worker composite.
+      `WorkerDefaultsCompositesTests` (14), `ProjectionGrainTests` and `SagaGrainTests` (4/4); cheatsheet rows added and
+      `llms-full.txt` regenerated.
 - [ ] 4.4 A full replay on a host with store-reading projections pauses their readers, returns their
       checkpoints to the beginning after truncating, and resumes them (D11). Verify: an integration test
       that replays while store readers run and finds every read model refilled.

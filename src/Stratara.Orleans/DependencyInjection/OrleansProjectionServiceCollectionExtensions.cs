@@ -18,8 +18,9 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// Runs every registered projection in grains that read the store in commit order from a
     /// checkpoint, and turns the bundle dispatcher into the wake-up hint. The host registers the
     /// <c>ICommittedPositionReader</c> of its choice and a checkpoint store, for example with
-    /// <c>AddStrataraProjectionCheckpoints&lt;TReadContext&gt;()</c>. Call it after the projection
-    /// composite: the bus-fed projection worker and the full-replay worker it registered are removed.
+    /// <c>AddStrataraProjectionCheckpoints&lt;TReadContext&gt;()</c>. Call it after
+    /// <c>AddEventProjectionServices</c>, which registers the projection runtime and the replay worker without the
+    /// bus-fed worker; this call removes nothing. After <c>AddEventProjectionWorkerServices</c> both paths run.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
@@ -30,7 +31,7 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
     /// <code>
-    /// builder.AddEventProjectionWorkerServices();
+    /// builder.AddEventProjectionServices();
     /// builder.Services
     ///     .AddProjectionsFromAssemblyContaining&lt;IAppMarker&gt;()
     ///     .AddSingleton&lt;ICommittedPositionReader, PostgresTransactionIdReader&lt;AppWriteDbContext&gt;&gt;()
@@ -52,14 +53,6 @@ public static class OrleansProjectionServiceCollectionExtensions
         AddStoreReaderCore(services, hybrid);
         services.AddScoped<INudgeTarget, ProjectionNudgeTarget>();
         services.TryAddSingleton<IProjectionRebuilder, ProjectionRebuilder>();
-        if (hybrid)
-        {
-            RemoveHostedServices(services, "Stratara.Projections.Services.ProjectionReplayWorker");
-        }
-        else
-        {
-            RemoveHostedServices(services, "Stratara.Projections.Services.ProjectionWorker", "Stratara.Projections.Services.ProjectionReplayWorker");
-        }
 
         return services;
     }
@@ -67,8 +60,8 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// <summary>
     /// Runs every registered saga in a grain per partition that reads the store in commit order from
     /// a checkpoint. Existing sagas run unchanged. The host registers the <c>ICommittedPositionReader</c>
-    /// of its choice and a checkpoint store. Call it after the saga composite: the bus-fed saga worker
-    /// it registered is removed.
+    /// of its choice and a checkpoint store. Call it after <c>AddSagaServices</c>, which registers the saga
+    /// runtime without the bus-fed worker; this call removes nothing.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
@@ -76,7 +69,7 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
     /// <code>
-    /// builder.AddSagaWorkerServices();
+    /// builder.AddSagaServices();
     /// builder.Services
     ///     .AddSagasFromAssemblyContaining&lt;IAppMarker&gt;()
     ///     .AddSingleton&lt;ICommittedPositionReader, PostgresTransactionIdReader&lt;AppWriteDbContext&gt;&gt;()
@@ -97,7 +90,6 @@ public static class OrleansProjectionServiceCollectionExtensions
 
         AddStoreReaderCore(services, hybrid);
         services.AddScoped<INudgeTarget, SagaNudgeTarget>();
-        RemoveHostedServices(services, "Stratara.Sagas.Services.SagaWorker");
         AddSagaProcessTimers(services);
         return services;
     }
@@ -152,21 +144,6 @@ public static class OrleansProjectionServiceCollectionExtensions
         if (!services.Any(d => d.ServiceType == typeof(OrleansEventBundleDispatcher)))
         {
             ReplaceBundleDispatcher(services, hybrid);
-        }
-    }
-
-    /// <summary>
-    /// The store-reading grains take the same composite registration a bus host uses and remove the
-    /// bus-fed workers it registered, by name, because those services are internal and registered in
-    /// one call.
-    /// </summary>
-    private static void RemoveHostedServices(IServiceCollection services, params string[] implementationTypeNames)
-    {
-        foreach (var descriptor in services
-                     .Where(d => d.ServiceType == typeof(IHostedService) && implementationTypeNames.Contains(d.ImplementationType?.FullName))
-                     .ToList())
-        {
-            services.Remove(descriptor);
         }
     }
 
