@@ -66,9 +66,17 @@ change sets `skip_specs: true`.
 
 - **Documentation:** the three new pages and the twelve pages above; the `toc.yml` of each section
   that gains a page; the landing page only if a new page belongs among its entry points.
-- **Tests:** `tests/Stratara.Documentation.Tests/DocumentationCorpus.cs` (the token boundary) and one
-  new test class for inline type names, with its allowlist.
-- **Not touched:** `src/`, every package, every spec, `llms.txt` beyond links to the new pages,
-  `llms-full.txt` (generated).
+- **Tests:** `tests/Stratara.Documentation.Tests/DocumentationCorpus.cs` (the token boundary), one
+  new test class for inline type names (`InlineTypeNameTests.cs`) with its allowlist, and a new case
+  in `ConfigurationSectionNameTests.cs` for the `SessionContext` section.
+- **Tooling:** `scripts/check-doc-symbols.py` knows `UseAuthentication` and `AddOpenTelemetry` as
+  external calls.
+- **Source, documentation only:** the XML summary of `AddSessionContext` in `Stratara.Sessions` now
+  says the options are registered with their defaults and not bound to configuration. No behaviour,
+  signature or package surface changed.
+- **Not touched:** every other file under `src/`, every spec, `llms.txt` beyond links to the new
+  pages, `llms-full.txt` (regenerated).
+- **Rode along in the same pull request (#95), not part of this change:** the owner's approval of
+  `ship-the-orleans-execution-model` and its task 0.2 decision, recorded in that change.
 - **Version:** no bump; the site deploys on merge through `deploy-site.yml`, behind its approval.
 - **Superseded sources:** none.
