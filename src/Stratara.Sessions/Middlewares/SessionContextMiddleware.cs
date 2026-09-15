@@ -13,8 +13,10 @@ namespace Stratara.Sessions.Middlewares;
 /// leaves the provider untouched.
 /// </summary>
 /// <remarks>
-/// Default behaviour is Actor = Subject — UserPlatform users operate on their own
-/// tenant's data. PlatformAdmin endpoints that act on a foreign tenant override
+/// The actor tenant and the data-owner tenant are the claimed tenant, the claimed user is the actor
+/// user, and <see cref="SessionContext.UserId"/> is left unset: the scope a protected field is
+/// encrypted under follows the data owner, so filling in the user would move every protected field
+/// written from a request to a per-user scope. Endpoints that act on a foreign tenant override
 /// <see cref="SessionContext.TenantId"/> after authorization.
 /// <para>
 /// The <c>X-Tenant-Id</c> HTTP header is honoured as a fallback for the tenant claim

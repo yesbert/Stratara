@@ -1,6 +1,6 @@
 # Say what an authenticated request sets
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-15)
 
 ## Why
 

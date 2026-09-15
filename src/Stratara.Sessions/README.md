@@ -39,7 +39,7 @@ public sealed class SomeHandler(ISessionContextProvider sessionContextProvider)
 ## What's in the box
 
 - `SessionContextProvider` — `internal sealed` impl of `ISessionContextProvider`, scoped per request. Writes Activity tags (`correlation.id`, `causation.id`, `tenant.id`, `user.id`) automatically on `Set` / `Clear`.
-- `SessionContextMiddleware` — ASP.NET Core middleware that extracts tenant + user from `ClaimTypes.NameIdentifier` + `stratara:tenant_id` claim (with optional `X-Tenant-Id` header fallback gated by `SessionContextOptions.AllowTenantHeader`) and constructs a `SessionContext` with Actor=Subject (the default UserPlatform case).
+- `SessionContextMiddleware` — ASP.NET Core middleware that extracts tenant + user from `ClaimTypes.NameIdentifier` + `stratara:tenant_id` claim (with optional `X-Tenant-Id` header fallback gated by `SessionContextOptions.AllowTenantHeader`) and constructs a `SessionContext` whose actor tenant and data-owner tenant are the claimed tenant, whose actor user is the claimed user, and whose data-owner user is left unset. It stays unset on purpose: the scope a protected field is encrypted under follows the data owner, so filling in the user would move every protected field written from a request to a per-user scope.
 - `SessionContextOptions` — configuration (`SessionContext` section) controlling the header fallback gate. Bind via `services.Configure<SessionContextOptions>(...)` or `services.AddOptions<SessionContextOptions>().Bind(...)`.
 - `StrataraClaimTypes` — claim-name constants (`stratara:tenant_id`).
 - `DefaultTenantIdentifier` — sentinel `Guid` used when no tenant claim or header is present (typically anonymous / system flows).
@@ -47,7 +47,7 @@ public sealed class SomeHandler(ISessionContextProvider sessionContextProvider)
 
 ## Adopting the Actor/Subject model
 
-For most operations Actor equals the data-owner Subject — a user acts on their own tenant's data. The split only diverges for:
+For most operations the actor's tenant is the data-owner tenant — a user acts on their own tenant's data — while the data-owner user stays unset unless the application sets it. The tenants only diverge for:
 - PlatformAdmin cross-tenant operations (Subject = customer tenant, Actor = admin tenant)
 - Anonymous endpoints (Actor = `Guid.Empty`, Subject = the just-minted tenant)
 - System / saga flows (Actor = `SessionContext.SystemActorTenantId` / `SystemActorUserId`)
