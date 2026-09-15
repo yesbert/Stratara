@@ -35,6 +35,7 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
         services.AddOptions<OutboxDrainOptions>();
         services.AddScoped<ISingletonWork, TWork>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, SingletonWorkStarter>());
+        Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         return services;
     }
 }

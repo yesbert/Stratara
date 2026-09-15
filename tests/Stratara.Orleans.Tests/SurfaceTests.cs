@@ -17,6 +17,7 @@ public class SurfaceTests
         "Microsoft.Extensions.DependencyInjection.OrleansProjectionServiceCollectionExtensions",
         "Microsoft.Extensions.DependencyInjection.OrleansSingletonWorkServiceCollectionExtensions",
         "Microsoft.Extensions.DependencyInjection.OrleansTimersServiceCollectionExtensions",
+        "Microsoft.Extensions.DependencyInjection.StrataraOrleansSiloBuilderExtensions",
         "Stratara.Orleans.Aggregates.HeavyWorkOptions",
         "Stratara.Orleans.Aggregates.OrleansDispatchOptions",
         "Stratara.Orleans.CommitOrder.CommitOrderOptions",

@@ -121,9 +121,15 @@
 
 ## 4. Registrations and composition (D2, D3, D11, D15, D16, D20)
 
-- [ ] 4.1 `AddStrataraOrleans` takes the durable directory factory and registers it; a lifecycle
+- [x] 4.1 `AddStrataraOrleans` takes the durable directory factory and registers it; a lifecycle
       participant fails the silo when it is absent. Verify: a test that a host without the directory fails
       at start with the message, and `SingletonWorkTests` green.
+      Done, with one shape change: the Redis grain directory has no public type or constructor, only
+      `AddRedisGrainDirectory(name, ...)`, so `AddStrataraOrleans` takes a delegate that registers the directory on the
+      silo builder under the name it is given (a plain factory fits through `AddGrainDirectory(name, factory)`). A
+      lifecycle participant at `RuntimeInitialize`, registered by every registration whose grains need the directory,
+      logs `117_107` and fails the silo naming `AddStrataraOrleans`. `DurableDirectoryCheckTests` (without and with),
+      `SingletonWorkTests` and `CoHostingTests` green (5/5); the proof-of-concept silos use the registration.
 - [x] 4.2 `IOutboxRepository.DeleteManyAsync` with a default loop and the EF override; the completion queue
       goes through the port. Verify: `tests/Stratara.EntityFrameworkCore.Tests` covers the override; a fake
       repository without the override passes `IntentCompletionQueueTests`.

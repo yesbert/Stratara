@@ -61,6 +61,12 @@ internal static partial class OrleansLog
     public static partial void LogPermitReleasedByExpiry(this ILogger logger, Guid unitId, string holder, string reason);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.DirectoryCheckFailed,
+        Level = LogLevel.Error,
+        Message = "No grain directory is registered under '{DirectoryName}'; the silo does not start. Register one with AddStrataraOrleans.")]
+    public static partial void LogDirectoryCheckFailed(this ILogger logger, string directoryName);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.CompletionFlushFailed,
         Level = LogLevel.Warning,
         Message = "Removing {Count} completed intents failed; the drain resumes them and their handlers may run again.")]

@@ -36,6 +36,7 @@ public static class OrleansTimersServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IDurableTimers, DurableTimers>();
+        Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         return services;
     }
 }

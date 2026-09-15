@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Orleans.Configuration;
 using Orleans.Hosting;
@@ -97,7 +98,7 @@ public static class PocSilo
             options.Invariant = AdoNetInvariant;
             options.ConnectionString = orleansConnectionString;
         });
-        silo.AddRedisGrainDirectory(GrainDirectories.Durable, options => options.ConfigurationOptions = redis);
+        silo.AddStrataraOrleans((s, name) => s.AddRedisGrainDirectory(name, options => options.ConfigurationOptions = redis));
         if (directory == PocSiloDirectory.RedisAsDefault)
         {
             silo.UseRedisGrainDirectoryAsDefault(options => options.ConfigurationOptions = redis);

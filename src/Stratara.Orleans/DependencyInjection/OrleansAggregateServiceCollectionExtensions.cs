@@ -85,6 +85,7 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.AddOptions<HeavyWorkOptions>();
         services.AddScoped<Stratara.Abstractions.Outbox.ICommandOutboxDispatcher, OrleansCommandDispatcher>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IntentStoreStartupCheck>());
+        Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         AddIntentCompletion(services);
         return services;
     }
