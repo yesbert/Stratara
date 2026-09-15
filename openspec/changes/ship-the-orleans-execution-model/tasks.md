@@ -280,14 +280,26 @@
       class excluded). A failure there is a warning, since `integration.yml` gates the suite; the job timeout is 90
       minutes.
 
-- [ ] 6.4 `README.md` presents the execution model as the headline feature, after 7.3 so real numbers
+- [x] 6.4 `README.md` presents the execution model as the headline feature, after 7.3 so real numbers
       exist (D13): a door beside the existing three that leads with the benefit the capability
       specifies, a step in *It grows with you*, the measured B3 and B5 rows in *Numbers, not
       adjectives*, and the recommended model beside the supported bus workers. Verify: every number
       equals a value in `evidence/results.md` from 7.3; every link resolves; `LandingBadgeTests` green.
-- [ ] 6.5 `docs/index.md`, the landing page, carries the same door, a `st-feature` card in *What is in
+      Done: a fourth door, *I scale out and cannot lose a command*, leads with the capability's purpose and shows
+      the registration chain the scenario host compiles; *It grows with you* splits stage three into the Orleans
+      cluster (recommended) and the workers and bus (supported); *Numbers, not adjectives* gains a table against the
+      bus workers — B3 after the lease fix (1,389 / 1,268 / 303 against 463 / 512 / 327 commands/s) and B5 (2.44
+      against 2.27 CPU-s per 1,000 commands, 190 / 217 against 167 / 185 MB), with the bus control's 23 % spread
+      between same-day runs stated. Links point at the concept, choose and migrate pages. Documentation tests
+      699/699.
+- [x] 6.5 `docs/index.md`, the landing page, carries the same door, a `st-feature` card in *What is in
       the box*, and the same numbers (D13). Verify: `docfx build docs/docfx.json --warningsAsErrors`
       green; `SiteMetadataTests` green; the numbers identical to `README.md`.
+      Done: the door as a fourth in a two-by-two grid (its excerpt marked `stratara-snippet-ignore`, pointing at
+      the migration page), a full-width feature card first in *What is in the box* linking the concept page, and a
+      second numbers block with the README's B3 values and the processor-time row. The growth figure is unchanged;
+      the task names no step for the landing page. `docfx build docs/docfx.json --warningsAsErrors` green (0
+      warnings), documentation tests 699/699 including `SiteMetadataTests`.
 - [x] 6.6 `docs/getting-started/choose-an-execution-model.md`, derived from `orleans-execution` and
       `host-composition`, links the capability, migration and operations pages and is listed in its
       `toc.yml` (D13). Verify: `tests/Stratara.Documentation.Tests` green.

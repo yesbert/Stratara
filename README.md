@@ -92,9 +92,33 @@ await keyStore.EraseScopeAsync(scope, ct);
 
 → [Tamper-evident streams](https://stratara.tech/concepts/tamper-evident-streams.html) · [Tenant-aware encryption](https://stratara.tech/concepts/tenant-aware-encryption.html) · hero samples [`TamperProof`](samples/Stratara.Sample.TamperProof) and [`Encryption`](samples/Stratara.Sample.Encryption)
 
+### 🚪 I scale out and cannot lose a command
+
+The Orleans execution model runs your handlers, projections, sagas and timers as virtual actors on a cluster. A committed fact is never lost to a crash. One aggregate has one writer across the whole deployment. Work that must happen once per cluster needs no lock. Your handlers do not change; the registration does.
+
+```bash
+dotnet add package Stratara.Orleans
+dotnet add package Stratara.Orleans.EntityFrameworkCore
+```
+
+```csharp
+builder.UseOrleans(silo => silo
+    .UseAdoNetClustering(o => { o.Invariant = "Npgsql"; o.ConnectionString = orleansDb; })
+    .UseAdoNetReminderService(o => { o.Invariant = "Npgsql"; o.ConnectionString = orleansDb; })
+    .AddStrataraOrleans((s, name) => s.AddRedisGrainDirectory(name, o => o.ConfigurationOptions = redis)));
+
+builder.Services
+    .AddStrataraAggregateGrains()                 // one writer per aggregate, cluster-wide
+    .AddStrataraOrleansCommandDispatcher()        // an accepted command is recorded before the call returns
+    .AddStrataraIntentStore<AppWriteDbContext>()  // ... and resumed after a crash
+    .AddStrataraSingletonWork<OutboxDrainWork>(); // once per cluster, without a lock
+```
+
+→ [The Orleans execution model](https://stratara.tech/concepts/orleans-execution-model.html) · [Choose an execution model](https://stratara.tech/getting-started/choose-an-execution-model.html) · [Migrate from the bus workers](https://stratara.tech/guides/migrate-to-the-orleans-execution-model.html)
+
 ## It grows with you
 
-The handler from door one runs unchanged behind door three. Only the hosting around it changes.
+The handler from door one runs unchanged behind every later stage. Only the hosting around it changes. At stage three you choose what runs it: the Orleans execution model, which is recommended, or the bus workers, which stay supported.
 
 ```mermaid
 flowchart LR
@@ -104,14 +128,20 @@ flowchart LR
     subgraph S2["2 · + Event store"]
         A1["API host<br/>IMediator + IEventSource"] --> DB1[("PostgreSQL<br/>streams · snapshots · outbox")]
     end
-    subgraph S3["3 · + Workers and bus"]
+    subgraph S3["3 · + Orleans cluster (recommended)"]
+        SI["Silos 1..N<br/>aggregate · projection · saga grains"] --> DB3[("PostgreSQL<br/>streams · recorded commands · checkpoints")]
+        DB3 -->|commit order| SI
+    end
+    subgraph S3B["3 · + Workers and bus (supported)"]
         A2["API hosts 1..N"] --> BUS{{"RabbitMQ / Azure Service Bus"}}
         BUS -->|competing consumers| CW["Command workers"]
         CW --> DB2[("PostgreSQL<br/>4096 stream buckets")]
         DB2 -->|pushed event bundles| PW["Projection · saga workers"]
         PW --> RM[("Read models")]
     end
-    S1 -.-> S2 -.-> S3
+    S1 -.-> S2
+    S2 -.-> S3
+    S2 -.-> S3B
 ```
 
 ## Why Stratara
@@ -134,6 +164,16 @@ Measured with [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet) on a 
 | Tamper-evident chain hashing | sub-microsecond per event |
 
 Methodology and caveats: [Performance & scaling](https://stratara.tech/concepts/performance-and-scaling.html).
+
+**The Orleans execution model against the bus workers**, same machine, one process each, PostgreSQL, Redis and RabbitMQ in containers; each command's handler appends to its aggregate's stream. Medians of three runs of 2,000 commands. The bus workers' own numbers moved by up to 23 % between runs on the same day, so read the ratios as approximate.
+
+| What | Orleans execution model | Bus workers |
+|---|---:|---:|
+| Commands to 2,000 aggregates, one each, recorded durably before the call returns | **1,389 /s** | 463 /s |
+| Commands to 20 aggregates, 100 each | **1,268 /s** | 512 /s |
+| 2,000 commands to one aggregate — a single writer is the limit on both | 303 /s | 327 /s |
+| Processor time per 1,000 commands, one host | 2.44 CPU-s (+7 %) | 2.27 CPU-s |
+| Memory at idle / under 200 commands/s | 190 / 217 MB | 167 / 185 MB |
 
 ## Documentation
 
