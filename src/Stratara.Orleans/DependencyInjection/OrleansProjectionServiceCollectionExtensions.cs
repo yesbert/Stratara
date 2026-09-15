@@ -5,6 +5,7 @@ using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Timers;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Hosting;
 using Stratara.Orleans.Projections;
 using Stratara.Orleans.Sagas;
 
@@ -50,6 +51,7 @@ public static class OrleansProjectionServiceCollectionExtensions
             options.Configure(configure);
         }
 
+        OrleansOptionsValidator.Register<ProjectionGrainOptions>(services);
         AddStoreReaderCore(services, hybrid);
         services.AddScoped<INudgeTarget, ProjectionNudgeTarget>();
         services.TryAddSingleton<IProjectionRebuilder, ProjectionRebuilder>();
@@ -89,6 +91,7 @@ public static class OrleansProjectionServiceCollectionExtensions
             options.Configure(configure);
         }
 
+        OrleansOptionsValidator.Register<SagaGrainOptions>(services);
         AddStoreReaderCore(services, hybrid);
         services.AddScoped<INudgeTarget, SagaNudgeTarget>();
         AddSagaProcessTimers(services);
@@ -96,25 +99,17 @@ public static class OrleansProjectionServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Processes own timers. Their owner check and handler take over the timer port; a host that
-    /// registered its own before this call keeps them for every owner that is not a process.
+    /// Processes own timers under a prefix of their own. The host's owner check and handler serve every
+    /// other owner, whether they were registered before or after this call.
     /// </summary>
     private static void AddSagaProcessTimers(IServiceCollection services)
     {
-        var owners = services.LastOrDefault(d => d.ServiceType == typeof(ITimerOwners));
-        var handler = services.LastOrDefault(d => d.ServiceType == typeof(ITimerHandler));
-        if (owners is not null && handler is not null && owners.ImplementationType != typeof(SagaProcessTimerHost))
+        services.AddStrataraDurableTimers();
+        if (services.Any(d => d.ServiceType == typeof(SagaProcessTimerHost)))
         {
-            services.Remove(owners);
-            services.Remove(handler);
-            services.Add(ServiceDescriptor.Describe(typeof(HostTimerServices),
-                sp => new HostTimerServices(
-                    (ITimerOwners)Instantiate(sp, owners),
-                    (ITimerHandler)Instantiate(sp, handler)),
-                ServiceLifetime.Scoped));
+            return;
         }
 
-        services.AddStrataraDurableTimers();
         services.AddScoped<SagaProcessTimerHost>();
         services.AddScoped<ITimerOwners>(sp => sp.GetRequiredService<SagaProcessTimerHost>());
         services.AddScoped<ITimerHandler>(sp => sp.GetRequiredService<SagaProcessTimerHost>());
@@ -140,6 +135,7 @@ public static class OrleansProjectionServiceCollectionExtensions
     private static void AddStoreReaderCore(IServiceCollection services, bool hybrid)
     {
         services.AddOptions<CommitOrderOptions>();
+        OrleansOptionsValidator.Register<CommitOrderOptions>(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, StoreReaderGrainStarter>());
         Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         if (!services.Any(d => d.ServiceType == typeof(OrleansEventBundleDispatcher)))

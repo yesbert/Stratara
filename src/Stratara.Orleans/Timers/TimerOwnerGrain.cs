@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
 using Stratara.Abstractions.Timers;
@@ -11,15 +12,20 @@ namespace Stratara.Orleans.Timers;
 /// The grain behind <see cref="IDurableTimers"/>. Each timer is a reminder whose name carries the
 /// purpose and the due time, so the reminder table is the only state. A reminder that fires checks
 /// the owner, waits if it is early, hands the timer to the host's handler once it is due, and
-/// unregisters itself afterwards — or at once, if the owner is gone.
+/// unregisters itself afterwards — or at once, if the owner is gone. The grain is reentrant: its only state
+/// is the reminder table, and registering or cancelling by name is idempotent, so a handler that cancels or
+/// reschedules its owner's timers, or a fact that reaches the owner while a tick runs, does not wait on the
+/// tick's own turn.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
+[Reentrant]
 internal sealed class TimerOwnerGrain(
     IServiceScopeFactory scopeFactory,
     IOptions<DurableTimerOptions> options,
     TimeProvider timeProvider) : Grain, ITimerOwnerGrain, IRemindable
 {
     private readonly TimeSpan _retryPeriod = options.Value.RetryPeriod;
+    private readonly TimeSpan _dueTolerance = options.Value.DueTolerance;
 
     public async Task RegisterAsync(string purpose, DateTimeOffset dueAt, CancellationToken cancellationToken)
     {
@@ -68,21 +74,20 @@ internal sealed class TimerOwnerGrain(
         var ownerId = this.GetPrimaryKeyString();
 
         using var scope = scopeFactory.CreateScope();
-        var owners = scope.ServiceProvider.GetRequiredService<ITimerOwners>();
+        var owners = TimerPorts.OwnersFor(scope.ServiceProvider, ownerId);
         if (!await owners.ExistsAsync(ownerId, CancellationToken.None))
         {
             await UnregisterByNameAsync(reminderName);
             return;
         }
 
-        var now = timeProvider.GetUtcNow();
-        if (now < dueAt)
+        if (!TimerDueTime.IsDue(timeProvider, dueAt, _dueTolerance, out var firedAt))
         {
             return;
         }
 
-        var handler = scope.ServiceProvider.GetRequiredService<ITimerHandler>();
-        await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, now), CancellationToken.None);
+        var handler = TimerPorts.HandlerFor(scope.ServiceProvider, ownerId);
+        await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), CancellationToken.None);
 
         await UnregisterByNameAsync(reminderName);
     }

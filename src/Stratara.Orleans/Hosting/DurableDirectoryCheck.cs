@@ -14,9 +14,15 @@ namespace Stratara.Orleans.Hosting;
 /// </summary>
 internal sealed class DurableDirectoryCheck(IServiceProvider services, ILogger<DurableDirectoryCheck> logger) : ILifecycleParticipant<ISiloLifecycle>
 {
-    /// <summary>Adds the check once, from every registration whose grains need the durable directory.</summary>
-    public static void Register(IServiceCollection services) =>
+    /// <summary>
+    /// Adds the check once, from every registration whose grains need the durable directory — and with it the
+    /// singleton work's placement filter, which every silo that can place the model's grains must know.
+    /// </summary>
+    public static void Register(IServiceCollection services)
+    {
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<ISiloLifecycle>, DurableDirectoryCheck>());
+        Singleton.SingletonWorkPlacement.AddFilter(services);
+    }
 
     public void Participate(ISiloLifecycle lifecycle) =>
         lifecycle.Subscribe(nameof(DurableDirectoryCheck), ServiceLifecycleStage.RuntimeInitialize, CheckAsync);

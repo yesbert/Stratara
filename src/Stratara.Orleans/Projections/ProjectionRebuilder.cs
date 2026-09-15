@@ -7,6 +7,12 @@ using Stratara.Projections.Abstractions;
 
 namespace Stratara.Orleans.Projections;
 
+/// <summary>
+/// Rebuilds one projection: pauses its readers, returns their checkpoints to the beginning, empties the
+/// projection, and resumes the readers however the truncation ended. The reset comes first, so no checkpoint
+/// is ever left past an effect the truncation removed; a truncation that fails part-way leaves readers that
+/// re-read from the beginning over a partly emptied model, which re-applying repairs.
+/// </summary>
 internal sealed class ProjectionRebuilder(
     IGrainFactory grainFactory,
     IServiceScopeFactory scopeFactory,
@@ -32,12 +38,12 @@ internal sealed class ProjectionRebuilder(
                 throw new InvalidOperationException($"Projection '{projectionName}' does not implement {nameof(IRebuildableProjection)} and cannot be rebuilt on its own.");
             }
 
-            await rebuildable.TruncateAsync(cancellationToken);
-
             var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
             var reader = services.GetRequiredService<ICommittedPositionReader>().Name;
             await Task.WhenAll(Enumerable.Range(0, commitOrder.Value.PartitionCount)
                 .Select(partition => checkpoints.SetAsync(projectionName, partition, reader, 0, cancellationToken)));
+
+            await rebuildable.TruncateAsync(cancellationToken);
         }
         finally
         {

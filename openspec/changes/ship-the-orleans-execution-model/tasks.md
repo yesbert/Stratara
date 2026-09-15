@@ -179,26 +179,63 @@
       forwarding behaviour lets through only a command for that aggregate. Heavy work marks its own command's
       aggregate, so it still runs outside the aggregate's activation. `CrossAggregateSendTests` green, with
       `ArrivalOrderTests`, `IntentPipelineTests`, `DurableIntentTests` and `HeavyBurstTests` as regression (13/13).
-- [ ] 4.7 Options validated at start; enumerable timer ports composed by prefix with the start-up check;
+- [x] 4.7 Options validated at start; enumerable timer ports composed by prefix with the start-up check;
       singleton work placed only on silos that registered it (D20). Verify: unit tests per invalid setting
       that fail the host at start naming it; a test that timer owners registered after the model fire; a
       two-silo test in which only one silo registers a singleton work and neither reports a failure.
+      Done: `OrleansOptionsValidator` validates all eight settings types on start (positive sizes and limits, polls
+      longer than zero, reminder periods at or above the runtime's minimum, grace longer than the completion window,
+      tolerance shorter than the retry period); `OrleansOptionsValidatorTests` (18 invalid settings + defaults).
+      Timer ports are resolved as enumerables: a prefixed port (processes, `saga:`) serves its owners, the host's one
+      unprefixed port every other owner; `TimerPortsStartupCheck` refuses two host owner checks, one without a
+      handler, and processes without their timers; the captured `HostTimerServices` is gone. `TimerPortsTests` shows
+      host ports registered before and after the model serving their owners. Singleton work carries a placement
+      filter: `AddStrataraOrleans` publishes the silo's registered works in its silo metadata, and the director keeps
+      only silos that name the work; every registration of the model adds the filter, because a silo that lacks it
+      cannot place the grain (`CoHostingTests` found this). `SingletonPlacementTests` (two silos, eight works, all on
+      the registering silo) and `SingletonWorkTests` green. Deviation: "timer owners registered after the model fire"
+      is verified as routing and start-check unit tests rather than on a silo; the firing path itself is covered by
+      `OwnerCheckedTimerTests` and `HardKillTimerTests`, green with the enumerable resolution. A run of twelve classes
+      at once exhausted the test container's connections for the two singleton tests; alone they pass (2/2).
 
 ## 5. Timers, processes, rebuild and reset (D17, D18, D19, D21, D22)
 
-- [ ] 5.1 The timer-owner grain is reentrant (D17). Verify: integration tests in which a fact and a timeout
+- [x] 5.1 The timer-owner grain is reentrant (D17). Verify: integration tests in which a fact and a timeout
       for one process collide, and in which `OnTimeoutAsync` reschedules — both complete, and the timeout
       fires once.
-- [ ] 5.2 A process step registers its timers before its append; the process contract documents it (D18).
+      Done: `TimerOwnerGrain` is `[Reentrant]`. `TimerReentrancyTests` covers both in one process: a fact step holds
+      the process past the tick's due time and then cancels a timer while the tick waits, the first tick reschedules
+      from inside `OnTimeoutAsync`, the second completes the process and cancels its timers; each step runs once
+      and no timer remains. Green.
+- [x] 5.2 A process step registers its timers before its append; the process contract documents it (D18).
       Verify: a kill test between the registration and the append in which the timeout fires once after
       the fact is applied again; `SagaProcessTimeoutTests` asserts a timer exists before the kill.
-- [ ] 5.3 The due-time tolerance option (D19). Verify: a unit test with a fake time provider in which a
+      Done: `SagaProcessGrain` cancels and registers a step's timers, then appends, then cancels all timers of a
+      completed process (a kill before that leaves timers the owner check drops). The contract remark in
+      `SagaProcess<TState>` already stated the order. The saga scenario gained a holding `IDurableTimers` decorator
+      and `timers`/`expirations`/`hold-registrations` commands; the new kill test holds after the registration,
+      kills with the timer stored and no process stream, and after the restart finds one expiry and no timer. The
+      existing kill test waits until the timer exists before each kill. Green.
+- [x] 5.3 The due-time tolerance option (D19). Verify: a unit test with a fake time provider in which a
       tick slightly before the due time fires.
-- [ ] 5.4 The rebuilder resets checkpoints before truncating (D21). Verify: `ProjectionRebuilder` end to end
+      Done: `DurableTimerOptions.DueTolerance` (default 500 ms, validated at least zero and shorter than the retry
+      period; a first default of 2 s failed every host with a 1 s retry period). A tick within it fires and reports
+      the due time as its firing time. `TimerDueTimeTests` (3, `FakeTimeProvider`) green.
+- [x] 5.4 The rebuilder resets checkpoints before truncating (D21). Verify: `ProjectionRebuilder` end to end
       against a real store, including a truncation that throws, after which the projection re-reads from
       the beginning.
-- [ ] 5.5 `IExecutionModelReset`, its storage implementation in the persistence package and the host's
+      Done: reset, then truncate, then resume in `finally`. `ProjectionRebuilderTests` gained the order and the
+      throwing truncation; `RebuildEndToEndTests` rebuilds a probe projection on PostgreSQL while its readers run —
+      a truncation that empties the model and throws, then a successful one — and both refill every row without a
+      new fact. The probe is inert in the other hosts of the assembly that discover their projections. Green.
+- [x] 5.5 `IExecutionModelReset`, its storage implementation in the persistence package and the host's
       directory callback (D22). Verify: `ResetTests` run against the port instead of the test-only reset.
+      Done: `IExecutionModelReset` and `ExecutionModelResetReport` in `Stratara.Orleans.Hosting`;
+      `AddStrataraExecutionModelReset<TReadContext>(runtimeConnectionString, clearDirectory)` in the persistence
+      package clears the reminders of the host's service and the membership (and its version row) of its cluster,
+      as the cluster options name them, every checkpoint, and the directory through the callback. `ResetTests` runs
+      the port from the stopped host with assertions scoped to its deployment; `PocReset` keeps only the Redis
+      cleanup and the counts. Surface lists updated. Green.
 
 ## 6. Documentation and gates (D13, D26)
 

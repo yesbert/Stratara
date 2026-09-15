@@ -19,7 +19,10 @@ public sealed class TimeoutProcessState : ISagaProcessState
 
     public DateTimeOffset ExpiresAt { get; set; }
 
-    public bool Expired { get; set; }
+    /// <summary>How many expiries the stream records; a timeout that fired twice would show as two.</summary>
+    public int Expirations { get; set; }
+
+    public bool Expired => Expirations > 0;
 
     public bool Completed => Expired;
 
@@ -32,7 +35,7 @@ public sealed class TimeoutProcessState : ISagaProcessState
     }
 
     [UsedImplicitly]
-    public void Apply(ProcessExpired @event) => Expired = true;
+    public void Apply(ProcessExpired @event) => Expirations++;
 }
 
 /// <summary>

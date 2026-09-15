@@ -30,9 +30,11 @@ internal interface ISagaProcessGrain : IGrainWithStringKey
 
 /// <summary>
 /// Runs one process instance: folds its state from its own stream, hands the fact or the timeout
-/// to the process, appends what it emitted, and registers or cancels its timers — all in the grain's
-/// turn, so a fact and a timeout never race. The fact itself is re-read from the store by stream and
-/// version rather than carried in the call: the store is the truth, the call is a hint.
+/// to the process, registers or cancels the timers the step asked for, and then appends what it emitted —
+/// all in the grain's turn, so a fact and a timeout never race. Timers come before the append: a kill in
+/// between leaves timers whose step is delivered again and registers the same names, or whose owner check
+/// drops them; a kill the other way round would lose the timeout. The fact itself is re-read from the store
+/// by stream and version rather than carried in the call: the store is the truth, the call is a hint.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grain, ISagaProcessGrain
@@ -87,6 +89,18 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
 
         await step(process, state, context, services);
 
+        var timers = services.GetRequiredService<IDurableTimers>();
+        var owner = SagaProcessTimerHost.OwnerOf(this.GetPrimaryKeyString());
+        foreach (var purpose in context.Cancelled)
+        {
+            await timers.CancelAsync(owner, purpose, cancellationToken);
+        }
+
+        foreach (var (purpose, dueAt) in context.Scheduled)
+        {
+            await timers.RegisterAsync(new TimerRegistration(owner, purpose, dueAt), cancellationToken);
+        }
+
         if (context.Emitted.Count > 0)
         {
             var events = services.GetRequiredService<IEventSource>();
@@ -103,22 +117,10 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
             state = await loader.LoadAsync(services, stateStream, cancellationToken) ?? state;
         }
 
-        var timers = services.GetRequiredService<IDurableTimers>();
-        var owner = SagaProcessTimerHost.OwnerOf(this.GetPrimaryKeyString());
+        // After the append: a kill before this leaves timers of a completed process, which the owner check drops.
         if (state.Completed)
         {
             await timers.CancelAllAsync(owner, cancellationToken);
-            return;
-        }
-
-        foreach (var purpose in context.Cancelled)
-        {
-            await timers.CancelAsync(owner, purpose, cancellationToken);
-        }
-
-        foreach (var (purpose, dueAt) in context.Scheduled)
-        {
-            await timers.RegisterAsync(new TimerRegistration(owner, purpose, dueAt), cancellationToken);
         }
     }
 
@@ -221,37 +223,20 @@ internal static class StateLoaders
 }
 
 /// <summary>
-/// The timer side of processes: owners are process grains, a due timeout is handed to its grain.
-/// Owners that are not processes go to the host's own owner check and handler, when it has them.
+/// The timer side of processes: owners are process grains, keyed under a prefix of their own, and a due
+/// timeout is handed to its grain. Owners that are not processes are served by the host's own ports.
 /// </summary>
-internal sealed class SagaProcessTimerHost(IGrainFactory grainFactory, HostTimerServices? host = null) : ITimerOwners, ITimerHandler
+internal sealed class SagaProcessTimerHost(IGrainFactory grainFactory) : ITimerOwners, ITimerHandler, IPrefixedTimerPort
 {
-    private const string Prefix = "saga:";
+    public const string Prefix = "saga:";
+
+    public string OwnerPrefix => Prefix;
 
     public static string OwnerOf(string grainKey) => Prefix + grainKey;
 
-    public Task<bool> ExistsAsync(string ownerId, CancellationToken cancellationToken)
-    {
-        if (ownerId.StartsWith(Prefix, StringComparison.Ordinal))
-        {
-            return grainFactory.GetGrain<ISagaProcessGrain>(ownerId[Prefix.Length..]).IsAliveAsync(cancellationToken);
-        }
+    public Task<bool> ExistsAsync(string ownerId, CancellationToken cancellationToken) =>
+        grainFactory.GetGrain<ISagaProcessGrain>(ownerId[Prefix.Length..]).IsAliveAsync(cancellationToken);
 
-        return host?.Owners.ExistsAsync(ownerId, cancellationToken) ?? Task.FromResult(false);
-    }
-
-    public Task OnDueAsync(TimerDue due, CancellationToken cancellationToken)
-    {
-        if (due.OwnerId.StartsWith(Prefix, StringComparison.Ordinal))
-        {
-            return grainFactory.GetGrain<ISagaProcessGrain>(due.OwnerId[Prefix.Length..]).OnTimeoutAsync(due.Purpose, cancellationToken);
-        }
-
-        return host?.Handler.OnDueAsync(due, cancellationToken) ?? Task.CompletedTask;
-    }
+    public Task OnDueAsync(TimerDue due, CancellationToken cancellationToken) =>
+        grainFactory.GetGrain<ISagaProcessGrain>(due.OwnerId[Prefix.Length..]).OnTimeoutAsync(due.Purpose, cancellationToken);
 }
-
-/// <summary>The host's own timer owner check and handler, kept behind the process one.</summary>
-/// <param name="Owners">The host's owner check.</param>
-/// <param name="Handler">The host's handler.</param>
-internal sealed record HostTimerServices(ITimerOwners Owners, ITimerHandler Handler);

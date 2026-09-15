@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Session;
+using Stratara.Abstractions.Timers;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.IntegrationTests.Projections;
@@ -19,7 +20,9 @@ namespace Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 /// <summary>
 /// A saga host with one stateful process whose timeout a kill must not lose. Commands:
 /// <c>start streamId</c> creates the counter that starts the process; <c>expired streamId timeoutMs</c>
-/// waits for the process's own stream to say it expired.
+/// waits for the process's own stream to say it expired; <c>expirations streamId</c> counts the expiries it
+/// records; <c>timers streamId</c> counts the process's timers; <c>hold-registrations</c> makes every later
+/// timer registration wait once it is stored, so a kill lands between a step's timers and its append.
 /// </summary>
 public sealed class SagaScenario : IPocScenario
 {
@@ -59,6 +62,7 @@ public sealed class SagaScenario : IPocScenario
                 }
             })
             .Configure<Stratara.Orleans.Timers.DurableTimerOptions>(options => options.RetryPeriod = settings.Profile == PocSiloProfile.Test ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1));
+        HoldingTimers.Decorate(builder.Services);
 
         var host = builder.Build();
         await using (var scope = host.Services.CreateAsyncScope())
@@ -114,6 +118,23 @@ public sealed class SagaScenario : IPocScenario
                     await Task.Delay(250);
                 }
             }
+            case "expirations":
+            {
+                var stateStream = Stratara.Orleans.Sagas.SagaProcessKey.StateStreamOf(nameof(TimeoutSaga), Guid.Parse(parts[1]));
+                await using var scope = services.CreateAsyncScope();
+                var state = await scope.ServiceProvider.GetRequiredService<IEventSource>().ExistsAsync(stateStream)
+                    ? await scope.ServiceProvider.GetRequiredService<IAggregationService>().AggregateAsync<TimeoutProcessState>(stateStream)
+                    : null;
+                return (state?.Expirations ?? 0).ToString(CultureInfo.InvariantCulture);
+            }
+            case "timers":
+            {
+                var owner = Stratara.Orleans.Sagas.SagaProcessTimerHost.OwnerOf(Stratara.Orleans.Sagas.SagaProcessKey.Of(nameof(TimeoutSaga), Guid.Parse(parts[1])));
+                return (await services.GetRequiredService<IDurableTimers>().ListAsync(owner)).Count.ToString(CultureInfo.InvariantCulture);
+            }
+            case "hold-registrations":
+                services.GetRequiredService<TimerRegistrationHold>().Active = true;
+                return "ok";
             default:
                 return "error unknown command " + parts[0];
         }

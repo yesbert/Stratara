@@ -23,6 +23,7 @@ internal interface ISingletonWorkGrain : IGrainWithStringKey
 /// grain directory's single-activation guarantee is what makes this "once per cluster".
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
+[SingletonWorkPlacementFilter]
 internal sealed class SingletonWorkGrain(
     IServiceScopeFactory scopeFactory,
     IOptions<SingletonWorkOptions> options) : Grain, ISingletonWorkGrain, IRemindable

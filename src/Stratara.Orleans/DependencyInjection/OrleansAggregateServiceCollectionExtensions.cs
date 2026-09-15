@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
 using Stratara.Orleans.Aggregates;
+using Stratara.Orleans.Hosting;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -41,6 +42,7 @@ public static class OrleansAggregateServiceCollectionExtensions
     private static void AddIntentCompletion(IServiceCollection services)
     {
         services.AddOptions<OrleansDispatchOptions>();
+        OrleansOptionsValidator.Register<OrleansDispatchOptions>(services);
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IntentCompletionQueue>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IntentCompletionQueue>(sp => sp.GetRequiredService<IntentCompletionQueue>()));
@@ -85,6 +87,7 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.TryAddScoped<IntentHandOver>();
         services.TryAddScoped<IntentResumer>();
         services.AddOptions<HeavyWorkOptions>();
+        OrleansOptionsValidator.Register<HeavyWorkOptions>(services);
         services.TryAddScoped<OrleansCommandDispatcher>();
         ReplaceUndecoratedDispatcher(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IntentStoreStartupCheck>());
@@ -126,6 +129,7 @@ public static class OrleansAggregateServiceCollectionExtensions
     public static IServiceCollection ConfigureStrataraHeavyWork(this IServiceCollection services, Action<HeavyWorkOptions> configure)
     {
         services.AddOptions<HeavyWorkOptions>().Configure(configure);
+        OrleansOptionsValidator.Register<HeavyWorkOptions>(services);
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
