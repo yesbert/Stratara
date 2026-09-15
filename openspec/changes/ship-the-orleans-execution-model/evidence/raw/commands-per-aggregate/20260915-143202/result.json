@@ -1,0 +1,302 @@
+{
+  "measurement": "commands-per-aggregate",
+  "results": [
+    {
+      "path": "bus-worker",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 4.5036485,
+      "commandsPerSecond": 444.08439068901583,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 3.9519402,
+      "commandsPerSecond": 506.0805322914552,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 4.1078902,
+      "commandsPerSecond": 486.86793040378734,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 4.2071122,
+      "commandsPerSecond": 475.3854674947818,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 3.9543526,
+      "commandsPerSecond": 505.7717918225097,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 3.907114,
+      "commandsPerSecond": 511.88677883471024,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 6.1560284,
+      "commandsPerSecond": 324.8847909798467,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 6.2222369,
+      "commandsPerSecond": 321.4278132033192,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "bus-worker",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 6.4899533,
+      "commandsPerSecond": 308.1686273459009,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.5357841,
+      "commandsPerSecond": 1302.2663797600196,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.3767945,
+      "commandsPerSecond": 1452.6496147391642,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.385626,
+      "commandsPerSecond": 1443.3909294427212,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.521288,
+      "commandsPerSecond": 1314.6754592161378,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.4992061,
+      "commandsPerSecond": 1334.0393959176126,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.5155748,
+      "commandsPerSecond": 1319.63133723258,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 6.3292283,
+      "commandsPerSecond": 315.994289540796,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 6.5974569,
+      "commandsPerSecond": 303.14711112398476,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-intent",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 6.3298842,
+      "commandsPerSecond": 315.9615463423485,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.7784189,
+      "commandsPerSecond": 1124.5944361027653,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.5684695,
+      "commandsPerSecond": 1275.1283974600717,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "2000x1",
+      "aggregates": 2000,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.609465,
+      "commandsPerSecond": 1242.6489547768979,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 1.0768004,
+      "commandsPerSecond": 1857.3544363467918,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 1.0884223,
+      "commandsPerSecond": 1837.5220720854397,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "20x100",
+      "aggregates": 20,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 1.0649008,
+      "commandsPerSecond": 1878.1092097968187,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 0,
+      "seconds": 6.3662614,
+      "commandsPerSecond": 314.15612308976193,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 1,
+      "seconds": 5.9232395,
+      "commandsPerSecond": 337.6530697433389,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    },
+    {
+      "path": "grain-sync",
+      "distribution": "1x2000",
+      "aggregates": 1,
+      "commands": 2000,
+      "repetition": 2,
+      "seconds": 6.3360292,
+      "commandsPerSecond": 315.65511093288524,
+      "conflicts": 0,
+      "directory": "BuiltInDefault"
+    }
+  ]
+}

@@ -220,9 +220,9 @@ builder.Services
   <p class="st-sub" style="margin-top:1.25rem"><a href="concepts/performance-and-scaling.md">Methodology and caveats →</a></p>
   <p class="st-sub" style="margin-top:2rem">The Orleans execution model against the bus workers: same machine, one process each, PostgreSQL, Redis and RabbitMQ in containers, every command appending to its aggregate's stream. Medians of three runs of 2,000 commands; the bus workers' own numbers moved by up to 23 % between runs on the same day, so read the ratios as approximate.</p>
   <div class="st-numbers">
-    <div class="st-number"><div class="st-big">1,389/s</div><div class="st-what">commands to 2,000 aggregates, each recorded durably before the call returns &mdash; 463/s on the bus workers</div></div>
-    <div class="st-number"><div class="st-big">1,268/s</div><div class="st-what">commands to 20 aggregates, 100 each &mdash; 512/s on the bus workers</div></div>
-    <div class="st-number"><div class="st-big">303/s</div><div class="st-what">2,000 commands to one aggregate, where a single writer is the limit &mdash; 327/s on the bus workers</div></div>
+    <div class="st-number"><div class="st-big">1,443/s</div><div class="st-what">commands to 2,000 aggregates, each recorded durably before the call returns &mdash; 487/s on the bus workers</div></div>
+    <div class="st-number"><div class="st-big">1,320/s</div><div class="st-what">commands to 20 aggregates, 100 each &mdash; 506/s on the bus workers</div></div>
+    <div class="st-number"><div class="st-big">316/s</div><div class="st-what">2,000 commands to one aggregate, where a single writer is the limit &mdash; 321/s on the bus workers</div></div>
     <div class="st-number"><div class="st-big">+7 %</div><div class="st-what">processor time per 1,000 commands on a silo against a bus host (2.44 against 2.27 CPU-s)</div></div>
   </div>
 </section>

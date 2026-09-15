@@ -288,7 +288,7 @@
       Done: a fourth door, *I scale out and cannot lose a command*, leads with the capability's purpose and shows
       the registration chain the scenario host compiles; *It grows with you* splits stage three into the Orleans
       cluster (recommended) and the workers and bus (supported); *Numbers, not adjectives* gains a table against the
-      bus workers — B3 after the lease fix (1,389 / 1,268 / 303 against 463 / 512 / 327 commands/s) and B5 (2.44
+      bus workers — B3 after the review fixes (1,443 / 1,320 / 316 against 487 / 506 / 321 commands/s) and B5 (2.44
       against 2.27 CPU-s per 1,000 commands, 190 / 217 against 167 / 185 MB), with the bus control's 23 % spread
       between same-day runs stated. Links point at the concept, choose and migrate pages. Documentation tests
       699/699.
@@ -347,7 +347,10 @@
       started within a quarter of the grace of its recording (`IntentLeaseTests`; `DurableIntentTests` 7/7). B3
       after the fix (`raw/commands-per-aggregate/20260915-122442/`): grain-intent 1 389 / 1 268 / 303 = −4 / −7 /
       −2 %, grain-sync −10 / +3 / −5 %, 0 conflicts; the bus control's −21 % on 2000×1 is the machine's (unchanged
-      code, 600 an hour earlier). B5
+      code, 600 an hour earlier). The pull-request review changed the lease to renew every third of the grace and
+      skip below a sixth, starting at acceptance (D27); B3 after the review fixes (`raw/commands-per-aggregate/20260915-143202/`,
+      commit `8dd1d1c`): grain-intent 1 443 / 1 320 / 316 = −1 / −3 / +2 %, grain-sync −11 / −3 / −5 % with the bus
+      control at −17 / −10 / 0 % in the same run, 0 conflicts. B5
       (`raw/resources/20260915-114914/`) holds: silo 190 / 217 MB, 0.028 idle CPU-s per s, 2.44 CPU-s per 1 000
       commands = +7 % of the bus host (archived +12 %). Both in `evidence/results.md`.
 - [x] 7.4 `tests/Stratara.Orleans.IntegrationTests` green on the packaged projects, 37 tests plus the new

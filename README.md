@@ -169,9 +169,9 @@ Methodology and caveats: [Performance & scaling](https://stratara.tech/concepts/
 
 | What | Orleans execution model | Bus workers |
 |---|---:|---:|
-| Commands to 2,000 aggregates, one each, recorded durably before the call returns | **1,389 /s** | 463 /s |
-| Commands to 20 aggregates, 100 each | **1,268 /s** | 512 /s |
-| 2,000 commands to one aggregate — a single writer is the limit on both | 303 /s | 327 /s |
+| Commands to 2,000 aggregates, one each, recorded durably before the call returns | **1,443 /s** | 487 /s |
+| Commands to 20 aggregates, 100 each | **1,320 /s** | 506 /s |
+| 2,000 commands to one aggregate — a single writer is the limit on both | 316 /s | 321 /s |
 | Processor time per 1,000 commands, one host | 2.44 CPU-s (+7 %) | 2.27 CPU-s |
 | Memory at idle / under 200 commands/s | 190 / 217 MB | 167 / 185 MB |
 

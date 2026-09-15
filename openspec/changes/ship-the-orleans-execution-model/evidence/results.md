@@ -21,7 +21,7 @@ Expectation (design D14): within 10 % of the archived numbers, or explained.
 
 | | Measurement | Archived (built-in directory) | Now | Against archived | Verdict | Raw |
 |---|---|---|---|---|---|---|
-| B3 | Commands per aggregate, medians of 3 × 2 000 at 2000×1 / 20×100 / 1×2000, handler appends to the aggregate's stream, one process | bus 584 / 560 / 322; grain-intent 1 452 / 1 359 / 309; grain-sync 1 395 / 1 912 / 334 commands/s; 0 conflicts | First run: bus 600 / 552 / 329; grain-intent 1 281 / 1 199 / 268; grain-sync 1 271 / 1 868 / 344. **After the lease fix below:** bus 463 / 512 / 327; **grain-intent 1 389 / 1 268 / 303**; grain-sync 1 260 / 1 969 / 317 commands/s; 0 conflicts on every path in both runs | First run: grain-intent −12 / −12 / −13 %. After the fix: **grain-intent −4 / −7 / −2 %**; grain-sync −10 / +3 / −5 %; bus −21 / −9 / +2 % | **holds after the fix.** The first run's intent shape was outside the bound; the cause is measured and removed (see below). The bus control is unchanged code and ran at 600 on 2000×1 an hour earlier, so its −21 % is the machine's, not the path's | `raw/commands-per-aggregate/20260915-114629/` (first), `raw/commands-per-aggregate/20260915-122442/` (after the fix) |
+| B3 | Commands per aggregate, medians of 3 × 2 000 at 2000×1 / 20×100 / 1×2000, handler appends to the aggregate's stream, one process | bus 584 / 560 / 322; grain-intent 1 452 / 1 359 / 309; grain-sync 1 395 / 1 912 / 334 commands/s; 0 conflicts | First run: bus 600 / 552 / 329; grain-intent 1 281 / 1 199 / 268; grain-sync 1 271 / 1 868 / 344. After the lease fix: bus 463 / 512 / 327; grain-intent 1 389 / 1 268 / 303; grain-sync 1 260 / 1 969 / 317. **After the review fixes (`8dd1d1c`, commands accepted into the aggregate's order, D27):** bus 487 / 506 / 321; **grain-intent 1 443 / 1 320 / 316**; grain-sync 1 243 / 1 857 / 316 commands/s; 0 conflicts on every path in every run | First run: grain-intent −12 / −12 / −13 %. After the lease fix: grain-intent −4 / −7 / −2 %. After the review fixes: **grain-intent −1 / −3 / +2 %**; grain-sync −11 / −3 / −5 %; bus −17 / −10 / 0 % | **holds.** The intent shape is within 3 % of the archived numbers. The synchronous shape's −11 % on 2000×1 is explained by the run rather than the path: the unchanged bus control ran 17 % below its archived number in the same run, and against that control the synchronous shape is at 255 % where the archive had 239 %. The extra call a fresh activation makes to run its queue may account for part of it; that share is not measured | `raw/commands-per-aggregate/20260915-114629/` (first), `20260915-122442/` (after the lease fix), `20260915-143202/` (after the review fixes) |
 | B5 | Resource use, 60 s idle then 60 s at 200 commands/s, one host each, fresh aggregate per command | bus 171 / 188 MB, 2.26 CPU-s per 1 000; silo 186 / 210 MB, 0.031 idle CPU-s per s, 2.53 CPU-s per 1 000 = +12 % | bus 167 / 185 MB, 0.008 idle CPU-s per s, 2.27 CPU-s per 1 000; silo **190 / 217 MB, 0.028 idle CPU-s per s, 2.44 CPU-s per 1 000 = +7 %** of the bus host; 12 000 of 12 000 applied on both | silo +2 / +4 % memory, −10 % idle processor time, −4 % per 1 000 commands; bus +0 % per 1 000 | **holds** | `raw/resources/20260915-114914/` |
 
 ### The durable-intent shape in B3
@@ -52,12 +52,16 @@ first repetition of 2000×1 is cold (699–861) and the medians there are not co
 the bus path ran first.
 
 **The fix.** A command handed over moments after it was recorded no longer renews its hand-over when execution
-starts: its record time keeps it out of the drain until the lease's first renewal at half the grace. The lease reads
-the record time from the time-ordered intent id and renews at the start only when the command is older than a
-quarter of the grace — a command that waited in the turn, and every resumed one. `IntentLeaseTests` covers the
-decision; `DurableIntentTests` (7/7, including a handler that runs longer than the grace and runs once) holds. The
-full B3 run after the fix, `raw/commands-per-aggregate/20260915-122442/`, is the row in the table above: the
-durable-intent shape is within 4–7 % of the archived numbers.
+starts: its record time keeps it out of the drain until the lease's renewals take over. The lease reads the record
+time from the time-ordered intent id and renews at the start only when the command is older than a threshold — a
+command that waited, and every resumed one. The first version renewed at half the grace and skipped the start
+renewal below a quarter of it; the pull-request review made a single failed renewal survivable, so the lease now
+renews every third of the grace and skips the start renewal below a sixth, and since the review fixes (D27) it
+starts when the aggregate accepts the command rather than when the command runs. `IntentLeaseTests` covers the
+decision; `DurableIntentTests` (7/7, including a handler that runs longer than the grace and runs once, and a resume
+that keeps its aggregate's order) holds. The B3 run after the first version, `raw/commands-per-aggregate/20260915-122442/`,
+put the durable-intent shape within 4–7 % of the archived numbers; the run after the review fixes,
+`raw/commands-per-aggregate/20260915-143202/`, within 3 %.
 
 ## Correctness (task 7.4)
 
