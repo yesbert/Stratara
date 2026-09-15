@@ -73,6 +73,36 @@ public static class ApplicationDiagnostics
         /// <summary>Instrument name <c>orleans.heavy.permits_in_use</c>; see <see cref="OrleansHeavyPermitsInUse"/>.</summary>
         public const string OrleansHeavyPermitsInUseName = "orleans.heavy.permits_in_use";
 
+        /// <summary>Instrument name <c>event_source.append.conflicts</c>; see <see cref="EventSourceAppendConflicts"/>.</summary>
+        public const string EventSourceAppendConflictsName = "event_source.append.conflicts";
+
+        /// <summary>Instrument name <c>event_source.events.appended</c>; see <see cref="EventsAppended"/>.</summary>
+        public const string EventsAppendedName = "event_source.events.appended";
+
+        /// <summary>Instrument name <c>outbox.published</c>; see <see cref="OutboxEntriesPublished"/>.</summary>
+        public const string OutboxEntriesPublishedName = "outbox.published";
+
+        /// <summary>Instrument name <c>messaging.dead_lettered</c>; see <see cref="MessagesDeadLettered"/>.</summary>
+        public const string MessagesDeadLetteredName = "messaging.dead_lettered";
+
+        /// <summary>Instrument name <c>command.duration</c>; see <see cref="CommandDuration"/>.</summary>
+        public const string CommandDurationName = "command.duration";
+
+        /// <summary>Instrument name <c>projection.events.processed</c>; see <see cref="ProjectionEventsProcessed"/>.</summary>
+        public const string ProjectionEventsProcessedName = "projection.events.processed";
+
+        /// <summary>Instrument name <c>projection.bundle.duration</c>; see <see cref="ProjectionBundleDuration"/>.</summary>
+        public const string ProjectionBundleDurationName = "projection.bundle.duration";
+
+        /// <summary>Instrument name <c>saga.events.processed</c>; see <see cref="SagaEventsProcessed"/>.</summary>
+        public const string SagaEventsProcessedName = "saga.events.processed";
+
+        /// <summary>Instrument name <c>saga.bundle.duration</c>; see <see cref="SagaBundleDuration"/>.</summary>
+        public const string SagaBundleDurationName = "saga.bundle.duration";
+
+        /// <summary>Instrument name <c>saga.inflight</c>; see <see cref="SagasInFlight"/>.</summary>
+        public const string SagasInFlightName = "saga.inflight";
+
         /// <summary>The shared <see cref="Metrics.Meter"/> instance.</summary>
         public static readonly Meter Meter = new(MeterName, "1.0.0");
 
@@ -81,7 +111,7 @@ public static class ApplicationDiagnostics
         /// events to a stream (write store).
         /// </summary>
         public static readonly Counter<long> EventSourceAppendConflicts = Meter.CreateCounter<long>(
-            "event_source.append.conflicts",
+            EventSourceAppendConflictsName,
             unit: "{conflict}",
             description: "Number of optimistic-concurrency conflicts detected when appending events to a stream.");
 
@@ -91,7 +121,7 @@ public static class ApplicationDiagnostics
         /// see per-event-type and per-aggregate write throughput.
         /// </summary>
         public static readonly Counter<long> EventsAppended = Meter.CreateCounter<long>(
-            "event_source.events.appended",
+            EventsAppendedName,
             unit: "{event}",
             description: "Number of domain events appended to an event stream, by event and aggregate type.");
 
@@ -101,7 +131,7 @@ public static class ApplicationDiagnostics
         /// distinguish command-dispatch from event-bundle throughput.
         /// </summary>
         public static readonly Counter<long> OutboxEntriesPublished = Meter.CreateCounter<long>(
-            "outbox.published",
+            OutboxEntriesPublishedName,
             unit: "{entry}",
             description: "Number of outbox entries successfully published, by entry kind (command or event).");
 
@@ -112,7 +142,7 @@ public static class ApplicationDiagnostics
         /// (<c>conflict</c> or <c>failure</c>).
         /// </summary>
         public static readonly Counter<long> MessagesDeadLettered = Meter.CreateCounter<long>(
-            "messaging.dead_lettered",
+            MessagesDeadLetteredName,
             unit: "{message}",
             description: "Number of messages moved to a dead-letter destination, by topic, subscription and reason.");
 
@@ -129,7 +159,7 @@ public static class ApplicationDiagnostics
         /// separate decision.
         /// </remarks>
         public static readonly Histogram<double> CommandDuration = Meter.CreateHistogram<double>(
-            "command.duration",
+            CommandDurationName,
             unit: "ms",
             description: "Latency in milliseconds of commands dispatched through the outbox worker, by request type and outcome.");
 
@@ -139,7 +169,7 @@ public static class ApplicationDiagnostics
         /// <c>failure</c>) so operators can see per-event-type projection throughput and failure rates.
         /// </summary>
         public static readonly Counter<long> ProjectionEventsProcessed = Meter.CreateCounter<long>(
-            "projection.events.processed",
+            ProjectionEventsProcessedName,
             unit: "{event}",
             description: "Number of events dispatched to projection handlers, by event type and outcome.");
 
@@ -149,7 +179,7 @@ public static class ApplicationDiagnostics
         /// (<c>success</c> or <c>failure</c>).
         /// </summary>
         public static readonly Histogram<double> ProjectionBundleDuration = Meter.CreateHistogram<double>(
-            "projection.bundle.duration",
+            ProjectionBundleDurationName,
             unit: "ms",
             description: "Projection event-bundle processing latency in milliseconds, by outcome.");
 
@@ -159,7 +189,7 @@ public static class ApplicationDiagnostics
         /// <c>failure</c>) so operators can see per-event-type saga throughput and failure rates.
         /// </summary>
         public static readonly Counter<long> SagaEventsProcessed = Meter.CreateCounter<long>(
-            "saga.events.processed",
+            SagaEventsProcessedName,
             unit: "{event}",
             description: "Number of events dispatched to saga handlers, by event type and outcome.");
 
@@ -169,7 +199,7 @@ public static class ApplicationDiagnostics
         /// <c>failure</c>).
         /// </summary>
         public static readonly Histogram<double> SagaBundleDuration = Meter.CreateHistogram<double>(
-            "saga.bundle.duration",
+            SagaBundleDurationName,
             unit: "ms",
             description: "Saga event-bundle processing latency in milliseconds, by outcome.");
 
@@ -179,7 +209,7 @@ public static class ApplicationDiagnostics
         /// saga lane cannot keep up with the inbound event rate.
         /// </summary>
         public static readonly UpDownCounter<long> SagasInFlight = Meter.CreateUpDownCounter<long>(
-            "saga.inflight",
+            SagasInFlightName,
             unit: "{bundle}",
             description: "Number of saga event-bundles currently being processed.");
 
@@ -302,5 +332,23 @@ public static class ApplicationDiagnostics
 
         /// <summary>Tag name <c>partition</c> — the store partition a reader reads.</summary>
         public const string Partition = "partition";
+
+        /// <summary>
+        /// The value an <see cref="EventType"/> or <see cref="AggregateType"/> tag carries for a type name: the
+        /// type's simple name, as <c>Type.Name</c> returns it, whether <paramref name="typeName"/> is
+        /// simple, namespace-qualified or assembly-qualified. Every instrument tags a type with this value, so
+        /// series from the write side and the read side join on it.
+        /// </summary>
+        /// <param name="typeName">A type name in any of those forms.</param>
+        /// <returns>The simple name — the part after the last namespace or nesting separator, without the assembly or generic arguments.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="typeName"/> is <see langword="null"/>.</exception>
+        public static string TypeNameValue(string typeName)
+        {
+            ArgumentNullException.ThrowIfNull(typeName);
+            var end = typeName.IndexOfAny([',', '[']);
+            var fullName = end < 0 ? typeName : typeName[..end];
+            var start = fullName.LastIndexOfAny(['.', '+']) + 1;
+            return fullName[start..].Trim();
+        }
     }
 }

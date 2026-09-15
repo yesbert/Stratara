@@ -70,9 +70,10 @@ You can reference the names in code instead of copying string literals:
   (`correlation.id`), `ApplicationDiagnostics.CausationIdTagName` (`causation.id`),
   `ApplicationDiagnostics.TenantIdTagName` (`tenant.id`) and `ApplicationDiagnostics.UserIdTagName`
   (`user.id`).
-- **Instruments:** each one is a public static field on `ApplicationDiagnostics.Metrics`, and its
-  name is that field's `Name`. For example, `ApplicationDiagnostics.Metrics.SagasInFlight.Name` is
-  `saga.inflight`.
+- **Instrument names:** each instrument is a public static field on `ApplicationDiagnostics.Metrics`,
+  and its name is published beside it as a constant of the same name with a `Name` suffix. For example,
+  `ApplicationDiagnostics.Metrics.SagasInFlightName` is `saga.inflight`, the name of
+  `ApplicationDiagnostics.Metrics.SagasInFlight`.
 
 ## Every instrument
 
@@ -97,9 +98,9 @@ The tags, with the constant on `ApplicationDiagnostics.MetricTags` that holds ea
 
 | Tag | Constant | Value |
 |---|---|---|
-| `aggregate.type` | `AggregateType` | The aggregate type the append concerned |
+| `aggregate.type` | `AggregateType` | The simple name of the aggregate type the append concerned, on every instrument that carries it |
 | `bucket.id` | `BucketId` | The bucket-lock bucket index of the stream that conflicted |
-| `event.type` | `EventType` | The domain-event type |
+| `event.type` | `EventType` | The simple name of the domain-event type, on every instrument that carries it. Two event types with the same simple name in different namespaces share a value; `ApplicationDiagnostics.MetricTags.TypeNameValue` gives the value for a type name |
 | `request.type` | `RequestType` | The simple name of the command type |
 | `outcome` | `Outcome` | `success` or `failure` |
 | `outbox.kind` | `OutboxKind` | `command` or `event` |

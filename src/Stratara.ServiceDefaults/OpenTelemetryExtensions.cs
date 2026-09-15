@@ -95,7 +95,7 @@ public static class OpenTelemetryExtensions
                 metrics
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddMeter("Stratara.Service");
+                    .AddMeter(ApplicationDiagnostics.Metrics.MeterName);
 
                 configureMetrics?.Invoke(metrics);
             })

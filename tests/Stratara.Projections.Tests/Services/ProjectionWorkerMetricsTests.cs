@@ -61,7 +61,7 @@ public class ProjectionWorkerMetricsTests
     [Fact]
     public async Task ABundleRecordsBothProjectionInstruments()
     {
-        var eventType = $"MetricsProbe.{Guid.CreateVersion7():N}";
+        var eventType = $"Probe{Guid.CreateVersion7():N}";
         var harness = new MetricsHarness();
         var (listener, measurements) = Capture();
 
@@ -85,7 +85,7 @@ public class ProjectionWorkerMetricsTests
     [Fact]
     public async Task AFailingBundleIsRecordedAsFailure()
     {
-        var eventType = $"MetricsProbe.{Guid.CreateVersion7():N}";
+        var eventType = $"Probe{Guid.CreateVersion7():N}";
         var harness = new MetricsHarness(failing: true);
         var (listener, measurements) = Capture();
 
@@ -113,7 +113,7 @@ public class ProjectionWorkerMetricsTests
                 Version: 1,
                 DataJson: "{}",
                 StreamId: Guid.NewGuid(),
-                EventTypeName: eventTypeName,
+                EventTypeName: $"Stratara.MetricsProbe.{eventTypeName}, Stratara.MetricsProbe",
                 AggregateTypeName: "TestAggregate",
                 ActorTenantId: Guid.Empty,
                 ActorUserId: Guid.Empty,

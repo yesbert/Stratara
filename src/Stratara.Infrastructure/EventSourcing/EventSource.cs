@@ -169,7 +169,7 @@ internal sealed class EventSource(
             var bucketId = firstEntry?.BucketId ?? 0;
             ClearBatchState();
             ApplicationDiagnostics.Metrics.EventSourceAppendConflicts.Add(1,
-                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.AggregateType, aggregateTypeName),
+                new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.AggregateType, ApplicationDiagnostics.MetricTags.TypeNameValue(aggregateTypeName)),
                 new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.BucketId, bucketId));
             throw new ConcurrencyException(streamId, aggregateTypeName, ex);
         }

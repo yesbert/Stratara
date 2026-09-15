@@ -62,6 +62,34 @@ public class ObservabilityMetricsTests
     }
 
     [Fact]
+    public void Every_instrument_is_created_from_its_published_name_constant()
+    {
+        (string Constant, string InstrumentName)[] pairs =
+        [
+            (ApplicationDiagnostics.Metrics.EventSourceAppendConflictsName, ApplicationDiagnostics.Metrics.EventSourceAppendConflicts.Name),
+            (ApplicationDiagnostics.Metrics.EventsAppendedName, ApplicationDiagnostics.Metrics.EventsAppended.Name),
+            (ApplicationDiagnostics.Metrics.OutboxEntriesPublishedName, ApplicationDiagnostics.Metrics.OutboxEntriesPublished.Name),
+            (ApplicationDiagnostics.Metrics.MessagesDeadLetteredName, ApplicationDiagnostics.Metrics.MessagesDeadLettered.Name),
+            (ApplicationDiagnostics.Metrics.CommandDurationName, ApplicationDiagnostics.Metrics.CommandDuration.Name),
+            (ApplicationDiagnostics.Metrics.ProjectionEventsProcessedName, ApplicationDiagnostics.Metrics.ProjectionEventsProcessed.Name),
+            (ApplicationDiagnostics.Metrics.ProjectionBundleDurationName, ApplicationDiagnostics.Metrics.ProjectionBundleDuration.Name),
+            (ApplicationDiagnostics.Metrics.SagaEventsProcessedName, ApplicationDiagnostics.Metrics.SagaEventsProcessed.Name),
+            (ApplicationDiagnostics.Metrics.SagaBundleDurationName, ApplicationDiagnostics.Metrics.SagaBundleDuration.Name),
+            (ApplicationDiagnostics.Metrics.SagasInFlightName, ApplicationDiagnostics.Metrics.SagasInFlight.Name),
+            (ApplicationDiagnostics.Metrics.OrleansReaderAppliedName, ApplicationDiagnostics.Metrics.OrleansReaderApplied.Name),
+            (ApplicationDiagnostics.Metrics.OrleansReaderStalledName, ApplicationDiagnostics.Metrics.OrleansReaderStalled.Name),
+            (ApplicationDiagnostics.Metrics.OrleansIntentRecordedName, ApplicationDiagnostics.Metrics.OrleansIntentRecorded.Name),
+            (ApplicationDiagnostics.Metrics.OrleansIntentResumedName, ApplicationDiagnostics.Metrics.OrleansIntentResumed.Name),
+            (ApplicationDiagnostics.Metrics.OrleansIntentKeptName, ApplicationDiagnostics.Metrics.OrleansIntentKept.Name),
+            (ApplicationDiagnostics.Metrics.OrleansCompletionFlushedName, ApplicationDiagnostics.Metrics.OrleansCompletionFlushed.Name),
+            (ApplicationDiagnostics.Metrics.OrleansCompletionFailedName, ApplicationDiagnostics.Metrics.OrleansCompletionFailed.Name),
+            (ApplicationDiagnostics.Metrics.OrleansHeavyPermitsInUseName, ApplicationDiagnostics.Metrics.OrleansHeavyPermitsInUse.Name),
+        ];
+
+        Assert.All(pairs, pair => Assert.Equal(pair.Constant, pair.InstrumentName));
+    }
+
+    [Fact]
     public async Task EventsAppended_counter_records_one_measurement_per_appended_event()
     {
         // The meter is process-global and other test classes append events concurrently, so we count

@@ -60,6 +60,8 @@ public class SessionContextMiddlewareTests
         Assert.NotNull(_capturedContext);
         Assert.Equal(userId, _capturedContext!.ActorUserId);
         Assert.Equal(tenantId, _capturedContext.TenantId);
+        Assert.Equal(tenantId, _capturedContext.ActorTenantId);
+        Assert.Null(_capturedContext.UserId);
     }
 
     [Fact]

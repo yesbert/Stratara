@@ -14,7 +14,7 @@ namespace Stratara.Infrastructure.BackgroundTasks;
 /// dropping work. The queue is process-local; cross-process scenarios should use the Outbox stack.
 /// <para>
 /// Since 3.0.12 the task-info dictionary applies FIFO eviction once it exceeds the configured retention
-/// cap (default 10 000 entries, the same as the channel capacity for a typical host). Round-3-Audit
+/// cap (default 10 000 entries; <c>AddBackgroundTasks()</c> sets the channel capacity to 100). Round-3-Audit
 /// Finding R3-Sec-006: without the cap the dictionary grew without bound — every queued task added an
 /// entry, nothing ever removed one. A long-running host or an authenticated spam loop could OOM the
 /// process by enqueuing millions of tasks.

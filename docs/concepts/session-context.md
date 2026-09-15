@@ -156,6 +156,10 @@ What happens depends on the request:
     as described in the next section.
   - The actor defaults to the data owner: `ActorTenantId` and `TenantId` are the same tenant, and
     the user from the claim is `ActorUserId`.
+  - The data-owner user, `UserId`, is left unset. The scope a protected field is encrypted under
+    follows the data owner, so filling in the user would move every protected field written from a
+    request to a per-user scope, and data already written under the tenant scope could no longer be
+    read the same way.
 - **Principal not authenticated.** No context is set, and the request continues. `Current` stays
   `null`.
 - **No name-identifier claim, or one that isn't a parsable identifier.** The user identity is the
