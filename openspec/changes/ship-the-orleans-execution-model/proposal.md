@@ -55,8 +55,10 @@ proof of concept that no consumer can install. This change ships it.
   what they register; each gains a sibling that registers everything but the bus-fed worker, so
   the Orleans registrations remove nothing by name.
 - **The documentation follows the specs**: pages for the new capability, the migration note and
-  the operations note on the site, the AI index's core facts, the landing page and README saying
-  which execution model is recommended, and an unreleased changelog entry.
+  the operations note on the site, the AI index's core facts, and an unreleased changelog entry. The
+  README, the landing page, a getting-started entry point and the release notes present the execution
+  model as the release's headline feature, with measured numbers behind it (owner request,
+  2026-09-14).
 - **Evidence**: B3 and B5 re-run once on the packaged code with diagnostics on, against the
   archived optimised numbers; the integration suite runs against the packages.
 
@@ -129,9 +131,10 @@ merge: new packable projects.
   collects the Orleans integration suite's coverage (D26); `.github/workflows/integration.yml` loses the
   scenario-host build step once the test project builds the host (D25).
 - **Documentation:** `docs/` gains the capability's pages, the migration note and the operations
-  note; `llms.txt` and `llms-full.txt`, `README.md` and the landing page name the recommended
-  model; `CHANGELOG.md` gains an unreleased entry; every page that states the package count or the
-  log-event range follows (D13).
+  note, and `docs/getting-started/choose-an-execution-model.md`; `llms.txt` and `llms-full.txt` carry
+  the core facts; `README.md` and the landing page present the execution model as the headline feature
+  with the measured numbers; `CHANGELOG.md` gains an unreleased entry that opens the minor's release
+  notes; every page that states the package count or the log-event range follows (D13).
 - **Version:** `<VersionPrefix>` is not touched here; `/bump-version minor` follows the merge.
 - **Superseded sources:** `openspec/changes/archive/2026-09-13-prove-an-orleans-execution-model/evidence/migration-note.md`
   and `openspec/changes/archive/2026-09-14-optimise-the-orleans-execution-model/evidence/operations-note.md`
