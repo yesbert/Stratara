@@ -88,9 +88,14 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always — the framework's write path is asynchronous, and the counter is only maintained on it.</exception>
-    public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result) =>
-        throw new NotSupportedException("The partition counter is maintained on the asynchronous save path only; use SaveChangesAsync.");
+    /// <exception cref="NotSupportedException">The save appends event stream entries — the framework's write path is asynchronous, and the counter is only maintained on it. A synchronous save that appends none passes.</exception>
+    public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+    {
+        var appends = eventData.Context?.ChangeTracker.Entries<EventStreamEntry>().Any(entry => entry.State == EntityState.Added) ?? false;
+        return appends
+            ? throw new NotSupportedException("The partition counter is maintained on the asynchronous save path only; use SaveChangesAsync.")
+            : result;
+    }
 
     private static async Task StampPositionsAsync(DbContext context, int partition, IReadOnlyList<EntityEntry<EventStreamEntry>> entries, CancellationToken cancellationToken)
     {

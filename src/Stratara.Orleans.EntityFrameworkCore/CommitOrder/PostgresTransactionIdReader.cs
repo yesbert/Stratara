@@ -62,7 +62,13 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
             .AsNoTracking()
             .Select(e => new { Entry = e, TransactionId = EF.Property<ulong>(e, CommitOrderSchema.TransactionIdColumn) })
             .ToListAsync(cancellationToken);
-        var rows = projected.Select(row => new Row(row.Entry, row.TransactionId)).ToList();
+        // The projection wraps the statement in a subquery, whose ORDER BY the outer query need not keep;
+        // the cut below depends on the order, so it is restored here.
+        var rows = projected
+            .Select(row => new Row(row.Entry, row.TransactionId))
+            .OrderBy(row => row.TransactionId)
+            .ThenBy(row => row.Entry.SequenceNumber)
+            .ToList();
 
         if (rows.Count == 0)
         {

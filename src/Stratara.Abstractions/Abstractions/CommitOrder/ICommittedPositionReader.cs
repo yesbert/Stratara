@@ -11,8 +11,8 @@ namespace Stratara.Abstractions.CommitOrder;
 /// <remarks>
 /// What a position <em>is</em> depends on the implementation — a sequence number, a per-partition
 /// counter, a transaction id — and a stored position is only meaningful to the reader that produced
-/// it. The baselines in this proof of concept deliberately do not keep the promise; the tests exist to
-/// show which implementations do.
+/// it. A read that orders by sequence number alone does not keep the promise: a transaction can take the
+/// lower sequence number and commit after one that took a higher.
 /// </remarks>
 public interface ICommittedPositionReader
 {
