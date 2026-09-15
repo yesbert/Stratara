@@ -36,7 +36,11 @@ public interface IAggregationService
     /// </summary>
     /// <typeparam name="TAggregate">The aggregate type — must have a parameterless constructor.</typeparam>
     /// <param name="streamId">The aggregate's stream id.</param>
-    /// <param name="fromVersion">Inclusive start version, or <c>null</c> for stream start.</param>
+    /// <param name="fromVersion">
+    /// Ignored. Rebuilding always starts from the beginning of the stream, or from the latest snapshot at
+    /// or below <paramref name="toVersion"/>, because an aggregate rebuilt from a later version alone would
+    /// lack the state its earlier events established. Kept for source compatibility.
+    /// </param>
     /// <param name="toVersion">Inclusive end version, or <c>null</c> for stream head.</param>
     /// <param name="cancellationToken">Propagated to the read-store query.</param>
     /// <returns>The reconstructed aggregate, or <c>null</c> if the stream does not exist.</returns>
@@ -49,7 +53,11 @@ public interface IAggregationService
     /// </summary>
     /// <param name="aggregateType">The aggregate type to construct.</param>
     /// <param name="streamId">The aggregate's stream id.</param>
-    /// <param name="fromVersion">Inclusive start version, or <c>null</c> for stream start.</param>
+    /// <param name="fromVersion">
+    /// Ignored. Rebuilding always starts from the beginning of the stream, or from the latest snapshot at
+    /// or below <paramref name="toVersion"/>, because an aggregate rebuilt from a later version alone would
+    /// lack the state its earlier events established. Kept for source compatibility.
+    /// </param>
     /// <param name="toVersion">Inclusive end version, or <c>null</c> for stream head.</param>
     /// <param name="cancellationToken">Propagated to the read-store query.</param>
     /// <returns>The reconstructed aggregate, or <c>null</c> if the stream does not exist.</returns>

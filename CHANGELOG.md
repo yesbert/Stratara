@@ -58,6 +58,10 @@ know about.
   `GetOrCreateCurrentKeyAsync` threw. It now falls back to the highest remaining version, or creates
   a new one, as `EnvelopeFileKeyStore` does.
 
+- **`IAggregationService.AggregateAsync` no longer documents `fromVersion` as a start version.** The
+  parameter has never been honoured: a rebuild starts from the stream's beginning, or from the latest
+  snapshot at or below `toVersion`. Its documentation now says so; the signature is unchanged.
+
 ### Added
 
 - `LogEvents.Messaging.WorkerQueueDeclaredWithOtherArguments` (`108_112`).
