@@ -66,7 +66,7 @@ internal sealed class SagaGrain(
     public const string ConsumerName = "sagas";
 
     /// <summary>One scope, one saga manager and one process list for the batch; per entry, the recorded session.</summary>
-    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken batchToken)
+    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
         using var scope = ScopeFactory.CreateScope();
         var services = scope.ServiceProvider;
@@ -74,21 +74,21 @@ internal sealed class SagaGrain(
         var sagas = services.GetRequiredService<ISagaManager>();
         var processes = services.GetServices<ISaga>().OfType<ISagaProcess>().ToList();
 
-        return await Loop.ApplyEachAsync(batch, async (entry, cancellationToken) =>
+        return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
         {
             sessions.Set(RecordedSession.Of(entry));
-            var events = await eventMapperFactory.MapToEventsAsync([entry], cancellationToken);
-            await sagas.HandleAsync(events, cancellationToken);
+            var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
+            await sagas.HandleAsync(events, entryToken);
 
             foreach (var process in processes)
             {
                 foreach (var @event in events.Where(process.Handles))
                 {
                     var key = SagaProcessKey.Of(process.GetType().Name, process.CorrelationOf(@event));
-                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version, cancellationToken);
+                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version, entryToken);
                 }
             }
-        }, batchToken);
+        }, cancellationToken);
     }
 }
 

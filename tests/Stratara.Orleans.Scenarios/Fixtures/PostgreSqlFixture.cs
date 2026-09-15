@@ -6,13 +6,15 @@ namespace Stratara.Orleans.IntegrationTests.Fixtures;
 /// <summary>
 /// One PostgreSQL container per test collection. Each context type gets a database of its own on
 /// it: <c>EnsureCreated</c> only builds a schema into an empty database, so two contexts with
-/// different models must not share one.
+/// different models must not share one. The connection limit is raised because a run of every
+/// test class — the analysis workflow's, or a local one — holds more connections at once than
+/// PostgreSQL's default of 100 allows.
 /// </summary>
 public sealed class PostgreSqlFixture : IAsyncLifetime
 {
     public const string Image = "postgres:17-alpine";
 
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(Image).Build();
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(Image).WithCommand("-c", "max_connections=400").Build();
 
     public string ConnectionString { get; private set; } = null!;
 

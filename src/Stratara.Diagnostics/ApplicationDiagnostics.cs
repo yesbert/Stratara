@@ -42,6 +42,8 @@ public static class ApplicationDiagnostics
         /// <summary>The meter name — <c>"Stratara.Service"</c>.</summary>
         public const string MeterName = "Stratara.Service";
 
+        private const string CommandUnit = "{command}";
+
         /// <summary>Instrument name <c>orleans.reader.applied</c>; see <see cref="OrleansReaderApplied"/>.</summary>
         public const string OrleansReaderAppliedName = "orleans.reader.applied";
 
@@ -235,25 +237,25 @@ public static class ApplicationDiagnostics
         /// <summary>Counter of commands recorded as durable intents before their dispatch returned.</summary>
         public static readonly Counter<long> OrleansIntentRecorded = Meter.CreateCounter<long>(
             OrleansIntentRecordedName,
-            unit: "{command}",
+            unit: CommandUnit,
             description: "Number of commands recorded as durable intents by the Orleans execution model.");
 
         /// <summary>Counter of recorded commands handed over again after their hand-over was lost.</summary>
         public static readonly Counter<long> OrleansIntentResumed = Meter.CreateCounter<long>(
             OrleansIntentResumedName,
-            unit: "{command}",
+            unit: CommandUnit,
             description: "Number of recorded commands resumed by the Orleans execution model's drain.");
 
         /// <summary>Counter of recorded commands kept for an operator after exhausting their resume bound.</summary>
         public static readonly Counter<long> OrleansIntentKept = Meter.CreateCounter<long>(
             OrleansIntentKeptName,
-            unit: "{command}",
+            unit: CommandUnit,
             description: "Number of recorded commands kept for an operator by the Orleans execution model.");
 
         /// <summary>Counter of completed intents removed from durable storage.</summary>
         public static readonly Counter<long> OrleansCompletionFlushed = Meter.CreateCounter<long>(
             OrleansCompletionFlushedName,
-            unit: "{command}",
+            unit: CommandUnit,
             description: "Number of completed intents removed by the Orleans execution model.");
 
         /// <summary>Counter of removals of completed intents that failed and were left to the drain.</summary>

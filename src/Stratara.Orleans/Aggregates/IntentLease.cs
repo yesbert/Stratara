@@ -99,16 +99,22 @@ internal sealed class IntentLease : IAsyncDisposable
     private async Task RenewUntilStoppedAsync(TimeSpan period)
     {
         using var timer = new PeriodicTimer(period, _timeProvider);
+        while (await WaitForTickAsync(timer))
+        {
+            await RenewAsync(_timeProvider.GetUtcNow(), _stop.Token);
+        }
+    }
+
+    /// <summary>Waits for the next renewal; <see langword="false"/> once the lease is stopped.</summary>
+    private async Task<bool> WaitForTickAsync(PeriodicTimer timer)
+    {
         try
         {
-            while (await timer.WaitForNextTickAsync(_stop.Token))
-            {
-                await RenewAsync(_timeProvider.GetUtcNow(), _stop.Token);
-            }
+            return await timer.WaitForNextTickAsync(_stop.Token);
         }
         catch (OperationCanceledException)
         {
-            return;
+            return false;
         }
     }
 

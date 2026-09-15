@@ -1,7 +1,9 @@
 namespace Stratara.Orleans.IntegrationTests.Hosting;
 
+[Alias("Stratara.Orleans.IntegrationTests.IPingGrain")]
 public interface IPingGrain : IGrainWithStringKey
 {
+    [Alias("PingAsync")]
     ValueTask<string> PingAsync();
 }
 

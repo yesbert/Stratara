@@ -114,6 +114,7 @@ internal abstract class StoreReaderGrain(
             }
 
             Loop.Withdraw();
+            _stopping.Dispose();
             logger.LogStoreReaderStopped(Consumer, Partition);
         }
 
