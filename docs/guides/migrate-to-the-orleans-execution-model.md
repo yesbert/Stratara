@@ -46,8 +46,9 @@ you run.
 
 The additions are declared by the framework's write and read contexts in
 `Stratara.EventSourcing.EntityFrameworkCore`, so a context derived from them carries them. Generate a
-migration after upgrading; a store that never runs the execution model carries the columns and never
-fills them.
+migration after upgrading — every host on that package does, whether or not it adopts the execution model,
+because appends and outbox writes fail against a table without the columns. A store that never runs the
+execution model carries the columns and never fills them.
 
 | Context | Addition | What it is for |
 |---|---|---|
@@ -65,7 +66,7 @@ Projections and sagas read the store through one `ICommittedPositionReader`.
 **On PostgreSQL**, the native reader adds no work to an append:
 
 ```csharp
-builder.Services.AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<AppWriteDbContext>>();
+builder.Services.AddSingleton<ICommittedPositionReader, PostgresTransactionIdReader<AppWriteDbContext>>();
 ```
 
 **On any other relational store**, the portable reader orders by the partition counter:
@@ -93,6 +94,10 @@ Each role is one call after the composite the host already has.
 | Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>` |
 | Heavy command worker (`AddHeavyCommandWorkerServices`) | `ConfigureStrataraHeavyWork(o => o.ClusterWideLimit = …)` | Heavy commands run in a bounded pool per silo under cluster-wide permits; the heavy lane and its host go |
 | Timeouts the host built itself | `AddStrataraDurableTimers()` with one `ITimerOwners` and one `ITimerHandler` | Owner-checked, durable, once per cluster; the host's ports may be registered before or after the model |
+
+Retire the bus outbox worker before the first host records commands through the execution model's
+dispatcher. The recorded commands wait in the same outbox table, and an outbox worker that still runs
+publishes them to the bus as well, so their handlers run on both paths.
 
 During a rollout a host can run both models at once — the bus consumer and the grains both apply
 idempotently. `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` take `hybrid: true` to keep

@@ -83,7 +83,7 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
         var store = postgres.ConnectionStringFor("poc_heavy_lease_store");
         await Timers.PostgresTimerHostSchema.EnsureDatabaseAsync(store);
         var environment = PocHostSettings.ToEnvironment(store, orleansConnectionString, redis.ConnectionString, rabbit.ConnectionString, siloPort: 11233, gatewayPort: 30122, clusterId: clusterId);
-        var worker = await PocHostProcess.StartAsync("heavy", environment);
+        await using var worker = await PocHostProcess.StartAsync("heavy", environment);
         Assert.Equal("ok", await worker.SendAsync("enqueue-heavy 6 120000"));
 
         Assert.True(

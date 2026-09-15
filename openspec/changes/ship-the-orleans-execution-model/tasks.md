@@ -43,8 +43,8 @@
       every public type of both packages and fails on an addition; a unit test for the purpose length; a
       test that the native reader works under a non-snake-case model.
       Done. The two non-promise readers live in `tests/Stratara.Orleans.IntegrationTests/CommitOrder/`,
-      which the benchmarks reference: `InterleavedCommitTests` needs the naive reader to prove it still
-      provokes the interleaving. Section names are no longer claimed. `SurfaceTrimTests` covers the purpose
+      beside their only user: `InterleavedCommitTests` needs the naive reader to prove it still provokes the
+      interleaving. Section names are no longer claimed. `SurfaceTrimTests` covers the purpose
       length and the drain; `NativeReaderModelNamesTests` the non-snake-case model.
 
 ## 2. Store schema and readers (D4, D7, D10, D23)
@@ -276,7 +276,7 @@
       coverage measure.
       Implemented, verification pending the merge: `sonar.yml` no longer excludes `src/Stratara.Orleans/**` from
       coverage; it builds the Orleans integration project and runs it with `--coverage` beside the unit tests,
-      leaving out the five kill-test classes (`--filter-not-class`, checked on the unit project: 75 → 71 with one
+      leaving out the six kill-test classes (`--filter-not-class`, checked on the unit project: 75 → 71 with one
       class excluded). A failure there is a warning, since `integration.yml` gates the suite; the job timeout is 90
       minutes.
 

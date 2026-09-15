@@ -59,7 +59,10 @@ internal sealed class OrleansCommandDispatcher(
         replayState.IsReplayActive ? Task.FromResult(0) : resumer.ResumeDueAsync(batchSize, cancellationToken);
 }
 
-/// <summary>Hands a recorded command to the grain that runs it: heavy work, its aggregate, or a runner of its own.</summary>
+/// <summary>
+/// Hands a recorded command to the grain that runs it: heavy work, its aggregate — which accepts it into the
+/// aggregate's order and returns before it runs — or a runner of its own.
+/// </summary>
 internal sealed class IntentHandOver(IGrainFactory grainFactory)
 {
     public Task HandOverAsync(Guid intentId, AggregateCommandEnvelope payload, bool heavy, Guid? aggregateId)
@@ -70,7 +73,7 @@ internal sealed class IntentHandOver(IGrainFactory grainFactory)
         }
 
         return aggregateId is { } id
-            ? grainFactory.GetGrain<IAggregateGrain>(id).ExecuteIntentAsync(intentId, payload)
+            ? grainFactory.GetGrain<IAggregateGrain>(id).AcceptIntentAsync(intentId, payload)
             : grainFactory.GetGrain<ICommandRunnerGrain>(intentId).ExecuteIntentAsync(payload);
     }
 }
@@ -145,7 +148,7 @@ public sealed class OrleansDispatchOptions
 {
     /// <summary>
     /// How long a recorded command may go without its hand-over being renewed before the drain hands it
-    /// over again. A running handler renews its hand-over at half this period, so a long handler is not
+    /// over again. A running handler renews its hand-over every third of this period, so a long handler is not
     /// handed over twice; a host that died stops renewing, and its commands are resumed after it.
     /// </summary>
     public TimeSpan IntentGrace { get; set; } = TimeSpan.FromSeconds(30);

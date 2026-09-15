@@ -57,6 +57,21 @@ public sealed class OrleansOptionsValidatorTests
         provider.GetRequiredService<IStartupValidator>().Validate();
     }
 
+    [Fact]
+    public async Task A_completion_window_longer_than_the_queue_accepts_fails_the_start_naming_it()
+    {
+        var services = BaseServices().AddStrataraOrleansCommandDispatcher(o =>
+        {
+            o.CompletionWindow = TimeSpan.FromSeconds(15);
+            o.IntentGrace = TimeSpan.FromMinutes(1);
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        var failure = Assert.ThrowsAny<Exception>(() => provider.GetRequiredService<IStartupValidator>().Validate());
+
+        Assert.Contains("OrleansDispatchOptions.CompletionWindow", failure.Message, StringComparison.Ordinal);
+    }
+
     private static IServiceCollection BaseServices() =>
         new ServiceCollection()
             .AddLogging()

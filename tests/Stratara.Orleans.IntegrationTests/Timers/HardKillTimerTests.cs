@@ -40,7 +40,7 @@ public sealed class HardKillTimerTests(PostgreSqlFixture postgres, RedisFixture 
             var kept = Enumerable.Range(0, OwnersPerKind).Select(i => $"kept-{kill}-{i}-{Guid.NewGuid():N}").ToList();
             var removed = Enumerable.Range(0, OwnersPerKind).Select(i => $"removed-{kill}-{i}-{Guid.NewGuid():N}").ToList();
 
-            var host = await PocHostProcess.StartAsync("timers", environment);
+            await using var host = await PocHostProcess.StartAsync("timers", environment);
             var dueAt = DateTimeOffset.UtcNow + DueIn;
             foreach (var owner in kept.Concat(removed))
             {

@@ -22,7 +22,7 @@ public sealed class TwoSiloKillTests(PostgreSqlFixture postgres, RedisFixture re
         var store = postgres.ConnectionStringFor("poc_singleton_takeover");
         await PostgresTimerHostSchema.EnsureDatabaseAsync(store);
 
-        var first = await PocHostProcess.StartAsync("singleton", Environment(store, clusterId, siloPort: 11291, gatewayPort: 30181));
+        await using var first = await PocHostProcess.StartAsync("singleton", Environment(store, clusterId, siloPort: 11291, gatewayPort: 30181));
         await using var second = await PocHostProcess.StartAsync("singleton", Environment(store, clusterId, siloPort: 11292, gatewayPort: 30182));
         var hosts = new Dictionary<int, PocHostProcess> { [11291] = first, [11292] = second };
 
@@ -37,8 +37,6 @@ public sealed class TwoSiloKillTests(PostgreSqlFixture postgres, RedisFixture re
         Assert.True(
             await WaitForAsync(() => hosts[surviving].SendAsync($"runs-since {surviving} {killedAt.ToUnixTimeMilliseconds()}"), reply => reply != "0", TakeoverTimeout),
             $"the surviving silo did not take the work over. Log:{System.Environment.NewLine}{string.Join(System.Environment.NewLine, hosts[surviving].Log.TakeLast(60))}");
-
-        await first.DisposeAsync();
     }
 
     [Fact]
@@ -49,7 +47,7 @@ public sealed class TwoSiloKillTests(PostgreSqlFixture postgres, RedisFixture re
         await PostgresTimerHostSchema.EnsureDatabaseAsync(store);
         var owner = $"two-silo-{Guid.NewGuid():N}";
 
-        var registering = await PocHostProcess.StartAsync("timers", Environment(store, clusterId, siloPort: 11293, gatewayPort: 30183));
+        await using var registering = await PocHostProcess.StartAsync("timers", Environment(store, clusterId, siloPort: 11293, gatewayPort: 30183));
         await using var surviving = await PocHostProcess.StartAsync("timers", Environment(store, clusterId, siloPort: 11294, gatewayPort: 30184));
 
         var dueAt = DateTimeOffset.UtcNow + TimerDueIn;
@@ -67,8 +65,6 @@ public sealed class TwoSiloKillTests(PostgreSqlFixture postgres, RedisFixture re
         await Task.Delay(PocSilo.RefreshReminderListPeriod * 2);
         Assert.Equal("1", await surviving.SendAsync($"firings {owner}"));
         Assert.Equal("0", await surviving.SendAsync($"timers {owner}"));
-
-        await registering.DisposeAsync();
     }
 
     private Dictionary<string, string> Environment(string store, string clusterId, int siloPort, int gatewayPort) =>

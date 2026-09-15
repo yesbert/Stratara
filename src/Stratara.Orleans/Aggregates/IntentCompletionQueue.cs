@@ -27,7 +27,8 @@ namespace Stratara.Orleans.Aggregates;
 /// </remarks>
 internal sealed class IntentCompletionQueue : IHostedService
 {
-    private static readonly TimeSpan LongestWindow = TimeSpan.FromSeconds(10);
+    /// <summary>The longest completion window the queue accepts; the settings validator refuses a longer one at start.</summary>
+    internal static readonly TimeSpan LongestWindow = TimeSpan.FromSeconds(10);
 
     private readonly Channel<Guid> _completed = Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = true });
     private readonly TimeSpan _window;

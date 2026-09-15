@@ -57,7 +57,11 @@ internal interface IProjectionGrain : IGrainWithStringKey
     [Alias("PositionAsync")]
     Task<long> PositionAsync();
 
-    /// <summary>Stops reading until <see cref="ResumeAsync"/>; returns once no batch is in flight.</summary>
+    /// <summary>
+    /// Stops reading until <see cref="ResumeAsync"/>; returns once no batch is in flight. Interleaves with a running
+    /// catch-up, which stops at its next batch boundary, so a pause does not wait for a partition far behind.
+    /// </summary>
+    [AlwaysInterleave]
     [Alias("PauseAsync")]
     Task PauseAsync();
 
@@ -137,14 +141,18 @@ internal sealed class ProjectionGrain(
 
     /// <summary>
     /// The first batch finds the projection among every registered one and remembers its type; every
-    /// later batch builds only that one, instead of every projection the silo has for the name of one.
+    /// later batch resolves that type where it is registered as itself, and finds it among the registered
+    /// projections again where it is not. The container always builds it, so a factory registration or a
+    /// lifetime the host chose holds for every batch.
     /// </summary>
     /// <exception cref="InvalidOperationException">No projection of the grain's name is registered on this silo.</exception>
     private IProjection ResolveProjection(IServiceProvider services, IProjectionHandler handler)
     {
         if (_projectionType is { } type)
         {
-            return (IProjection)ActivatorUtilities.CreateInstance(services, type);
+            return services.GetService(type) as IProjection
+                   ?? services.GetServices<IProjection>().FirstOrDefault(p => p.GetType() == type)
+                   ?? throw new InvalidOperationException($"The projection {type.FullName} named '{Consumer}' is no longer registered on this silo.");
         }
 
         var projection = services.GetServices<IProjection>().FirstOrDefault(p => handler.GetProjectionName(p) == Consumer)

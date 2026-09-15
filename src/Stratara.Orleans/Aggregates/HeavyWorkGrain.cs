@@ -69,7 +69,8 @@ internal sealed class HeavyWorkGrain(
     IServiceScopeFactory scopeFactory,
     IOptions<HeavyWorkOptions> options,
     ILocalSiloDetails localSilo,
-    TimeProvider timeProvider) : Grain, IHeavyWorkGrain
+    TimeProvider timeProvider,
+    ILogger<HeavyWorkGrain> logger) : Grain, IHeavyWorkGrain
 {
     public const int MaxLocalWorkers = 8;
 
@@ -88,6 +89,10 @@ internal sealed class HeavyWorkGrain(
     public Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope) =>
         CommandExecution.RunAsync(scopeFactory, envelope, intentId, UnderPermitAsync);
 
+    /// <summary>
+    /// Runs the unit under a permit. The release after it cannot change the unit's outcome: a release that fails is
+    /// logged, and the permit's lease releases it.
+    /// </summary>
     private async Task UnderPermitAsync(Func<Task> run)
     {
         var permits = GrainFactory.GetGrain<IHeavyWorkPermitGrain>(0);
@@ -104,10 +109,22 @@ internal sealed class HeavyWorkGrain(
         {
             await stop.CancelAsync();
             await renewing;
-            await permits.ReleaseAsync(unitId);
+            try
+            {
+                await permits.ReleaseAsync(unitId);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogPermitReleaseFailed(ex, unitId);
+            }
         }
     }
 
+    /// <summary>
+    /// Renews the unit's permit at half its lease. A permit that is no longer held — its lease lapsed on a renewal
+    /// that failed, or the permit grain was activated again without it — is taken again, so the permit grain counts
+    /// the running unit against the bound once more.
+    /// </summary>
     private async Task RenewWhileRunningAsync(IHeavyWorkPermitGrain permits, Guid unitId, CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(_renewal, timeProvider);
@@ -117,7 +134,11 @@ internal sealed class HeavyWorkGrain(
             {
                 try
                 {
-                    await permits.RenewAsync(unitId);
+                    if (!await permits.RenewAsync(unitId))
+                    {
+                        logger.LogPermitRenewalLost(unitId);
+                        await permits.TryAcquireAsync(unitId, localSilo.SiloAddress);
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

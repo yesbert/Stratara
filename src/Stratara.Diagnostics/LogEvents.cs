@@ -296,5 +296,11 @@ public static class LogEvents
         public const int PermitReleasedByExpiry = 117_106;
         /// <summary>The storage-backed grain directory the execution model requires is not registered; the silo does not start (error).</summary>
         public const int DirectoryCheckFailed = 117_107;
+        /// <summary>Renewing a running command's hand-over failed; the next renewal tries again (warning).</summary>
+        public const int IntentRenewalFailed = 117_108;
+        /// <summary>A running heavy unit's permit was no longer held when renewed and is taken again (warning).</summary>
+        public const int PermitRenewalLost = 117_109;
+        /// <summary>Releasing a heavy unit's permit failed; its lease releases it (warning).</summary>
+        public const int PermitReleaseFailed = 117_110;
     }
 }

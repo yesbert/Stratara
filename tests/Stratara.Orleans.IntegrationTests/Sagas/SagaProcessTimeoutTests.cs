@@ -26,7 +26,7 @@ public sealed class SagaProcessTimeoutTests(PostgreSqlFixture postgres, RedisFix
         {
             var streamId = Guid.NewGuid();
 
-            var host = await PocHostProcess.StartAsync("saga", environment);
+            await using var host = await PocHostProcess.StartAsync("saga", environment);
             Assert.Equal("ok", await host.SendAsync($"start {streamId}"));
             Assert.True(await WaitForAsync(host, $"timers {streamId}", "1", TimerTimeout), Failure($"Kill {kill + 1}: the process's timer did not exist before the kill", host));
             host.Kill();
@@ -44,7 +44,7 @@ public sealed class SagaProcessTimeoutTests(PostgreSqlFixture postgres, RedisFix
         var environment = await EnvironmentForAsync("poc_saga_process_hold_store", "poc_saga_process_hold_read", siloPort: 11222, gatewayPort: 30111);
         var streamId = Guid.NewGuid();
 
-        var host = await PocHostProcess.StartAsync("saga", environment);
+        await using var host = await PocHostProcess.StartAsync("saga", environment);
         Assert.Equal("ok", await host.SendAsync("hold-registrations"));
         Assert.Equal("ok", await host.SendAsync($"start {streamId}"));
         Assert.True(await WaitForAsync(host, $"timers {streamId}", "1", TimerTimeout), Failure("the held step did not register its timer", host));

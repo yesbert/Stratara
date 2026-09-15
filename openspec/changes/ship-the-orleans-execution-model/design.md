@@ -159,8 +159,11 @@ without it fails at start. `IOutboxRepository` gains only the batch removal of D
 
 The drain resumes a stored command only while its attempts are below the bound the host already
 configures for bus messages (`MessageRetryOptions.MaxDeliveryAttempts`) and its last hand-over is older
-than the grace. A running handler renews its hand-over at half the grace, so it is not handed over
-again however long it runs. On the bound the drain marks the record kept with the last failure; it is
+than the grace. A running handler renews its hand-over every third of the grace, so it is not handed over
+again however long it runs and a single failed renewal does not let the hand-over lapse; a failed renewal is
+logged. A command handed over within a sixth of the grace of its recording is not renewed when execution
+starts — its record time holds it past the first two renewals — because that renewal, one statement per command
+inside the aggregate's turn, cost the durable-intent shape 13 % of its throughput on one aggregate. On the bound the drain marks the record kept with the last failure; it is
 then invisible to the drain. The aggregate is
 read from the record, not from the command's JSON, so a command whose payload is protected keeps its
 per-aggregate order when resumed. An operator finds kept commands by the log event and the counter of
@@ -452,7 +455,8 @@ commit-order column default.
 ### D24 — The published surface is what a consumer should use
 
 Before the packages ship: the two readers that deliberately do not keep the commit-order promise move to
-the benchmarks; the send lane becomes internal and releases a scope's tail once it completes; the native
+the benchmarks; the send lane becomes internal and releases a scope's tail once it completes (a recorded
+command's call completes at acceptance, D27); the native
 reader takes its table and column names from the model instead of assuming the snake-case convention;
 every options type's section name is bound by its registration or no longer claims to be; a timer purpose
 longer than the store's column is refused with an argument exception, not a provider exception; the
@@ -489,6 +493,31 @@ for a package that ships.
 
 Evidence: `.github/workflows/sonar.yml` (the exclusion and its comment, #83).
 
+### D27 — An aggregate accepts a command before it runs it
+
+The aggregate's grain takes a command through a call that interleaves with whatever the grain is running and
+only queues it; a turn of the grain's own runs the queue one command at a time, in the order the commands were
+accepted. A recorded command's call returns once it is accepted, so the send lane releases that aggregate at
+acceptance; a forwarded command's call returns once it has run, as before. A handler that dispatches to its own
+aggregate is accepted behind itself instead of waiting for itself, and a second dispatch to one aggregate from a
+scope no longer waits for the first command's handler. Order per scope is kept as the capability states: both
+kinds of command join the same queue, in the order the lane issues them. A recorded command's lease starts when it
+is accepted, not when it runs, so a command waiting behind a long handler is not handed over again; an intent the
+drain hands over while the activation still holds it is not queued a second time. An activation that ends with
+commands still queued fails the forwarded ones back to their callers and stops renewing the recorded ones, which
+the drain resumes after the grace.
+
+*Rejected: releasing the lane when the call is sent.* The runtime promises no delivery order for calls in flight
+at the same time, which is the reason the lane exists.
+
+*Rejected: bypassing the lane only inside the target aggregate's own turn.* It removes the stall and leaves every
+other second dispatch to an aggregate waiting for a handler.
+
+Evidence: owner decision 2026-09-15 on a pull-request review finding — a handler that dispatched two commands to
+its own aggregate stalled until the runtime's response timeout, because the lane released an aggregate only when
+the previous call, and so its handler, completed (`AggregateSendLane.cs`, `OrleansCommandDispatcher.cs`
+`EnqueueCommandAsync`); `SelfDispatchTests`.
+
 ## Risks / Trade-offs
 
 - **[A consumer migration touches the outbox and event stream tables]** → Additive columns with
@@ -501,12 +530,17 @@ Evidence: `.github/workflows/sonar.yml` (the exclusion and its comment, #83).
   duration; measured in the heavy-burst test's latency bounds.
 - **[Single-silo deployments and a hard death]** → Not fixable here; the operations page states it
   and the capability says so in a scenario.
-- **[Scope]** → Twenty-six decisions and eight spec deltas. No decision is a tail: each closes a
+- **[Scope]** → Twenty-seven decisions and eight spec deltas. No decision is a tail: each closes a
   requirement a delta states, so a decision deferred to a patch takes its requirements and scenarios
   out of this change into a change of its own before approval (task 0.2), rather than archiving a
   guarantee the packages do not keep.
-- **[A reentrant timer owner]** → Its state is the reminder table and register and cancel are
-  idempotent by name; D17's test is the collision of a fact and a timeout.
+- **[A reentrant timer owner]** → Its state is the reminder table; changes to the table run one at a time,
+  so two reschedules of one purpose leave one timer, and a tick holds that gate only to unregister itself, so a
+  handler that reschedules its owner does not wait on its own tick. D17's test is the collision of a fact and a
+  timeout.
+- **[Accepted commands wait in the activation (D27)]** → An activation that ends before running them fails the
+  forwarded ones back to their callers, who see the failure as they would a failed call, and leaves the recorded
+  ones in the store, where the drain resumes them after the grace — later, never lost.
 - **[Timers registered before the append]** → A timeout may reach a process for a step whose events
   were not recorded; the process contract says `OnTimeoutAsync` decides from state.
 

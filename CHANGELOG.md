@@ -17,7 +17,8 @@ applies to the entire NuGet family.
 ## [Unreleased]
 
 The Orleans execution model ships as two packages, and three fixes land on the 4.0.4 retry and
-conflict work. A host that does not adopt the execution model changes nothing; one new warning to
+conflict work. A host on the Entity Framework store generates one migration whether or not it adopts
+the execution model; otherwise a host that does not adopt it changes nothing, with one new warning to
 know about.
 
 ### Added
@@ -33,12 +34,14 @@ know about.
   registration after its composite, and both models can run side by side during a rollout. Every
   setting is validated at start. See *Choose an Execution Model*, *Migrate to the Orleans Execution
   Model* and *Operate the Orleans Execution Model* on the documentation site.
-- **Schema additions for a host that adopts it.** The framework's write context declares
-  `event_stream_entry.partition_position`, the `partition_position` table, on PostgreSQL
-  `event_stream_entry.commit_transaction_id`, and the `outbox_entry` columns `aggregate_id`, `heavy`,
-  `attempt_count`, `last_handed_over_at`, `kept_at` and `last_failure`; the read context declares
-  `projection_checkpoint`. Generate a migration after upgrading; a store that never runs the execution
-  model carries them unfilled.
+- **Schema additions — every host on the Entity Framework store generates a migration.** The framework's
+  write context declares `event_stream_entry.partition_position`, the `partition_position` table, on
+  PostgreSQL `event_stream_entry.commit_transaction_id`, and the `outbox_entry` columns `aggregate_id`,
+  `heavy`, `attempt_count`, `last_handed_over_at`, `kept_at` and `last_failure`; the read context declares
+  `projection_checkpoint`. They are part of the model whether or not a host adopts the execution model, so
+  every host on `Stratara.EventSourcing.EntityFrameworkCore` generates and applies a migration after
+  upgrading — without it, appends and outbox writes fail on the missing columns. A store that never runs
+  the execution model carries them unfilled; on PostgreSQL an append also reads back the transaction id.
 - **Composites without the bus-fed worker.** `AddEventProjectionServices()` and `AddSagaServices()`
   register the projection and saga runtimes without their bus workers; `AddProjectionHandling` and
   `AddSagaHandling` do the same on `IServiceCollection`.

@@ -95,6 +95,7 @@ public static class ProjectionServiceCollectionExtensions
                      .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IProjection).IsAssignableFrom(t)))
         {
             services.AddScoped(typeof(IProjection), type);
+            services.TryAddScoped(type);
             RegisterHandledEventTypes(type, resolver);
         }
 

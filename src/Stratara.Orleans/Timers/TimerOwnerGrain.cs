@@ -27,21 +27,64 @@ internal sealed class TimerOwnerGrain(
     private readonly TimeSpan _retryPeriod = options.Value.RetryPeriod;
     private readonly TimeSpan _dueTolerance = options.Value.DueTolerance;
 
+    // Reentrancy lets a registration interleave with another at every await; changes to the reminder table run
+    // one at a time, so two reschedules of one purpose leave one timer. A tick holds the gate only to unregister
+    // itself, never while the handler runs, so a handler that reschedules its owner does not wait on its own tick.
+    private readonly SemaphoreSlim _changes = new(1, 1);
+
     public async Task RegisterAsync(string purpose, DateTimeOffset dueAt, CancellationToken cancellationToken)
     {
-        await CancelAsync(purpose, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var dueIn = dueAt - timeProvider.GetUtcNow();
-        if (dueIn < TimeSpan.Zero)
+        await _changes.WaitAsync(cancellationToken);
+        try
         {
-            dueIn = TimeSpan.Zero;
-        }
+            await CancelPurposeAsync(purpose, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
-        await this.RegisterOrUpdateReminder(ReminderName.Encode(purpose, dueAt), dueIn, _retryPeriod);
+            var dueIn = dueAt - timeProvider.GetUtcNow();
+            if (dueIn < TimeSpan.Zero)
+            {
+                dueIn = TimeSpan.Zero;
+            }
+
+            await this.RegisterOrUpdateReminder(ReminderName.Encode(purpose, dueAt), dueIn, _retryPeriod);
+        }
+        finally
+        {
+            _changes.Release();
+        }
     }
 
     public async Task CancelAsync(string purpose, CancellationToken cancellationToken)
+    {
+        await _changes.WaitAsync(cancellationToken);
+        try
+        {
+            await CancelPurposeAsync(purpose, cancellationToken);
+        }
+        finally
+        {
+            _changes.Release();
+        }
+    }
+
+    public async Task CancelAllAsync(CancellationToken cancellationToken)
+    {
+        await _changes.WaitAsync(cancellationToken);
+        try
+        {
+            foreach (var reminder in await this.GetReminders())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await this.UnregisterReminder(reminder);
+            }
+        }
+        finally
+        {
+            _changes.Release();
+        }
+    }
+
+    private async Task CancelPurposeAsync(string purpose, CancellationToken cancellationToken)
     {
         foreach (var reminder in await this.GetReminders())
         {
@@ -50,15 +93,6 @@ internal sealed class TimerOwnerGrain(
             {
                 await this.UnregisterReminder(reminder);
             }
-        }
-    }
-
-    public async Task CancelAllAsync(CancellationToken cancellationToken)
-    {
-        foreach (var reminder in await this.GetReminders())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await this.UnregisterReminder(reminder);
         }
     }
 

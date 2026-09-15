@@ -67,7 +67,7 @@ public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixt
         {
             var streamId = Guid.NewGuid();
 
-            var host = await PocHostProcess.StartAsync(scenario, environment);
+            await using var host = await PocHostProcess.StartAsync(scenario, environment);
             Assert.Equal("ok", await host.SendAsync("arm-kill"));
             await host.SendExpectingExitAsync($"append {streamId}", ExitTimeout);
 

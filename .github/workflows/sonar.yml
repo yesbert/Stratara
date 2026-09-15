@@ -152,6 +152,7 @@ jobs:
             --filter-not-class "${suite}.Timers.HardKillTimerTests" \
             --filter-not-class "${suite}.Projections.CommitPublishKillTests" \
             --filter-not-class "${suite}.Sagas.SagaProcessTimeoutTests" \
+            --filter-not-class "${suite}.Hosting.TwoSiloKillTests" \
             || echo "::warning::The Orleans integration tests failed in the analysis run; integration.yml is the gate for them."
 
       # `end` submits the analysis and, because the begin step asked for it, waits for the server's

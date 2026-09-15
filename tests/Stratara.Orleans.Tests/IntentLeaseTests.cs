@@ -20,11 +20,11 @@ public sealed class IntentLeaseTests
     }
 
     [Fact]
-    public void A_command_that_waited_a_quarter_of_the_grace_is_renewed_at_the_start()
+    public void A_command_that_waited_a_sixth_of_the_grace_is_renewed_at_the_start()
     {
         var intentId = Guid.CreateVersion7(RecordedAt);
 
-        Assert.True(IntentLease.RenewsAtStart(intentId, RecordedAt + Grace / 4, Grace));
+        Assert.True(IntentLease.RenewsAtStart(intentId, RecordedAt + Grace / 6, Grace));
     }
 
     [Fact]

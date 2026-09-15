@@ -18,7 +18,7 @@ public sealed class DurableDirectoryCheckTests(RedisFixture redis)
     [Fact]
     public async Task A_silo_without_the_durable_directory_fails_at_start_naming_the_registration()
     {
-        using var host = Build(siloPort: 11241, gatewayPort: 30131, withDirectory: false);
+        using var host = Build(siloPort: 11245, gatewayPort: 30135, withDirectory: false);
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
 
         var failure = await Assert.ThrowsAnyAsync<Exception>(() => host.StartAsync(timeout.Token));

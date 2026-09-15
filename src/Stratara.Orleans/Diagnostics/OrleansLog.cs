@@ -71,4 +71,22 @@ internal static partial class OrleansLog
         Level = LogLevel.Warning,
         Message = "Removing {Count} completed intents failed; the drain resumes them and their handlers may run again.")]
     public static partial void LogCompletionFlushFailed(this ILogger logger, Exception exception, int count);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentRenewalFailed,
+        Level = LogLevel.Warning,
+        Message = "Renewing the hand-over of running command {IntentId} failed; the next renewal tries again.")]
+    public static partial void LogIntentRenewalFailed(this ILogger logger, Exception exception, Guid intentId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.PermitRenewalLost,
+        Level = LogLevel.Warning,
+        Message = "Heavy-work permit of running unit {UnitId} was no longer held when renewed; it is taken again.")]
+    public static partial void LogPermitRenewalLost(this ILogger logger, Guid unitId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.PermitReleaseFailed,
+        Level = LogLevel.Warning,
+        Message = "Releasing the heavy-work permit of unit {UnitId} failed; its lease releases it.")]
+    public static partial void LogPermitReleaseFailed(this ILogger logger, Exception exception, Guid unitId);
 }

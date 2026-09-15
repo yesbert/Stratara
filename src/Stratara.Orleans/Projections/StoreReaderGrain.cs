@@ -31,6 +31,7 @@ internal abstract class StoreReaderGrain(
 {
     private const string KeepAliveReminder = "keep-alive";
 
+    private readonly CancellationTokenSource _stopping = new();
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
 
@@ -57,7 +58,7 @@ internal abstract class StoreReaderGrain(
         Partition = partition;
         _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger);
         _poll ??= this.RegisterGrainTimer(
-            cancellationToken => RequestCatchUp(cancellationToken),
+            _ => RequestCatchUp(),
             new GrainTimerCreationOptions
             {
                 DueTime = settings.PollInterval,
@@ -93,17 +94,35 @@ internal abstract class StoreReaderGrain(
 
     Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => RequestCatchUp();
 
-    /// <summary>A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.</summary>
+    /// <summary>
+    /// A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.
+    /// A loop that outlasts the deactivation's budget is cancelled — it stops at its next store call or batch
+    /// boundary — and waited for once more; what the grain reported is withdrawn however the wait ended.
+    /// </summary>
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
-        await Loop.WaitForRunningAsync(cancellationToken);
-        Loop.Withdraw();
-        logger.LogStoreReaderStopped(Consumer, Partition);
+        try
+        {
+            await Loop.WaitForRunningAsync(cancellationToken);
+        }
+        finally
+        {
+            if (Loop.Running is not null)
+            {
+                await _stopping.CancelAsync();
+                await Loop.WaitForRunningAsync(CancellationToken.None);
+            }
+
+            Loop.Withdraw();
+            logger.LogStoreReaderStopped(Consumer, Partition);
+        }
+
         await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
     /// <summary>Applies a batch in order and returns the index of the first entry that did not apply.</summary>
     protected abstract Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken);
 
-    private Task<int> RequestCatchUp(CancellationToken cancellationToken = default) => Loop.RequestCatchUp(ApplyBatchAsync, () => Suspended, cancellationToken);
+    /// <summary>Every loop, whoever requested it, runs under the activation's lifetime, so a deactivation can stop it.</summary>
+    private Task<int> RequestCatchUp() => Loop.RequestCatchUp(ApplyBatchAsync, () => Suspended, _stopping.Token);
 }

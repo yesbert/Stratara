@@ -39,6 +39,9 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
 
     public ValidateOptionsResult Validate(string? name, OrleansDispatchOptions options) => Result<OrleansDispatchOptions>(
         Positive(options.CompletionWindow, nameof(options.CompletionWindow)),
+        options.CompletionWindow <= IntentCompletionQueue.LongestWindow
+            ? null
+            : $"{nameof(options.CompletionWindow)} ({options.CompletionWindow}) must be at most {IntentCompletionQueue.LongestWindow}.",
         Positive(options.CompletionBatchSize, nameof(options.CompletionBatchSize)),
         options.IntentGrace > options.CompletionWindow
             ? null

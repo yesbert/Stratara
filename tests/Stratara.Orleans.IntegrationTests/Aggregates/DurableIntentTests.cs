@@ -37,7 +37,7 @@ public sealed class DurableIntentTests(PostgreSqlFixture postgres, RedisFixture 
         var failing = Guid.NewGuid();
         var after = Guid.NewGuid();
 
-        var host = await PocHostProcess.StartAsync("intent", environment);
+        await using var host = await PocHostProcess.StartAsync("intent", environment);
         await EnqueueAsync(host, $"enqueue-failing {failing}");
         await EnqueueAsync(host, $"enqueue {after} {HandlerDelayMs}");
         host.Kill();
@@ -71,7 +71,7 @@ public sealed class DurableIntentTests(PostgreSqlFixture postgres, RedisFixture 
         var environment = await EnvironmentForAsync("poc_intent_order", siloPort: 11186, gatewayPort: 30075);
         var target = Guid.NewGuid();
 
-        var host = await PocHostProcess.StartAsync("intent", environment);
+        await using var host = await PocHostProcess.StartAsync("intent", environment);
         await EnqueueAsync(host, $"enqueue-ordered {target} 1 {HandlerDelayMs}");
         await EnqueueAsync(host, $"enqueue-ordered {target} 2 0");
         Assert.Equal(string.Empty, await host.SendAsync($"order {target}"));
@@ -108,7 +108,7 @@ public sealed class DurableIntentTests(PostgreSqlFixture postgres, RedisFixture 
         {
             var aggregateId = Guid.NewGuid();
 
-            var host = await PocHostProcess.StartAsync("intent", environment);
+            await using var host = await PocHostProcess.StartAsync("intent", environment);
             await EnqueueAsync(host, $"{enqueueCommand} {aggregateId} {HandlerDelayMs}");
             Assert.Equal("false", await host.SendAsync($"applied {aggregateId}"));
             host.Kill();

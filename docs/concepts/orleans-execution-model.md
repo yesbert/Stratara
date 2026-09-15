@@ -16,7 +16,7 @@ actors on an Orleans cluster, so that a committed fact is never lost to a crash,
 writer across the whole deployment, and work that must happen once per cluster needs no lock.
 
 It ships as two packages: `Stratara.Orleans`, the runtime, and `Stratara.Orleans.EntityFrameworkCore`,
-the persistence it needs. Both follow Orleans 10.3.x.
+the persistence it needs. Both depend on Orleans 10.3.1 or a later 10.x release.
 
 ## What the model guarantees
 

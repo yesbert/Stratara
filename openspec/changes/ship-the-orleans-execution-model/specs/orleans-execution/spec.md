@@ -10,8 +10,7 @@ and work that must happen once per cluster needs no lock.
 
 Where a host has registered the Orleans execution model for commands, a command that names an
 aggregate SHALL run in that aggregate's activation, and two commands naming the same aggregate SHALL
-NOT run concurrently anywhere in the cluster. The activation is registered in a storage-backed
-directory a host provides. Where an unstable cluster produces a second activation regardless, the
+NOT run concurrently anywhere in the cluster. Where an unstable cluster produces a second activation regardless, the
 store's version constraint SHALL still refuse the second writer, so the guarantee degrades to the one
 the bus workers give and never below it. A command that a handler sends for another aggregate SHALL
 run in that other aggregate's activation, not in the sending handler's.
