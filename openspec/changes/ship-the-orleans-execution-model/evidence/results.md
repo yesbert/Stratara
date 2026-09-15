@@ -1,6 +1,7 @@
 # Results
 
-> **Status:** in progress, 2026-09-15. Every number cites its raw directory under `evidence/raw/`.
+> **Status:** complete, 2026-09-15 — performance (7.3) and correctness (7.4) recorded. Every number cites its raw
+> directory under `evidence/raw/` or its workflow run.
 > The comparison is with the archived numbers of `optimise-the-orleans-execution-model`
 > (`openspec/changes/archive/2026-09-14-optimise-the-orleans-execution-model/evidence/results.md`), the run
 > with the built-in directory for aggregate grains, which is what the packages register.
@@ -60,4 +61,27 @@ durable-intent shape is within 4–7 % of the archived numbers.
 
 ## Correctness (task 7.4)
 
-*Pending: the integration suite on the packaged projects.*
+`tests/Stratara.Orleans.IntegrationTests` on the packaged projects, run by `.github/workflows/integration.yml` via
+`workflow_dispatch` on `feature/ship-the-orleans-execution-model` at commit `fdb5c8e` (the lease fix included),
+three runs in a row on the hosted Ubuntu runner:
+
+| Run | Duration | Orleans integration tests | RabbitMQ integration tests |
+|---|---|---|---|
+| `34969157789` | 24m37s | 56 / 56 | 42 / 42 |
+| `34971671299` | 25m36s | 56 / 56 | 42 / 42 |
+| `34974373060` | 24m37s | 56 / 56 | 42 / 42 |
+
+The archived suite had 37 Orleans tests. The 19 added cases cover:
+- the mediator pipeline on the intent path, and a command a handler sends for another aggregate;
+- the commit-order readers' model names and the partition-counter backfill;
+- the start check for the storage-backed directory;
+- the replay and the single-projection rebuild with store readers;
+- reentrant timers;
+- placement of singleton work;
+- the two-silo kills: singleton takeover, and a timer registered on the killed silo firing once.
+
+The kill tests run with due times from a start signal and assert that the kill lands before them.
+
+Locally, before the runs: `HardKillTimerTests`, `OwnerCheckedTimerTests`, `TwoSiloKillTests` and
+`SingletonWorkTests` 6 / 6 together; `DurableIntentTests` 7 / 7 after the lease fix; the Orleans unit tests
+79 / 79.

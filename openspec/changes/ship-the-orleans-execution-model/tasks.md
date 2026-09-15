@@ -297,7 +297,8 @@
       green; `SiteMetadataTests` green; the numbers identical to `README.md`.
       Done: the door as a fourth in a two-by-two grid (its excerpt marked `stratara-snippet-ignore`, pointing at
       the migration page), a full-width feature card first in *What is in the box* linking the concept page, and a
-      second numbers block with the README's B3 values and the processor-time row. The growth figure is unchanged;
+      second numbers block with the README's B3 values and the processor-time row; the README's memory row is left
+      off the landing page (owner decision 2026-09-15: four tiles fill the grid). The growth figure is unchanged;
       the task names no step for the landing page. `docfx build docs/docfx.json --warningsAsErrors` green (0
       warnings), documentation tests 699/699 including `SiteMetadataTests`.
 - [x] 6.6 `docs/getting-started/choose-an-execution-model.md`, derived from `orleans-execution` and
@@ -312,10 +313,11 @@
 
 ## 7. Tests and evidence (D14, D25)
 
-- [ ] 7.1 The scenario host's path from build-time metadata with an environment fallback; the integration
+- [x] 7.1 The scenario host's path from build-time metadata with an environment fallback; the integration
       project builds the host; the scenario-host step leaves `.github/workflows/integration.yml`. Verify:
       the workflow green without the step, and the suite green when run from a custom output directory.
-      Implemented, workflow run pending with 7.2 (owner decision 2026-09-15: a scenario library). The scenarios, the
+      Done: `integration.yml` green without the step, three runs on the branch (see 7.2) (owner decision 2026-09-15:
+      a scenario library). The scenarios, the
       silo and store helpers, the probe projections, the heavy-work probes, `PostgresTimerHostSchema` and the container
       fixtures moved from the test project into `tests/Stratara.Orleans.Scenarios`, keeping their namespaces; the
       xUnit collection definition stays in the tests. The scenario host (`Stratara.Orleans.Benchmarks`) and the
@@ -325,9 +327,15 @@
       `CounterViewProjection`, so they register what they did. The scenario-host step left `integration.yml`. Locally:
       `SagaProcessTimeoutTests` 2/2 from a build with `-o /tmp/orleans-custom-out` (the host found through the
       recorded path), `DurableDirectoryCheckTests` and `ArrivalOrderTests` 4/4 from the default output.
-- [ ] 7.2 Kill tests with due times relative to a start signal and asserted preconditions; singleton work
+- [x] 7.2 Kill tests with due times relative to a start signal and asserted preconditions; singleton work
       taken over by the surviving silo; a timer across two silos. Verify: the integration workflow green
       three runs in a row on the branch.
+      Done: `HardKillTimerTests` (due 8 s after a start signal, kill asserted before it with every timer registered
+      and none fired) and `OwnerCheckedTimerTests` (5 s, same preconditions); `TwoSiloKillTests` kills the silo
+      running singleton work and the silo that registered a timer, and the survivor takes the work over and fires
+      the timer once. `PocHostProcess.SendAsync` reports a host that ended with its exit code and log. Locally the
+      four classes 6/6 together. `integration.yml` via `workflow_dispatch` three runs in a row green: `34969157789`
+      (24m37s), `34971671299` (25m36s), `34974373060` (24m37s), each Orleans 56/56 and RabbitMQ 42/42.
 - [x] 7.3 B3 and B5 on the packaged code, production profile, built-in directory, diagnostics on; compared
       with the archived optimised numbers in `evidence/results.md`. Verify:
       `evidence/raw/commands-per-aggregate/` and `evidence/raw/resources/` exist and the comparison is
@@ -342,7 +350,9 @@
       code, 600 an hour earlier). B5
       (`raw/resources/20260915-114914/`) holds: silo 190 / 217 MB, 0.028 idle CPU-s per s, 2.44 CPU-s per 1 000
       commands = +7 % of the bus host (archived +12 %). Both in `evidence/results.md`.
-- [ ] 7.4 `tests/Stratara.Orleans.IntegrationTests` green on the packaged projects, 37 tests plus the new
+- [x] 7.4 `tests/Stratara.Orleans.IntegrationTests` green on the packaged projects, 37 tests plus the new
       cases. Verify: the run's summary in `evidence/results.md`.
+      Done: 56 / 56 (37 plus 19 new cases) in each of the three `integration.yml` runs on `fdb5c8e`, RabbitMQ 42 / 42
+      alongside; the summary and what the new cases cover are in `evidence/results.md` → *Correctness*.
 - [ ] 7.5 `./scripts/local-gauntlet.sh` green; `openspec validate --strict` green; `/bump-version minor`
       queued for after the merge. Verify: the gauntlet's last line and `git diff --stat main`.
