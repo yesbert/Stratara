@@ -18,6 +18,7 @@ public static class PocHostEntry
     {
         ["timers"] = () => new TimersScenario(),
         ["intent"] = () => new IntentScenario(),
+        ["heavy"] = () => new HeavyScenario(),
         ["bus"] = () => new BusScenario(),
         ["projection-bus"] = () => new ProjectionScenario(ProjectionPath.Bus),
         ["projection-bus-durable"] = () => new ProjectionScenario(ProjectionPath.Bus, durableBundles: true),

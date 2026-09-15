@@ -55,6 +55,12 @@ internal static partial class OrleansLog
     public static partial void LogCommandKept(this ILogger logger, Guid intentId, int attempts, string lastFailure);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.PermitReleasedByExpiry,
+        Level = LogLevel.Warning,
+        Message = "Heavy-work permit of unit {UnitId} held by silo {Holder} was released: {Reason}.")]
+    public static partial void LogPermitReleasedByExpiry(this ILogger logger, Guid unitId, string holder, string reason);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.CompletionFlushFailed,
         Level = LogLevel.Warning,
         Message = "Removing {Count} completed intents failed; the drain resumes them and their handlers may run again.")]

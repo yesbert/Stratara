@@ -11,6 +11,7 @@ using Stratara.Contracts.Session;
 using Stratara.Orleans.Aggregates;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
+using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Store;
 
 namespace Stratara.Orleans.IntegrationTests.HeavyWork;
@@ -60,6 +61,86 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
         Assert.True(maxInUse <= ClusterWideLimit, $"heavy work ran {maxInUse} wide, above the limit of {ClusterWideLimit}");
         Assert.True(burstP99 <= Math.Max(2 * baselineP99, baselineP99 + 100), $"interactive p99 under burst {burstP99:F1} ms is outside its range (baseline {baselineP99:F1} ms)");
         await app.StopAsync();
+    }
+
+    /// <summary>
+    /// Task 3.3: a worker silo is killed while its units hold every permit. The permit grain lives on the
+    /// surviving silo, so its record of the permits survives the kill; the permits come back once their
+    /// lease has lapsed or the cluster has declared the worker dead, and the bound is whole again.
+    /// </summary>
+    [Fact]
+    public async Task Permits_held_by_a_killed_worker_silo_are_released_and_the_bound_is_whole_again()
+    {
+        const string clusterId = "stratara-poc-heavy-lease";
+        var orleansConnectionString = postgres.ConnectionStringFor("poc_orleans");
+        await PocSilo.EnsureSchemaAsync(orleansConnectionString);
+
+        using var survivor = await StartPermitHolderAsync(orleansConnectionString, clusterId, siloPort: 11232, gatewayPort: 30121);
+        var permits = survivor.Services.GetRequiredService<IGrainFactory>().GetGrain<IHeavyWorkPermitGrain>(0);
+        Assert.Equal(0, await permits.InUseAsync());
+
+        var store = postgres.ConnectionStringFor("poc_heavy_lease_store");
+        await Timers.PostgresTimerHostSchema.EnsureDatabaseAsync(store);
+        var environment = PocHostSettings.ToEnvironment(store, orleansConnectionString, redis.ConnectionString, rabbit.ConnectionString, siloPort: 11233, gatewayPort: 30122, clusterId: clusterId);
+        var worker = await PocHostProcess.StartAsync("heavy", environment);
+        Assert.Equal("ok", await worker.SendAsync("enqueue-heavy 6 120000"));
+
+        Assert.True(
+            await WaitUntilAsync(async () => await permits.InUseAsync() == HeavyScenario.ClusterWideLimit, TimeSpan.FromSeconds(30)),
+            $"the worker did not take every permit; in use {await permits.InUseAsync()}. Log:{Environment.NewLine}{string.Join(Environment.NewLine, worker.Log.TakeLast(40))}");
+
+        worker.Kill();
+
+        Assert.True(
+            await WaitUntilAsync(async () => await permits.InUseAsync() == 0, HeavyScenario.PermitLease * 4),
+            $"the killed worker's permits were not released; in use {await permits.InUseAsync()}");
+
+        var silo = survivor.Services.GetRequiredService<global::Orleans.Runtime.ILocalSiloDetails>().SiloAddress;
+        var units = Enumerable.Range(0, HeavyScenario.ClusterWideLimit).Select(_ => Guid.NewGuid()).ToList();
+        foreach (var unit in units)
+        {
+            Assert.True(await permits.TryAcquireAsync(unit, silo), "the bound was not whole again");
+        }
+
+        Assert.False(await permits.TryAcquireAsync(Guid.NewGuid(), silo), "the bound admitted more than its limit");
+        foreach (var unit in units)
+        {
+            await permits.ReleaseAsync(unit);
+        }
+
+        await survivor.StopAsync();
+    }
+
+    private async Task<IHost> StartPermitHolderAsync(string orleansConnectionString, string clusterId, int siloPort, int gatewayPort)
+    {
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
+        builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort, clusterId: clusterId));
+        builder.Services.ConfigureStrataraHeavyWork(options =>
+        {
+            options.ClusterWideLimit = HeavyScenario.ClusterWideLimit;
+            options.PermitLease = HeavyScenario.PermitLease;
+        });
+
+        var app = builder.Build();
+        using var startTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await app.StartAsync(startTimeout.Token);
+        return app;
+    }
+
+    private static async Task<bool> WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (await condition())
+            {
+                return true;
+            }
+
+            await Task.Delay(250);
+        }
+
+        return false;
     }
 
     private static async Task<List<double>> MeasureInteractiveAsync(IServiceProvider services)

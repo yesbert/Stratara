@@ -89,13 +89,14 @@ public static class OrleansAggregateServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>Settings for heavy work: the cluster-wide limit and the permit retry.</summary>
+    /// <summary>Settings for heavy work: the cluster-wide limit, the permit retry and the permit lease.</summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">The settings.</param>
     /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection ConfigureStrataraHeavyWork(this IServiceCollection services, Action<HeavyWorkOptions> configure)
     {
         services.AddOptions<HeavyWorkOptions>().Configure(configure);
+        services.TryAddSingleton(TimeProvider.System);
         return services;
     }
 }

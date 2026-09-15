@@ -100,8 +100,12 @@
       Done: `DurableIntentTests` (bound and kept, long handler plain and heavy, order by the recorded aggregate for a
       command that names it only through the interface and seals a note, operator's return) and
       `IntentStoreStartupCheckTests`; integration suite 44/44.
-- [ ] 3.3 Permits as leases reconciled against membership. Verify: `HeavyBurstTests` gains a case where a
+- [x] 3.3 Permits as leases reconciled against membership. Verify: `HeavyBurstTests` gains a case where a
       worker silo is killed holding permits and the bound is whole after the lease.
+      Done: the permit grain records holder silo and expiry per unit and releases a permit whose lease lapsed or whose
+      holder the cluster declared dead, on every acquisition and on its own timer; `HeavyWorkOptions.PermitLease`,
+      renewal at half the lease. `HeavyBurstTests` kills a worker process holding every permit while the permit grain
+      lives on the surviving silo; the bound is whole again after the lease. 2/2.
 - [ ] 3.4 Starters as silo lifecycle participants. Verify: `CoHostingTests` green in both orders with the
       hosted-service starters deleted.
 - [ ] 3.5 Cancellation reaches the store in the reader loop, the checkpoint store, the durable timers and
