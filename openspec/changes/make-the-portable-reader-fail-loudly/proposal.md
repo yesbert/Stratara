@@ -16,8 +16,8 @@ orders by a per-partition counter and is meant for any relational provider, can 
 - Lowering the partition count merges partitions whose positions overlap. The reader refuses the old
   checkpoints and asks for a reset, but after the reset new appends are still skipped until the counter
   passes the merged maximum.
-- When positioning an append fails, the interceptor leaves the transaction it opened behind, and a save
-  retried on the same context fails with an unrelated exception.
+- When positioning an append fails, the interceptor leaves the transaction it opened open on the context
+  until the context saves again or is disposed.
 
 The owner decided (2026-09-16) to make these failures loud now and to defer finishing the portable reader
 — automatic registration, renumbering, tests on other providers — until a user needs a provider other
@@ -32,8 +32,9 @@ than PostgreSQL. Every product built on Stratara today runs on PostgreSQL.
 - **A lowered partition count refuses to start.** A host that reads with the portable reader refuses to
   start when the store holds counter rows for partitions at or above its partition count, naming both.
 - **The interceptor cleans up after itself.** A failure while positioning an append, or while committing,
-  rolls back and releases the transaction the interceptor opened, so a retried save on the same context
-  behaves like a first one.
+  rolls back and releases the transaction the interceptor opened at once, instead of leaving it open on the
+  context until the context saves again or is disposed. (Hardening: during apply a retried save on the same
+  context turned out to work already; see design D3.)
 - **The documentation says what the portable reader is.** Verified on PostgreSQL only; every process that
   appends needs the interceptor; the partition count does not change without renumbering, which the
   framework does not offer. `MaintainPartitionCounter` is documented as what it is: a value a write

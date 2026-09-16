@@ -73,6 +73,14 @@ instead of throwing on an existing key.
 Evidence: `PartitionCounterInterceptor.cs:53-88`; the review's probe against EF Core 10.0.11 (not
 committed).
 
+*Found during apply (2026-09-16):* the review overstated the defect. A save retried on the same context after
+a failed positioning does not fail under the 4.1.1 interceptor: the transaction left behind is still the
+context's current one, so the retry opens none, and `SavedChangesAsync` finds the left-over entry and commits
+it. `PortableReaderFailsLoudlyTests.A_save_whose_positioning_failed_leaves_no_transaction_for_the_next_save_on_the_context`
+passes against both. What remains is a transaction that stays open on a context until the context is disposed
+or saves again — anything else run on that context in between runs inside it. D3 is kept as hardening with that
+test as its regression guard, and is not described as a consumer-visible fix.
+
 ### D4 — `MaintainPartitionCounter` stays, documented as what it is
 
 Its XML documentation says that the framework does not read it: a write context reads it when it decides

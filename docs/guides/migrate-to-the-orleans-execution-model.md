@@ -76,7 +76,14 @@ builder.Services.AddStrataraPortableCounterReader<AppWriteDbContext>();
 ```
 
 The write context must add `PartitionCounterInterceptor` to its interceptors so every append is
-positioned. A store that already holds entries is positioned once, after migrating and before the first
+positioned — in **every process that appends to the store**, not only in the hosts that read. The framework
+does not add it, and `CommitOrderOptions.MaintainPartitionCounter` is only the value a write context reads
+when it decides to. A read stops at an entry appended without a position rather than skipping it: the
+partition stops advancing, the failure names the entry, and positioning it with the backfill lets the
+partition continue. The partition count is fixed once the store holds positions — lowering it would merge
+partitions whose positions overlap, the framework offers no renumbering, and a host refuses to start with a
+count lower than the store's counters. The portable reader is verified on PostgreSQL only; on PostgreSQL the
+native reader is the one to use. A store that already holds entries is positioned once, after migrating and before the first
 start, with `PartitionCounterBackfill.RunAsync`; the host refuses to start while an entry without a
 position remains. Running the backfill again changes nothing. A checkpoint the portable reader wrote
 before a backfill is no longer meaningful and must be reset.
