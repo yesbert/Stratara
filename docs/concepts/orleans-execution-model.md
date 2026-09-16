@@ -24,7 +24,9 @@ the persistence it needs. Both depend on Orleans 10.3.1 or a later 10.x release.
 and two commands for the same aggregate never run at the same time anywhere in the cluster. A command
 a handler sends for another aggregate runs in that aggregate's activation. If an unstable cluster
 activates an aggregate twice anyway, the store's version constraint refuses the second writer, so the
-guarantee never falls below the one the bus workers give.
+guarantee never falls below the one the bus workers give. Heavy commands are the exception: they run in
+their own bounded pool beside the aggregate's other commands, keep no order with them, and where both
+append the version constraint refuses the later one, which is resumed like any failing command.
 
 **An accepted command is not lost.** The execution model's command dispatcher records a command
 durably before the dispatch returns and hands it to its activation afterwards. A host that dies in

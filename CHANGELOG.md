@@ -28,8 +28,28 @@ applies to the entire NuGet family.
 - **The documentation states when a read store can be shared.** Checkpoints are keyed by consumer, not
   by deployment: deployments sharing a read store need distinct projection names, and at most one of
   them runs `AddStrataraSagaGrains`.
+- **Orleans: heavy commands are specified as running outside their aggregate's turn and order.** They
+  always ran in their own bounded pool beside the aggregate's other commands; the specification promised
+  otherwise. Their hand-over no longer holds the per-aggregate send order either: a command dispatched after
+  a heavy command for the same aggregate no longer waits for it, and two due heavy commands on one aggregate
+  no longer hold up the drain's resume pass. Where a heavy command and another command on the same aggregate
+  both append, the store's version check refuses the later one, which is resumed like any failing command.
+- **Orleans: a recorded command is stored under a kind of its own.** No bus outbox drain reads it any more.
+  Commands recorded under 4.1.0 are still resumed; stop every bus outbox worker before upgrading hosts that
+  record commands.
 
 ### Fixed
+
+- **Orleans: the outbox drain no longer publishes recorded commands to the bus.** It chose between resuming
+  recorded commands and publishing stored commands by whether the execution model's dispatcher was
+  registered on its own silo, and the migration guide registers the dispatcher on the API host and the drain
+  on the silos. Such a silo handed every recorded command — kept ones included — to the bus: commands ran
+  twice, kept commands came back, the attempt bound did not hold. The drain now resumes recorded commands
+  wherever an intent store is registered and warns (`117_111`) where recorded commands exist but none is.
+  Register `AddStrataraIntentStore` on the silos that run the drain.
+- **Orleans: a durable timer fires once however long its handler runs.** A handler that outlasted the
+  reminder call's response timeout was started again by the next tick. A tick that arrives while the same
+  timer's handler runs now does nothing, and a tick confirms its timer is still registered before firing.
 
 - **Orleans: two writers of the same first checkpoint no longer fail one of them.** When an
   activation and its successor overlap during a failover, both can find no checkpoint row and both

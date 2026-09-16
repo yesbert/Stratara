@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Mediator;
@@ -23,7 +24,8 @@ namespace Stratara.Orleans.Aggregates;
 /// changes what "accepted" means for a host that dies: the bus loses the message it had not yet
 /// published, this loses nothing and may run a handler twice. Handlers are already expected to
 /// tolerate a second delivery. While a replay is active, commands are recorded and not handed over,
-/// as the bus dispatcher does. Hand-overs to one aggregate from one scope keep their order.
+/// as the bus dispatcher does. Hand-overs to one aggregate from one scope keep their order; a heavy command runs
+/// outside its aggregate's turn and order, so its hand-over neither waits for the calls before it nor holds the ones after it.
 /// </remarks>
 internal sealed class OrleansCommandDispatcher(
     IntentRecorder recorder,
@@ -42,7 +44,7 @@ internal sealed class OrleansCommandDispatcher(
         var aggregateId = (command as IAggregateScopedCommand)?.AggregateId;
 
         var recorded = recorder.RecordAsync(intentId, command, session, aggregateId, heavy, cancellationToken);
-        var issued = lane.SendAsync(aggregateId ?? intentId, recorded, payload =>
+        var issued = lane.SendAsync(AggregateSendLane.KeyOf(intentId, aggregateId, heavy), recorded, payload =>
             replayState.IsReplayActive ? Task.CompletedTask : handOver.HandOverAsync(intentId, payload, heavy, aggregateId));
 
         (await issued).Ignore();
@@ -96,6 +98,20 @@ internal sealed class IntentResumer(
     private readonly TimeSpan _grace = options.Value.IntentGrace;
     private readonly int _maxAttempts = retry.Value.MaxDeliveryAttempts;
 
+    /// <summary>
+    /// A resumer for a silo that runs the drain but does not dispatch commands itself: the grace and the attempt
+    /// bound come from the options registered there, as on a dispatching host.
+    /// </summary>
+    public static IntentResumer Create(IServiceProvider services, ICommandIntentStore intents) =>
+        services.GetService<IntentResumer>() ?? new IntentResumer(
+            intents,
+            new IntentHandOver(services.GetRequiredService<IGrainFactory>()),
+            new AggregateSendLane(),
+            services.GetService<IOptions<OrleansDispatchOptions>>() ?? Options.Create(new OrleansDispatchOptions()),
+            services.GetService<IOptions<MessageRetryOptions>>() ?? Options.Create(new MessageRetryOptions()),
+            services.GetService<TimeProvider>() ?? TimeProvider.System,
+            services.GetRequiredService<ILogger<IntentResumer>>());
+
     public async Task<int> ResumeDueAsync(int batchSize, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
@@ -121,7 +137,7 @@ internal sealed class IntentResumer(
             var payload = new AggregateCommandEnvelope(intent.Envelope.CommandTypeName, intent.Envelope.CommandJson, intent.Envelope.SessionContextJson);
             try
             {
-                var issued = await lane.SendAsync(intent.AggregateId ?? intent.Id, Task.FromResult(payload), issue =>
+                var issued = await lane.SendAsync(AggregateSendLane.KeyOf(intent.Id, intent.AggregateId, intent.Heavy), Task.FromResult(payload), issue =>
                     handOver.HandOverAsync(intent.Id, issue, intent.Heavy, intent.AggregateId));
                 issued.Ignore();
             }

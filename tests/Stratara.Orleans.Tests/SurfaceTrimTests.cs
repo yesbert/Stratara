@@ -59,6 +59,9 @@ public sealed class SurfaceTrimTests
         repository
             .Setup(r => r.GetManyAsync<CommandEnvelope>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
+        repository
+            .Setup(r => r.GetManyAsync<RecordedIntent>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
         var transaction = new Mock<ITransaction>();
         var unitOfWork = new Mock<IWriteUnitOfWork>();
         unitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(transaction.Object);

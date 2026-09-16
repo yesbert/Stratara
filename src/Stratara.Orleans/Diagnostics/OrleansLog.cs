@@ -89,4 +89,10 @@ internal static partial class OrleansLog
         Level = LogLevel.Warning,
         Message = "Releasing the heavy-work permit of unit {UnitId} failed; its lease releases it.")]
     public static partial void LogPermitReleaseFailed(this ILogger logger, Exception exception, Guid unitId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.RecordedCommandsWithoutIntentStore,
+        Level = LogLevel.Warning,
+        Message = "The outbox drain found commands recorded by the execution model but no intent store is registered on this silo; register AddStrataraIntentStore where the drain runs, or they are not resumed.")]
+    public static partial void LogRecordedCommandsWithoutIntentStore(this ILogger logger);
 }

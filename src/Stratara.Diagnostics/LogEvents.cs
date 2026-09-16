@@ -302,5 +302,7 @@ public static class LogEvents
         public const int PermitRenewalLost = 117_109;
         /// <summary>Releasing a heavy unit's permit failed; its lease releases it (warning).</summary>
         public const int PermitReleaseFailed = 117_110;
+        /// <summary>The outbox drain found recorded commands on a silo without an intent store, so it cannot resume them (warning).</summary>
+        public const int RecordedCommandsWithoutIntentStore = 117_111;
     }
 }
