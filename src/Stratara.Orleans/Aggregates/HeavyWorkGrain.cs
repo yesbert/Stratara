@@ -12,6 +12,11 @@ using Stratara.Orleans.Diagnostics;
 namespace Stratara.Orleans.Aggregates;
 
 /// <summary>Settings for heavy work.</summary>
+/// <remarks>
+/// A heavy command runs outside its aggregate's turn and order: a command naming the same aggregate does not wait
+/// for it, and where both append, the store's version check refuses the later one, which is resumed like any
+/// failing command. Mark a command heavy only where it rarely meets a stream of other commands on its aggregate.
+/// </remarks>
 public sealed class HeavyWorkOptions
 {
     /// <summary>How many heavy units may run at once across the whole cluster.</summary>
@@ -57,7 +62,8 @@ internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
 
 /// <summary>
 /// Heavy work runs here rather than in the aggregate's grain, so a long unit does not hold an
-/// aggregate's turn, and here rather than anywhere, so the number running is bounded: per silo by
+/// aggregate's turn — it runs beside the aggregate's other commands, and the store's version check refuses the
+/// later writer where both append — and here rather than anywhere, so the number running is bounded: per silo by
 /// the worker pool, and across the cluster by the permit grain — the limit a stateless worker's
 /// pool alone cannot give. The intent's hand-over is renewed from the moment it arrives, while it
 /// waits for a permit and while it runs, and it is completed after the handler, so a crash in between

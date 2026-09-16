@@ -43,7 +43,7 @@ three defects that reach every deployment regardless of its store and its commit
     from one scope are not ordered.
   - A command recorded under 4.1.0 and still in storage when a host upgrades is resumed by the upgraded
     drain; the guide says to let a bus drain run nowhere while such records exist.
-- No schema change, no migration, no new public type or member.
+- No schema change, no migration. One new log event id, `LogEvents.Orleans.RecordedCommandsWithoutIntentStore`; no other new public type or member.
 
 ## Capabilities
 

@@ -89,7 +89,7 @@ Each role is one call after the composite the host already has.
 |---|---|---|
 | API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order |
 | Command worker (`AddCommandWorkerServices`) | `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain. Register it after every other pipeline behaviour |
-| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind; the Redis outbox lock is no longer needed |
+| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>()` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. A silo that changes `OrleansDispatchOptions.IntentGrace` on the API host configures the same value. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
 | Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>` |
 | Heavy command worker (`AddHeavyCommandWorkerServices`) | `ConfigureStrataraHeavyWork(o => o.ClusterWideLimit = …)` | Heavy commands run in a bounded pool per silo under cluster-wide permits; the heavy lane and its host go |
@@ -97,7 +97,10 @@ Each role is one call after the composite the host already has.
 
 Retire the bus outbox worker before the first host records commands through the execution model's
 dispatcher. The recorded commands wait in the same outbox table, and an outbox worker that still runs
-publishes them to the bus as well, so their handlers run on both paths.
+publishes them to the bus as well, so their handlers run on both paths. From the release after 4.1.0 a recorded command is
+stored under a kind of its own that no bus drain reads; a command recorded under 4.1.0 still carries the
+bus command kind, so stop every bus outbox worker before upgrading hosts that record commands, and keep it
+stopped until those records are gone.
 
 During a rollout a host can run both models at once — the bus consumer and the grains both apply
 idempotently. `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` take `hybrid: true` to keep

@@ -10,7 +10,7 @@ namespace Stratara.Orleans.EntityFrameworkCore.Intents;
 
 /// <summary>
 /// The command-intent bookkeeping in the write store's outbox table: a recorded command is an outbox
-/// entry of the command-envelope type, and its resume bookkeeping is the entry's attempt count, hand-over
+/// entry of the execution model's own record type, and its resume bookkeeping is the entry's attempt count, hand-over
 /// time, last failure and kept state. Every operation is one statement on a context of its own.
 /// </summary>
 /// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
@@ -41,7 +41,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var entries = await context.Set<OutboxEntry>().AsNoTracking()
-            .Where(e => e.DataTypeName == CommandTypeName
+            .Where(e => (e.DataTypeName == CommandTypeName || e.DataTypeName == CommandIntentRecord.PreviousCommandTypeName)
                         && e.KeptAt == null
                         && e.Timestamp <= handedOverBefore
                         && (e.LastHandedOverAt == null || e.LastHandedOverAt <= handedOverBefore))
@@ -105,8 +105,15 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     }
 }
 
-/// <summary>The type name a recorded command is stored under, shared by every closed store type.</summary>
+/// <summary>
+/// The type name a recorded command is stored under, shared by every closed store type. It names the execution
+/// model's record rather than the command envelope, so a bus outbox drain — which selects stored commands by the
+/// envelope's type name — never reads one. Records written before the name changed carry the envelope's name and
+/// are still resumed.
+/// </summary>
 internal static class CommandIntentRecord
 {
-    public static readonly string CommandTypeName = typeof(CommandEnvelope).GetQualifiedTypeName();
+    public static readonly string CommandTypeName = typeof(RecordedIntent).GetQualifiedTypeName();
+
+    public static readonly string PreviousCommandTypeName = typeof(CommandEnvelope).GetQualifiedTypeName();
 }

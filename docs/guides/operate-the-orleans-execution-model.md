@@ -130,3 +130,16 @@ within seconds.
 A timer's due time is computed on the host that registered it and its tick runs on a silo with a clock of
 its own. A tick earlier than the due time by less than `DurableTimerOptions.DueTolerance` fires instead of
 waiting a whole retry period.
+
+A timer fires once however long its handler runs. When a handler outlasts the reminder call's response
+timeout, the runtime delivers the next tick while it still runs; that tick does nothing, and the timer is
+unregistered once the handler has completed.
+
+## Heavy commands and their aggregate
+
+A heavy command runs in the bounded heavy-work pool, not in its aggregate's activation, so a long unit
+does not hold back the aggregate's other commands. It therefore keeps no order with them: a command
+dispatched after it for the same aggregate does not wait for it, and where both append, the store's
+version check refuses the later one, which is resumed within `MessageRetryOptions.MaxDeliveryAttempts` like
+any failing command. Mark a command heavy only where it rarely meets a stream of other commands on its
+aggregate.

@@ -19,6 +19,14 @@ internal sealed class AggregateSendLane
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Task> _tails = new();
 
+    /// <summary>
+    /// The key a hand-over is ordered under: its aggregate, or its intent when it names none or is heavy work. Heavy
+    /// work runs outside the aggregate's turn for the length of its unit, so ordering it under the aggregate would
+    /// hold every later call to the aggregate for that long.
+    /// </summary>
+    public static Guid KeyOf(Guid intentId, Guid? aggregateId, bool heavy) =>
+        heavy ? intentId : aggregateId ?? intentId;
+
     /// <summary>How many keys still have a call in flight.</summary>
     public int InFlight
     {

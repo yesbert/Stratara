@@ -32,6 +32,10 @@ internal sealed class TimerOwnerGrain(
     // itself, never while the handler runs, so a handler that reschedules its owner does not wait on its own tick.
     private readonly SemaphoreSlim _changes = new(1, 1);
 
+    // A tick that arrives while the same timer's handler runs — a handler that outlasts the retry period — must not
+    // start the handler again; the timer is only unregistered once its handler has completed.
+    private readonly HashSet<string> _firing = new(StringComparer.Ordinal);
+
     public async Task RegisterAsync(string purpose, DateTimeOffset dueAt, CancellationToken cancellationToken)
     {
         await _changes.WaitAsync(cancellationToken);
@@ -104,6 +108,23 @@ internal sealed class TimerOwnerGrain(
 
     async Task IRemindable.ReceiveReminder(string reminderName, TickStatus status)
     {
+        if (!_firing.Add(reminderName))
+        {
+            return;
+        }
+
+        try
+        {
+            await FireAsync(reminderName);
+        }
+        finally
+        {
+            _firing.Remove(reminderName);
+        }
+    }
+
+    private async Task FireAsync(string reminderName)
+    {
         var (purpose, dueAt) = ReminderName.Decode(reminderName);
         var ownerId = this.GetPrimaryKeyString();
 
@@ -115,7 +136,7 @@ internal sealed class TimerOwnerGrain(
             return;
         }
 
-        if (!TimerDueTime.IsDue(timeProvider, dueAt, _dueTolerance, out var firedAt))
+        if (!TimerDueTime.IsDue(timeProvider, dueAt, _dueTolerance, out var firedAt) || await this.GetReminder(reminderName) is null)
         {
             return;
         }

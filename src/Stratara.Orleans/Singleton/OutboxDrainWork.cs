@@ -1,8 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
+using Stratara.Abstractions.Projections;
 using Stratara.Contracts.Messages;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Projections;
 using Stratara.Abstractions.Singleton;
 
@@ -35,6 +38,7 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
             return;
         }
 
+        await WarnOfRecordedCommandsAsync(cancellationToken);
         await DrainAsync<CommandEnvelope, ICommandOutboxDispatcher>(
             (dispatcher, entries, ct) => dispatcher.EnqueueOutboxEntriesAsync(entries, ct),
             static _ => false,
@@ -47,19 +51,49 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
 
     /// <summary>
     /// On the execution model the commands are resumed from the intent store, which knows which are due
-    /// and how often each has been handed over; the store is not read for them as plain entries.
+    /// and how often each has been handed over; the store is not read for them as plain entries. The
+    /// resume runs wherever an intent store is registered, whether or not this silo also dispatches
+    /// commands, because the commands may have been recorded by another host.
     /// </summary>
-    /// <returns><see langword="true"/> when the registered command dispatcher is the execution model's.</returns>
+    /// <returns><see langword="true"/> when an intent store is registered on this silo.</returns>
     private async Task<bool> ResumeRecordedCommandsAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
-        if (scope.ServiceProvider.GetService<Aggregates.OrleansCommandDispatcher>() is not { } dispatcher)
+        var services = scope.ServiceProvider;
+        if (services.GetService<ICommandIntentStore>() is not { } intents)
         {
             return false;
         }
 
-        await dispatcher.ResumeDueAsync(_options.BatchSize, cancellationToken);
+        if (services.GetService<Aggregates.OrleansCommandDispatcher>() is { } dispatcher)
+        {
+            await dispatcher.ResumeDueAsync(_options.BatchSize, cancellationToken);
+            return true;
+        }
+
+        if (services.GetService<IProjectionReplayState>() is { IsReplayActive: true })
+        {
+            return true;
+        }
+
+        await Aggregates.IntentResumer.Create(services, intents).ResumeDueAsync(_options.BatchSize, cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// A silo without an intent store drains stored commands to the bus; commands the execution model recorded on
+    /// another host are not of that kind and would wait unseen, so their presence is logged.
+    /// </summary>
+    private async Task WarnOfRecordedCommandsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        var recorded = await unitOfWork.CreateOutboxRepository(transaction).GetManyAsync<RecordedIntent>(1, cancellationToken);
+        if (recorded.Count > 0)
+        {
+            scope.ServiceProvider.GetRequiredService<ILogger<OutboxDrainWork>>().LogRecordedCommandsWithoutIntentStore();
+        }
     }
 
     /// <summary>

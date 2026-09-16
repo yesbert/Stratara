@@ -56,7 +56,7 @@ Evidence: `CommandIntentStore.cs:21,111`; `OutboxRepository.cs:67` (the bus side
 
 `OutboxDrainWork` resumes recorded commands when an `ICommandIntentStore` is registered on its silo —
 through an internal resumer it can build from the store and the options, not through the dispatcher
-— and additionally drains bus commands and bundles as today. A silo registered with the drain but no
+— and drains stored bundles, skipping the command bus pass exactly as it did when the dispatcher was registered. (Revised during apply, 2026-09-16: the first draft said it would also drain bus commands; a silo with an intent store belongs to a deployment whose commands are recorded, not published.) A silo registered with the drain but no
 intent store drains bus kinds only; if it finds records of the execution model's kind, it logs a
 warning naming `AddStrataraIntentStore` on each period that finds them, so the miswiring is visible.
 The guide's per-role table registers `AddStrataraIntentStore` on the silos that run the drain.
