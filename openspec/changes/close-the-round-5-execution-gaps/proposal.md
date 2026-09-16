@@ -53,7 +53,8 @@ in a cycle, splits roles across silos, rebuilds twice, or resets against tables 
 - **Renewals run off the activation's scheduler**, so a handler that never yields is still renewed,
   and **a heavy hand-over is leased from its acceptance**, before it waits for a worker or a permit.
 - **Every failed attempt of a recorded command, and every failed hand-over, is logged** with the
-  command's identity and attempt; two new log events under the Orleans band.
+  command's identity, its type and its aggregate; two new log events under the Orleans band. The
+  attempt number stays on the resumption's log line, where it is known.
 - **A projection's readers resume only when the last pauser resumes**, and a rebuild requested while a
   full replay is active is refused with a message.
 - **Every role is placed by role.** A silo publishes in its metadata the roles it registered —

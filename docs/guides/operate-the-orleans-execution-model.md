@@ -53,6 +53,39 @@ builder.UseOrleans(silo => silo
 
 A silo without a directory under that name fails at start and names the call.
 
+## Placement by role
+
+A silo publishes the roles its composition registered — commands with `AddStrataraAggregateGrains`,
+projections with `AddStrataraProjectionGrains`, sagas with `AddStrataraSagaGrains`, timers with
+`AddStrataraDurableTimers` and an `ITimerOwners` — and the grains of a role are placed only on silos that
+publish it: aggregates, command runners and the heavy-work pools on command silos, projection grains on
+projection silos, saga and process grains on saga silos, timer owners on silos that have the timer ports.
+Roles may therefore be split across silos, and a silo that registers a role registers every handler,
+projection, process or timer port of that role. A call for a role no silo of the cluster registered fails
+naming the role and the registration that adopts it, instead of activating where the role is missing.
+Singleton work is placed the same way, on the silos that registered it.
+
+## The response timeout
+
+The runtime's `MessagingOptions.ResponseTimeout` (thirty seconds by default) bounds a caller's wait for one
+grain call. On this model that is the wait for **one forwarded command**: a command a handler sends for
+another aggregate, or a command dispatched through the mediator that names an aggregate. A handler that
+cannot finish inside it is heavy work — mark the command `IHeavyCommand` — or the host sizes the timeout.
+The aggregate's own order is not bounded by it: the commands accepted into one aggregate's order run to the
+end however long the order takes, because the grain runs its order through a one-way call to itself.
+The hand-over of a heavy command or of a command that names no aggregate spans the whole unit, so a unit
+longer than the timeout ends that call with a timeout nobody waits for; it is not logged.
+
+## Sends between aggregates
+
+A handler running for one aggregate may send a command for another; the command runs in the other
+aggregate's activation, after the command running there, and the sender waits for it. The sends must form
+a directed acyclic graph: a send that names an aggregate whose turn is waiting on the sending chain —
+A sends to B, and B's handler sends back to A — is refused at once with a message naming both aggregates,
+B's command fails with the refusal and A's command with B's failure. Nothing waits for the response timeout.
+Where a handler has to reach back, dispatch through `ICommandOutboxDispatcher` instead: the command is
+recorded and handed over without waiting, in its own turn.
+
 ## Kept commands
 
 A recorded command whose handler keeps failing is resumed up to `MessageRetryOptions.MaxDeliveryAttempts`
@@ -73,12 +106,19 @@ SET kept_at = NULL, attempt_count = 0
 WHERE id = @id AND kept_at IS NOT NULL;
 ```
 
+A failing handler is seen before the command is kept: every attempt that fails is logged as `117_112`
+with the command's identity, its type and the aggregate it names, and a hand-over that fails as `117_113`;
+the resumption that follows logs `117_004` with the attempt number, and the keep logs `117_104`.
+
 ## A partition that stops advancing
 
 An entry a projection or saga cannot apply stops its partition. The checkpoint stays before the entry,
-the failure is logged with the entry's identity and counted, and the entry is tried again on every wake-up
-and poll — nothing after it in that partition advances until it passes. The event identifiers are listed
-in the [log events schema](../reference/log-events-schema.md). A missing prerequisite from another
+the failure is logged with the entry's identity (`117_101`, every attempt `117_102`) and counted in
+`orleans.reader.stalled`, and the entry is tried again on every wake-up and poll — nothing after it in
+that partition advances until it passes. A read that fails before any entry applied — the store
+unreachable, a checkpoint the reader refuses — counts as a stall of the same partition and is logged as
+`117_103`, whichever wake-up or poll started it; the next one reads again. The event identifiers are
+listed in the [log events schema](../reference/log-events-schema.md). A missing prerequisite from another
 partition is retried under the preceding-fact policy in the same way.
 
 Under the portable reader a partition also stops at an entry that has **no partition position**: a process
@@ -87,6 +127,25 @@ appended it without `PartitionCounterInterceptor`. The logged failure names the 
 `PartitionCounterBackfill.RunAsync` once; the partition continues from where it stopped. A host that refuses
 to start naming a partition counter beyond its partition count was configured with a lower count than the
 store was counted with; restore the count.
+
+## What to watch
+
+Every instrument is published under the meter `Stratara` with the names in
+`ApplicationDiagnostics.Metrics`, tagged with the projection and the partition where they apply:
+
+| Instrument | What it says | Alert when |
+|---|---|---|
+| `orleans.reader.stalled` | Partitions currently stopped at an entry or a failed read | above zero for longer than a retry deserves |
+| `orleans.reader.lag` | Age of the oldest entry a partition has not applied | above the bound the host promises its read models |
+| `orleans.reader.applied` | Entries applied | flat while `orleans.reader.lag` grows |
+| `orleans.intent.recorded`, `orleans.intent.resumed` | Commands recorded and resumed after a lost hand-over | resumptions climb while nothing was killed — hand-overs are being lost |
+| `orleans.intent.kept` | Commands kept for an operator | every increment |
+| `orleans.completion.flushed`, `orleans.completion.failed` | Completed commands removed, and removals that failed | failures above zero |
+| `orleans.heavy.permits_in_use` | Heavy units running under a permit | at `ClusterWideLimit` for longer than the units take |
+
+The log events to route to an alert: `117_101` and `117_103` (a partition stopped), `117_104` (a command
+kept), `117_111` (recorded commands on a silo without an intent store), `117_112` and `117_113` (a failing
+attempt or hand-over). The whole band is listed in the [log events schema](../reference/log-events-schema.md).
 
 ## Reset what the model keeps
 
@@ -107,12 +166,21 @@ builder.Services.AddStrataraExecutionModelReset<AppReadDbContext>(
         var multiplexer = services.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>();
         var keys = multiplexer.GetServer(multiplexer.GetEndPoints()[0]).Keys(pattern: "*my-cluster*").ToArray();
         return keys.Length == 0 ? 0 : await multiplexer.GetDatabase().KeyDeleteAsync(keys);
-    });
+    },
+    schema: "public");
 
-var report = await app.Services.GetRequiredService<IExecutionModelReset>().ResetAsync();
+await using var scope = app.Services.CreateAsyncScope();
+var report = await scope.ServiceProvider.GetRequiredService<IExecutionModelReset>().ResetAsync();
 ```
 
-Run it while no silo of the cluster runs: a running silo writes its membership and reminders back.
+Run it while no silo of the cluster runs: a running silo writes its membership and reminders back. The
+reset is a scoped service, like the store readers whose names it reads; resolve it from a scope, as
+above — a host built with scope validation on refuses to resolve it from the root. Name the schema the
+runtime's scripts ran under where it is not the connection's default; a reminder or membership table
+absent under that schema fails the reset naming the table, rather than reporting that nothing was
+removed. The three runtime tables are cleared in one transaction; a failure after them — in the
+checkpoint delete or the directory cleanup — leaves the checkpoints and the directory as they were, and
+the reset can be run again.
 
 Resolve it from the host's own composition — the one that calls `AddStrataraProjectionGrains` and
 `AddStrataraSagaGrains`. The checkpoints it removes are those of the projections and sagas registered
@@ -150,3 +218,11 @@ dispatched after it for the same aggregate does not wait for it, and where both 
 version check refuses the later one, which is resumed within `MessageRetryOptions.MaxDeliveryAttempts` like
 any failing command. Mark a command heavy only where it rarely meets a stream of other commands on its
 aggregate.
+
+The pool is as many pools as `HeavyWorkOptions.ClusterWideLimit` needs, eight slots each, placed on silos
+of the command role; the permits bound the cluster. A heavy hand-over is leased from the moment the pool
+accepts it — while it waits for a slot, while it waits for a permit and while it runs — so a burst that
+queues units for longer than `OrleansDispatchOptions.IntentGrace` hands none of them over twice. The
+lease and the permit are renewed from timers of their own, off the activation's scheduler, so a handler
+that computes without yielding is renewed all the same: however long a handler runs, and whether or not it
+yields, it runs once.

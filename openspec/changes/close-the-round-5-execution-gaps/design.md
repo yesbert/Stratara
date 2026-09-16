@@ -90,8 +90,11 @@ target. The failure propagates like any handler failure: B's command fails with 
 command fails with B's failure, both callers see it at once.
 
 The chain is an ordered list of `Guid`s; a command that names no aggregate (`AggregateId` null) adds
-nothing. A recorded intent resumed by the drain starts a fresh chain — it has no caller. A heavy
-command starts its chain with its own aggregate id, so a heavy handler's sends are checked too.
+nothing. A recorded intent — dispatched or resumed — and a heavy hand-over start a fresh chain: nobody
+waits for them, so a cycle through them cannot deadlock, and seeding them from the caller's ambient
+chain would refuse sends that are safe. (Revised during apply: the first draft had the heavy grain seed
+from the caller.) The grain clears the carried key before its one-way self-call, so the runner's
+request context carries no stale chain.
 
 *Rejected: reentrancy (`[Reentrant]`, call-chain reentrancy).* The wait is in the framework's own
 queue (A's runner awaits B while A's `ExecuteAsync` already interleaved and queued), so the runtime's
@@ -104,21 +107,24 @@ Evidence: `AggregateGrainBehavior.cs:35-44`; `AggregateGrain.cs:291,336-355`; Or
 flows with every grain call. Test: an A→B→A cycle on the PostgreSQL store, asserting the message and
 that both calls return well under the response timeout.
 
-### D3 — Renewals run off the activation scheduler; the heavy grain accepts, then runs
+### D3 — Renewals run from timers of their own; the heavy grain accepts, then runs
 
-Both renewal loops are started with `Task.Run` so their `PeriodicTimer` continuations run on the
-thread pool. They touch no grain state: the intent lease renews through a store call on its own
-scope, the permit renewal calls the permit grain through a grain reference, which is legal from any
-thread. Stopping stays as it is (cancel, await).
+*Revised during apply (2026-09-16): the build conventions forbid `Task.Run` in framework code.* Both
+renewals run from a `TimeProvider.CreateTimer` timer: its callback runs on the thread pool, where no
+activation scheduler is captured, and starts one renewal at a time (a tick that finds one running does
+nothing). They touch no grain state: the intent lease renews through a store call on its own scope, the
+permit renewal calls the permit grain through a grain reference, which is legal from any thread.
+Stopping disposes the timer and awaits the renewal in flight.
 
-`HeavyWorkGrain.ExecuteIntentAsync` becomes `[AlwaysInterleave]` and does what the aggregate grain's
-`AcceptIntentAsync` does: start the lease, enqueue the unit into a per-activation queue, and return
-once the lease is renewing. A per-activation worker loop — one activation, `MaxLocalWorkers` slots as
-today's stateless-worker count, now a `SemaphoreSlim` — takes units in order, acquires the permit,
-runs, releases. `[StatelessWorker]` is dropped: one activation per silo holds the queue (the grain is
-keyed by silo through the dispatcher, as the hand-over already targets the local pool), and the
-runtime's request queue no longer holds unleased hand-overs. The lease starts before the wait; a
-crash between acceptance and run leaves a leased record that lapses and is resumed, as today.
+`HeavyWorkGrain.ExecuteIntentAsync` is `[AlwaysInterleave]`: the call starts the lease at once
+(`CommandExecution.RunAsync` starts it before the `around` wrapper runs), then waits for one of the
+activation's `MaxLocalWorkers` slots (a `SemaphoreSlim`), then for a permit, then runs — and the call
+completes when the unit has, which keeps the activation alive and the request observable. The lease
+therefore covers the wait for a slot and for a permit. A hand-over the activation already holds is not
+accepted twice. `[StatelessWorker]` is dropped for the reason D6 gives: a stateless worker is placed on
+the calling silo, which a placement filter cannot move; the grain is instead an ordinary grain keyed by
+pool, with `PoolsFor(ClusterWideLimit)` = ⌈limit ÷ 8⌉ pools spread over the intent ids and placed on
+silos of the command role. With the defaults that is one pool of eight slots under eight permits.
 
 *Rejected: keeping `[StatelessWorker]` and leasing in the resumer before the call.* The resumer
 cannot renew on the worker's behalf once the call is queued, and a lease held by the caller's silo
@@ -159,16 +165,22 @@ model is complete after catch-up.
 
 ### D6 — Placement by role, through the mechanism singleton work already uses
 
-`SingletonWorkPlacement` is generalised into a role placement: one metadata key per role
-(`stratara.role.aggregates`, `.projections`, `.sagas`, `.timers`, `.heavy-work`), published by the
+`SingletonWorkPlacement` is generalised into a role placement (`Hosting/RolePlacement.cs`): one
+metadata key per role (`stratara.role.commands`, `.projections`, `.sagas`, `.timers`), published by the
 registration that adopts the role (`AddStrataraAggregateGrains`, `AddStrataraProjectionGrains`,
-`AddStrataraSagaGrains`, `AddStrataraDurableTimers`, `ConfigureStrataraHeavyWork` or the heavy
-pool's registration), read into the silo metadata at the same point singleton work is. One
-`PlacementFilterStrategy` per role, one director that filters silos on the role's key; `AggregateGrain`
-and the command-runner grain carry the aggregate filter, `ProjectionGrain` the projection filter,
-`SagaGrain` and `SagaProcessGrain` the saga filter, `TimerOwnerGrain` the timer filter, `HeavyWorkGrain`
-and the permit grain the heavy filter. `AddStrataraOrleans` registers every filter, as it registers the
-singleton filter today, because a grain class naming a filter cannot be placed from a silo without it.
+`AddStrataraSagaGrains`, `AddStrataraDurableTimers`), read into the same silo metadata singleton work
+fills. One `PlacementFilterStrategy` per role, one director that filters silos on the role's key;
+`AggregateGrain`, the command-runner grain and `HeavyWorkGrain` carry the commands filter,
+`ProjectionGrain` the projections filter, `SagaGrain` and `SagaProcessGrain` the sagas filter,
+`TimerOwnerGrain` the timers filter. Every registration that adds the directory check also adds the
+filters, because a grain class naming a filter cannot be placed from a silo without it.
+
+*Revised during apply:* heavy work is not a role of its own — heavy handlers are command handlers, so
+the heavy pools follow the commands role; `ConfigureStrataraHeavyWork` stays a settings call. The
+timers role is published only where an `ITimerOwners` is registered (decided when the silo builds its
+metadata), so an API silo that calls `AddStrataraDurableTimers` to *register* timers, with its owners
+elsewhere, hosts no timer owner. The permit grain keeps its durable directory and no filter: it holds
+only the permit bookkeeping and the options of the silo it lands on, as before.
 
 When the filter leaves no silo, the runtime throws at placement; the director wraps that with a message
 naming the role and the registration that adopts it, so the caller reads *no silo of the cluster

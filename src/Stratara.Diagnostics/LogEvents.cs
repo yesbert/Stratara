@@ -304,5 +304,9 @@ public static class LogEvents
         public const int PermitReleaseFailed = 117_110;
         /// <summary>The outbox drain found recorded commands on a silo without an intent store, so it cannot resume them (warning).</summary>
         public const int RecordedCommandsWithoutIntentStore = 117_111;
+        /// <summary>One attempt to run a recorded command failed; the failure is recorded with it and it is resumed within its bound (warning).</summary>
+        public const int IntentAttemptFailed = 117_112;
+        /// <summary>Handing a recorded command to its grain failed; the drain hands it over again after the grace (warning).</summary>
+        public const int HandOverFailed = 117_113;
     }
 }

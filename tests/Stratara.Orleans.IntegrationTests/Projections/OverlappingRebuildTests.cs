@@ -17,23 +17,26 @@ using Stratara.Projections.Abstractions;
 namespace Stratara.Orleans.IntegrationTests.Projections;
 
 /// <summary>
-/// Task 5.4: a projection rebuilt on a real store while its readers run. A truncation that empties the model and
-/// then throws leaves the checkpoints at the beginning, so the readers re-read every fact and fill the model again
-/// without a new fact arriving; a rebuild that succeeds does the same.
+/// Scenario <em>A projection is asked to rebuild twice at once</em>: two rebuilds of one projection overlap — the
+/// second truncates while the first has already resumed the readers. With a pause that was a flag, the readers
+/// re-read and advanced their checkpoints between the two truncations, and the second truncation emptied the model
+/// for good. With a pause that is a count, the readers resume only when both have finished, and the model is
+/// complete once they have caught up.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
-public sealed class RebuildEndToEndTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
+public sealed class OverlappingRebuildTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
 {
-    private const int Streams = 3;
+    private const int Streams = 4;
     private const int FactsPerStream = 3;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan Settle = TimeSpan.FromSeconds(8);
 
     [Fact]
-    public async Task A_failed_and_a_successful_rebuild_both_refill_the_model_from_the_beginning()
+    public async Task Two_overlapping_rebuilds_leave_the_model_complete()
     {
         var control = new RebuildProbeControl();
-        var read = postgres.ConnectionStringFor("poc_rebuild_read");
-        using var app = await StartAsync(control, read, siloPort: 11281, gatewayPort: 30171);
+        var read = postgres.ConnectionStringFor("poc_overlap_read");
+        using var app = await StartAsync(control, read, siloPort: 11314, gatewayPort: 30204);
         var tenantId = Guid.NewGuid();
 
         foreach (var streamId in Enumerable.Range(0, Streams).Select(_ => Guid.NewGuid()))
@@ -46,22 +49,25 @@ public sealed class RebuildEndToEndTests(PostgreSqlFixture postgres, RedisFixtur
         }
 
         var expected = Streams * FactsPerStream;
-        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == expected), "the model was not built before the rebuild");
+        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == expected), "the model was not built before the rebuilds");
         var rebuilder = app.Services.GetRequiredService<IProjectionRebuilder>();
 
-        control.FailTruncation = true;
-        await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync(nameof(RebuildProbeProjection)));
-        Assert.True(control.Truncations >= 1, "the rebuild never reached the truncation");
-        Assert.True(
-            await WaitUntilAsync(async () => await CountAsync(app.Services) == expected),
-            $"after the failed rebuild the readers did not re-read from the beginning; {await CountAsync(app.Services)} of {expected} rows");
+        control.HoldTruncationNumber = 2;
+        var first = rebuilder.RebuildAsync(nameof(RebuildProbeProjection));
+        var second = rebuilder.RebuildAsync(nameof(RebuildProbeProjection));
+        await Task.WhenAny(first, second);
+        Assert.True(await WaitUntilAsync(() => Task.FromResult(control.Truncations == 2)), "the second truncation was never reached");
+        await Task.Delay(Settle);
+        var rowsWhileTheSecondStillHeld = await CountAsync(app.Services);
+        control.HoldTruncation.TrySetResult();
+        await Task.WhenAll(first, second);
 
-        control.FailTruncation = false;
-        await rebuilder.RebuildAsync(nameof(RebuildProbeProjection));
         Assert.True(
             await WaitUntilAsync(async () => await CountAsync(app.Services) == expected),
-            $"after the rebuild the model was not refilled; {await CountAsync(app.Services)} of {expected} rows");
-        Assert.Equal(2, control.Truncations);
+            $"after two overlapping rebuilds the model holds {await CountAsync(app.Services)} of {expected} rows ({rowsWhileTheSecondStillHeld} while the second rebuild still held its truncation)");
+        await Task.Delay(Settle);
+        Assert.Equal(expected, await CountAsync(app.Services));
+        TestContext.Current.TestOutputHelper?.WriteLine($"{rowsWhileTheSecondStillHeld} rows while the second rebuild held its truncation, {expected} after both");
 
         await app.StopAsync();
     }
@@ -74,7 +80,7 @@ public sealed class RebuildEndToEndTests(PostgreSqlFixture postgres, RedisFixtur
         var builder = PocHosting.CreateBuilder();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor("poc_rebuild_store"),
+            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor("poc_overlap_store"),
             ["ConnectionStrings:rabbitmq"] = rabbit.ConnectionString,
         });
         builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));
@@ -155,78 +161,5 @@ public sealed class RebuildEndToEndTests(PostgreSqlFixture postgres, RedisFixtur
         }
 
         return false;
-    }
-}
-
-/// <summary>
-/// Whether the probe's next truncation fails after emptying the model, what it waits for before emptying it, and
-/// how many truncations ran.
-/// </summary>
-public sealed class RebuildProbeControl
-{
-    private int _truncations;
-
-    public bool FailTruncation { get; set; }
-
-    /// <summary>The truncation with this number counts itself, then waits on <see cref="HoldTruncation"/> before it empties the model.</summary>
-    public int? HoldTruncationNumber { get; set; }
-
-    public TaskCompletionSource HoldTruncation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    public int Truncations => _truncations;
-
-    public int CountTruncation() => Interlocked.Increment(ref _truncations);
-}
-
-/// <summary>
-/// One row per fact, idempotent by stream and version, in a table of its own. Every host of this assembly that
-/// discovers its projections registers the probe as well; without a <see cref="RebuildProbeControl"/> it is
-/// inert, so those hosts need neither its table nor its control.
-/// </summary>
-public sealed class RebuildProbeProjection(IServiceProvider services) : IRebuildableProjection
-{
-    private readonly RebuildProbeControl? _control = services.GetService<RebuildProbeControl>();
-
-    public async Task TruncateAsync(CancellationToken cancellationToken)
-    {
-        if (_control is null)
-        {
-            return;
-        }
-
-        var number = _control.CountTruncation();
-        if (number == _control.HoldTruncationNumber)
-        {
-            await _control.HoldTruncation.Task.WaitAsync(cancellationToken);
-        }
-
-        await using (var context = await ContextFactory().CreateDbContextAsync(cancellationToken))
-        {
-            await context.Database.ExecuteSqlRawAsync("DELETE FROM poc_rebuild_probe", cancellationToken);
-        }
-
-        if (_control.FailTruncation)
-        {
-            throw new InvalidOperationException("the probe's truncation failed after emptying the model");
-        }
-    }
-
-    public Task HandleAsync(IEvent<CounterCreated> @event, CancellationToken cancellationToken) => RecordAsync(@event, cancellationToken);
-
-    public Task HandleAsync(IEvent<CounterIncremented> @event, CancellationToken cancellationToken) => RecordAsync(@event, cancellationToken);
-
-    private IDbContextFactory<PocReadDbContext> ContextFactory() => services.GetRequiredService<IDbContextFactory<PocReadDbContext>>();
-
-    private async Task RecordAsync(IEvent @event, CancellationToken cancellationToken)
-    {
-        if (_control is null)
-        {
-            return;
-        }
-
-        await using var context = await ContextFactory().CreateDbContextAsync(cancellationToken);
-        await context.Database.ExecuteSqlAsync(
-            $"INSERT INTO poc_rebuild_probe (stream_id, version) VALUES ({@event.StreamId}, {@event.Version}) ON CONFLICT (stream_id, version) DO NOTHING",
-            cancellationToken);
     }
 }

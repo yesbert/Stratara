@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Orleans.Runtime;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
@@ -38,10 +39,31 @@ internal sealed class AggregateGrainBehavior<TRequest>(
             return;
         }
 
+        if (AggregateTurn.Encloses(scoped.AggregateId))
+        {
+            throw new InvalidOperationException(AggregateTurn.CycleMessage(scoped.AggregateId));
+        }
+
         var session = sessionContextProvider.Current ?? throw new InvalidOperationException("Session context is not set");
         var grain = grainFactory.GetGrain<IAggregateGrain>(scoped.AggregateId);
-        var call = await lane.SendAsync(scoped.AggregateId, BuildEnvelopeAsync(request, session, cancellationToken), grain.ExecuteAsync);
-        await call;
+        var carried = AggregateTurn.Carry();
+        if (carried is not null)
+        {
+            RequestContext.Set(AggregateTurn.RequestContextKey, carried);
+        }
+
+        try
+        {
+            var call = await lane.SendAsync(scoped.AggregateId, BuildEnvelopeAsync(request, session, cancellationToken), grain.ExecuteAsync);
+            await call;
+        }
+        finally
+        {
+            if (carried is not null)
+            {
+                RequestContext.Remove(AggregateTurn.RequestContextKey);
+            }
+        }
     }
 
     private async Task<AggregateCommandEnvelope> BuildEnvelopeAsync(TRequest request, SessionContext session, CancellationToken cancellationToken) =>

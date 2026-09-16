@@ -127,9 +127,13 @@ What to know when you read them:
   `saga.inflight` goes up when a bundle starts and down when it finishes, whatever the outcome. If it
   keeps rising, the saga lane cannot keep up with the rate events arrive. The projection instruments
   work the same way, apart from the in-flight gauge, which sagas alone have.
-- **Consumer lag is not measured.** No instrument tells you how far a projection or a saga trails the
-  event stream, and none should be read as if it did. Projections and sagas have no checkpoint store,
-  so lag can't be measured from these instruments.
+- **Consumer lag is measured only under the Orleans execution model.** On the bus path no instrument
+  tells you how far a projection or a saga trails the event stream, and none of the instruments above
+  should be read as if it did: the bus-fed workers keep no checkpoint. Where a host runs its projections
+  and sagas on the [Orleans execution model](../concepts/orleans-execution-model.md), each reads the
+  store from a checkpoint, and `orleans.reader.lag` reports the age of the oldest entry a partition has
+  not applied while `orleans.reader.stalled` counts the partitions that stopped; see
+  [what to watch](operate-the-orleans-execution-model.md#what-to-watch).
 
 In a test, you can listen to one instrument by its published name:
 

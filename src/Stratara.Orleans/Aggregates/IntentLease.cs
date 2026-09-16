@@ -10,7 +10,8 @@ namespace Stratara.Orleans.Aggregates;
 /// Keeps a running command from becoming due again: renews its hand-over every third of the grace until the
 /// execution ends, so however long the handler runs, the drain does not hand it over a second time, and a single
 /// renewal that fails does not let the hand-over lapse. A renewal that fails is logged and skipped; the next one
-/// tries again.
+/// tries again. The renewals run from a timer of their own, off the scheduler the lease was started on: a handler
+/// that blocks its activation's scheduler — computing without awaiting — is renewed all the same.
 /// </summary>
 /// <remarks>
 /// A command handed over moments after it was recorded is not renewed when execution starts: its record time holds
@@ -27,7 +28,9 @@ internal sealed class IntentLease : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly Guid _intentId;
     private readonly CancellationTokenSource _stop = new();
-    private Task _renewing = Task.CompletedTask;
+    private ITimer? _timer;
+    private volatile Task _inFlight = Task.CompletedTask;
+    private int _renewing;
 
     private IntentLease(ICommandIntentStore intents, TimeProvider timeProvider, ILogger logger, Guid intentId)
     {
@@ -52,7 +55,8 @@ internal sealed class IntentLease : IAsyncDisposable
             await lease.RenewAsync(now, CancellationToken.None);
         }
 
-        lease._renewing = lease.RenewUntilStoppedAsync(grace / 3);
+        var period = grace / 3;
+        lease._timer = timeProvider.CreateTimer(static state => ((IntentLease)state!).OnTick(), lease, period, period);
         return lease;
     }
 
@@ -76,9 +80,13 @@ internal sealed class IntentLease : IAsyncDisposable
         return now - DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds) >= grace / 6;
     }
 
-    /// <summary>Records the failure of this attempt with the command; a failure to record it does not hide the original one.</summary>
-    public async Task RecordFailureAsync(Exception failure)
+    /// <summary>
+    /// Logs the failure of this attempt and records it with the command; a failure to record it does not hide the
+    /// original one.
+    /// </summary>
+    public async Task RecordFailureAsync(Exception failure, string commandType, Guid? aggregateId)
     {
+        _logger.LogIntentAttemptFailed(failure, _intentId, commandType, aggregateId);
         try
         {
             await _intents.RecordFailureAsync(_intentId, IntentFailure.Describe(failure), CancellationToken.None);
@@ -89,32 +97,43 @@ internal sealed class IntentLease : IAsyncDisposable
         }
     }
 
+    /// <summary>Stops the renewals: no tick starts after this returns, and the one in flight has ended.</summary>
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync();
-        await _renewing;
+        if (_timer is { } timer)
+        {
+            await timer.DisposeAsync();
+        }
+
+        await _inFlight;
         _stop.Dispose();
     }
 
-    private async Task RenewUntilStoppedAsync(TimeSpan period)
+    /// <summary>A tick on the timer's thread: one renewal at a time; a tick that finds one running does nothing.</summary>
+    private void OnTick()
     {
-        using var timer = new PeriodicTimer(period, _timeProvider);
-        while (await WaitForTickAsync(timer))
+        if (_stop.IsCancellationRequested || Interlocked.CompareExchange(ref _renewing, 1, 0) != 0)
         {
-            await RenewAsync(_timeProvider.GetUtcNow(), _stop.Token);
+            return;
         }
+
+        _inFlight = RenewOnTickAsync();
     }
 
-    /// <summary>Waits for the next renewal; <see langword="false"/> once the lease is stopped.</summary>
-    private async Task<bool> WaitForTickAsync(PeriodicTimer timer)
+    private async Task RenewOnTickAsync()
     {
         try
         {
-            return await timer.WaitForNextTickAsync(_stop.Token);
+            await RenewAsync(_timeProvider.GetUtcNow(), _stop.Token);
         }
         catch (OperationCanceledException)
         {
-            return false;
+            return;
+        }
+        finally
+        {
+            Volatile.Write(ref _renewing, 0);
         }
     }
 

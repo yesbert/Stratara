@@ -15,7 +15,9 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// <summary>
     /// Forwards every command that names an aggregate into that aggregate's grain, where the
     /// command's handler runs in the grain's turn. Call it after every other pipeline behaviour is
-    /// registered: the behaviour it adds must be the innermost one.
+    /// registered: the behaviour it adds must be the innermost one. The silo publishes the command role:
+    /// aggregates, commands that name no aggregate and heavy work are placed only on silos that called this,
+    /// so call it where the command handlers are — every handler of the role, on every silo that registers it.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
@@ -30,8 +32,14 @@ public static class OrleansAggregateServiceCollectionExtensions
     public static IServiceCollection AddStrataraAggregateGrains(this IServiceCollection services)
     {
         services.TryAddScoped<AggregateSendLane>();
-        services.AddTransient(typeof(IPipelineBehavior<>), typeof(AggregateGrainBehavior<>));
+        if (!services.Any(d => d.ImplementationType == typeof(AggregateGrainBehavior<>)))
+        {
+            services.AddTransient(typeof(IPipelineBehavior<>), typeof(AggregateGrainBehavior<>));
+        }
+
         AddIntentCompletion(services);
+        RolePlacement.Publish(services, ExecutionRole.Commands);
+        DurableDirectoryCheck.Register(services);
         return services;
     }
 

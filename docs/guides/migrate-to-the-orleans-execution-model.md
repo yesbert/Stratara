@@ -19,10 +19,14 @@ projections and sagas do not change. What changes is registration.
 ```bash
 dotnet add package Stratara.Orleans
 dotnet add package Stratara.Orleans.EntityFrameworkCore
+dotnet add package Microsoft.Orleans.Clustering.AdoNet
+dotnet add package Microsoft.Orleans.Reminders.AdoNet
+dotnet add package Microsoft.Orleans.GrainDirectory.Redis
 ```
 
 The silo's clustering, reminder and directory providers are the host's choice; the examples below use
-the ADO.NET providers on PostgreSQL and the Redis grain directory.
+the ADO.NET providers on PostgreSQL and the Redis grain directory, which are the three provider packages
+above. `Stratara.Orleans` brings the Orleans runtime and reminders and no provider.
 
 ## Register the silo
 
@@ -37,10 +41,18 @@ builder.UseOrleans(silo => silo
 ```
 
 `AddStrataraOrleans` registers the storage-backed grain directory the model's single-activation grains
-use, under the name it passes to your callback. A silo that runs the model's grains without it fails at
-start with a message naming this call. The ADO.NET providers ship no database scripts: apply Orleans'
-main, clustering and reminders scripts for your database once, in that order, from the Orleans release
-you run.
+use, under the name it passes to your callback, and the placement filters every silo of the model needs.
+A silo that runs the model's grains without it fails at start with a message naming this call. The
+ADO.NET providers create no tables: apply Orleans' main, clustering and reminders scripts for your database
+once, in that order, from the Orleans release you run — for PostgreSQL `PostgreSQL-Main.sql`,
+`PostgreSQL-Clustering.sql` and `PostgreSQL-Reminders.sql`, shipped inside the
+`Microsoft.Orleans.Clustering.AdoNet` and `Microsoft.Orleans.Reminders.AdoNet` packages (in the package's
+folder under your NuGet cache, or in the Orleans repository under `src/AdoNet`). The `orleans` connection
+string may point at the write-store database or at one of its own; the reset needs the same string.
+
+A host that only dispatches commands — an API host — may join the cluster as an Orleans client with
+`UseOrleansClient` instead of running a silo: the dispatcher needs only the grain factory the client
+provides, and the aggregates run on the silos of the command role.
 
 ## Migrate the schema
 
@@ -90,24 +102,30 @@ before a backfill is no longer meaningful and must be reset.
 
 ## Adopt the roles
 
-Each role is one call after the composite the host already has.
+Each role is one call after the composite the host already has. Roles may be split across silos: a silo
+publishes the roles it registers, and the grains of a role are placed only on silos that publish it — see
+[placement by role](operate-the-orleans-execution-model.md#placement-by-role). A silo that registers a role
+registers everything of that role: every command handler with `AddStrataraAggregateGrains`, every
+projection with `AddStrataraProjectionGrains`, every saga and process with `AddStrataraSagaGrains`, and the
+timer owner check and handler with `AddStrataraDurableTimers`.
 
 | Role today | Add after the composite | What changes |
 |---|---|---|
 | API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order |
-| Command worker (`AddCommandWorkerServices`) | `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain. Register it after every other pipeline behaviour |
-| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>()` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. A silo that changes `OrleansDispatchOptions.IntentGrace` on the API host configures the same value. The Redis outbox lock is no longer needed |
+| Command worker (`AddCommandWorkerServices`) | `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register it after every other pipeline behaviour. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
+| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>()` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace` and `MessageRetryOptions.MaxDeliveryAttempts` from its own configuration: give it the values the API host has. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
-| Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>` |
+| Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>`. Processes own durable timers, so the silo runs a reminder service |
 | Heavy command worker (`AddHeavyCommandWorkerServices`) | `ConfigureStrataraHeavyWork(o => o.ClusterWideLimit = …)` | Heavy commands run in a bounded pool per silo under cluster-wide permits; the heavy lane and its host go |
-| Timeouts the host built itself | `AddStrataraDurableTimers()` with one `ITimerOwners` and one `ITimerHandler` | Owner-checked, durable, once per cluster; the host's ports may be registered before or after the model |
+| Timeouts the host built itself | `AddStrataraDurableTimers()` with one `ITimerOwners` and one `ITimerHandler` | Owner-checked, durable, once per cluster; the host's ports may be registered before or after the model. Timer owners are placed only on silos that registered the ports; a silo that calls `AddStrataraDurableTimers` only to register timers hosts none |
 
-Retire the bus outbox worker before the first host records commands through the execution model's
-dispatcher. The recorded commands wait in the same outbox table, and an outbox worker that still runs
-publishes them to the bus as well, so their handlers run on both paths. From the release after 4.1.0 a recorded command is
-stored under a kind of its own that no bus drain reads; a command recorded under 4.1.0 still carries the
-bus command kind, so stop every bus outbox worker before upgrading hosts that record commands, and keep it
-stopped until those records are gone.
+Retire the bus outbox worker **before the first silo with an intent store runs the drain**, not only
+before the first host records commands. The intent store still claims a stored bus command — one the bus
+dispatcher wrote because a publish failed or a replay was active — once it is older than
+`OrleansDispatchOptions.IntentGrace`, so a bus outbox worker running beside such a silo runs that command
+on both paths. Since 4.1.1 a recorded command is stored under a kind of its own that no bus drain reads;
+a command recorded under 4.1.0 still carries the bus command kind, so stop every bus outbox worker before
+upgrading hosts that record commands, and keep it stopped until those records are gone.
 
 During a rollout a host can run both models at once — the bus consumer and the grains both apply
 idempotently. `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` take `hybrid: true` to keep

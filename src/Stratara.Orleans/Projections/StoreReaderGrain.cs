@@ -72,19 +72,13 @@ internal abstract class StoreReaderGrain(
 
     public Task EnsureRunningAsync() => this.RegisterOrUpdateReminder(KeepAliveReminder, settings.KeepAlivePeriod, settings.KeepAlivePeriod);
 
-    /// <summary>Requests a catch-up without waiting for it; a catch-up that fails is logged, and the next wake-up or poll reads again.</summary>
+    /// <summary>
+    /// Requests a catch-up without waiting for it. A catch-up that fails is logged and counted by the loop itself,
+    /// whichever wake-up or poll started it, and the next one reads again.
+    /// </summary>
     public Task NudgeAsync()
     {
-        RequestCatchUp().ContinueWith(
-            static (faulted, state) =>
-            {
-                var (grainLogger, consumer, partition) = ((ILogger, string, int))state!;
-                grainLogger.LogCatchUpFaulted(faulted.Exception!.GetBaseException(), consumer, partition);
-            },
-            (logger, Consumer, Partition),
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Current);
+        RequestCatchUp().Ignore();
         return Task.CompletedTask;
     }
 

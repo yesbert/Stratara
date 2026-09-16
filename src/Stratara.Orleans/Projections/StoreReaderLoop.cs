@@ -43,7 +43,8 @@ internal sealed class StoreReaderLoop(
     private long _position;
     private bool _positionKnown;
     private bool _dirty;
-    private bool _stalled;
+    private bool _stalledOnEntry;
+    private bool _stalledOnRead;
     private Task<int>? _running;
 
     /// <summary>The catch-up in flight, or <see langword="null"/> when none is.</summary>
@@ -58,7 +59,8 @@ internal sealed class StoreReaderLoop(
     /// </summary>
     public void Withdraw()
     {
-        MarkAdvancing();
+        MarkAdvancing(onRead: true);
+        MarkAdvancing(onRead: false);
         StoreReaderLag.Clear(consumer, partition);
     }
 
@@ -156,6 +158,26 @@ internal sealed class StoreReaderLoop(
     /// </summary>
     public async Task<int> CatchUpAsync(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
     {
+        try
+        {
+            return await ReadAndApplyAsync(applyBatch, suspended, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            MarkStalled(onRead: true);
+            logger.LogCatchUpFaulted(ex, consumer, partition);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The catch-up proper. A store that cannot be read, a checkpoint the store refuses or a checkpoint that cannot
+    /// be written throws out of here and is counted and logged by the caller as a stall on the read; an entry that
+    /// cannot be applied is the batch's own affair. The checkpoint for the entries a cut batch applied is written
+    /// with a token of its own, because those entries are applied whether or not the catch-up was cancelled.
+    /// </summary>
+    private async Task<int> ReadAndApplyAsync(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
+    {
         using var scope = scopeFactory.CreateScope();
         var (reader, checkpoints) = Resolve(scope.ServiceProvider);
         var readerName = reader.Name;
@@ -171,6 +193,7 @@ internal sealed class StoreReaderLoop(
         while (!suspended() && !cancellationToken.IsCancellationRequested)
         {
             var batch = await reader.ReadAfterAsync(partition, _position, batchSize, cancellationToken);
+            MarkAdvancing(onRead: true);
             if (batch.Entries.Count == 0)
             {
                 StoreReaderLag.Clear(consumer, partition);
@@ -191,14 +214,14 @@ internal sealed class StoreReaderLoop(
                 var resumeAt = batch.ResumePositionBefore(applied, _position);
                 if (resumeAt != _position)
                 {
-                    await checkpoints.SetAsync(consumer, partition, readerName, resumeAt, cancellationToken);
+                    await checkpoints.SetAsync(consumer, partition, readerName, resumeAt, CancellationToken.None);
                     _position = resumeAt;
                 }
 
                 return total;
             }
 
-            MarkAdvancing();
+            MarkAdvancing(onRead: false);
             await checkpoints.SetAsync(consumer, partition, readerName, batch.Position, cancellationToken);
             _position = batch.Position;
             if (!batch.HasMore)
@@ -246,36 +269,53 @@ internal sealed class StoreReaderLoop(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                MarkStalled();
+                MarkStalled(onRead: false);
                 logger.LogPartitionStalled(ex, consumer, partition, entry.Id, entry.SequenceNumber);
                 return i;
             }
         }
 
-        MarkAdvancing();
+        MarkAdvancing(onRead: false);
         return batch.Entries.Count;
     }
 
-    private void MarkStalled()
+    /// <summary>Whether the partition counts as stalled: on an entry it cannot apply, or on a read it cannot make.</summary>
+    private bool Stalled => _stalledOnEntry || _stalledOnRead;
+
+    private void MarkStalled(bool onRead)
     {
-        if (_stalled)
+        var before = Stalled;
+        if (onRead)
         {
-            return;
+            _stalledOnRead = true;
+        }
+        else
+        {
+            _stalledOnEntry = true;
         }
 
-        _stalled = true;
-        ApplicationDiagnostics.Metrics.OrleansReaderStalled.Add(1, _tags);
+        if (!before)
+        {
+            ApplicationDiagnostics.Metrics.OrleansReaderStalled.Add(1, _tags);
+        }
     }
 
-    private void MarkAdvancing()
+    private void MarkAdvancing(bool onRead)
     {
-        if (!_stalled)
+        var before = Stalled;
+        if (onRead)
         {
-            return;
+            _stalledOnRead = false;
+        }
+        else
+        {
+            _stalledOnEntry = false;
         }
 
-        _stalled = false;
-        ApplicationDiagnostics.Metrics.OrleansReaderStalled.Add(-1, _tags);
+        if (before && !Stalled)
+        {
+            ApplicationDiagnostics.Metrics.OrleansReaderStalled.Add(-1, _tags);
+        }
     }
 
     private static (ICommittedPositionReader Reader, IProjectionCheckpointStore Checkpoints) Resolve(IServiceProvider services) =>

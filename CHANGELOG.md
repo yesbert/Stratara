@@ -16,8 +16,33 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **Orleans: `AddStrataraExecutionModelReset` takes the schema the runtime tables live in.** `schema`
+  defaults to `public`; a reminder or membership table absent under it fails the reset naming the table
+  instead of reporting that nothing was removed, and the three runtime tables are cleared in one transaction.
+- **Orleans: two log events.** `117_112` (`LogEvents.Orleans.IntentAttemptFailed`) for every attempt of a
+  recorded command that fails, with the command's id, type and aggregate; `117_113` (`HandOverFailed`) for a
+  hand-over that fails. A failing handler is seen before its command is kept.
+
 ### Changed
 
+- **Orleans: every role is placed on the silos that registered it.** A silo publishes the roles its
+  composition registers — commands with `AddStrataraAggregateGrains`, projections with
+  `AddStrataraProjectionGrains`, sagas with `AddStrataraSagaGrains`, timers with `AddStrataraDurableTimers`
+  and an `ITimerOwners` — and aggregates, command runners, heavy-work pools, projection, saga, process and
+  timer-owner grains are placed only on silos publishing their role, as singleton work already was. Roles
+  may be split across silos; a call for a role no silo registered fails naming the role and the registration.
+  The heavy-work pool is no longer a stateless worker on the calling silo: it is one pool per eight permits
+  of `HeavyWorkOptions.ClusterWideLimit`, placed on silos of the command role. An API host that only
+  dispatches may join as an Orleans client.
+- **Orleans: a send that would close a cycle between aggregates is refused at once.** A handler running for
+  aggregate A that sends to B, whose handler sends back to A, used to wait for the runtime's response
+  timeout; the send back is now refused with a message naming both aggregates, and both commands fail at
+  once. Sends between aggregates form a directed acyclic graph.
+- **Orleans: a read that fails counts as a stall.** A store that cannot be read, or a checkpoint the reader
+  refuses, is logged as `117_103` and counted in `orleans.reader.stalled` whichever wake-up or poll started
+  the read, not only on a nudge.
 - **Orleans: the portable commit-order reader states its preconditions.** It is verified on PostgreSQL
   only; every process that appends to a store it reads needs `PartitionCounterInterceptor` — the framework
   does not add it, and `CommitOrderOptions.MaintainPartitionCounter` is only the value a write context reads
@@ -26,6 +51,33 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **Orleans: an aggregate's order runs to the end however long it takes.** The grain ran its accepted
+  commands through an ordinary call to itself, which the runtime timed out after `MessagingOptions.ResponseTimeout`
+  (thirty seconds); the grain read the timeout as "the run never started" and failed every command still
+  waiting back to its caller, dropping the leases of the recorded ones. The call is one-way now; the
+  response timeout bounds a caller's wait for one forwarded command only, which the operations guide says.
+- **Orleans: a running command is renewed whether or not its handler yields.** The lease and permit
+  renewals ran on the activation's scheduler, so a heavy handler that computed without awaiting past
+  `IntentGrace` was never renewed, was claimed by the drain and ran a second time. Both renewals run from
+  timers of their own.
+- **Orleans: a heavy hand-over is leased while it waits for a worker.** A burst that queued units for
+  longer than the grace handed the queued ones over twice; the pool accepts a hand-over at once and its
+  lease covers the wait for a slot and a permit. A hand-over the pool already holds is not accepted twice.
+- **Orleans: two rebuilds of one projection no longer interleave.** The pause was a flag: the first rebuild's
+  resume let the readers re-read and advance their checkpoints before the second rebuild truncated, which
+  left the read model empty for good. Pauses are counted, the readers resume when the last pauser resumes,
+  and a rebuild requested during a full replay is refused naming the replay.
+- **Orleans: the reset is resolved from a scope in the documentation and its example.** It is a scoped
+  service; resolving it from the root provider throws wherever scope validation is on.
+- **Orleans: a batch cut short by the reader's shutdown still records the checkpoint for the entries it applied.**
+- **Orleans: the migration guide's package list compiles.** It names `Microsoft.Orleans.Clustering.AdoNet`,
+  `Microsoft.Orleans.Reminders.AdoNet` and `Microsoft.Orleans.GrainDirectory.Redis`, where their SQL scripts
+  are, that the bus outbox worker is retired before the first drain silo with an intent store (the intent
+  store still claims stored bus commands older than the grace), that the saga role needs a reminder service,
+  and which settings the drain silo reads from its own configuration. The `Stratara.Orleans` README quick
+  start no longer keeps the bus-fed projection worker beside the grains; the log events `117_001`–`117_113`
+  and the `orleans.*` instruments are on the reference page and in the operations guide with what to alert
+  on; two pages that still said there is no checkpoint store say where one is.
 - **Orleans: the portable reader stops at an entry without a position instead of skipping it.** An entry
   appended by a process without the interceptor was never read, silently. A read of its partition now fails
   naming the entry, the interceptor and `PartitionCounterBackfill`; the partition stops like any failing

@@ -33,7 +33,8 @@ internal sealed class OrleansCommandDispatcher(
     IntentResumer resumer,
     ISessionContextProvider sessionContextProvider,
     IProjectionReplayState replayState,
-    AggregateSendLane lane) : ICommandOutboxDispatcher
+    AggregateSendLane lane,
+    ILogger<OrleansCommandDispatcher> logger) : ICommandOutboxDispatcher
 {
     /// <inheritdoc/>
     public async Task<Guid> EnqueueCommandAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
@@ -47,7 +48,7 @@ internal sealed class OrleansCommandDispatcher(
         var issued = lane.SendAsync(AggregateSendLane.KeyOf(intentId, aggregateId, heavy), recorded, payload =>
             replayState.IsReplayActive ? Task.CompletedTask : handOver.HandOverAsync(intentId, payload, heavy, aggregateId));
 
-        (await issued).Ignore();
+        IntentHandOver.Observe(await issued, logger, intentId, aggregateId, heavy);
         return intentId;
     }
 
@@ -65,18 +66,49 @@ internal sealed class OrleansCommandDispatcher(
 /// Hands a recorded command to the grain that runs it: heavy work, its aggregate — which accepts it into the
 /// aggregate's order and returns before it runs — or a runner of its own.
 /// </summary>
-internal sealed class IntentHandOver(IGrainFactory grainFactory)
+internal sealed class IntentHandOver(IGrainFactory grainFactory, IOptions<HeavyWorkOptions> heavyWork)
 {
+    private readonly int _pools = HeavyWorkGrain.PoolsFor(heavyWork.Value.ClusterWideLimit);
+
     public Task HandOverAsync(Guid intentId, AggregateCommandEnvelope payload, bool heavy, Guid? aggregateId)
     {
         if (heavy)
         {
-            return grainFactory.GetGrain<IHeavyWorkGrain>(0).ExecuteIntentAsync(intentId, payload);
+            return grainFactory.GetGrain<IHeavyWorkGrain>(PoolOf(intentId)).ExecuteIntentAsync(intentId, payload);
         }
 
         return aggregateId is { } id
             ? grainFactory.GetGrain<IAggregateGrain>(id).AcceptIntentAsync(intentId, payload)
             : grainFactory.GetGrain<ICommandRunnerGrain>(intentId).ExecuteIntentAsync(payload);
+    }
+
+    /// <summary>The pool a heavy intent goes to: spread over the pools by its id.</summary>
+    private long PoolOf(Guid intentId) => (long)(unchecked((uint)intentId.GetHashCode()) % (uint)_pools);
+
+    /// <summary>
+    /// Nobody waits for a hand-over, but a hand-over that fails is logged. A call that spans the whole unit — heavy
+    /// work, or a command that names no aggregate — outlives the runtime's response timeout by design; its timeout
+    /// says nothing about the unit and is not logged.
+    /// </summary>
+    public static void Observe(Task call, ILogger logger, Guid intentId, Guid? aggregateId, bool heavy)
+    {
+        var spansTheUnit = heavy || aggregateId is null;
+        call.ContinueWith(
+            (faulted, state) =>
+            {
+                var (log, id, aggregate, isHeavy, longCall) = ((ILogger, Guid, Guid?, bool, bool))state!;
+                var failure = faulted.Exception!.GetBaseException();
+                if (longCall && failure is TimeoutException)
+                {
+                    return;
+                }
+
+                log.LogHandOverFailed(failure, id, aggregate, isHeavy);
+            },
+            (logger, intentId, aggregateId, heavy, spansTheUnit),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default).Ignore();
     }
 }
 
@@ -105,7 +137,7 @@ internal sealed class IntentResumer(
     public static IntentResumer Create(IServiceProvider services, ICommandIntentStore intents) =>
         services.GetService<IntentResumer>() ?? new IntentResumer(
             intents,
-            new IntentHandOver(services.GetRequiredService<IGrainFactory>()),
+            new IntentHandOver(services.GetRequiredService<IGrainFactory>(), services.GetService<IOptions<HeavyWorkOptions>>() ?? Options.Create(new HeavyWorkOptions())),
             new AggregateSendLane(),
             services.GetService<IOptions<OrleansDispatchOptions>>() ?? Options.Create(new OrleansDispatchOptions()),
             services.GetService<IOptions<MessageRetryOptions>>() ?? Options.Create(new MessageRetryOptions()),
@@ -139,7 +171,7 @@ internal sealed class IntentResumer(
             {
                 var issued = await lane.SendAsync(AggregateSendLane.KeyOf(intent.Id, intent.AggregateId, intent.Heavy), Task.FromResult(payload), issue =>
                     handOver.HandOverAsync(intent.Id, issue, intent.Heavy, intent.AggregateId));
-                issued.Ignore();
+                IntentHandOver.Observe(issued, logger, intent.Id, intent.AggregateId, intent.Heavy);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

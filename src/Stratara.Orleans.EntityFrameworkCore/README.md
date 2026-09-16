@@ -17,9 +17,12 @@ them without further configuration.
 | Part | What it does |
 |---|---|
 | `PostgresTransactionIdReader<TContext>` | Reads in commit order on PostgreSQL, adding no work to an append |
-| `PortableCounterReader<TContext>` | Reads in commit order on any relational provider, through a per-partition counter |
-| `PartitionCounterInterceptor` | Maintains the per-partition counter inside the appending transaction |
+| `PortableCounterReader<TContext>`, `AddStrataraPortableCounterReader<TWriteContext>()` | Reads in commit order on any relational provider, through a per-partition counter; verified on PostgreSQL only |
+| `PartitionCounterInterceptor` | Maintains the per-partition counter inside the appending transaction — in every process that appends |
+| `PartitionCounterBackfill` | Positions the entries a store held before it adopted the counter, once |
 | `AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the checkpoints in the read context |
+| `AddStrataraIntentStore<TWriteContext>()` | Records the commands the execution model's dispatcher accepts, in the outbox table |
+| `AddStrataraExecutionModelReset<TReadContext>()` | Clears reminders, membership, directory and the host's checkpoints while no silo runs |
 
 ## Quick start
 

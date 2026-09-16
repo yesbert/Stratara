@@ -14,13 +14,18 @@ using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Store;
 using Stratara.Orleans.IntegrationTests.Projections;
+using Stratara.Orleans.Singleton;
+using Npgsql;
 
 namespace Stratara.Orleans.IntegrationTests.HeavyWork;
 
 /// <summary>
 /// T6 of the expectations: interactive commands measured alone, then while 500 heavy units of
 /// 200 ms drain through the bounded worker pool. Interactive p99 stays within twice its baseline and
-/// within baseline plus 100 ms; heavy work never exceeds the cluster-wide limit.
+/// within baseline plus 100 ms; heavy work never exceeds the cluster-wide limit. The burst queues units
+/// for far longer than the two-second grace the test configures, and the drain runs beside it: every unit
+/// runs exactly once, because a heavy hand-over is leased from its acceptance, not from its first slot
+/// (scenario <em>A heavy burst queues commands longer than the grace</em>).
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
@@ -31,6 +36,9 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
     private const int HeavyUnits = 500;
     private const int HeavyDelayMs = 200;
     private const int ClusterWideLimit = 4;
+    private const string BurstStore = "poc_heavy_store";
+    private static readonly TimeSpan Grace = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan BurstDrainTimeout = TimeSpan.FromSeconds(120);
 
     [Fact]
     public async Task Interactive_latency_stays_within_its_range_under_a_heavy_burst()
@@ -39,13 +47,14 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
 
         var baseline = await MeasureInteractiveAsync(app.Services);
 
+        var units = Enumerable.Range(0, HeavyUnits).Select(_ => Guid.NewGuid()).ToList();
         await using (var scope = app.Services.CreateAsyncScope())
         {
             scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(NewSession());
             var dispatcher = scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>();
-            for (var i = 0; i < HeavyUnits; i++)
+            foreach (var unit in units)
             {
-                await dispatcher.EnqueueCommandAsync(new HeavyProbe(Guid.NewGuid(), HeavyDelayMs));
+                await dispatcher.EnqueueCommandAsync(new CountedHeavyProbe(unit, HeavyDelayMs));
             }
         }
 
@@ -63,7 +72,22 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
 
         Assert.True(maxInUse <= ClusterWideLimit, $"heavy work ran {maxInUse} wide, above the limit of {ClusterWideLimit}");
         Assert.True(burstP99 <= Math.Max(2 * baselineP99, baselineP99 + 100), $"interactive p99 under burst {burstP99:F1} ms is outside its range (baseline {baselineP99:F1} ms)");
+
+        var store = postgres.ConnectionStringFor(BurstStore);
+        Assert.True(await WaitUntilAsync(async () => await OutboxCountAsync(store) == 0, BurstDrainTimeout), $"the burst did not drain: {await OutboxCountAsync(store)} records left");
+        await Task.Delay(Grace * 2);
+        var executions = app.Services.GetRequiredService<ExecutionCount>();
+        var runTwice = units.Where(unit => executions.Started(unit) != 1).ToList();
+        Assert.True(runTwice.Count == 0, $"{runTwice.Count} of {HeavyUnits} units did not run exactly once; counts: {string.Join(", ", runTwice.Take(5).Select(unit => executions.Started(unit)))}");
         await app.StopAsync();
+    }
+
+    private static async Task<long> OutboxCountAsync(string store)
+    {
+        await using var connection = new NpgsqlConnection(store);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("SELECT count(*) FROM outbox_entry", connection);
+        return (long)(await command.ExecuteScalarAsync() ?? 0L);
     }
 
     /// <summary>
@@ -188,7 +212,7 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor("poc_heavy_store"),
+            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor(BurstStore),
             ["ConnectionStrings:rabbitmq"] = rabbit.ConnectionString,
         });
         builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));
@@ -196,14 +220,17 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<InteractiveProbe>, InteractiveProbeHandler>()
-            .AddScoped<ICommandHandler<HeavyProbe>, HeavyProbeHandler>()
+            .AddSingleton<ExecutionCount>()
+            .AddScoped<ICommandHandler<CountedHeavyProbe>, CountedHeavyProbeHandler>()
             .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<InteractiveProbe>()
-            .AddTrustedType<HeavyProbe>()
+            .AddTrustedType<CountedHeavyProbe>()
             .AddStrataraAggregateGrains()
-            .AddStrataraOrleansCommandDispatcher()
+            .AddStrataraOrleansCommandDispatcher(options => options.IntentGrace = Grace)
             .AddStrataraIntentStore<PocWriteDbContext>()
-            .ConfigureStrataraHeavyWork(options => options.ClusterWideLimit = ClusterWideLimit);
+            .ConfigureStrataraHeavyWork(options => options.ClusterWideLimit = ClusterWideLimit)
+            .AddStrataraSingletonWork<OutboxDrainWork>(options => options.KeepAlivePeriod = TimeSpan.FromSeconds(5))
+            .Configure<OutboxDrainOptions>(options => options.PollingInterval = TimeSpan.FromMilliseconds(500));
 
         var app = builder.Build();
         await using (var scope = app.Services.CreateAsyncScope())
@@ -244,5 +271,18 @@ public sealed class HeavyBurstTests(PostgreSqlFixture postgres, RedisFixture red
             underBurstMs = underBurst,
         };
         File.WriteAllText(Path.Combine(run, "result.json"), JsonSerializer.Serialize(result, IndentedJson));
+    }
+}
+
+/// <summary>A heavy unit whose executions are counted per unit.</summary>
+public sealed record CountedHeavyProbe(Guid AggregateId, int DelayMs) : ICommand, IAggregateScopedCommand, IHeavyCommand;
+
+public sealed class CountedHeavyProbeHandler(ExecutionCount executions) : ICommandHandler<CountedHeavyProbe>
+{
+    public async Task HandleAsync(CountedHeavyProbe command, CancellationToken cancellationToken)
+    {
+        executions.MarkStarted(command.AggregateId);
+        await Task.Delay(command.DelayMs, cancellationToken);
+        executions.MarkCompleted(command.AggregateId);
     }
 }

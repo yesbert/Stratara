@@ -22,6 +22,8 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// <c>AddStrataraProjectionCheckpoints&lt;TReadContext&gt;()</c>. Call it after
     /// <c>AddEventProjectionServices</c>, which registers the projection runtime and the replay worker without the
     /// bus-fed worker; this call removes nothing. After <c>AddEventProjectionWorkerServices</c> both paths run.
+    /// The silo publishes the projection role: the projection grains are placed only on silos that called this,
+    /// so register every projection of the role on every silo that registers it.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
@@ -53,6 +55,7 @@ public static class OrleansProjectionServiceCollectionExtensions
 
         OrleansOptionsValidator.Register<ProjectionGrainOptions>(services);
         AddStoreReaderCore(services, hybrid);
+        RolePlacement.Publish(services, ExecutionRole.Projections);
         services.AddScoped<INudgeTarget, ProjectionNudgeTarget>();
         services.TryAddSingleton<IProjectionRebuilder, ProjectionRebuilder>();
         ReplayCheckpointResetTruncator.Decorate(services, Instantiate);
@@ -64,7 +67,9 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// Runs every registered saga in a grain per partition that reads the store in commit order from
     /// a checkpoint. Existing sagas run unchanged. The host registers the <c>ICommittedPositionReader</c>
     /// of its choice and a checkpoint store. Call it after <c>AddSagaServices</c>, which registers the saga
-    /// runtime without the bus-fed worker; this call removes nothing.
+    /// runtime without the bus-fed worker; this call removes nothing. The silo publishes the saga role: the saga
+    /// and process grains are placed only on silos that called this, so register every saga and process of the
+    /// role on every silo that registers it. Processes own durable timers, so the silo needs a reminder service.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
@@ -93,6 +98,7 @@ public static class OrleansProjectionServiceCollectionExtensions
 
         OrleansOptionsValidator.Register<SagaGrainOptions>(services);
         AddStoreReaderCore(services, hybrid);
+        RolePlacement.Publish(services, ExecutionRole.Sagas);
         services.AddScoped<INudgeTarget, SagaNudgeTarget>();
         AddSagaProcessTimers(services);
         return services;

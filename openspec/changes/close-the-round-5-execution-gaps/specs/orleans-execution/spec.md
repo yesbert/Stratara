@@ -59,8 +59,8 @@ whose handler keeps failing SHALL be resumed a bounded number of times and then 
 as a bus message a handler cannot take is kept, and SHALL NOT hold back the resumption of other
 commands; an operator SHALL be able to return a kept command, which is then resumed with its attempts
 starting over. Every attempt that fails SHALL be logged with the command's identity, the aggregate it
-names, its type and the attempt number, and so SHALL a hand-over that fails, so that a failing handler
-is seen before the command is kept. A command whose handler is still running SHALL NOT be handed over
+names and its type, and so SHALL a hand-over that fails, so that a failing handler is seen before the
+command is kept; the resumption that follows SHALL log the attempt number. A command whose handler is still running SHALL NOT be handed over
 again, however long it runs and whether or not the handler yields, and a heavy command waiting for a
 worker or a permit SHALL count as running. A resumed command SHALL keep the order of the aggregate
 it names whatever protection its payload carries. Heavy commands SHALL be exempt from both order
@@ -91,9 +91,9 @@ registered SHALL apply whatever order it and the execution model were registered
 #### Scenario: A handler keeps failing
 
 - **WHEN** a resumed command's handler throws on every attempt
-- **THEN** each attempt is logged with the command's identity and attempt number, it is resumed up to
-  the configured bound, then kept with the attempt count and the last failure, and the commands after
-  it are still resumed
+- **THEN** each attempt is logged with the command's identity and each resumption with its attempt
+  number, it is resumed up to the configured bound, then kept with the attempt count and the last
+  failure, and the commands after it are still resumed
 
 #### Scenario: An operator returns a kept command
 

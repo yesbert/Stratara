@@ -22,7 +22,9 @@ the persistence it needs. Both depend on Orleans 10.3.1 or a later 10.x release.
 
 **One writer per aggregate.** A command that names an aggregate runs in that aggregate's activation,
 and two commands for the same aggregate never run at the same time anywhere in the cluster. A command
-a handler sends for another aggregate runs in that aggregate's activation. If an unstable cluster
+a handler sends for another aggregate runs in that aggregate's activation; sends between aggregates form
+a directed acyclic graph, and a send that would close a cycle is refused at once, naming both aggregates,
+rather than waiting for a timeout. If an unstable cluster
 activates an aggregate twice anyway, the store's version constraint refuses the second writer, so the
 guarantee never falls below the one the bus workers give. Heavy commands are the exception: they run in
 their own bounded pool beside the aggregate's other commands, keep no order with them, and where both
@@ -32,7 +34,9 @@ append the version constraint refuses the later one, which is resumed like any f
 durably before the dispatch returns and hands it to its activation afterwards. A host that dies in
 between is resumed after a grace. A command whose handler keeps failing is resumed a bounded number of
 times — the same bound the host configures for bus messages — and then kept for an operator, without
-holding back the commands after it. Every command on this path passes the same mediator pipeline as on
+holding back the commands after it; every attempt that fails is logged. A command whose handler is still
+running is never handed over twice — however long it runs, whether or not it yields, and while a heavy
+command waits for a worker. Every command on this path passes the same mediator pipeline as on
 the bus: validation, authorization, tenant isolation, audit.
 
 **No committed fact is missed.** Projections and sagas read the event store from a checkpoint, in commit
@@ -42,7 +46,8 @@ other projection keeps applying live events.
 
 **A failure is visible, not skipped.** An entry that cannot be applied stops its partition: the
 checkpoint stays before it, the failure is logged with the entry's identity, the stall is counted, and
-the entry is tried again.
+the entry is tried again. A read that fails counts as a stall too. Two rebuilds of one projection never
+interleave, and a rebuild during a full replay is refused.
 
 **Once per cluster.** Singleton work runs in one place in the cluster, only on silos that registered
 it, and moves to another silo when its silo is lost. Durable timers belong to an owner, fire once on or
@@ -72,7 +77,8 @@ it registers — and the event stream is never touched.
 `ICommandHandler<TCommand>`, `IProjection`, `ISaga`, `IAggregateScopedCommand`, `IHeavyCommand`,
 `IEventSource`, the promise of `ICommandOutboxDispatcher`, the outbox table and the event stream. A host
 adopts the model one role at a time, after the composite it already calls, and can run both models at
-once during a rollout.
+once during a rollout. Roles may be split across silos: the grains of a role are placed only on silos
+that registered it, and a host that only dispatches commands may join as an Orleans client.
 
 ## Where to go next
 
