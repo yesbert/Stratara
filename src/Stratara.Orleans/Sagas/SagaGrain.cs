@@ -95,6 +95,8 @@ internal sealed class SagaGrain(
 /// <summary>The saga grain for the partition.</summary>
 internal sealed class SagaNudgeTarget : INudgeTarget
 {
+    public IReadOnlyList<string> ConsumerNames { get; } = [SagaGrain.ConsumerName];
+
     public Task NudgeAsync(IGrainFactory grainFactory, int partition)
     {
         grainFactory.GetGrain<ISagaGrain>(StoreReaderGrainKey.Of(SagaGrain.ConsumerName, partition)).NudgeAsync().Ignore();

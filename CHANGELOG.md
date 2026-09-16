@@ -16,6 +16,19 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Changed
+
+- **Orleans: the execution-model reset removes only the checkpoints of the host's own projections and
+  sagas.** It removed every checkpoint in the read store, so a reset in one deployment made another
+  deployment sharing the read store rebuild its projections unasked. The reset now removes the
+  checkpoints of the projections and sagas registered in the composition it is resolved from, and the
+  report counts only those. A checkpoint of a projection the host no longer registers stays; nothing
+  reads it. Resolve the reset from the host's own composition — one that registers no store reader
+  removes no checkpoint.
+- **The documentation states when a read store can be shared.** Checkpoints are keyed by consumer, not
+  by deployment: deployments sharing a read store need distinct projection names, and at most one of
+  them runs `AddStrataraSagaGrains`.
+
 ### Fixed
 
 - **Orleans: two writers of the same first checkpoint no longer fail one of them.** When an

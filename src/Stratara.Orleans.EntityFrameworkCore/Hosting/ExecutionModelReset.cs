@@ -4,12 +4,14 @@ using Npgsql;
 using Orleans.Configuration;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
 using Stratara.Orleans.Hosting;
+using Stratara.Orleans.Projections;
 
 namespace Stratara.Orleans.EntityFrameworkCore.Hosting;
 
 /// <summary>
 /// The reset against PostgreSQL: the runtime's reminder and membership tables, scoped to the host's service and
-/// cluster so another deployment in the same database keeps its state; the checkpoint table of the read context;
+/// cluster so another deployment in the same database keeps its state; the checkpoints of the store readers the host
+/// registers, so another consumer's checkpoints in the same read store stay;
 /// and the grain directory through the cleanup the host supplies, because the directory's backend is its choice.
 /// </summary>
 /// <typeparam name="TReadContext">The read context that holds the checkpoint table.</typeparam>
@@ -17,6 +19,7 @@ internal sealed class ExecutionModelReset<TReadContext>(
     IDbContextFactory<TReadContext> readContextFactory,
     IOptions<ClusterOptions> cluster,
     ExecutionModelResetSettings settings,
+    IEnumerable<INudgeTarget> storeReaders,
     IServiceProvider services) : IExecutionModelReset
     where TReadContext : DbContext
 {
@@ -35,7 +38,10 @@ internal sealed class ExecutionModelReset<TReadContext>(
         int checkpoints;
         await using (var context = await readContextFactory.CreateDbContextAsync(cancellationToken))
         {
-            checkpoints = await context.Set<ProjectionCheckpoint>().ExecuteDeleteAsync(cancellationToken);
+            var consumers = storeReaders.SelectMany(reader => reader.ConsumerNames).Distinct(StringComparer.Ordinal).ToList();
+            checkpoints = consumers.Count == 0
+                ? 0
+                : await context.Set<ProjectionCheckpoint>().Where(c => consumers.Contains(c.Projection)).ExecuteDeleteAsync(cancellationToken);
         }
 
         var directoryEntries = await settings.ClearDirectory(services, cancellationToken);

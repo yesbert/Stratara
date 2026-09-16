@@ -83,10 +83,12 @@ partition is retried under the preceding-fact policy in the same way.
 
 ## Reset what the model keeps
 
-`IExecutionModelReset` clears everything the model keeps beside the event stream: the reminders of the
-host's service, and with them every durable timer; the membership rows of its cluster; every checkpoint;
-and the grain directory's entries, through a callback the host supplies because the directory is its
-choice. The event stream is never touched, and a host started afterwards rebuilds every checkpoint from it.
+`IExecutionModelReset` clears everything the model keeps beside the event stream for the host's
+deployment: the reminders of its service, and with them every durable timer; the membership rows of its
+cluster; the checkpoints of the projections and sagas it registers; and the grain directory's entries,
+through a callback the host supplies because the directory is its choice. The event stream is never
+touched, and a host started afterwards rebuilds those checkpoints from it. The report counts what was
+removed of each.
 
 ```csharp
 var orleansDb = builder.Configuration.GetConnectionString("orleans")!;
@@ -104,6 +106,19 @@ var report = await app.Services.GetRequiredService<IExecutionModelReset>().Reset
 ```
 
 Run it while no silo of the cluster runs: a running silo writes its membership and reminders back.
+
+Resolve it from the host's own composition — the one that calls `AddStrataraProjectionGrains` and
+`AddStrataraSagaGrains`. The checkpoints it removes are those of the projections and sagas registered
+there; a tool that registers none removes no checkpoint and reports zero. Another consumer's checkpoints
+in the same read store stay, and so do those of a projection the host no longer registers: nothing reads
+them, and removing them is a delete the host owns.
+
+### Sharing a read store
+
+A checkpoint belongs to a consumer and a partition, not to a deployment. Two deployments can keep their
+checkpoints in one read store only when no projection name is registered by both. Every deployment's
+store-reading sagas read under one consumer, so at most one deployment sharing a read store runs
+`AddStrataraSagaGrains`; two would overwrite each other's positions.
 
 ## Reminder profile and clocks
 

@@ -187,9 +187,11 @@ internal static class StoreReaderGrainKey
     }
 }
 
-/// <summary>A set of grains the bundle dispatcher nudges after a commit, keyed by partition.</summary>
+/// <summary>A set of grains the bundle dispatcher nudges after a commit, keyed by partition, and the consumer names they checkpoint under.</summary>
 internal interface INudgeTarget
 {
+    IReadOnlyList<string> ConsumerNames { get; }
+
     Task NudgeAsync(IGrainFactory grainFactory, int partition);
 
     Task EnsureRunningAsync(IGrainFactory grainFactory, int partition);
@@ -199,6 +201,8 @@ internal interface INudgeTarget
 internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler, IEnumerable<IProjection> projections) : INudgeTarget
 {
     private readonly List<string> _names = [.. projections.Select(projectionHandler.GetProjectionName).Distinct()];
+
+    public IReadOnlyList<string> ConsumerNames => _names;
 
     public Task NudgeAsync(IGrainFactory grainFactory, int partition)
     {
