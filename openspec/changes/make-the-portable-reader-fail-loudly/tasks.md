@@ -12,7 +12,7 @@
 - [ ] 1.2 An integration test on PostgreSQL: a store read by the portable reader, an append through a context
       without the interceptor; the read of that partition throws with the message, reads of other
       partitions do not, and after `PartitionCounterBackfill.RunAsync` the entry is read. Run it against the
-      current reader first and record that it passes silently there (the entry is never returned). Verify:
+      current reader first and record that it fails there: no exception, and the entry is never returned. Verify:
       a test in `tests/Stratara.Orleans.IntegrationTests/CommitOrder`.
 - [ ] 1.3 The query plan uses the position index on PostgreSQL. Verify: `EXPLAIN` of the generated statement
       in the test's output or recorded here.
