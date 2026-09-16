@@ -20,9 +20,11 @@ them without further configuration.
 | `PortableCounterReader<TContext>`, `AddStrataraPortableCounterReader<TWriteContext>()` | Reads in commit order on any relational provider, through a per-partition counter; verified on PostgreSQL only |
 | `PartitionCounterInterceptor` | Maintains the per-partition counter inside the appending transaction — in every process that appends |
 | `PartitionCounterBackfill` | Positions the entries a store held before it adopted the counter, once |
+| `CommitTransactionIdBackfill` | Stamps the entries a PostgreSQL store held before the commit record existed, in append order and bounded batches, once |
 | `AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the checkpoints in the read context |
 | `AddStrataraIntentStore<TWriteContext>()` | Records the commands the execution model's dispatcher accepts, in the outbox table |
 | `AddStrataraExecutionModelReset<TReadContext>()` | Clears reminders, membership, directory and the host's checkpoints while no silo runs |
+| `IStoreReaderSeeding` (registered with the store-reading roles) | Seeds the host's checkpoints at the store's head before a first start on a populated store |
 
 ## Quick start
 

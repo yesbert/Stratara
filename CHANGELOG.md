@@ -18,6 +18,17 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **Orleans: a host seeds its store readers at the head.** `IStoreReaderSeeding.SeedAtHeadAsync`, registered
+  with `AddStrataraProjectionGrains` and `AddStrataraSagaGrains`, writes a checkpoint at the store's current
+  head for every registered projection and saga and partition that has none, and reports how many it wrote and
+  how many existed. A host whose read models are current runs it once, while no silo runs, before its first
+  start — without it the first start re-applied the whole history. A consumer registered later still starts
+  at the beginning.
+- **`ICommittedPositionReader.HeadAsync`** reports a partition's head — the position after which nothing
+  committed exists — with a default that walks the partition; both shipped readers answer in one query.
+- **Orleans: `CommitTransactionIdBackfill`** stamps the commit record on a populated PostgreSQL event table in
+  append order and bounded batches, so the native reader's column is added without rewriting the table and
+  without the whole history landing under one transaction id.
 - **Orleans: `AddStrataraExecutionModelReset` takes the schema the runtime tables live in.** `schema`
   defaults to `public`; a reminder or membership table absent under it fails the reset naming the table
   instead of reporting that nothing was removed, and the three runtime tables are cleared in one transaction.
@@ -27,6 +38,11 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **The migration guide says how a populated store adopts the execution model.** The transaction-id column
+  is added nullable, backfilled, then given its default and constraint — while nothing appends; the guide
+  states the upgrade order (schema before the first 4.1 host, 4.0 hosts keep running, bus outbox worker
+  before the first drain silo, seed, silos, API host, bus workers, queues), that a checkpoint is keyed by the
+  projection's simple class name, and the prerequisites of the Orleans packages.
 - **Orleans: every role is placed on the silos that registered it.** A silo publishes the roles its
   composition registers — commands with `AddStrataraAggregateGrains`, projections with
   `AddStrataraProjectionGrains`, sagas with `AddStrataraSagaGrains`, timers with `AddStrataraDurableTimers`

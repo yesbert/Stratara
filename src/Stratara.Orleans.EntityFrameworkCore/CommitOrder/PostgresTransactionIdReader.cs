@@ -101,6 +101,17 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
         };
     }
 
+    /// <inheritdoc/>
+    public async Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var statements = _statements ??= Statements.For(context);
+        var head = await context.Database
+            .SqlQueryRaw<string?>(statements.Head, _partitionCount, partition)
+            .SingleAsync(cancellationToken);
+        return head is null ? 0 : (long)ulong.Parse(head, CultureInfo.InvariantCulture);
+    }
+
     private async Task<List<Row>> ReadWholeTransactionAsync(TContext context, Statements statements, int partition, ulong transactionId, CancellationToken cancellationToken)
     {
         var id = transactionId.ToString(CultureInfo.InvariantCulture);
@@ -115,7 +126,7 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     private sealed record Row(EventStreamEntry Entry, ulong TransactionId);
 
     /// <summary>The two statements, with the table and columns named as the context's model maps them.</summary>
-    private sealed record Statements(string ReadAfter, string ReadTransaction)
+    private sealed record Statements(string ReadAfter, string ReadTransaction, string Head)
     {
         /// <exception cref="InvalidOperationException">The model maps no event stream table, or lacks the commit-order column.</exception>
         public static Statements For(DbContext context)
@@ -153,6 +164,11 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
                 WHERE {{bucket}} % {0} = {1}
                   AND {{transaction}} = CAST({2} AS xid8)
                 ORDER BY {{sequence}}
+                """,
+                $$"""
+                SELECT CAST(MAX({{transaction}}) AS text) AS "Value" FROM {{from}}
+                WHERE {{bucket}} % {0} = {1}
+                  AND {{transaction}} < pg_snapshot_xmin(pg_current_snapshot())
                 """);
         }
     }
