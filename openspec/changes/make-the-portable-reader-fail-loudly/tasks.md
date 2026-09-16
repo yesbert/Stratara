@@ -1,7 +1,8 @@
 ## 0. Gate
 
-- [ ] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
+- [x] 0.1 The owner has set this proposal's status line to `approved`. Verify: `proposal.md` line 3.
       Nothing below starts before it.
+      Done: approved by the owner on 2026-09-16, recorded at the owner's request.
 
 ## 1. An unpositioned entry stops its partition (D1)
 

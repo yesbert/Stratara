@@ -1,6 +1,6 @@
 # Make the portable reader fail loudly
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-16)
 
 ## Why
 
