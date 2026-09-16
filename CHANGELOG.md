@@ -16,6 +16,18 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.1.1`._
+
+## [4.1.1] — 2026-09-16
+
+Correctness fixes for the Orleans execution model ahead of production use. Recorded commands can no longer
+reach a bus drain, a durable timer fires once however long its handler runs, and heavy commands are
+specified as the exception to the one-writer-per-aggregate promise they always were. The execution-model
+reset removes only the host's own checkpoints, and three store-level fixes land for the partition
+counter, its backfill and a checkpoint's first write. No schema change; **stop every bus outbox worker
+before upgrading hosts that record commands through the execution model**, and register
+`AddStrataraIntentStore` on the silos that run the drain.
+
 ### Changed
 
 - **Orleans: the execution-model reset removes only the checkpoints of the host's own projections and
@@ -3304,7 +3316,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.1.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.1.1...main
+[4.1.1]: https://github.com/yesbert/Stratara/releases/tag/v4.1.1
 [4.1.0]: https://github.com/yesbert/Stratara/releases/tag/v4.1.0
 [4.0.4]: https://github.com/yesbert/Stratara/releases/tag/v4.0.4
 [4.0.3]: https://github.com/yesbert/Stratara/releases/tag/v4.0.3
