@@ -57,7 +57,7 @@ execution model carries the columns and never fills them.
 | Write, PostgreSQL only | `event_stream_entry.commit_transaction_id` (`xid8`, filled by the database, indexed) | The transaction that inserted the entry, for the native reader |
 | Write | `outbox_entry.aggregate_id`, `heavy` | Where a recorded command runs |
 | Write | `outbox_entry.attempt_count`, `last_handed_over_at`, `kept_at`, `last_failure` (up to 2048 characters) | The bounded resume of a recorded command |
-| Read | table `projection_checkpoint` (`projection`, `partition`, `reader`, `position`) | Where each store reader resumes |
+| Read | table `projection_checkpoint` (`projection`, `partition`, `reader`, `position`) | Where each store reader resumes. Keyed by consumer, not by deployment — see [Sharing a read store](operate-the-orleans-execution-model.md#sharing-a-read-store) |
 
 ## Choose a commit-order reader
 

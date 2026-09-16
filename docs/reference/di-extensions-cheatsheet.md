@@ -167,11 +167,11 @@ registered with `UseOrleans`. See [Choose an Execution Model](../getting-started
 | `services.ConfigureStrataraHeavyWork(o => …)` | The cluster-wide limit, the permit retry and the permit lease of heavy work |
 | `services.AddStrataraProjectionGrains(opts?, hybrid?)` | Runs every projection in grains that read the store in commit order from a checkpoint. Call after `builder.AddEventProjectionServices()`; register the host's `IProjectionViewTruncator` before it |
 | `services.AddStrataraSagaGrains(opts?, hybrid?)` | Runs every saga, and every stateful process, in grains that read the store. Call after `builder.AddSagaServices()` |
-| `services.AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the store readers' checkpoints in the read context |
+| `services.AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the store readers' checkpoints in the read context, keyed by consumer and partition. Deployments sharing a read store need distinct projection names, and at most one of them runs saga grains |
 | `services.AddStrataraPortableCounterReader<TWriteContext>()` | The commit-order reader for any relational provider, and a start check that refuses a store holding an entry without a position. The write context adds `PartitionCounterInterceptor` itself, and a store with existing entries runs `PartitionCounterBackfill.RunAsync` once before the first start |
 | `services.AddStrataraDurableTimers(opts?)` | `IDurableTimers` over the silo's reminder service. The host supplies one `ITimerOwners` and one `ITimerHandler`, before or after this call |
 | `services.AddStrataraSingletonWork<TWork>(opts?)` | Runs an `ISingletonWork` once per cluster at its period, only on silos that registered it |
-| `services.AddStrataraExecutionModelReset<TReadContext>(runtimeConnectionString, clearDirectory)` | `IExecutionModelReset`: clears the reminders and membership of the host's deployment, every checkpoint, and the grain directory through the host's callback. Run it while no silo of the cluster runs |
+| `services.AddStrataraExecutionModelReset<TReadContext>(runtimeConnectionString, clearDirectory)` | `IExecutionModelReset`: clears the reminders and membership of the host's deployment, the checkpoints of the projections and sagas it registers, and the grain directory through the host's callback. Run it while no silo of the cluster runs |
 
 Every setting these calls bind is validated when the host starts, and an invalid one fails the start
 naming itself.

@@ -15,8 +15,9 @@ namespace Stratara.Orleans.IntegrationTests.Hosting;
 
 /// <summary>
 /// Task 5.5: the shipped reset, run from a stopped host, leaves no reminder or membership row of the host's
-/// deployment, no directory key and no checkpoint, and a host started afterwards fires nothing for the timers
-/// that existed before.
+/// deployment, no directory key and no checkpoint of a consumer the host registers, and a host started afterwards
+/// fires nothing for the timers that existed before. A checkpoint of a consumer the host does not register stays
+/// with its position.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
@@ -28,6 +29,8 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
     /// <summary>The service and cluster id <see cref="PocSilo"/> gives a silo on <see cref="SiloPort"/>.</summary>
     private static readonly string Deployment = $"{PocSilo.ClusterId}-{SiloPort}";
 
+    private const string HostConsumer = "probe";
+
     [Fact]
     public async Task One_reset_clears_timers_membership_directory_and_checkpoints()
     {
@@ -35,6 +38,7 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
         var readConnectionString = postgres.ConnectionStringFor(ReadDatabase);
         var timerHost = new RecordingTimerHost();
         var owner = $"reset-{Guid.NewGuid():N}";
+        var foreignConsumer = $"another-deployment-{Guid.NewGuid():N}";
 
         ExecutionModelResetReport report;
         using (var app = await StartAsync(timerHost, orleansConnectionString, readConnectionString, gatewayPort: 30130))
@@ -43,7 +47,10 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
             await app.Services.GetRequiredService<IDurableTimers>().RegisterAsync(new TimerRegistration(owner, "expire", DateTimeOffset.UtcNow + TimeSpan.FromSeconds(8)));
             await using (var scope = app.Services.CreateAsyncScope())
             {
-                await scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>().SetAsync("probe", 0, "probe-reader", 42);
+                var checkpoints = scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+                await checkpoints.SetAsync(HostConsumer, 0, "probe-reader", 42);
+                await checkpoints.SetAsync(HostConsumer, 1, "probe-reader", 42);
+                await checkpoints.SetAsync(foreignConsumer, 0, "probe-reader", 42);
             }
 
             await app.StopAsync();
@@ -54,10 +61,17 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
         }
 
         TestContext.Current.TestOutputHelper?.WriteLine(report.ToString());
-        Assert.True(report.Reminders > 0 && report.Checkpoints > 0, $"the reset reported nothing removed: {report}");
+        Assert.True(report.Reminders > 0, $"the reset reported no reminder removed: {report}");
+        Assert.Equal(2, report.Checkpoints);
         Assert.Equal(0, await PocReset.CountAsync(orleansConnectionString, "orleansreminderstable", "serviceid", Deployment));
         Assert.Equal(0, await PocReset.CountAsync(orleansConnectionString, "orleansmembershiptable", "deploymentid", Deployment));
-        Assert.Equal(0, await PocReset.CountAsync(readConnectionString, "projection_checkpoint"));
+        Assert.Equal(0, await PocReset.CountAsync(readConnectionString, "projection_checkpoint", "projection", HostConsumer));
+        Assert.Equal(1, await PocReset.CountAsync(readConnectionString, "projection_checkpoint", "projection", foreignConsumer));
+        await using (var read = new ServiceCollection().AddDbContextFactory<PocReadDbContext>(options => options.UseSnakeCaseNamingConvention().UseNpgsql(readConnectionString)).BuildServiceProvider())
+        {
+            var store = new ProjectionCheckpointStore<PocReadDbContext>(read.GetRequiredService<IDbContextFactory<PocReadDbContext>>());
+            Assert.Equal(42, await store.GetAsync(foreignConsumer, 0, "probe-reader"));
+        }
         Assert.Equal(0, redis.CountKeys());
 
         using (var restarted = await StartAsync(timerHost, orleansConnectionString, readConnectionString, gatewayPort: 30130))
@@ -83,6 +97,7 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
             .AddSingleton<ITimerHandler>(timerHost)
             .AddDbContextFactory<PocReadDbContext>(options => options.UseSnakeCaseNamingConvention().UseNpgsql(readConnectionString))
             .AddScoped<IProjectionCheckpointStore, ProjectionCheckpointStore<PocReadDbContext>>()
+            .AddScoped<INudgeTarget, ProbeConsumer>()
             .AddStrataraExecutionModelReset<PocReadDbContext>(orleansConnectionString, (_, _) => PocReset.ClearDirectoryAsync(redis.ConnectionString));
 
         var app = builder.Build();
@@ -95,5 +110,15 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
         using var startTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         await app.StartAsync(startTimeout.Token);
         return app;
+    }
+
+    /// <summary>A store reader the host registers under <see cref="HostConsumer"/>, without a grain behind it.</summary>
+    private sealed class ProbeConsumer : INudgeTarget
+    {
+        public IReadOnlyList<string> ConsumerNames { get; } = [HostConsumer];
+
+        public Task NudgeAsync(IGrainFactory grainFactory, int partition) => Task.CompletedTask;
+
+        public Task EnsureRunningAsync(IGrainFactory grainFactory, int partition) => Task.CompletedTask;
     }
 }

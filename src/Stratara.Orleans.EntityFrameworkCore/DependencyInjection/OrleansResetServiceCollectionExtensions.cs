@@ -14,7 +14,8 @@ public static class OrleansResetServiceCollectionExtensions
     /// Registers <see cref="IExecutionModelReset"/> for a deployment whose runtime keeps its reminders and
     /// membership in PostgreSQL and whose checkpoints live in <typeparamref name="TReadContext"/>. The reminders
     /// are cleared for the host's service and the membership for its cluster, as the silo's cluster options name
-    /// them; the checkpoints are cleared in full. The grain directory is cleared by
+    /// them; the checkpoints are cleared for the store-reading projections and sagas registered in the same
+    /// composition. The grain directory is cleared by
     /// <paramref name="clearDirectory"/>, because its backend is the host's choice. Binds no configuration.
     /// Requires a registered <see cref="IDbContextFactory{TContext}"/> for the read context. A reset registered
     /// before this call is kept.

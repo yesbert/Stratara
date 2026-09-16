@@ -46,14 +46,17 @@ the finding was about.
 Evidence: `ReplayCheckpointReset.cs` (the replay path already scopes by the same names);
 `ExecutionModelReset.cs:38`.
 
-### D2 — One internal source of consumer names in `Stratara.Orleans`
+### D2 — The nudge targets name their consumers; the reset reads them
 
-`Stratara.Orleans` gets an internal service that yields the host's store-reader consumer names, built
-from the registered `INudgeTarget`s: each target exposes the consumer names it addresses
-(`ProjectionNudgeTarget` its projection names, `SagaNudgeTarget` the saga consumer). The replay
-truncator switches to it where it enumerates projection names today, so every place that needs "which
-checkpoints are this host's" reads one list. `Stratara.Orleans.csproj` grants
-`InternalsVisibleTo` to `Stratara.Orleans.EntityFrameworkCore`.
+`INudgeTarget` — the internal registration each kind of store reader already contributes, and the one
+the silo starts the readers from — exposes the consumer names it addresses: `ProjectionNudgeTarget` its
+projection names, `SagaNudgeTarget` the saga consumer. The reset takes the union over the registered
+targets, so the checkpoints it removes are exactly those of the readers the host starts.
+`Stratara.Orleans.csproj` grants `InternalsVisibleTo` to `Stratara.Orleans.EntityFrameworkCore`.
+
+The replay truncator keeps enumerating projections itself. It pauses projection grains only, so a list
+that includes the saga consumer is the wrong list for it; and its tests compose projections without
+the nudge targets. (Revised during apply, 2026-09-16: the proposal had it switch to the shared list.)
 
 *Rejected: a public port (for example on `IProjectionCheckpointStore` or a new interface)* — the names
 are an implementation detail of how the execution model keys its readers; publishing them adds surface
@@ -61,7 +64,8 @@ a consumer would have to keep compatible, for one internal caller.
 *Rejected: re-deriving the names inside the EF package from `IProjection` registrations* — would miss
 the saga consumer or hard-code its name a second time.
 
-Evidence: `ProjectionGrain.cs:191-220`, `SagaGrain.cs:66,96-106`; `Stratara.Mediator.csproj:30`.
+Evidence: `ProjectionGrain.cs:191-240` (`StoreReaderGrainStarter` starts readers from the targets),
+`SagaGrain.cs:66,96-106`; `ReplayCheckpointReset.cs:27-37`; `Stratara.Mediator.csproj:30`.
 
 ### D3 — A composition without consumers removes no checkpoint
 
