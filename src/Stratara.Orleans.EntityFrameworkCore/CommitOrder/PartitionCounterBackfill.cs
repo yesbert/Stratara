@@ -9,7 +9,8 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// Positions the entries a store holds from before it adopted the partition counter, once, so the
 /// portable reader can serve it. Each partition is positioned in a transaction of its own that holds
 /// the partition's counter row, so appends to that partition wait for it and no position is handed
-/// out twice. Entries without a position come first, in bucket-then-sequence order; entries already
+/// out twice. Entries without a position come first, in the order the store's sequence numbered them —
+/// the closest to commit order a store without a commit record keeps; entries already
 /// positioned keep their order and move up behind them; the counter continues after the last.
 /// </summary>
 /// <remarks>
@@ -50,8 +51,7 @@ public static class PartitionCounterBackfill
 
         var unpositioned = await context.Set<EventStreamEntry>()
             .Where(e => e.BucketId % partitionCount == partition && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
-            .OrderBy(e => e.BucketId)
-            .ThenBy(e => e.SequenceNumber)
+            .OrderBy(e => e.SequenceNumber)
             .Select(e => e.SequenceNumber)
             .ToListAsync(cancellationToken);
         if (unpositioned.Count == 0)

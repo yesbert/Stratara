@@ -51,22 +51,40 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
     /// <remarks>
     /// One statement in the steady state: the row exists after the first write, and an update that
     /// touches it is the whole round trip. Only a checkpoint that has never been written costs the
-    /// insert after it.
+    /// insert after it. Two writers of the same first checkpoint — an activation and its successor
+    /// overlapping during a failover — both find no row; the one whose insert loses to the key
+    /// updates the row the other inserted instead of failing.
     /// </remarks>
     public async Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var updated = await context.Set<ProjectionCheckpoint>()
-            .Where(c => c.Projection == projection && c.Partition == partition)
-            .ExecuteUpdateAsync(
-                set => set.SetProperty(c => c.Position, position).SetProperty(c => c.Reader, reader),
-                cancellationToken);
-        if (updated == 1)
+        if (await UpdateAsync(context, projection, partition, reader, position, cancellationToken))
         {
             return;
         }
 
         context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });
-        await context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The other writer inserted the row between the update and the insert; it carries this position now.
+            if (!await UpdateAsync(context, projection, partition, reader, position, cancellationToken))
+            {
+                throw;
+            }
+        }
+    }
+
+    private static async Task<bool> UpdateAsync(TContext context, string projection, int partition, string reader, long position, CancellationToken cancellationToken)
+    {
+        var updated = await context.Set<ProjectionCheckpoint>()
+            .Where(c => c.Projection == projection && c.Partition == partition)
+            .ExecuteUpdateAsync(
+                set => set.SetProperty(c => c.Position, position).SetProperty(c => c.Reader, reader),
+                cancellationToken);
+        return updated == 1;
     }
 }
