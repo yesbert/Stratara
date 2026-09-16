@@ -1,6 +1,6 @@
 # Close the Orleans readiness gaps
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-16)
 
 ## Why
 
