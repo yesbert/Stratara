@@ -81,6 +81,13 @@ and poll — nothing after it in that partition advances until it passes. The ev
 in the [log events schema](../reference/log-events-schema.md). A missing prerequisite from another
 partition is retried under the preceding-fact policy in the same way.
 
+Under the portable reader a partition also stops at an entry that has **no partition position**: a process
+appended it without `PartitionCounterInterceptor`. The logged failure names the entry, the interceptor and
+`PartitionCounterBackfill`. Add the interceptor to the write context of that process, then run
+`PartitionCounterBackfill.RunAsync` once; the partition continues from where it stopped. A host that refuses
+to start naming a partition counter beyond its partition count was configured with a lower count than the
+store was counted with; restore the count.
+
 ## Reset what the model keeps
 
 `IExecutionModelReset` clears everything the model keeps beside the event stream for the host's

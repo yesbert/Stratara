@@ -16,7 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.1.1`._
+### Changed
+
+- **Orleans: the portable commit-order reader states its preconditions.** It is verified on PostgreSQL
+  only; every process that appends to a store it reads needs `PartitionCounterInterceptor` — the framework
+  does not add it, and `CommitOrderOptions.MaintainPartitionCounter` is only the value a write context reads
+  when it does; and the partition count cannot change once the store holds positions. On PostgreSQL the
+  native reader remains the one to use.
+
+### Fixed
+
+- **Orleans: the portable reader stops at an entry without a position instead of skipping it.** An entry
+  appended by a process without the interceptor was never read, silently. A read of its partition now fails
+  naming the entry, the interceptor and `PartitionCounterBackfill`; the partition stops like any failing
+  entry and continues once the entry is positioned.
+- **Orleans: a host refuses to start with a partition count lower than the store's counters.** Lowering the
+  count merged partitions whose positions overlap, and new appends were skipped even after the checkpoints
+  were reset.
+- **Orleans: the partition counter interceptor releases its transaction when positioning fails.** The
+  transaction it opened stayed open on the context until the next save or the context's disposal.
 
 ## [4.1.1] — 2026-09-16
 

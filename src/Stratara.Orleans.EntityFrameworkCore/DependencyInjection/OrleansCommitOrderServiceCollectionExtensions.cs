@@ -17,8 +17,11 @@ public static class OrleansCommitOrderServiceCollectionExtensions
     /// host fails at start while the store holds an entry without a position — entries written before
     /// the counter was adopted — with a message naming <see cref="PartitionCounterBackfill"/>. Requires a
     /// registered <see cref="IDbContextFactory{TContext}"/> for the write context, and the write context
-    /// must add <see cref="PartitionCounterInterceptor"/> so every append is positioned. Register it
-    /// before the execution model's projection and saga registrations.
+    /// must add <see cref="PartitionCounterInterceptor"/> so every append is positioned — in every process that
+    /// appends to the store, not only this host; a read stops at an entry appended without a position. The host
+    /// also refuses to start with a partition count lower than the store's counter rows, because the count cannot
+    /// change without renumbering. Verified on PostgreSQL only. Register it before the execution model's projection
+    /// and saga registrations.
     /// </summary>
     /// <typeparam name="TWriteContext">A write context derived from the framework's write context.</typeparam>
     /// <param name="services">The service collection.</param>

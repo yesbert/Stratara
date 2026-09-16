@@ -52,12 +52,22 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
 
         if (context.Database.CurrentTransaction is null)
         {
-            _ownedTransactions.Add(context, await context.Database.BeginTransactionAsync(cancellationToken));
+            _ownedTransactions.AddOrUpdate(context, await context.Database.BeginTransactionAsync(cancellationToken));
         }
 
-        foreach (var group in added.GroupBy(entry => PartitionMap.PartitionOf(entry.Entity.BucketId, _partitionCount)).OrderBy(group => group.Key))
+        try
         {
-            await StampPositionsAsync(context, group.Key, [.. group], cancellationToken);
+            foreach (var group in added.GroupBy(entry => PartitionMap.PartitionOf(entry.Entity.BucketId, _partitionCount)).OrderBy(group => group.Key))
+            {
+                await StampPositionsAsync(context, group.Key, [.. group], cancellationToken);
+            }
+        }
+        catch
+        {
+            // The runtime does not report a failure of this callback to SaveChangesFailedAsync, so the transaction this
+            // interceptor opened is released here; otherwise the context's next save would run inside it and never commit.
+            await ReleaseAsync(context, commit: false);
+            throw;
         }
 
         return result;
@@ -66,11 +76,9 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     /// <inheritdoc/>
     public override async ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
     {
-        if (eventData.Context is { } context && _ownedTransactions.TryGetValue(context, out var transaction))
+        if (eventData.Context is { } context)
         {
-            _ownedTransactions.Remove(context);
-            await transaction.CommitAsync(cancellationToken);
-            await transaction.DisposeAsync();
+            await ReleaseAsync(context, commit: true, cancellationToken);
         }
 
         return result;
@@ -79,11 +87,9 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     /// <inheritdoc/>
     public override async Task SaveChangesFailedAsync(DbContextErrorEventData eventData, CancellationToken cancellationToken = default)
     {
-        if (eventData.Context is { } context && _ownedTransactions.TryGetValue(context, out var transaction))
+        if (eventData.Context is { } context)
         {
-            _ownedTransactions.Remove(context);
-            await transaction.RollbackAsync(cancellationToken);
-            await transaction.DisposeAsync();
+            await ReleaseAsync(context, commit: false, cancellationToken);
         }
     }
 
@@ -95,6 +101,35 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
         return appends
             ? throw new NotSupportedException("The partition counter is maintained on the asynchronous save path only; use SaveChangesAsync.")
             : result;
+    }
+
+    /// <summary>
+    /// Commits or rolls back the transaction this interceptor opened for the context, and always disposes and forgets
+    /// it — disposing a transaction whose commit failed rolls it back — so no path leaves it open on the context.
+    /// </summary>
+    private async Task ReleaseAsync(DbContext context, bool commit, CancellationToken cancellationToken = default)
+    {
+        if (!_ownedTransactions.TryGetValue(context, out var transaction))
+        {
+            return;
+        }
+
+        try
+        {
+            if (commit)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+            else
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+        }
+        finally
+        {
+            _ownedTransactions.Remove(context);
+            await transaction.DisposeAsync();
+        }
     }
 
     private static async Task StampPositionsAsync(DbContext context, int partition, IReadOnlyList<EntityEntry<EventStreamEntry>> entries, CancellationToken cancellationToken)

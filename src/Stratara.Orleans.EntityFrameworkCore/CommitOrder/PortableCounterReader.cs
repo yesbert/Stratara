@@ -15,24 +15,31 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// one already seen has already committed — the promise of the port, on any relational database.
 /// </summary>
 /// <remarks>
-/// Entries written without the interceptor carry no position and are invisible to this reader; a
-/// store that adopts the counter backfills them once. The reader's name carries the partition count,
-/// because a position is only meaningful under the count its partition was counted with.
+/// Every process that appends to the store must maintain the counter, and the partition count must not change
+/// without renumbering the entries, which the framework does not offer. An entry written without the interceptor
+/// carries no position; rather than read past it, a read of its partition fails naming it until the entry is
+/// positioned with <see cref="PartitionCounterBackfill"/>. The reader's name carries the partition count, because
+/// a position is only meaningful under the count its partition was counted with. Verified on PostgreSQL only.
 /// </remarks>
 /// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> contextFactory, IOptions<CommitOrderOptions> options)
     : ICommittedPositionReader
     where TContext : DbContext, IWriteDbContext
 {
+    /// <summary>How many unpositioned entries one read looks at to find one of its partition.</summary>
+    private const int UnpositionedProbe = 64;
+
     private readonly int _partitionCount = options.Value.PartitionCount;
 
     /// <inheritdoc/>
     public string Name => $"partition-counter/{_partitionCount}";
 
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">An entry of <paramref name="partition"/> was appended without a position.</exception>
     public async Task<CommittedBatch> ReadAfterAsync(int partition, long afterPosition, int batchSize, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await RefuseUnpositionedAsync(context, partition, cancellationToken);
 
         var entries = await context.Set<EventStreamEntry>().AsNoTracking()
             .Where(e => e.BucketId % _partitionCount == partition
@@ -53,5 +60,26 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
         {
             HasMore = hasMore,
         };
+    }
+
+    /// <summary>
+    /// Looks up unpositioned entries through the position index — the partition is derived in memory, because a
+    /// filter on the bucket cannot use it — and refuses to read a partition that holds one.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">An entry of the partition was appended without a position.</exception>
+    private async Task RefuseUnpositionedAsync(TContext context, int partition, CancellationToken cancellationToken)
+    {
+        var unpositioned = await context.Set<EventStreamEntry>().AsNoTracking()
+            .Where(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
+            .Select(e => new { e.SequenceNumber, e.BucketId })
+            .Take(UnpositionedProbe)
+            .ToListAsync(cancellationToken);
+
+        var blocking = unpositioned.FirstOrDefault(e => PartitionMap.PartitionOf(e.BucketId, _partitionCount) == partition);
+        if (blocking is not null)
+        {
+            throw new InvalidOperationException(
+                $"Entry {blocking.SequenceNumber} of partition {partition} has no partition position, so the portable commit-order reader stops before it instead of reading past it. A process appended it without {nameof(PartitionCounterInterceptor)}; add the interceptor to every write context that appends to this store, then position the entry with {nameof(PartitionCounterBackfill)}.{nameof(PartitionCounterBackfill.RunAsync)}.");
+        }
     }
 }

@@ -51,9 +51,13 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
             MaintainCounter: false, SkipsInFastCase: false, SkipsUnderLongHold: false),
     };
 
+    /// <summary>
+    /// The reader that orders by the counter gets a store of its own: the other cases append without the counter,
+    /// and the portable reader stops at an entry without a position instead of reading past it.
+    /// </summary>
     private Task<PocStore<PocCommitOrderWriteDbContext>> StoreFor(ReaderCase reader) =>
         PocStore<PocCommitOrderWriteDbContext>.CreateAsync(
-            postgres.ConnectionStringFor(Database),
+            postgres.ConnectionStringFor(reader.MaintainCounter ? $"{Database}_counted" : Database),
             options => options.MaintainPartitionCounter = reader.MaintainCounter);
 
     [Theory]
