@@ -111,7 +111,8 @@
 - [x] 6.4 A host with the dispatcher joins as an Orleans client and its dispatches run on the command silo
       (scenario *The API host joins as a client*). Verify: an integration test in the same class.
       Done: `RoleSplitTests.A_host_with_only_the_dispatcher_joins_as_a_client_and_its_commands_run_on_the_command_silo` — `UseOrleansClient` with ADO.NET clustering, `AddStrataraOrleansCommandDispatcher` + `AddStrataraIntentStore` on the client; all three commands ran on the command silo.
-- [ ] 6.5 `SingletonPlacementTests`, `CoHostingTests`, `TwoSiloKillTests` stay green. Verify: the runs.
+- [x] 6.5 `SingletonPlacementTests`, `CoHostingTests`, `TwoSiloKillTests` stay green. Verify: the runs.
+      Done: all three in the full Orleans integration run of 76/76 (10.1).
 - [x] 6.6 The migration guide says a silo that registers a role registers all of that role's handlers,
       projections or processes, that roles may be split across silos, and that the API host may be a
       client; the concept page states placement by role. Verify: the guide's role section and the concept

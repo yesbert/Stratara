@@ -14,7 +14,10 @@ aggregate SHALL run in that aggregate's activation, and two commands naming the 
 NOT run concurrently anywhere in the cluster. Where an unstable cluster produces a second activation regardless, the
 store's version constraint SHALL still refuse the second writer, so the guarantee degrades to the one
 the bus workers give and never below it. A command that a handler sends for another aggregate SHALL
-run in that other aggregate's activation, not in the sending handler's.
+run in that other aggregate's activation, not in the sending handler's. Sends between aggregates
+SHALL form a directed acyclic graph: a send that names an aggregate whose turn the sending chain is
+already inside SHALL be refused at once, with a message naming the sending and the receiving
+aggregate, rather than waiting for a timeout.
 
 A heavy command SHALL be the exception: it SHALL run in the bounded heavy-work pool, outside its
 aggregate's activation, so that a long unit does not hold the aggregate's other commands back. It MAY
@@ -39,6 +42,13 @@ failing command — the guarantee the bus path gives heavy work.
   command for the second aggregate is running
 - **THEN** the dispatched command runs after the running one, in the second aggregate's activation
 
+#### Scenario: A handler sends back to an aggregate in its own chain
+
+- **WHEN** a handler running for aggregate A sends a command to aggregate B, and B's handler sends a
+  command naming A while A's turn is still waiting on B
+- **THEN** the send to A is refused at once with a message naming A and B, B's command fails with that
+  refusal, A's command fails with B's failure, and neither activation waits for a timeout
+
 #### Scenario: A heavy command and a command name one aggregate
 
 - **WHEN** a heavy command naming an aggregate runs and a command naming the same aggregate is
@@ -55,10 +65,16 @@ grace. A command whose completion the host had not recorded before it died SHALL
 whose handler keeps failing SHALL be resumed a bounded number of times and then kept for an operator,
 as a bus message a handler cannot take is kept, and SHALL NOT hold back the resumption of other
 commands; an operator SHALL be able to return a kept command, which is then resumed with its attempts
-starting over. A command whose handler is still running SHALL NOT be handed over again, however long
-it runs, and a resumed command SHALL keep the order of the aggregate it names whatever protection its
-payload carries. Heavy commands SHALL be exempt from both order promises, and a heavy command SHALL
-NOT hold back a command or a resumption that follows it. Recorded commands SHALL be resumed by the
+starting over. Every attempt that fails SHALL be logged with the command's identity, the aggregate it
+names and its type, and so SHALL a hand-over that fails, so that a failing handler is seen before the
+command is kept; the resumption that follows SHALL log the attempt number. A command whose handler is still running SHALL NOT be handed over
+again, however long it runs and whether or not the handler yields, and a heavy command waiting for a
+worker or a permit SHALL count as running. A resumed command SHALL keep the order of the aggregate
+it names whatever protection its payload carries. Heavy commands SHALL be exempt from both order
+promises, and a heavy command SHALL NOT hold back a command or a resumption that follows it. The
+commands waiting in an aggregate's order SHALL run to the end however long the order takes; the
+runtime's response timeout bounds a caller's wait for one forwarded command, and the documentation
+SHALL name it as a setting the host sizes. Recorded commands SHALL be resumed by the
 execution model's drain wherever that drain runs with an intent store registered, whichever host
 dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
 without an intent store SHALL report it.
@@ -82,7 +98,8 @@ registered SHALL apply whatever order it and the execution model were registered
 #### Scenario: A handler keeps failing
 
 - **WHEN** a resumed command's handler throws on every attempt
-- **THEN** it is resumed up to the configured bound, then kept with the attempt count and the last
+- **THEN** each attempt is logged with the command's identity and each resumption with its attempt
+  number, it is resumed up to the configured bound, then kept with the attempt count and the last
   failure, and the commands after it are still resumed
 
 #### Scenario: An operator returns a kept command
@@ -94,6 +111,25 @@ registered SHALL apply whatever order it and the execution model were registered
 
 - **WHEN** a recorded command's handler is still running after the grace has passed
 - **THEN** it is not handed over again while it runs, and it runs once
+
+#### Scenario: A heavy handler computes past the grace without yielding
+
+- **WHEN** a heavy command's handler runs longer than the grace without awaiting anything
+- **THEN** it is not handed over again while it runs, it runs once, and its permit is still held when
+  it ends
+
+#### Scenario: A heavy burst queues commands longer than the grace
+
+- **WHEN** more heavy commands are dispatched than the pool runs at once, so that a command waits for a
+  worker longer than the grace
+- **THEN** every command runs exactly once
+
+#### Scenario: An aggregate's order takes longer than the response timeout
+
+- **WHEN** commands accepted into one aggregate's order take longer to run, together, than the
+  runtime's response timeout
+- **THEN** every accepted command runs, in order, and none is failed back to its caller as not having
+  run
 
 #### Scenario: A resumed command's payload is encrypted
 
@@ -137,7 +173,9 @@ the event store from a checkpoint, in an order in which no entry at or below a c
 commit later, and apply what it reads under the session recorded with each entry. A commit SHALL
 wake the readers of the partitions it touched; a wake-up that is lost costs latency and never a
 fact, because a poll reads the store regardless. A committed fact SHALL reach every projection and
-saga whatever dies after the commit.
+saga whatever dies after the commit. Two rebuilds of one projection SHALL NOT interleave: the
+projection's readers SHALL resume only when every rebuild that paused them has finished, and a
+rebuild requested while a full replay is active SHALL be refused with a message that says so.
 
 #### Scenario: The host dies between the commit and the wake-up
 
@@ -163,12 +201,27 @@ saga whatever dies after the commit.
 - **THEN** the projection re-reads from the beginning of the store when it resumes, and never applies
   on top of a partly emptied read model without re-reading
 
+#### Scenario: A projection is asked to rebuild twice at once
+
+- **WHEN** a second rebuild of a projection is requested while the first is still emptying its read
+  model
+- **THEN** the projection's readers do not resume until both have finished, and the read model holds
+  every fact of the store once the readers have caught up
+
+#### Scenario: A rebuild is requested during a full replay
+
+- **WHEN** a projection's rebuild is requested while a full replay is active
+- **THEN** the rebuild is refused with a message naming the replay, and the replay is not disturbed
+
 ### Requirement: A failing entry stops its partition, is retried, and is visible
 
 Where an entry cannot be applied — a missing prerequisite past its retry policy, or a genuine
 failure — the reader SHALL stop at that entry, SHALL NOT advance its checkpoint past it, SHALL retry
 it on the next wake-up or poll, and SHALL log the entry and count the stall, so that a partition that
-stops advancing is seen and not inferred from a checkpoint that stands still.
+stops advancing is seen and not inferred from a checkpoint that stands still. A read that fails
+before any entry is applied — the store unreachable, a checkpoint the reader refuses — SHALL count as
+a stall and be logged whichever wake-up or poll started it. A batch whose application is cut short by
+the reader's own shutdown SHALL still record the checkpoint for the entries it applied.
 
 #### Scenario: A projection throws on one entry
 
@@ -181,6 +234,12 @@ stops advancing is seen and not inferred from a checkpoint that stands still.
 - **WHEN** a projection reports that a prerequisite is missing
 - **THEN** the entry is retried under the preceding-fact policy without advancing the checkpoint,
   and applies once the prerequisite has
+
+#### Scenario: The store cannot be read
+
+- **WHEN** a reader's read of the store fails on a poll
+- **THEN** the failure is logged with the consumer and partition, the stall is counted, and the next
+  wake-up or poll reads again
 
 ### Requirement: Work that must happen once happens once per cluster
 
@@ -268,7 +327,11 @@ grain directory's entries and the checkpoints of the store-reading projections a
 registers — so that the deployment can be brought back to "nothing scheduled, nothing remembered". A
 reset SHALL NOT remove a reminder, membership row or checkpoint that belongs to another deployment or
 to a consumer the host does not register, and SHALL report how many of each it removed. The event
-stream SHALL NOT be touched by a reset.
+stream SHALL NOT be touched by a reset. A host SHALL be able to name the schema its runtime tables
+live in, and a reset that finds a runtime table absent SHALL fail naming it rather than report that it
+removed nothing. The documentation SHALL say that a reset that fails part-way leaves what it had not
+yet removed in place, and SHALL show the reset resolved in a way that works wherever scope validation
+is on.
 
 #### Scenario: A reset is run
 
@@ -282,6 +345,18 @@ stream SHALL NOT be touched by a reset.
 - **WHEN** a host runs the reset against a read store that also holds the checkpoints of a projection
   the host does not register
 - **THEN** those checkpoints remain with the positions they had, and the report does not count them
+
+#### Scenario: The runtime tables live in a schema
+
+- **WHEN** a host whose reminder and membership tables live in a schema other than the connection's
+  default names that schema and runs the reset
+- **THEN** its reminders and membership rows are removed and counted
+
+#### Scenario: A runtime table is absent
+
+- **WHEN** a host runs the reset against a database in which a reminder or membership table does not
+  exist under the named schema
+- **THEN** the reset fails with a message naming the table, and reports no count
 
 ### Requirement: A read store's checkpoints belong to the consumers that read into it
 
@@ -329,7 +404,12 @@ membership table — rather than imply the runtime recovers on its own.
 
 Each role — commands, projections, sagas, outbox drain, timers, heavy work — SHALL be adopted with
 one registration after the role's existing composite, and a host SHALL be able to run both models
-at once during a rollout, because both apply idempotently. A host that registers the execution model
+at once during a rollout, because both apply idempotently. A role's work SHALL run only on a silo
+that registered the role: a cluster whose silos register different roles SHALL place each
+aggregate, projection, saga, timer owner and heavy unit on a silo that registered its role, and a
+call for a role no silo of the cluster registered SHALL fail with a message naming the role rather
+than activate where the role is missing. A host that only dispatches commands MAY join the cluster
+as a client rather than a silo. A host that registers the execution model
 without the storage-backed grain directory it requires SHALL fail at start with a message naming
 what is missing, not at the first activation, and so SHALL a host with an invalid setting, naming the
 setting. The host's own timer owners and handlers SHALL be honoured whatever order they are registered
@@ -340,6 +420,25 @@ in relative to the execution model.
 - **WHEN** a host calls the projection services composite and then the execution model's projection
   registration
 - **THEN** the bus-fed projection worker is not registered and the store-reading projections are
+
+#### Scenario: Silos register different roles
+
+- **WHEN** one silo of a cluster registers the command role and another the projection, saga and
+  timer roles, and commands are dispatched, facts committed and timers registered
+- **THEN** every command runs on the command silo, every projection, saga and timer owner runs on the
+  other, and no call fails for a role missing on the silo it ran on
+
+#### Scenario: No silo registers a role
+
+- **WHEN** a command is dispatched to a cluster in which no silo registered the command role
+- **THEN** the dispatch fails with a message naming the command role, and no activation is left
+  behind on a silo that lacks it
+
+#### Scenario: The API host joins as a client
+
+- **WHEN** a host registers the execution model's command dispatcher and joins the cluster as an
+  Orleans client, not a silo
+- **THEN** its dispatches are recorded and run on a silo that registered the command role
 
 #### Scenario: A host forgets the directory
 
