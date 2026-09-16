@@ -100,13 +100,16 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     private static async Task StampPositionsAsync(DbContext context, int partition, IReadOnlyList<EntityEntry<EventStreamEntry>> entries, CancellationToken cancellationToken)
     {
         var count = entries.Count;
-        var updated = await context.Database.ExecuteSqlAsync(
-            $"UPDATE partition_position SET position = position + {count} WHERE partition = {partition}",
-            cancellationToken);
+        // Through the model rather than as SQL text, so a context that maps the counter away from the
+        // snake-case convention locks and advances the row it actually has.
+        var updated = await context.Set<PartitionPosition>()
+            .Where(counter => counter.Partition == partition)
+            .ExecuteUpdateAsync(set => set.SetProperty(counter => counter.Position, counter => counter.Position + count), cancellationToken);
         if (updated != 1)
         {
+            var table = context.Model.FindEntityType(typeof(PartitionPosition))?.GetTableName() ?? CommitOrderSchema.PartitionPositionTable;
             throw new InvalidOperationException(
-                $"Partition {partition} has no counter row in {CommitOrderSchema.PartitionPositionTable}; seed one row per partition before appending.");
+                $"Partition {partition} has no counter row in {table}; seed one row per partition before appending.");
         }
 
         var last = await context.Set<PartitionPosition>().AsNoTracking()

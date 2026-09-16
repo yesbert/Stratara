@@ -16,7 +16,20 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.1.0`._
+### Fixed
+
+- **Orleans: two writers of the same first checkpoint no longer fail one of them.** When an
+  activation and its successor overlap during a failover, both can find no checkpoint row and both
+  insert it; the one that lost to the key threw. It now updates the row the other inserted.
+- **Orleans: the partition counter works on a model that does not use snake-case names.** The
+  interceptor advanced the counter with SQL naming `partition_position` and its columns literally, so
+  a write context mapping the counter under other names failed every append. It now goes through the
+  context's model, as the native reader already did.
+- **Orleans: the partition-counter backfill positions old entries in the order they were appended.**
+  It ordered each partition's history by bucket first, so a projection or saga reading across
+  aggregates saw the facts of one bucket before earlier facts of another. Entries are now positioned
+  in sequence order, as the event-sourcing-store specification already promised. A store backfilled
+  under 4.1.0 keeps the positions it was given; the backfill does not reposition entries.
 
 ## [4.1.0] — 2026-09-15
 

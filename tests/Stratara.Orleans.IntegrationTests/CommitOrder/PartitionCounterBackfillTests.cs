@@ -15,7 +15,7 @@ namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 /// <summary>
 /// Task 2.4: a store that holds entries from before it adopted the partition counter. A host reading
 /// with the portable reader refuses to start and names the backfill; the backfill positions the old
-/// entries ahead of the ones appended since; a host started afterwards reads every entry of a
+/// entries in the order they were appended, ahead of the ones appended since; a host started afterwards reads every entry of a
 /// partition in order.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
@@ -35,13 +35,14 @@ public sealed class PartitionCounterBackfillTests(PostgreSqlFixture postgres)
             await context.Database.ExecuteSqlRawAsync("UPDATE partition_position SET position = 0");
         }
 
-        var history = await AppendAsync(before, count: 12);
+        // Buckets fall while sequence numbers rise, so an order by bucket and an order of appending disagree in every partition.
+        var history = await AppendAsync(before, count: 12, bucketOf: i => (12 - i) * 7);
 
         var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => StartHostAsync(connectionString));
         Assert.Contains(nameof(PartitionCounterBackfill), refused.Message, StringComparison.Ordinal);
 
         await using var after = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, Configure(maintainCounter: true));
-        var live = await AppendAsync(after, count: 8);
+        var live = await AppendAsync(after, count: 8, bucketOf: _ => Random.Shared.Next(0, 4096));
 
         await using (var context = await after.CreateContextAsync())
         {
@@ -57,7 +58,7 @@ public sealed class PartitionCounterBackfillTests(PostgreSqlFixture postgres)
         {
             var read = await DrainAsync(reader, partition);
             var expectedHistory = history.Where(e => PartitionMap.PartitionOf(e.BucketId, PartitionCount) == partition)
-                .OrderBy(e => e.BucketId).ThenBy(e => e.SequenceNumber).Select(e => e.Id);
+                .OrderBy(e => e.SequenceNumber).Select(e => e.Id);
             var expectedLive = live.Where(e => PartitionMap.PartitionOf(e.BucketId, PartitionCount) == partition)
                 .OrderBy(e => e.SequenceNumber).Select(e => e.Id);
 
@@ -75,14 +76,14 @@ public sealed class PartitionCounterBackfillTests(PostgreSqlFixture postgres)
         options.MaintainPartitionCounter = maintainCounter;
     };
 
-    private static async Task<List<EventStreamEntry>> AppendAsync(PocStore<PocCommitOrderWriteDbContext> store, int count)
+    private static async Task<List<EventStreamEntry>> AppendAsync(PocStore<PocCommitOrderWriteDbContext> store, int count, Func<int, int> bucketOf)
     {
         var tenantId = Guid.NewGuid();
         var written = new List<EventStreamEntry>();
         for (var i = 0; i < count; i++)
         {
             await using var context = await store.CreateContextAsync();
-            var entry = PocStore<PocCommitOrderWriteDbContext>.NewEntry(Guid.NewGuid(), 1, Random.Shared.Next(0, 4096), tenantId);
+            var entry = PocStore<PocCommitOrderWriteDbContext>.NewEntry(Guid.NewGuid(), 1, bucketOf(i), tenantId);
             context.Set<EventStreamEntry>().Add(entry);
             await context.SaveChangesAsync();
             written.Add(entry);
