@@ -1,6 +1,6 @@
 # Scope the reset to the host's consumers
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-16)
 
 ## Why
 
