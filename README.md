@@ -4,7 +4,7 @@
 
 # Stratara
 
-**CQRS and Event Sourcing for .NET 10. Start with a mediator, grow into the full stack, keep the receipts.**
+**CQRS and Event Sourcing for .NET 10. Start with a mediator, scale out on Orleans, keep the receipts.**
 
 [![CI](https://github.com/yesbert/Stratara/actions/workflows/ci.yml/badge.svg)](https://github.com/yesbert/Stratara/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/v/Stratara.Mediator?logo=nuget&label=NuGet)](https://www.nuget.org/packages?q=Stratara) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-stratara.tech-2ea44f.svg)](https://stratara.tech) [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet)](https://dotnet.microsoft.com/)
 
@@ -14,7 +14,7 @@
 
 **New to the terms?** *Mediator* — your controller hands over one object (`OpenAccount`) and a dispatcher finds the single handler that answers it. *CQRS* — **C**ommand **Q**uery **R**esponsibility **S**egregation: a command changes something and returns little, a query reads and changes nothing, and keeping them apart lets each side take the shape its own job needs. *Event sourcing* — store the facts that happened (`AccountOpened`, `MoneyDeposited`) instead of the state they produced, and fold them to get the current value. Longer: the [glossary](https://stratara.tech/overview/glossary.html).
 
-Stratara is one MIT-licensed family of 27 NuGet packages, versioned together: mediator, event store on PostgreSQL, outbox over RabbitMQ or Azure Service Bus, projections, sagas, identity — and, as defaults rather than add-ons, hash-chained tamper-evident event streams and tenant-bound field encryption with GDPR-grade crypto-shredding. Take one package or take all of them; they never disagree about each other's version.
+Stratara is one MIT-licensed family of 27 NuGet packages, versioned together: mediator, event store on PostgreSQL, outbox over RabbitMQ or Azure Service Bus, projections, sagas, identity — and, as defaults rather than add-ons, hash-chained tamper-evident event streams and tenant-bound field encryption with GDPR-grade crypto-shredding. Scale out on the Orleans execution model: one writer per aggregate across the cluster, and no accepted command lost to a crash. Take one package or take all of them; they never disagree about each other's version.
 
 ## Pick your door
 

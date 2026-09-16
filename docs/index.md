@@ -1,16 +1,17 @@
 ---
 _layout: "landing"
 title: "Stratara — CQRS and Event Sourcing for .NET"
-description: "Start with a lean mediator and grow into event sourcing, an outbox, projections and sagas. Tamper-evident streams and tenant-bound encryption are already inside. MIT, .NET 10."
+description: "Start with a lean mediator, grow into event sourcing, and scale out on Orleans with one writer per aggregate and no command lost to a crash. Tamper-evident streams and tenant-bound encryption inside. MIT, .NET 10."
 ---
 
 <section class="st-hero">
   <img class="st-logo" src="assets/logo.png" alt="Stratara">
-  <h1>CQRS and Event Sourcing for .NET. <em>Start small, keep the receipts.</em></h1>
+  <h1>CQRS and Event Sourcing for .NET. <em>Start with a mediator, scale out on Orleans, keep the receipts.</em></h1>
   <p class="st-lead">
-    Begin with a lean mediator. Add an event store when you need one. Scale out with an outbox,
-    projections and sagas when you must. One MIT-licensed family of packages, one version, and
-    tamper-evident streams and tenant-bound encryption already inside.
+    Begin with a lean mediator. Add an event store when you need one. Scale out on the Orleans
+    execution model: one writer per aggregate across the cluster, and no accepted command lost to a
+    crash. One MIT-licensed family of packages, one version, and tamper-evident streams and
+    tenant-bound encryption already inside.
   </p>
   <div class="st-cta">
     <a class="btn btn-primary" href="getting-started/first-stratara-app.md">Get started in 5 minutes</a>

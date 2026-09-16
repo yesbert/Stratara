@@ -149,7 +149,7 @@ jobs:
           # The apex itself must answer, not redirect: a 301 to www would mean Plesk's preferred
           # domain still points the other way, and every published link would take a detour.
           status_is https://stratara.tech/ 200 "the apex does not answer with the site itself"
-          contains https://stratara.tech/ "Start small, keep the receipts" "the landing page is not the documentation"
+          contains https://stratara.tech/ "scale out on Orleans, keep the receipts" "the landing page is not the documentation"
           status_is https://stratara.tech/concepts/why-event-sourcing.html 200 "a deep page is missing"
           status_is https://stratara.tech/legal/imprint.html 200 "the imprint is not served"
           status_is https://stratara.tech/legal/privacy.html 200 "the privacy policy is not served"
