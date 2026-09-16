@@ -34,6 +34,35 @@ public interface ICommittedPositionReader
     /// <param name="cancellationToken">Propagated to the store.</param>
     /// <returns>The entries in commit order, and the position to store; an empty batch keeps the position it was asked for.</returns>
     Task<CommittedBatch> ReadAfterAsync(int partition, long afterPosition, int batchSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the head of <paramref name="partition"/>: the position after which no entry committed at the time of
+    /// the call exists, so that a consumer starting there reads exactly what commits afterwards. <c>0</c> on a
+    /// partition without entries. The default walks the partition batch by batch from the beginning and returns
+    /// the last position; a reader overrides it with one query where its store can answer directly.
+    /// </summary>
+    /// <param name="partition">The partition, from <c>0</c> to the configured partition count − 1.</param>
+    /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <returns>The position to store for a consumer that starts at the head.</returns>
+    async Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default)
+    {
+        const int walkBatchSize = 1_000;
+        var position = 0L;
+        while (true)
+        {
+            var batch = await ReadAfterAsync(partition, position, walkBatchSize, cancellationToken);
+            if (batch.Entries.Count == 0)
+            {
+                return position;
+            }
+
+            position = batch.Position;
+            if (!batch.HasMore)
+            {
+                return position;
+            }
+        }
+    }
 }
 
 /// <summary>

@@ -143,6 +143,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         services.AddOptions<CommitOrderOptions>();
         OrleansOptionsValidator.Register<CommitOrderOptions>(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, StoreReaderGrainStarter>());
+        services.TryAddScoped<IStoreReaderSeeding, StoreReaderSeeding>();
         Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         if (!services.Any(d => d.ServiceType == typeof(OrleansEventBundleDispatcher)))
         {

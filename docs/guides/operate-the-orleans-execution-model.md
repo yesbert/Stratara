@@ -188,6 +188,15 @@ there; a tool that registers none removes no checkpoint and reports zero. Anothe
 in the same read store stay, and so do those of a projection the host no longer registers: nothing reads
 them, and removing them is a delete the host owns.
 
+### Seeding instead of resetting
+
+The reset brings a deployment back to "nothing remembered", and a host started afterwards reads the whole
+store again. A host whose read models are current does the opposite before its first start: it seeds a
+checkpoint at the head for every consumer it registers, with `IStoreReaderSeeding`, resolved from a scope
+like the reset — see [Start on a populated store](migrate-to-the-orleans-execution-model.md#start-on-a-populated-store).
+A checkpoint at the beginning counts as absent and is seeded, so run the reset first where a full re-read is
+wanted, and seed afterwards only the consumers that are current.
+
 ### Sharing a read store
 
 A checkpoint belongs to a consumer and a partition, not to a deployment. Two deployments can keep their

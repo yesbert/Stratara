@@ -38,3 +38,7 @@ builder.Services
     .AddStrataraProjectionCheckpoints<AppReadDbContext>()
     .AddStrataraProjectionGrains();
 ```
+
+A host whose read models are already current seeds its checkpoints at the store's head before its first
+start — `IStoreReaderSeeding.SeedAtHeadAsync()` from a scope, while no silo runs — so that the first start
+applies only what commits afterwards.

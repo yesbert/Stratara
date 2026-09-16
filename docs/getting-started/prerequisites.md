@@ -20,6 +20,7 @@ That's it for the minimum surface. The `Stratara.Mediator` + `Stratara.Abstracti
 | If you use… | You'll need… |
 |---|---|
 | `Stratara.EventSourcing.EntityFrameworkCore` | PostgreSQL 15+ for a running host (the store registration is Npgsql). `Stratara.Testing.EntityFrameworkCore` runs the same store on SQLite, for tests only |
+| `Stratara.Orleans`, `Stratara.Orleans.EntityFrameworkCore` | An Orleans 10.3 cluster: a storage-backed membership table and reminder service (the ADO.NET providers on PostgreSQL, with Orleans' own scripts applied), a storage-backed grain directory (Redis 7+), and PostgreSQL 15+ for the native commit-order reader |
 | `Stratara.Outbox.RabbitMQ` | RabbitMQ 3.13+ with the management plugin (publisher confirms + reconnect; worker subscriptions are quorum queues) |
 | `Stratara.Outbox.RabbitMQ`, optional | Redis 7+ — only for a multi-replica outbox worker (`AddRedisOutboxLock()`) or a projection replay that must span hosts; a single host runs without it |
 | `Stratara.Outbox.AzureServiceBus` | An Azure Service Bus namespace; either a connection string or a `DefaultAzureCredential`-resolvable managed identity |
