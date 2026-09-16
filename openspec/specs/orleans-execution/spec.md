@@ -16,6 +16,12 @@ store's version constraint SHALL still refuse the second writer, so the guarante
 the bus workers give and never below it. A command that a handler sends for another aggregate SHALL
 run in that other aggregate's activation, not in the sending handler's.
 
+A heavy command SHALL be the exception: it SHALL run in the bounded heavy-work pool, outside its
+aggregate's activation, so that a long unit does not hold the aggregate's other commands back. It MAY
+therefore run while another command naming the same aggregate runs; where both append, the store's
+version constraint SHALL refuse the later writer, and the refused command SHALL be resumed like any
+failing command — the guarantee the bus path gives heavy work.
+
 #### Scenario: Two commands name one aggregate from two hosts
 
 - **WHEN** two hosts dispatch commands naming the same aggregate at the same time
@@ -33,6 +39,13 @@ run in that other aggregate's activation, not in the sending handler's.
   command for the second aggregate is running
 - **THEN** the dispatched command runs after the running one, in the second aggregate's activation
 
+#### Scenario: A heavy command and a command name one aggregate
+
+- **WHEN** a heavy command naming an aggregate runs and a command naming the same aggregate is
+  dispatched
+- **THEN** the command runs without waiting for the heavy command, and if both append, one append
+  succeeds and the other command observes a concurrency conflict and is resumed
+
 ### Requirement: An accepted command is recorded before the call returns and resumed after a crash
 
 Where a host has registered the Orleans execution model's command dispatcher, dispatching a command
@@ -44,7 +57,11 @@ as a bus message a handler cannot take is kept, and SHALL NOT hold back the resu
 commands; an operator SHALL be able to return a kept command, which is then resumed with its attempts
 starting over. A command whose handler is still running SHALL NOT be handed over again, however long
 it runs, and a resumed command SHALL keep the order of the aggregate it names whatever protection its
-payload carries.
+payload carries. Heavy commands SHALL be exempt from both order promises, and a heavy command SHALL
+NOT hold back a command or a resumption that follows it. Recorded commands SHALL be resumed by the
+execution model's drain wherever that drain runs with an intent store registered, whichever host
+dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
+without an intent store SHALL report it.
 
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
@@ -97,7 +114,21 @@ registered SHALL apply whatever order it and the execution model were registered
 #### Scenario: Two commands to one aggregate from one scope
 
 - **WHEN** one scope dispatches two commands naming the same aggregate, one after the other
-- **THEN** they run in the order they were dispatched; across scopes no order is promised
+- **THEN** they run in the order they were dispatched; across scopes no order is promised, and a
+  heavy command keeps no order with the commands around it
+
+#### Scenario: The drain runs on a silo that did not dispatch the commands
+
+- **WHEN** commands are recorded by an API host and the drain runs on a silo where the execution
+  model's dispatcher is not registered, and a recorded command is due or kept
+- **THEN** the due command is resumed within its attempt bound, the kept command stays kept, and
+  neither is published to a bus
+
+#### Scenario: Two heavy commands to one aggregate are due
+
+- **WHEN** two heavy commands naming the same aggregate are due in one resumption, and further
+  commands are due after them
+- **THEN** every due command is handed over without waiting for either heavy command to finish
 
 ### Requirement: Projections and sagas read the store in commit order and never miss a committed fact
 
@@ -204,6 +235,11 @@ handling cancels or registers the process's timers SHALL complete.
 
 - **WHEN** a timer's tick runs on a silo whose clock is slightly behind the registering host's
 - **THEN** the timer fires on that tick and not a retry period later
+
+#### Scenario: A timer's handler runs longer than the retry period
+
+- **WHEN** a timer's handler is still running when the timer's next tick arrives
+- **THEN** the tick does not start the handler again, and the handler runs once
 
 ### Requirement: Heavy work is bounded across the cluster by permits that expire with their holder
 

@@ -52,8 +52,9 @@ starting over. A command whose handler is still running SHALL NOT be handed over
 it runs, and a resumed command SHALL keep the order of the aggregate it names whatever protection its
 payload carries. Heavy commands SHALL be exempt from both order promises, and a heavy command SHALL
 NOT hold back a command or a resumption that follows it. Recorded commands SHALL be resumed by the
-execution model's drain wherever that drain runs, whichever host dispatched them, and SHALL never be
-published to a message bus.
+execution model's drain wherever that drain runs with an intent store registered, whichever host
+dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
+without an intent store SHALL report it.
 
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
