@@ -84,4 +84,60 @@ public sealed class PermitLedgerTests
         Assert.False(released.HolderDead);
         Assert.Equal(0, ledger.InUse);
     }
+
+    [Fact]
+    public void A_permit_that_falls_free_goes_to_the_refused_unit_and_not_to_a_new_one()
+    {
+        var ledger = new PermitLedger(Limit, Lease, _clock);
+        _clock.Advance(Lease);
+        var running = Guid.NewGuid();
+        var held = Enumerable.Range(0, Limit).Select(_ => Guid.NewGuid()).ToList();
+        foreach (var unit in held)
+        {
+            Assert.True(ledger.TryAcquire(unit, Holder));
+        }
+
+        Assert.False(ledger.Reclaim(running, Holder));
+        ledger.Release(held[0]);
+
+        Assert.False(ledger.TryAcquire(Guid.NewGuid(), Holder));
+        Assert.True(ledger.Reclaim(running, Holder));
+        Assert.Equal(Limit, ledger.InUse);
+    }
+
+    [Fact]
+    public void A_reservation_a_unit_stops_refreshing_frees_the_permit_for_a_new_unit()
+    {
+        var ledger = new PermitLedger(Limit, Lease, _clock);
+        _clock.Advance(Lease);
+        var held = Enumerable.Range(0, Limit).Select(_ => Guid.NewGuid()).ToList();
+        foreach (var unit in held)
+        {
+            ledger.TryAcquire(unit, Holder);
+        }
+
+        Assert.False(ledger.Reclaim(Guid.NewGuid(), Holder));
+        ledger.Release(held[0]);
+        _clock.Advance(Lease);
+
+        Assert.True(ledger.TryAcquire(Guid.NewGuid(), Holder));
+    }
+
+    [Fact]
+    public void A_unit_that_holds_its_permit_again_keeps_no_reservation()
+    {
+        var ledger = new PermitLedger(Limit, Lease, _clock);
+        _clock.Advance(Lease);
+        var first = Guid.NewGuid();
+        Assert.True(ledger.TryAcquire(first, Holder));
+        var running = Guid.NewGuid();
+        Assert.True(ledger.TryAcquire(Guid.NewGuid(), Holder));
+
+        Assert.False(ledger.Reclaim(running, Holder));
+        ledger.Release(first);
+        Assert.True(ledger.Reclaim(running, Holder));
+        ledger.Release(running);
+
+        Assert.True(ledger.TryAcquire(Guid.NewGuid(), Holder));
+    }
 }
