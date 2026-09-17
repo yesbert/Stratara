@@ -65,17 +65,20 @@ internal sealed class HeavyWorkRunner : IHostedService
     /// </summary>
     /// <param name="unit">What to run; it ends the intent's lease whatever happens to it.</param>
     /// <param name="cancellationToken">Cancelled when the silo stops: a unit still waiting is run at once, which
-    /// ends it at the permit.</param>
+    /// ends it at the permit it was waiting for.</param>
     public Task RunAsync(Func<Task> unit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(unit);
         var queued = new HeavyUnit(unit);
+
+        // Registered before the unit is queued: a worker that takes it first disposes a registration that is
+        // already there, and a cancellation that arrives first runs the unit and leaves the worker nothing to take.
+        queued.AbandonOn(cancellationToken);
         if (!_queued.Writer.TryWrite(queued))
         {
-            return unit();
+            queued.RunAsync().Ignore();
         }
 
-        queued.AbandonOn(cancellationToken);
         return queued.Completion.Task;
     }
 
