@@ -678,6 +678,10 @@ every publisher to an exchange is retired before its queues are deleted, that a 
 emptied deliberately, and that a publication kept after its queues are deleted stores every bundle for
 a drain that cannot deliver it.
 
+The documentation SHALL show how a consumer tests its handlers, projections, sagas and timers on the
+execution model in one process, with the registrations it uses in production, and SHALL ship a runnable
+sample that does so.
+
 #### Scenario: A host adopts the projection role
 
 - **WHEN** a host calls the projection services composite and then the execution model's projection
@@ -755,3 +759,10 @@ a drain that cannot deliver it.
   commits facts
 - **THEN** the bundle is published to the bus as before, and the documentation states that such a
   silo keeps the broker until it registers a store-reading role
+
+#### Scenario: A consumer tests on the execution model
+
+- **WHEN** a consumer follows the testing documentation for the execution model
+- **THEN** its handlers, projections, sagas and timers run through the registrations it uses in
+  production, in the test's process, without a cluster, a broker or a database server — and the
+  shipped sample runs the same in one console run

@@ -21,7 +21,19 @@ batches and in append order; the backfill SHALL run while nothing appends, and t
 say so. The portable reader SHALL see only entries appended by a process that maintains
 its partition counter; every process that appends to a store read by it SHALL maintain the counter, and
 a reader that finds an entry appended without it SHALL stop its partition and report the entry rather
-than read past it. The partition count of a store read by the portable reader SHALL NOT change without
+than read past it — whatever the entry's place in its partition and however many entries without a
+position other partitions hold. Maintaining the counter is the write context's to declare through the
+documented interceptor; the framework SHALL NOT offer a setting that appears to switch the counter on
+or off without doing so, and the setting that once did SHALL be marked obsolete with a message naming
+the interceptor until it is removed. Positions handed out to one append SHALL follow the version order
+within each stream. Positioning an entry that was appended without the counter SHALL NOT change a
+position already handed out: the entry SHALL take a position after every position the partition has
+handed out, so that a checkpoint written before the positioning stays true and a reader resumes from
+it, reads the positioned entry once, and re-applies nothing. The documentation SHALL state that such an
+entry is therefore read after entries appended with the counter in the meantime — a later version of
+its own stream included — that the process appending without the counter is to be stopped before
+positioning, and that a read model which stops on the resulting order is repaired by a rebuild.
+The partition count of a store read by the portable reader SHALL NOT change without
 renumbering its entries, and a host whose partition count is lower than the store's counter rows show
 SHALL refuse to start. A position SHALL NOT be accepted by the other reader, nor under a partition count
 other than the one it was written under. A store that holds entries from before the portable reader
@@ -87,3 +99,31 @@ a store with entries it has not positioned.
   number of counter rows the store holds
 - **THEN** it refuses to start with a message naming both counts, instead of reading merged partitions
   whose positions overlap — verified on the PostgreSQL store only
+
+#### Scenario: A late entry is positioned behind a checkpoint
+
+- **WHEN** a reader holds a checkpoint past several positioned entries, an entry of its partition is
+  appended without the counter, and the entry is then positioned
+- **THEN** the positioned entries keep their positions, the reader resumes from its checkpoint, reads
+  the late entry once after them, and re-applies none of them — verified on the PostgreSQL store only
+
+#### Scenario: Unpositioned entries pile up in other partitions
+
+- **WHEN** many entries are appended without the counter to other partitions after one was appended
+  without it to the reader's own
+- **THEN** the reader of that partition still stops before its own unpositioned entry, however many the
+  others hold — verified on the PostgreSQL store only with more foreign entries than one read of the
+  store returns
+
+#### Scenario: One append holds several versions of one stream
+
+- **WHEN** one save appends several versions of one stream, and of another stream, to a store that
+  maintains the counter
+- **THEN** the positions handed out follow the version order within each stream, and a reader returns
+  them in that order — verified on the PostgreSQL store only
+
+#### Scenario: A host sets the retired switch
+
+- **WHEN** a host sets the setting that once claimed to maintain the counter
+- **THEN** the build warns that it is obsolete, names the interceptor as what maintains the counter, and
+  the value changes nothing

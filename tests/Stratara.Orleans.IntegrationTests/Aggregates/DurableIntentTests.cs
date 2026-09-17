@@ -5,9 +5,11 @@ using Stratara.Orleans.IntegrationTests.Timers;
 namespace Stratara.Orleans.IntegrationTests.Aggregates;
 
 /// <summary>
-/// The durable-intent path: a command accepted before a kill is applied after the restart, a command
+/// The durable-intent path: a command accepted before a kill is applied after the restart — five kills per path,
+/// recorded and heavy, the kill landing inside a five-second handler — a command
 /// whose handler keeps failing is resumed a bounded number of times and then kept without holding back
-/// the commands after it, a handler that runs longer than the grace runs once, a command that names
+/// the commands after it, a handler that runs longer than the grace runs once — awaiting or not yielding on the
+/// aggregate path, awaiting on the heavy path — a command that names
 /// its aggregate only through the interface is resumed in its aggregate's order, and a kept command an
 /// operator returns is resumed with its count starting over.
 /// </summary>
@@ -51,6 +53,7 @@ public sealed class DurableIntentTests(PostgreSqlFixture postgres, RedisFixture 
     [Theory]
     [InlineData("enqueue", "poc_intent_long", 11184, 30073)]
     [InlineData("enqueue-heavy", "poc_intent_long_heavy", 11185, 30074)]
+    [InlineData("enqueue-blocking", "poc_intent_long_blocking", 11336, 30226)]
     public async Task A_handler_that_runs_longer_than_the_grace_runs_once(string enqueueCommand, string database, int siloPort, int gatewayPort)
     {
         var environment = await EnvironmentForAsync(database, siloPort, gatewayPort);
