@@ -34,7 +34,7 @@ not work, and it is the one thing the reset is for.
 
 ## Impact
 
-- Affected specs: `test-support`
+- Affected specs: `test-support`, `orleans-execution` (what a reset means on a host that goes on running)
 - Affected code: `src/Stratara.Testing.Orleans/InMemoryExecutionModelReset.cs`,
   `src/Stratara.Testing.Orleans/ExecutionModelTestHost.cs`,
   `src/Stratara.Orleans/Projections/StoreReaderGrain.cs`,

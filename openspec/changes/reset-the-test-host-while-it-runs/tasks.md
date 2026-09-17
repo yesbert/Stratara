@@ -21,6 +21,7 @@
 ## 3. Documentation and the run
 
 - [x] 3.1 The package README and the testing guide say what the reset does to the readers.
-- [x] 3.2 `CHANGELOG.md`; the `test-support` spec no longer describes the host's wiring, and the
-      `package-distribution` purpose no longer counts packages.
+- [x] 3.2 `CHANGELOG.md`; the `test-support` spec no longer describes the host's wiring, the reset port
+      says what a reset means on a host that goes on running, and the `package-distribution` purpose no
+      longer counts packages.
 - [x] 3.3 Gauntlet, the testing package's tests and the projection and saga integration suites.

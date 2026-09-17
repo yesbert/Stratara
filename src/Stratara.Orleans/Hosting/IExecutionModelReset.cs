@@ -15,6 +15,12 @@ namespace Stratara.Orleans.Hosting;
 public interface IExecutionModelReset
 {
     /// <summary>Clears the execution model's state and reports what was removed.</summary>
+    /// <remarks>
+    /// A reset belongs to a deployment that is not running. An implementation for a host that goes on running — the
+    /// test-support host's — leaves its store readers where the store's head is instead of removing their
+    /// checkpoints, and reports how many it moved: a reader returned to the beginning would read the store again
+    /// into read models a reset does not empty.
+    /// </remarks>
     /// <param name="cancellationToken">Propagated to every store the reset clears.</param>
     /// <returns>How many reminders, membership rows, checkpoints and directory entries were removed.</returns>
     Task<ExecutionModelResetReport> ResetAsync(CancellationToken cancellationToken = default);
@@ -23,6 +29,6 @@ public interface IExecutionModelReset
 /// <summary>What a reset removed.</summary>
 /// <param name="Reminders">The reminders of the host's service, durable timers included.</param>
 /// <param name="MembershipRows">The membership rows of the host's cluster.</param>
-/// <param name="Checkpoints">The checkpoints of the store-reading projections and sagas the host registers.</param>
+/// <param name="Checkpoints">The checkpoints of the store-reading projections and sagas the host registers — removed, or moved where the host goes on running.</param>
 /// <param name="DirectoryEntries">The entries the host's directory cleanup removed.</param>
 public sealed record ExecutionModelResetReport(int Reminders, int MembershipRows, int Checkpoints, long DirectoryEntries);

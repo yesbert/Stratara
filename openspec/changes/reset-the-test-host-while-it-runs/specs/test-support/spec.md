@@ -46,6 +46,11 @@ across silos belongs to an integration test against real infrastructure.
 - **THEN** the projection applies nothing appended before the seeding and everything after; and after a
   reset the host remembers no timer and every reader is where the store's head is
 
+#### Scenario: A host's start fails
+
+- **WHEN** the host cannot start — what a test asked to run before the start throws
+- **THEN** the test is given that failure, and nothing the host had started keeps running
+
 #### Scenario: A host is reset between two tests
 
 - **WHEN** a test resets a running host after facts were applied, and then dispatches again

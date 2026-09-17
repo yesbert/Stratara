@@ -103,7 +103,8 @@ public sealed class ExecutionModelTestHostTests
         await host.Timers.RegisterAsync(new TimerRegistration(owner, "expire", DateTimeOffset.UtcNow.AddHours(1)), TestContext.Current.CancellationToken);
         var report = await host.ResetAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(report.Checkpoints > 0, "the reset removed no checkpoint");
+        // The readers had caught up, so their checkpoints were already where the reset puts them: nothing moved.
+        Assert.Equal(0, report.Checkpoints);
         Assert.True(report.Reminders > 0, "the reset removed no timer");
         Assert.Empty(await host.Timers.ListAsync(owner, TestContext.Current.CancellationToken));
         await using var scope = host.Services.CreateAsyncScope();
@@ -116,6 +117,28 @@ public sealed class ExecutionModelTestHostTests
                 await reader.HeadAsync(partition, TestContext.Current.CancellationToken),
                 await checkpoints.GetAsync(name, partition, reader.Name, TestContext.Current.CancellationToken));
         }
+    }
+
+    /// <summary>
+    /// A start that fails hands the test the failure that caused it — not one from the stop that follows — and leaves
+    /// nothing of the host running, which the next host proves by starting at all.
+    /// </summary>
+    [Fact]
+    public async Task A_host_whose_start_fails_reports_that_failure_and_leaves_nothing_behind()
+    {
+        var runs = new Runs();
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => ExecutionModelTestHost.CreateAsync(
+            services => Commands(services, runs).AddStrataraProjectionGrains(),
+            options => options.BeforeStart = _ => throw new InvalidOperationException("the test's own seeding failed")));
+
+        Assert.Equal("the test's own seeding failed", failure.Message);
+
+        await using var next = await ExecutionModelTestHost.CreateAsync(services => Commands(services, runs).AddStrataraProjectionGrains());
+        var account = Guid.NewGuid();
+        await next.DispatchAsync(new OpenAccount(account, 3m), TestContext.Current.CancellationToken);
+        await next.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(3m, runs.Balances[account]);
     }
 
     /// <summary>

@@ -182,7 +182,7 @@ internal sealed class RolePlacementFilterDirector(IServiceProvider services) : I
 {
     private readonly ISiloMetadataCache? _siloMetadata = services.GetService<ISiloMetadataCache>();
     private readonly Singleton.SingletonWorkPlacement.SingletonWorkSiloMetadata? _ownMetadata = services.GetService<Singleton.SingletonWorkPlacement.SingletonWorkSiloMetadata>();
-    private readonly IOptions<SiloMetadata>? _publishing = services.GetService<IOptions<SiloMetadata>>();
+    private readonly IServiceProvider _services = services;
     private readonly SiloAddress? _localSilo = services.GetService<ILocalSiloDetails>()?.SiloAddress;
 
     public IEnumerable<SiloAddress> Filter(PlacementFilterStrategy filterStrategy, PlacementTarget target, IEnumerable<SiloAddress> silos)
@@ -192,9 +192,10 @@ internal sealed class RolePlacementFilterDirector(IServiceProvider services) : I
             return silos;
         }
 
+        Singleton.SingletonWorkPlacement.EnsurePublished(_ownMetadata, _services);
         var key = RolePlacement.MetadataKeyOf(strategy.Role);
         return RolePlacement.Select(strategy.Role, silos, silo => silo.Equals(_localSilo)
-            ? _ownMetadata.Entries.ContainsKey(key)
+            ? _ownMetadata.Publishes(key)
             : _siloMetadata.GetSiloMetadata(silo).Metadata.ContainsKey(key));
     }
 }

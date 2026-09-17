@@ -37,6 +37,7 @@ internal sealed class InMemoryExecutionModelReset(
         var partitions = commitOrder.Value.PartitionCount;
         var paused = new List<(INudgeTarget Target, int Partition)>(targets.Count * partitions);
         var moved = 0;
+        var resuming = new List<Exception>();
         try
         {
             foreach (var target in targets)
@@ -52,10 +53,26 @@ internal sealed class InMemoryExecutionModelReset(
         }
         finally
         {
+            // Every reader that was paused is resumed, whatever one of them answers: a reader left paused reads
+            // nothing for the rest of the host's life.
             foreach (var (target, partition) in paused)
             {
-                await target.ResumeAsync(grainFactory, partition);
+                try
+                {
+                    await target.ResumeAsync(grainFactory, partition);
+                }
+                catch (Exception failure)
+                {
+                    resuming.Add(failure);
+                }
             }
+        }
+
+        if (resuming.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"{resuming.Count} of the host's store readers stayed paused after the reset and read nothing until the host is created again.",
+                resuming[0]);
         }
 
         return new ExecutionModelResetReport(registered, MembershipRows: 0, moved, directory.Clear());
@@ -76,12 +93,15 @@ internal sealed class InMemoryExecutionModelReset(
             var head = await positions.HeadAsync(partition, cancellationToken);
             foreach (var consumer in consumers)
             {
-                await checkpoints.ResetAsync(consumer, partition, positions.Name, cancellationToken);
-                if (head > 0)
+                // One write, so no moment exists in which the reader has no checkpoint and would read the store from
+                // the beginning into read models this does not empty.
+                var before = await checkpoints.GetAsync(consumer, partition, positions.Name, cancellationToken);
+                if (before == head)
                 {
-                    await checkpoints.SetAsync(consumer, partition, positions.Name, head, cancellationToken);
+                    continue;
                 }
 
+                await checkpoints.SetAsync(consumer, partition, positions.Name, head, cancellationToken);
                 moved++;
             }
         }

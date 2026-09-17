@@ -162,28 +162,27 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         {
             var session = new TestSessionContextProvider(TestSessionContext.ForTenant(DefaultTenantId));
             var host = Build(connectionString, settings, session, configure);
-            var testHost = new ExecutionModelTestHost(host, keeper, session);
-            await CreateSchemaAsync(host.Services, settings.PartitionCount, cancellationToken);
-            if (settings.BeforeStart is { } beforeStart)
-            {
-                await beforeStart(testHost);
-            }
-
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(settings.StartTimeout);
             try
             {
+                var testHost = new ExecutionModelTestHost(host, keeper, session);
+                await CreateSchemaAsync(host.Services, settings.PartitionCount, cancellationToken);
+                if (settings.BeforeStart is { } beforeStart)
+                {
+                    await beforeStart(testHost);
+                }
+
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(settings.StartTimeout);
                 await host.StartAsync(timeout.Token);
+                return testHost;
             }
             catch
             {
-                // A silo that started part-way holds its ports, threads and timers until it is stopped, and the noise
-                // it goes on making would bury the failure the test is about to see.
+                // What the host built holds ports, threads, timers and database connections until it is stopped, and
+                // the noise it goes on making would bury the failure the test is about to see.
                 await StopQuietlyAsync(host);
                 throw;
             }
-
-            return testHost;
         }
         catch
         {
@@ -215,11 +214,17 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
     }
 
     /// <summary>
-    /// Forgets what the execution model keeps, through its reset port: the timers, the grain directory's entries and the
-    /// registered store readers' checkpoints.
+    /// Forgets what the execution model keeps on this host: its timers and the grain directory's entries go, and every
+    /// registered store reader is put at the store's head — the host keeps running, and a reader returned to the
+    /// beginning would read the store again into read models this does not empty.
     /// </summary>
+    /// <remarks>
+    /// This is the host's reset, not a rehearsal of the deployment's: a deployment resets while nothing runs and its
+    /// readers start again from nothing. Between two tests of one host, "nothing from before" means the head.
+    /// </remarks>
     /// <param name="cancellationToken">Cancels the reset.</param>
-    /// <returns>What was removed.</returns>
+    /// <returns>What was removed, and how many checkpoints were moved.</returns>
+    /// <exception cref="InvalidOperationException">A store reader could not be started again and reads nothing.</exception>
     public async Task<ExecutionModelResetReport> ResetAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -396,8 +401,10 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         {
             await host.StopAsync();
         }
-        catch (Exception stopping) when (stopping is not OperationCanceledException)
+        catch (Exception stopping)
         {
+            // Whatever the stop ends with, including its own timeout: the failure the caller is about to see is the
+            // one that made the start fail, not this.
             _ = stopping;
         }
         finally

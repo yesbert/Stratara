@@ -27,6 +27,7 @@ internal sealed class SingletonWorkPlacementFilterDirector(IServiceProvider serv
 {
     private readonly ISiloMetadataCache? _siloMetadata = services.GetService<ISiloMetadataCache>();
     private readonly SingletonWorkPlacement.SingletonWorkSiloMetadata? _ownMetadata = services.GetService<SingletonWorkPlacement.SingletonWorkSiloMetadata>();
+    private readonly IServiceProvider _services = services;
     private readonly SiloAddress? _localSilo = services.GetService<ILocalSiloDetails>()?.SiloAddress;
 
     public IEnumerable<SiloAddress> Filter(PlacementFilterStrategy filterStrategy, PlacementTarget target, IEnumerable<SiloAddress> silos)
@@ -36,9 +37,10 @@ internal sealed class SingletonWorkPlacementFilterDirector(IServiceProvider serv
             return silos;
         }
 
+        SingletonWorkPlacement.EnsurePublished(_ownMetadata, _services);
         var key = SingletonWorkPlacement.MetadataKeyOf(target.GrainIdentity.Key.ToString());
         return silos.Where(silo => silo.Equals(_localSilo)
-            ? _ownMetadata.Entries.ContainsKey(key)
+            ? _ownMetadata.Publishes(key)
             : _siloMetadata.GetSiloMetadata(silo).Metadata.ContainsKey(key));
     }
 }
@@ -89,15 +91,10 @@ internal static class SingletonWorkPlacement
     /// <summary>
     /// Makes sure this silo's own entries are written before a placement filter judges it by them. The runtime writes
     /// them when it first materialises the silo's metadata, and nothing in this model orders that before the first
-    /// placement: reading the options here does it, once, under the options' own lock.
+    /// placement, so a filter writes them itself — once, whoever gets there first.
     /// </summary>
-    internal static void EnsurePublished(SingletonWorkSiloMetadata metadata, IOptions<SiloMetadata>? publishing)
-    {
-        if (!metadata.Published)
-        {
-            _ = publishing?.Value;
-        }
-    }
+    internal static void EnsurePublished(SingletonWorkSiloMetadata metadata, IServiceProvider services) =>
+        metadata.Fill(services.GetRequiredService<IServiceScopeFactory>());
 
     /// <summary>
     /// The metadata entries naming the singleton work and the execution-model roles registered on this silo. The
@@ -107,26 +104,56 @@ internal static class SingletonWorkPlacement
     /// </summary>
     internal sealed class SingletonWorkSiloMetadata
     {
+        private readonly Lock _gate = new();
+        private bool _filled;
+        private bool _filling;
+
         public Dictionary<string, string> Entries { get; } = new(StringComparer.Ordinal);
 
-        /// <summary>Whether <see cref="Fill"/> has run, which the runtime does when it materialises the silo's metadata.</summary>
-        public bool Published { get; private set; }
 
         /// <summary>
-        /// Writes the entries. A work registered with its name is published under that name without being constructed;
-        /// a work registered without one is constructed here, while the silo starts, to read its name.
+        /// Writes the entries, once. A work registered with its name is published under that name without being
+        /// constructed; a work registered without one is constructed here to read its name. Whoever asks first writes
+        /// them — the runtime when it materialises the silo's metadata, or a placement filter that would otherwise
+        /// read an empty table — and the gate is what makes a later reader see them whole. A call from inside the
+        /// writing, out of a work's own constructor, returns instead of writing them again.
         /// </summary>
         /// <exception cref="InvalidOperationException">A work registered without a name could not be constructed.</exception>
         public void Fill(IServiceScopeFactory scopeFactory)
         {
-            using var scope = scopeFactory.CreateScope();
-            foreach (var name in PublishedNames(scope.ServiceProvider))
+            lock (_gate)
             {
-                Entries[MetadataKeyOf(name)] = "registered";
-            }
+                if (_filled || _filling)
+                {
+                    return;
+                }
 
-            Hosting.RolePlacement.Fill(Entries, scope.ServiceProvider);
-            Published = true;
+                _filling = true;
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    foreach (var name in PublishedNames(scope.ServiceProvider))
+                    {
+                        Entries[MetadataKeyOf(name)] = "registered";
+                    }
+
+                    Hosting.RolePlacement.Fill(Entries, scope.ServiceProvider);
+                    _filled = true;
+                }
+                finally
+                {
+                    _filling = false;
+                }
+            }
+        }
+
+        /// <summary>Reads an entry under the gate that writes them.</summary>
+        public bool Publishes(string key)
+        {
+            lock (_gate)
+            {
+                return Entries.ContainsKey(key);
+            }
         }
 
         private static IEnumerable<string> PublishedNames(IServiceProvider services)
