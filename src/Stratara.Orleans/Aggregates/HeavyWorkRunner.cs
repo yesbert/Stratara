@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,19 +15,22 @@ namespace Stratara.Orleans.Aggregates;
 /// one of <see cref="HeavyWorkGrain.MaxLocalWorkers"/> workers, off the activation's scheduler, so a handler that
 /// computes without awaiting anything occupies one worker and nothing else — the silo's other units keep running,
 /// and the pool keeps accepting and leasing hand-overs while it computes. The permit a unit runs under is taken
-/// here, on the worker, and renewed from a timer of its own.
+/// here, on the worker, inside the unit's own lease.
 /// </summary>
 /// <remarks>
 /// The workers are loops over a channel, started when the host starts, as
 /// <see cref="IntentCompletionQueue"/>'s flush loop is: a hosted service has no synchronization context, so a loop
-/// runs on the thread pool and the unit it invokes runs there too. A unit handed in after the host stopped the
-/// runner runs on the caller, so nothing is lost to the order in which hosted services stop.
+/// runs on the thread pool and the unit it invokes runs there too. Eight workers per silo can hold eight threads of
+/// the pool while their handlers compute, which is what heavy work is for; size the silo for it. A unit whose token
+/// is cancelled while it waits — the silo is stopping — is run where the cancellation is seen rather than dropped,
+/// so it ends its intent's lease and is resumed elsewhere instead of waiting behind the handlers ahead of it. A unit
+/// handed in after the host stopped the runner runs on the caller, so nothing is lost to the order in which hosted
+/// services stop.
 /// </remarks>
 internal sealed class HeavyWorkRunner : IHostedService
 {
-    private readonly Channel<Unit> _queued = Channel.CreateUnbounded<Unit>();
-    private readonly IGrainFactory _grainFactory;
-    private readonly ILocalSiloDetails _localSilo;
+    private readonly Channel<HeavyUnit> _queued = Channel.CreateUnbounded<HeavyUnit>();
+    private readonly IServiceProvider _services;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<HeavyWorkRunner> _logger;
     private readonly TimeSpan _renewal;
@@ -34,14 +38,12 @@ internal sealed class HeavyWorkRunner : IHostedService
     private Task[]? _workers;
 
     public HeavyWorkRunner(
-        IGrainFactory grainFactory,
+        IServiceProvider services,
         IOptions<HeavyWorkOptions> options,
-        ILocalSiloDetails localSilo,
         TimeProvider timeProvider,
         ILogger<HeavyWorkRunner> logger)
     {
-        _grainFactory = grainFactory;
-        _localSilo = localSilo;
+        _services = services;
         _timeProvider = timeProvider;
         _logger = logger;
         _renewal = options.Value.PermitLease / 2;
@@ -57,16 +59,58 @@ internal sealed class HeavyWorkRunner : IHostedService
     }
 
     /// <summary>
-    /// Runs <paramref name="unit"/> on a worker, under a permit, and completes when it has run or thrown. The unit
-    /// waits for a worker and for a permit under the lease its pool grain started, so a unit that waits counts as
-    /// running.
+    /// Runs <paramref name="unit"/> on a worker and completes when it has run or thrown. The unit itself takes the
+    /// permit — through <see cref="UnderPermitAsync"/>, inside its lease — so a unit that waits for a worker or a
+    /// permit counts as running and a unit that never starts still ends its lease.
     /// </summary>
+    /// <param name="unit">What to run; it ends the intent's lease whatever happens to it.</param>
+    /// <param name="cancellationToken">Cancelled when the silo stops: a unit still waiting is run at once, which
+    /// ends it at the permit.</param>
     public Task RunAsync(Func<Task> unit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(unit);
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var queued = new Unit(unit, completion, cancellationToken);
-        return _queued.Writer.TryWrite(queued) ? completion.Task : UnderPermitAsync(unit, cancellationToken);
+        var queued = new HeavyUnit(unit);
+        if (!_queued.Writer.TryWrite(queued))
+        {
+            return unit();
+        }
+
+        queued.AbandonOn(cancellationToken);
+        return queued.Completion.Task;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="run"/> under a permit, as the unit's own wrapper, so the lease around it ends the intent
+    /// whatever the permit does. The release after it cannot change the unit's outcome: a release that fails is
+    /// logged, and the permit's lease releases it.
+    /// </summary>
+    public async Task UnderPermitAsync(Func<Task> run, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        var silo = _services.GetRequiredService<ILocalSiloDetails>().SiloAddress;
+        var permits = _services.GetRequiredService<IGrainFactory>().GetGrain<IHeavyWorkPermitGrain>(0);
+        var unitId = Guid.NewGuid();
+        await _acquirePermit.ExecuteAsync(async _ => await permits.TryAcquireAsync(unitId, silo), cancellationToken);
+
+        var renewal = new PermitRenewal(permits, unitId, silo, _logger);
+        var renewing = _timeProvider.CreateTimer(static state => ((PermitRenewal)state!).Tick(), renewal, _renewal, _renewal);
+        try
+        {
+            await run();
+        }
+        finally
+        {
+            await renewing.DisposeAsync();
+            await renewal.SettleAsync();
+            try
+            {
+                await permits.ReleaseAsync(unitId);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogPermitReleaseFailed(ex, unitId);
+            }
+        }
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -88,7 +132,7 @@ internal sealed class HeavyWorkRunner : IHostedService
         {
             await Task.WhenAll(_workers).WaitAsync(cancellationToken);
         }
-        catch (Exception ex) when (ex is OperationCanceledException)
+        catch (OperationCanceledException)
         {
             _workers = null;
         }
@@ -101,49 +145,47 @@ internal sealed class HeavyWorkRunner : IHostedService
         {
             while (reader.TryRead(out var unit))
             {
-                try
-                {
-                    await UnderPermitAsync(unit.Run, unit.Cancellation);
-                    unit.Completion.TrySetResult();
-                }
-                catch (Exception ex)
-                {
-                    unit.Completion.TrySetException(ex);
-                }
+                await unit.RunAsync();
             }
         }
     }
+}
 
-    /// <summary>
-    /// Runs the unit under a permit. The release after it cannot change the unit's outcome: a release that fails is
-    /// logged, and the permit's lease releases it.
-    /// </summary>
-    private async Task UnderPermitAsync(Func<Task> run, CancellationToken cancellationToken)
+/// <summary>
+/// One unit queued for a worker. It runs once: either a worker takes it, or the cancellation of the token it was
+/// queued with takes it and runs it where that is seen, which ends it at the permit it waits for.
+/// </summary>
+internal sealed class HeavyUnit(Func<Task> run)
+{
+    private CancellationTokenRegistration _abandon;
+    private int _taken;
+
+    public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Runs the unit at once when <paramref name="cancellationToken"/> is cancelled and no worker has taken it.</summary>
+    public void AbandonOn(CancellationToken cancellationToken) =>
+        _abandon = cancellationToken.Register(static state => ((HeavyUnit)state!).RunAsync().Ignore(), this);
+
+    /// <summary>Runs the unit unless it is already taken, and completes what the pool grain awaits.</summary>
+    public async Task RunAsync()
     {
-        var permits = _grainFactory.GetGrain<IHeavyWorkPermitGrain>(0);
-        var unitId = Guid.NewGuid();
-        await _acquirePermit.ExecuteAsync(async _ => await permits.TryAcquireAsync(unitId, _localSilo.SiloAddress), cancellationToken);
+        if (Interlocked.CompareExchange(ref _taken, 1, 0) != 0)
+        {
+            return;
+        }
 
-        var renewal = new PermitRenewal(permits, unitId, _localSilo.SiloAddress, _logger);
-        var renewing = _timeProvider.CreateTimer(static state => ((PermitRenewal)state!).Tick(), renewal, _renewal, _renewal);
         try
         {
             await run();
+            Completion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            Completion.TrySetException(ex);
         }
         finally
         {
-            await renewing.DisposeAsync();
-            await renewal.SettleAsync();
-            try
-            {
-                await permits.ReleaseAsync(unitId);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogPermitReleaseFailed(ex, unitId);
-            }
+            _abandon.Dispose();
         }
     }
-
-    private sealed record Unit(Func<Task> Run, TaskCompletionSource Completion, CancellationToken Cancellation);
 }

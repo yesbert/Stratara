@@ -118,6 +118,7 @@ public sealed class PermitLedgerTests
 
         Assert.False(ledger.Reclaim(Guid.NewGuid(), Holder));
         ledger.Release(held[0]);
+        Assert.False(ledger.TryAcquire(Guid.NewGuid(), Holder));
         _clock.Advance(Lease);
 
         Assert.True(ledger.TryAcquire(Guid.NewGuid(), Holder));
@@ -130,14 +131,18 @@ public sealed class PermitLedgerTests
         _clock.Advance(Lease);
         var first = Guid.NewGuid();
         Assert.True(ledger.TryAcquire(first, Holder));
+        var second = Guid.NewGuid();
+        Assert.True(ledger.TryAcquire(second, Holder));
         var running = Guid.NewGuid();
-        Assert.True(ledger.TryAcquire(Guid.NewGuid(), Holder));
 
         Assert.False(ledger.Reclaim(running, Holder));
         ledger.Release(first);
+        Assert.False(ledger.TryAcquire(Guid.NewGuid(), Holder));
         Assert.True(ledger.Reclaim(running, Holder));
-        ledger.Release(running);
 
+        // The reclaim took the reservation with it, so the permit released next is free for a new unit; a
+        // reservation left standing would refuse it.
+        ledger.Release(second);
         Assert.True(ledger.TryAcquire(Guid.NewGuid(), Holder));
     }
 }

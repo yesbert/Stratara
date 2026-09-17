@@ -45,7 +45,7 @@ internal sealed class PermitLedger
         }
 
         var now = _timeProvider.GetUtcNow();
-        if (now < _graceEndsAt || _permits.Count + Reservations(now) >= _limit)
+        if (now < _graceEndsAt || _permits.Count + Reservations(now, unitId) >= _limit)
         {
             return false;
         }
@@ -119,10 +119,11 @@ internal sealed class PermitLedger
     }
 
     /// <summary>
-    /// How many running units that were refused are waiting for the next free permit; a reservation a unit stopped
+    /// How many running units that were refused are waiting for the next free permit, leaving out
+    /// <paramref name="asking"/>'s own reservation, which must not stand in its way; a reservation a unit stopped
     /// refreshing — it ended, or its silo died — is dropped once its lease has passed.
     /// </summary>
-    private int Reservations(DateTimeOffset now)
+    private int Reservations(DateTimeOffset now, Guid asking)
     {
         foreach (var (unitId, expiresAt) in _reserved.ToList())
         {
@@ -132,7 +133,7 @@ internal sealed class PermitLedger
             }
         }
 
-        return _reserved.Count;
+        return _reserved.Count - (_reserved.ContainsKey(asking) ? 1 : 0);
     }
 
     private void Take(Guid unitId, SiloAddress holder, DateTimeOffset now)

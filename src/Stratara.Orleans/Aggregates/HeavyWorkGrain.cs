@@ -102,6 +102,11 @@ internal sealed class HeavyWorkGrain(
     private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
     private readonly HashSet<Task> _inFlight = [];
 
+    /// <summary>
+    /// Accepts the hand-over: the intent's lease starts here, before the unit is queued for a worker, so a unit
+    /// waiting for a worker or a permit counts as running. The unit itself — the handler, inside its lease, under a
+    /// permit — runs on one of the silo's workers.
+    /// </summary>
     public async Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
@@ -114,10 +119,16 @@ internal sealed class HeavyWorkGrain(
         Task run;
         try
         {
-            // The lease starts here, before the unit is queued, so a unit waiting for a worker counts as running.
             var lease = await IntentLease.StartAsync(scope.ServiceProvider, intentId);
             run = runner.RunAsync(
-                () => CommandExecution.RunIntentAsync(scope.ServiceProvider, envelope, intentId, lease, around: null, aggregateId: null, _stopping.Token),
+                () => CommandExecution.RunIntentAsync(
+                    scope.ServiceProvider,
+                    envelope,
+                    intentId,
+                    lease,
+                    around: unit => runner.UnderPermitAsync(unit, _stopping.Token),
+                    aggregateId: null,
+                    _stopping.Token),
                 _stopping.Token);
         }
         catch
@@ -141,8 +152,9 @@ internal sealed class HeavyWorkGrain(
     }
 
     /// <summary>
-    /// Waits for the units in flight within the deactivation budget; past it, cancels their token — a unit waiting for
-    /// a worker or a permit stops waiting, a running handler is told to stop — and waits for them to end.
+    /// Waits for the units in flight within the deactivation budget; past it, cancels their token — a unit still
+    /// queued for a worker ends at the permit it was waiting for, a unit waiting for a permit stops waiting, and a
+    /// running handler is told to stop — and waits for them to end.
     /// </summary>
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
