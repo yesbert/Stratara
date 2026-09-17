@@ -155,6 +155,21 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
                     await Task.Delay(200);
                 }
             }
+            case "count":
+            {
+                // The unguarded running total: a fact applied twice counts twice here, where the view's version guard hides it.
+                await using var scope = services.CreateAsyncScope();
+                await using var read = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<PocReadDbContext>>().CreateDbContextAsync();
+                var created = await read.CounterTotals.AsNoTracking().Select(t => (int?)t.Created).SingleOrDefaultAsync();
+                return (created ?? 0).ToString(CultureInfo.InvariantCulture);
+            }
+            case "reset-count":
+            {
+                await using var scope = services.CreateAsyncScope();
+                await using var read = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<PocReadDbContext>>().CreateDbContextAsync();
+                await read.CounterTotals.ExecuteDeleteAsync();
+                return "ok";
+            }
             default:
                 return "error unknown command " + parts[0];
         }

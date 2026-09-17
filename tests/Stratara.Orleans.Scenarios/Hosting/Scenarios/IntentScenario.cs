@@ -18,7 +18,7 @@ namespace Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 /// A backend host whose <c>ICommandOutboxDispatcher</c> is the durable-intent one and whose outbox
 /// drain runs as singleton work. The probe command waits before it records itself in a table, which
 /// opens the window a kill lands in. Commands: <c>enqueue aggregateId delayMs</c>,
-/// <c>enqueue-heavy aggregateId delayMs</c>, <c>enqueue-failing aggregateId</c>,
+/// <c>enqueue-heavy aggregateId delayMs</c>, <c>enqueue-blocking aggregateId delayMs</c>, <c>enqueue-failing aggregateId</c>,
 /// <c>enqueue-ordered target sequence delayMs</c>, <c>heal aggregateId</c>,
 /// <c>return-kept aggregateId</c>, <c>applied aggregateId</c>, <c>applications aggregateId</c>,
 /// <c>intent aggregateId</c>, <c>order target</c>, <c>outbox-count</c>.
@@ -41,11 +41,13 @@ public sealed class IntentScenario : IPocScenario
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<RecordApplied>, RecordAppliedHandler>()
             .AddScoped<ICommandHandler<RecordAppliedHeavily>, RecordAppliedHeavilyHandler>()
+            .AddScoped<ICommandHandler<RecordAppliedBlocking>, RecordAppliedBlockingHandler>()
             .AddScoped<ICommandHandler<FailUntilHealed>, FailUntilHealedHandler>()
             .AddScoped<ICommandHandler<RecordInOrder>, RecordInOrderHandler>()
             .AddAggregatesFromAssemblyContaining<IntentScenario>()
             .AddTrustedType<RecordApplied>()
             .AddTrustedType<RecordAppliedHeavily>()
+            .AddTrustedType<RecordAppliedBlocking>()
             .AddTrustedType<FailUntilHealed>()
             .AddTrustedType<RecordInOrder>()
             .AddSingleton(new AppliedTable(settings.StoreConnectionString))
@@ -83,6 +85,7 @@ public sealed class IntentScenario : IPocScenario
         {
             case "enqueue":
             case "enqueue-heavy":
+            case "enqueue-blocking":
             case "enqueue-failing":
             case "enqueue-ordered":
             {
@@ -93,6 +96,7 @@ public sealed class IntentScenario : IPocScenario
                 var id = parts[0] switch
                 {
                     "enqueue-heavy" => await dispatcher.EnqueueCommandAsync(new RecordAppliedHeavily(aggregateId, Int(parts[2]))),
+                    "enqueue-blocking" => await dispatcher.EnqueueCommandAsync(new RecordAppliedBlocking(aggregateId, Int(parts[2]))),
                     "enqueue-failing" => await dispatcher.EnqueueCommandAsync(new FailUntilHealed(aggregateId)),
                     "enqueue-ordered" => await dispatcher.EnqueueCommandAsync(new RecordInOrder(aggregateId, Int(parts[2]), Int(parts[3]), "sealed note " + parts[2])),
                     _ => await dispatcher.EnqueueCommandAsync(new RecordApplied(aggregateId, Int(parts[2]))),
@@ -162,6 +166,9 @@ public sealed record RecordApplied(Guid AggregateId, int DelayMs) : ICommand, IA
 
 public sealed record RecordAppliedHeavily(Guid AggregateId, int DelayMs) : ICommand, IAggregateScopedCommand, IHeavyCommand;
 
+/// <summary>Holds its aggregate's turn without yielding: the handler sleeps the thread rather than awaiting.</summary>
+public sealed record RecordAppliedBlocking(Guid AggregateId, int DelayMs) : ICommand, IAggregateScopedCommand;
+
 /// <summary>Fails on every attempt until its aggregate is healed, then records itself applied.</summary>
 public sealed record FailUntilHealed(Guid AggregateId) : ICommand, IAggregateScopedCommand;
 
@@ -179,6 +186,15 @@ public sealed class RecordAppliedHandler(AppliedTable applied) : ICommandHandler
     public async Task HandleAsync(RecordApplied command, CancellationToken cancellationToken)
     {
         await Task.Delay(command.DelayMs, cancellationToken);
+        await applied.MarkAsync(command.AggregateId);
+    }
+}
+
+public sealed class RecordAppliedBlockingHandler(AppliedTable applied) : ICommandHandler<RecordAppliedBlocking>
+{
+    public async Task HandleAsync(RecordAppliedBlocking command, CancellationToken cancellationToken)
+    {
+        Thread.Sleep(command.DelayMs);
         await applied.MarkAsync(command.AggregateId);
     }
 }

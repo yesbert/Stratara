@@ -8,7 +8,9 @@ namespace Stratara.Orleans.IntegrationTests.Projections;
 /// <summary>
 /// T1 of the expectations: the host is ended between the commit and the publish, twenty times per
 /// path. On the bus path the bundle in flight is lost and the view never appears; on the checkpoint
-/// path every event is applied after the restart. The raw counts are written to the evidence
+/// path every event is applied after the restart, and — the kill falling after the commit and before any read —
+/// applied once, which the unguarded running total shows where the version-guarded view would hide a second
+/// application. The raw counts are written to the evidence
 /// directory when <c>POC_EVIDENCE_DIR</c> names one; otherwise the run asserts and records nothing.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
@@ -23,13 +25,14 @@ public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixt
     [Fact]
     public async Task The_checkpoint_path_loses_no_event_where_the_bus_path_loses_every_bundle_in_flight()
     {
-        var busLost = await RunAsync("projection-bus", "poc_kill_bus", siloPort: 11201, gatewayPort: 30090);
-        var grainLost = await RunAsync("projection-grain", "poc_kill_grain", siloPort: 11202, gatewayPort: 30091);
+        var (busLost, _) = await RunAsync("projection-bus", "poc_kill_bus", siloPort: 11201, gatewayPort: 30090);
+        var (grainLost, grainApplications) = await RunAsync("projection-grain", "poc_kill_grain", siloPort: 11202, gatewayPort: 30091, countApplications: true);
 
-        TestContext.Current.TestOutputHelper?.WriteLine($"bus path: {busLost.Count} of {Kills} events lost; checkpoint path: {grainLost.Count} of {Kills} events lost");
-        WriteEvidence(busLost, grainLost);
+        TestContext.Current.TestOutputHelper?.WriteLine($"bus path: {busLost.Count} of {Kills} events lost; checkpoint path: {grainLost.Count} of {Kills} events lost, {grainApplications} applications");
+        WriteEvidence(busLost, grainLost, grainApplications);
 
         Assert.Empty(grainLost);
+        Assert.Equal(Kills, grainApplications);
     }
 
     /// <summary>
@@ -41,7 +44,7 @@ public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixt
     [Fact]
     public async Task The_durable_bundle_path_loses_no_event_where_the_bus_path_loses_every_bundle_in_flight()
     {
-        var durableLost = await RunAsync("projection-bus-durable", "poc_kill_durable", siloPort: 11203, gatewayPort: 30092);
+        var (durableLost, _) = await RunAsync("projection-bus-durable", "poc_kill_durable", siloPort: 11203, gatewayPort: 30092);
 
         TestContext.Current.TestOutputHelper?.WriteLine($"durable bundle path: {durableLost.Count} of {Kills} events lost");
         WriteEvidence("commit-publish-kill-durable", new { kills = Kills, durable = new { lost = durableLost.Count, streams = durableLost } });
@@ -49,7 +52,11 @@ public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixt
         Assert.Empty(durableLost);
     }
 
-    private async Task<List<Guid>> RunAsync(string scenario, string database, int siloPort, int gatewayPort)
+    /// <summary>
+    /// Kills the host after each commit and reads the view after the restart. With <paramref name="countApplications"/>
+    /// the running total is reset before the first append and read after the last, once it has stopped moving.
+    /// </summary>
+    private async Task<(List<Guid> Lost, int Applications)> RunAsync(string scenario, string database, int siloPort, int gatewayPort, bool countApplications = false)
     {
         var store = postgres.ConnectionStringFor(database);
         var read = postgres.ConnectionStringFor(database + "_read");
@@ -70,6 +77,11 @@ public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixt
             var streamId = Guid.NewGuid();
 
             await using var host = await PocHostProcess.StartAsync(scenario, environment);
+            if (countApplications && kill == 0)
+            {
+                Assert.Equal("ok", await host.SendAsync("reset-count"));
+            }
+
             Assert.Equal("ok", await host.SendAsync("arm-kill"));
             await host.SendExpectingExitAsync($"append {streamId}", ExitTimeout);
 
@@ -78,17 +90,42 @@ public sealed class CommitPublishKillTests(PostgreSqlFixture postgres, RedisFixt
             {
                 lost.Add(streamId);
             }
+
+            if (countApplications && kill == Kills - 1)
+            {
+                return (lost, await SettledCountAsync(restarted));
+            }
         }
 
-        return lost;
+        return (lost, 0);
     }
 
-    private static void WriteEvidence(List<Guid> busLost, List<Guid> grainLost) =>
+    /// <summary>The running total once two reads a second apart agree, so a late second application is still counted.</summary>
+    private static async Task<int> SettledCountAsync(PocHostProcess host)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(ViewTimeoutMs);
+        var last = int.Parse(await host.SendAsync("count"), System.Globalization.CultureInfo.InvariantCulture);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            var now = int.Parse(await host.SendAsync("count"), System.Globalization.CultureInfo.InvariantCulture);
+            if (now == last && now >= Kills)
+            {
+                return now;
+            }
+
+            last = now;
+        }
+
+        return last;
+    }
+
+    private static void WriteEvidence(List<Guid> busLost, List<Guid> grainLost, int grainApplications) =>
         WriteEvidence("commit-publish-kill", new
         {
             kills = Kills,
             bus = new { lost = busLost.Count, streams = busLost },
-            checkpoint = new { lost = grainLost.Count, streams = grainLost },
+            checkpoint = new { lost = grainLost.Count, applications = grainApplications, streams = grainLost },
         });
 
     private static void WriteEvidence(string measurement, object result)

@@ -8,8 +8,9 @@ using Stratara.Orleans.Projections;
 namespace Stratara.Orleans.Tests;
 
 /// <summary>
-/// The catch-up loop keys its checkpoint on the reader's name, not its class, and ends a catch-up
-/// after a batch that said nothing more was there instead of issuing an empty read.
+/// The catch-up loop keys its checkpoint on the reader's name, not its class, ends a catch-up after a batch that said
+/// nothing more was there instead of issuing an empty read, and resumes a partly applied batch below a transaction
+/// whose second entry failed, so the transaction's applied entry is applied again.
 /// </summary>
 public sealed class StoreReaderLoopTests
 {
@@ -85,6 +86,45 @@ public sealed class StoreReaderLoopTests
 
         Assert.Equal([5, 6], applied);
         Assert.Equal(6, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
+    [Fact]
+    public async Task A_projection_that_throws_on_the_second_entry_of_one_transaction_resumes_below_the_transaction()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        var entries = Entries(1, 4);
+        entries[2] = new CommittedEntry(entries[2].Entry, 2);
+        entries[3] = new CommittedEntry(entries[3].Entry, 3);
+        var reader = new ScriptedReader("scripted/16", entries);
+        var loop = LoopOver(reader, checkpoints, batchSize: 10);
+        var failing = entries[2].Entry;
+        var applied = new List<CommittedEntry>();
+        Task<int> Apply(CommittedBatch batch, CancellationToken _)
+        {
+            var count = 0;
+            foreach (var entry in batch.Entries)
+            {
+                if (ReferenceEquals(entry.Entry, failing))
+                {
+                    break;
+                }
+
+                applied.Add(entry);
+                count++;
+            }
+
+            return Task.FromResult(count);
+        }
+
+        await loop.CatchUpAsync(Apply);
+
+        Assert.Equal(1, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+        failing = null;
+        applied.Clear();
+        await loop.CatchUpAsync(Apply);
+
+        Assert.Equal([entries[1].Entry, entries[2].Entry, entries[3].Entry], applied.Select(entry => entry.Entry));
+        Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
     }
 
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)
