@@ -19,15 +19,20 @@ public sealed class ResumeBacklogTests(PostgreSqlFixture postgres, RedisFixture 
     public async Task A_backlog_of_several_batches_is_handed_over_within_one_period()
     {
         var probes = new RecordedIntentProbes();
-        using var host = await RecordedIntentHost.StartAsync(new RecordedIntentSettings(
+        using var host = await RecordedIntentHost.BuildAsync(new RecordedIntentSettings(
             postgres.ConnectionStringFor("poc_intent_backlog_store"), postgres.ConnectionStringFor("poc_orleans"), redis.ConnectionString, rabbit.ConnectionString,
             11256, 30146, probes, PollingInterval, BatchSize));
         var tenant = Guid.NewGuid();
         var backlog = Enumerable.Range(0, BatchSize * Batches).Select(_ => Guid.NewGuid()).ToList();
+
+        // Recorded before the host runs, so the drain finds the whole backlog on its first pass: records written
+        // while it polls would come due spread over the writing, and the span below would measure the writing.
         foreach (var probe in backlog)
         {
             await RecordedIntentHost.RecordAsync(host, tenant, probe);
         }
+
+        await RecordedIntentHost.StartAsync(host);
 
         Assert.True(
             await RecordedIntentHost.WaitUntilAsync(() => Task.FromResult(backlog.All(probes.Ran.ContainsKey)), PollingInterval * (Batches + 3)),

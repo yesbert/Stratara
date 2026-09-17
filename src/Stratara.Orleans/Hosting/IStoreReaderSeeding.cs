@@ -10,7 +10,8 @@ namespace Stratara.Orleans.Hosting;
 /// Run it once, while no silo of the cluster runs, after migrating the schema and before the host's first start on a
 /// populated store. Resolve it from the host's own composition — the one that calls <c>AddStrataraProjectionGrains</c>
 /// or <c>AddStrataraSagaGrains</c> — and from a scope, like the store readers whose names it reads. A checkpoint at
-/// the beginning counts as absent and is seeded; run the reset first where a full re-read is wanted instead.
+/// the beginning counts as absent and is seeded, so a reset followed by a seeding re-reads nothing: start without
+/// seeding where a full re-read is wanted, and rebuild single read models with <c>IProjectionRebuilder</c> instead.
 /// </remarks>
 public interface IStoreReaderSeeding
 {

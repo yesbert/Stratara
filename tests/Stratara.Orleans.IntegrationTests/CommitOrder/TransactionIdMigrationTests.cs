@@ -21,7 +21,13 @@ namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 [Collection(InfrastructureCollection.Name)]
 public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
 {
-    private const int Entries = 25;
+    /// <summary>
+    /// More entries per partition than <see cref="BackfillBatch"/>, so a backfill that stamped the history with one
+    /// transaction would read back in one batch per partition and fail the bound — with fewer, every partition fits
+    /// in one backfill batch and the bound holds however the history was stamped.
+    /// </summary>
+    private const int Entries = 44;
+
     private const int BackfillBatch = 10;
     private const int ReadBatch = 3;
     private const string Table = "event_stream_entry";
@@ -33,6 +39,7 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
         var connectionString = postgres.ConnectionStringFor("poc_xid_migration");
         var appended = await PopulateWithoutTheColumnAsync(connectionString);
 
+        var fileBeforeTheMigration = await RelFileNodeAsync(connectionString);
         await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ADD COLUMN {Column} xid8 NULL");
         await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
         int stamped;
@@ -47,7 +54,11 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
         await ExecuteAsync(connectionString, $"CREATE INDEX IF NOT EXISTS ix_{Table}_{Column} ON {Table} ({Column})");
 
         Assert.Equal(Entries, stamped);
+        Assert.Equal(fileBeforeTheMigration, await RelFileNodeAsync(connectionString));
         var reader = new PostgresTransactionIdReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
+        Assert.All(appended, partition => Assert.True(
+            partition.Value.Count > BackfillBatch,
+            $"partition {partition.Key} holds {partition.Value.Count} entries, not more than the backfill's batch of {BackfillBatch} — the bound below would hold however the history was stamped"));
         var largestBatch = 0;
         foreach (var partition in appended.Keys)
         {
@@ -107,7 +118,7 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
         await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ADD COLUMN IF NOT EXISTS {Column} xid8 NOT NULL DEFAULT pg_current_xact_id()");
         await ExecuteAsync(connectionString, $"DELETE FROM {Table}");
         var tenantId = Guid.NewGuid();
-        var buckets = new[] { 7, 8, 9 };
+        var buckets = new[] { 7, 8 };
         var appended = new Dictionary<int, List<long>>();
         for (var i = 0; i < Entries; i++)
         {
@@ -131,5 +142,14 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>The table's file, which PostgreSQL replaces where a change rewrites the table rather than its metadata.</summary>
+    private static async Task<long> RelFileNodeAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand($"SELECT relfilenode FROM pg_class WHERE relname = '{Table}'", connection);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 }
