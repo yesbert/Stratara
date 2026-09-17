@@ -85,4 +85,15 @@ public class SurfaceTests
             $"Timers are reached through Stratara's own port; these public types expose {RemindableInterface}: " +
             string.Join(", ", offenders));
     }
+
+    [Fact]
+    public void The_retired_counter_switch_is_obsolete_and_names_the_interceptor()
+    {
+        var obsolete = typeof(Stratara.Orleans.CommitOrder.CommitOrderOptions)
+            .GetProperty("MaintainPartitionCounter")?
+            .GetCustomAttribute<ObsoleteAttribute>();
+
+        Assert.NotNull(obsolete);
+        Assert.Contains("PartitionCounterInterceptor", obsolete.Message, StringComparison.Ordinal);
+    }
 }

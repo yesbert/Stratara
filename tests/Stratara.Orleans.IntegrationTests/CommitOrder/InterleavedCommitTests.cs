@@ -58,7 +58,7 @@ public sealed class InterleavedCommitTests(PostgreSqlFixture postgres)
     private Task<PocStore<PocCommitOrderWriteDbContext>> StoreFor(ReaderCase reader) =>
         PocStore<PocCommitOrderWriteDbContext>.CreateAsync(
             postgres.ConnectionStringFor(reader.MaintainCounter ? $"{Database}_counted" : Database),
-            options => options.MaintainPartitionCounter = reader.MaintainCounter);
+            maintainCounter: reader.MaintainCounter);
 
     [Theory]
     [MemberData(nameof(Readers), DisableDiscoveryEnumeration = true)]

@@ -19,7 +19,7 @@ them without further configuration.
 | `PostgresTransactionIdReader<TContext>` | Reads in commit order on PostgreSQL, adding no work to an append |
 | `PortableCounterReader<TContext>`, `AddStrataraPortableCounterReader<TWriteContext>()` | Reads in commit order on any relational provider, through a per-partition counter; verified on PostgreSQL only |
 | `PartitionCounterInterceptor` | Maintains the per-partition counter inside the appending transaction — in every process that appends |
-| `PartitionCounterBackfill` | Positions the entries a store held before it adopted the counter, once |
+| `PartitionCounterBackfill` | Positions unpositioned entries after the partition's counter, never moving a position already handed out, so checkpoints stay true |
 | `CommitTransactionIdBackfill` | Stamps the entries a PostgreSQL store held before the commit record existed, in append order and bounded batches, once |
 | `AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the checkpoints in the read context |
 | `AddStrataraIntentStore<TWriteContext>()` | Records the commands the execution model's dispatcher accepts, in the outbox table |

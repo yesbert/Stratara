@@ -155,16 +155,24 @@ builder.Services.AddStrataraPortableCounterReader<AppWriteDbContext>();
 
 The write context must add `PartitionCounterInterceptor` to its interceptors so every append is
 positioned — in **every process that appends to the store**, not only in the hosts that read. The framework
-does not add it, and `CommitOrderOptions.MaintainPartitionCounter` is only the value a write context reads
-when it decides to. A read stops at an entry appended without a position rather than skipping it: the
+does not add it. `CommitOrderOptions.MaintainPartitionCounter` switches nothing: it is obsolete, warns where it is
+set, and is removed with the next major version; the interceptor is what maintains the counter. Within one save,
+positions follow each stream's version order. A read stops at an entry appended without a position rather than skipping it: the
 partition stops advancing, the failure names the entry, and positioning it with the backfill lets the
 partition continue. The partition count is fixed once the store holds positions — lowering it would merge
 partitions whose positions overlap, the framework offers no renumbering, and a host refuses to start with a
 count lower than the store's counters. The portable reader is verified on PostgreSQL only; on PostgreSQL the
 native reader is the one to use. A store that already holds entries is positioned once, after migrating and before the first
 start, with `PartitionCounterBackfill.RunAsync`; the host refuses to start while an entry without a
-position remains. Running the backfill again changes nothing. A checkpoint the portable reader wrote
-before a backfill is no longer meaningful and must be reset.
+position remains. Running the backfill again changes nothing.
+
+The backfill never moves a position it did not hand out: unpositioned entries take the positions after the
+last one of their partition, so a checkpoint written before a backfill stays true and the reader resumes from
+it. On a store nothing has appended to with the counter yet, that is the history in the order it was appended.
+An entry a process appended without the counter **after** entries appended with it is read after those — a
+later version of its own stream included. Stop the process that appends without the counter before running
+the backfill; a read model that stops on the resulting order — a missing preceding fact — is repaired by
+rebuilding it.
 
 ## Adopt the roles
 
@@ -227,7 +235,7 @@ Every setting is validated when the host starts; an invalid one fails the start 
 | `OrleansDispatchOptions` | `IntentGrace` 30 s, `CompletionWindow` 20 ms, `CompletionBatchSize` 64. The resume bound is `MessageRetryOptions.MaxDeliveryAttempts` |
 | `HeavyWorkOptions` | `ClusterWideLimit` 8, `PermitRetry` 100 ms, `PermitLease` 30 s |
 | `ProjectionGrainOptions`, `SagaGrainOptions` | `BatchSize` 500, `PollInterval` 5 s, `KeepAlivePeriod` 1 min |
-| `CommitOrderOptions` | `PartitionCount` 16, `MaintainPartitionCounter` true |
+| `CommitOrderOptions` | `PartitionCount` 16 |
 | `SingletonWorkOptions` | `KeepAlivePeriod` 1 min |
 | `OutboxDrainOptions` | `PollingInterval` 5 s, `BatchSize` 100 |
 | `DurableTimerOptions` | `RetryPeriod` 1 min, `DueTolerance` 500 ms |

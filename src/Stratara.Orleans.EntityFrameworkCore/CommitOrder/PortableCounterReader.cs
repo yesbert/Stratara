@@ -26,9 +26,6 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
     : ICommittedPositionReader
     where TContext : DbContext, IWriteDbContext
 {
-    /// <summary>How many unpositioned entries one read looks at to find one of its partition.</summary>
-    private const int UnpositionedProbe = 64;
-
     private readonly int _partitionCount = options.Value.PartitionCount;
 
     /// <inheritdoc/>
@@ -75,23 +72,22 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
     }
 
     /// <summary>
-    /// Looks up unpositioned entries through the position index — the partition is derived in memory, because a
-    /// filter on the bucket cannot use it — and refuses to read a partition that holds one.
+    /// Asks for the earliest unpositioned entry of the partition — the position index serves the null-position
+    /// predicate, and unpositioned entries are the anomaly, so the rows it yields are few whatever other partitions
+    /// hold — and refuses to read a partition that holds one.
     /// </summary>
     /// <exception cref="InvalidOperationException">An entry of the partition was appended without a position.</exception>
     private async Task RefuseUnpositionedAsync(TContext context, int partition, CancellationToken cancellationToken)
     {
-        var unpositioned = await context.Set<EventStreamEntry>().AsNoTracking()
-            .Where(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
-            .Select(e => new { e.SequenceNumber, e.BucketId })
-            .Take(UnpositionedProbe)
-            .ToListAsync(cancellationToken);
-
-        var blocking = unpositioned.FirstOrDefault(e => PartitionMap.PartitionOf(e.BucketId, _partitionCount) == partition);
-        if (blocking is not null)
+        var blocking = await context.Set<EventStreamEntry>().AsNoTracking()
+            .Where(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null && e.BucketId % _partitionCount == partition)
+            .OrderBy(e => e.SequenceNumber)
+            .Select(e => (long?)e.SequenceNumber)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (blocking is { } sequenceNumber)
         {
             throw new InvalidOperationException(
-                $"Entry {blocking.SequenceNumber} of partition {partition} has no partition position, so the portable commit-order reader stops before it instead of reading past it. A process appended it without {nameof(PartitionCounterInterceptor)}; add the interceptor to every write context that appends to this store, then position the entry with {nameof(PartitionCounterBackfill)}.{nameof(PartitionCounterBackfill.RunAsync)}.");
+                $"Entry {sequenceNumber} of partition {partition} has no partition position, so the portable commit-order reader stops before it instead of reading past it. A process appended it without {nameof(PartitionCounterInterceptor)}; add the interceptor to every write context that appends to this store, then position the entry with {nameof(PartitionCounterBackfill)}.{nameof(PartitionCounterBackfill.RunAsync)}.");
         }
     }
 }

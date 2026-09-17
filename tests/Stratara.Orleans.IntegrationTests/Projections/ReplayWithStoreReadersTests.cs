@@ -96,7 +96,7 @@ public sealed class ReplayWithStoreReadersTests(PostgreSqlFixture postgres, Redi
             .AddProjectionsFromAssemblyContaining<CounterViewProjection>()
             .AddSingleton(new ProjectionProbeControl())
             .AddSingleton(observed)
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddScoped<IProjectionViewTruncator, ObservingViewTruncator>()

@@ -34,7 +34,7 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
         var appended = await PopulateWithoutTheColumnAsync(connectionString);
 
         await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ADD COLUMN {Column} xid8 NULL");
-        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, options => options.MaintainPartitionCounter = false);
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
         int stamped;
         await using (var context = await store.CreateContextAsync())
         {
@@ -84,7 +84,7 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
         var appended = await PopulateWithoutTheColumnAsync(connectionString);
 
         await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ADD COLUMN {Column} xid8 NOT NULL DEFAULT pg_current_xact_id()");
-        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, options => options.MaintainPartitionCounter = false);
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
         var reader = new PostgresTransactionIdReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
 
         var (partition, sequences) = appended.MaxBy(pair => pair.Value.Count);
@@ -103,7 +103,7 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
     private static async Task<Dictionary<int, List<long>>> PopulateWithoutTheColumnAsync(string connectionString)
     {
         await PostgresTimerHostSchema.EnsureDatabaseAsync(connectionString);
-        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, options => options.MaintainPartitionCounter = false);
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
         await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ADD COLUMN IF NOT EXISTS {Column} xid8 NOT NULL DEFAULT pg_current_xact_id()");
         await ExecuteAsync(connectionString, $"DELETE FROM {Table}");
         var tenantId = Guid.NewGuid();

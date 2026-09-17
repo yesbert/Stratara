@@ -49,7 +49,7 @@ public sealed class SagaScenario : IPocScenario
             .AddTrustedType<ProcessExpired>()
             .AddSingleton(TimeProvider.System)
             .AddScoped<ISaga, TimeoutSaga>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraSagaGrains(options =>

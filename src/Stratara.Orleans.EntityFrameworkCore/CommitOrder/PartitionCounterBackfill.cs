@@ -9,14 +9,17 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// Positions the entries a store holds from before it adopted the partition counter, once, so the
 /// portable reader can serve it. Each partition is positioned in a transaction of its own that holds
 /// the partition's counter row, so appends to that partition wait for it and no position is handed
-/// out twice. Entries without a position come first, in the order the store's sequence numbered them —
-/// the closest to commit order a store without a commit record keeps; entries already
-/// positioned keep their order and move up behind them; the counter continues after the last.
+/// out twice. Entries without a position take the positions after the last one the partition handed out, in the
+/// order the store's sequence numbered them — the closest to commit order a store without a commit record keeps.
+/// A position already handed out never changes, so a checkpoint written before the backfill stays true and a reader
+/// resumes from it.
 /// </summary>
 /// <remarks>
-/// Run it once after migrating and before the portable reader's host starts. Running it again on a
-/// positioned store changes nothing. A checkpoint written by the portable reader before the backfill
-/// is no longer meaningful afterwards and must be reset.
+/// Run it once after migrating and before the portable reader's host starts; on a store no process has appended to
+/// with the counter yet, history is positioned from the first position. Running it again on a positioned store
+/// changes nothing. An entry appended without the counter after entries appended with it is read after them — a later
+/// version of its own stream included — so stop the process that appends without the counter before running the
+/// backfill; a read model that stops on the resulting order is repaired by rebuilding it.
 /// </remarks>
 public static class PartitionCounterBackfill
 {
@@ -60,22 +63,13 @@ public static class PartitionCounterBackfill
             return 0;
         }
 
-        var shift = (long)unpositioned.Count;
-        await context.Set<EventStreamEntry>()
-            .Where(e => e.BucketId % partitionCount == partition && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) != null)
-            .ExecuteUpdateAsync(
-                set => set.SetProperty(
-                    e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn),
-                    e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) + shift),
-                cancellationToken);
-
         for (var offset = 0; offset < unpositioned.Count; offset += UpdateBatchSize)
         {
             var batch = unpositioned.Skip(offset).Take(UpdateBatchSize).ToList();
             for (var i = 0; i < batch.Count; i++)
             {
                 var sequenceNumber = batch[i];
-                var position = (long)(offset + i + 1);
+                var position = counter + offset + i + 1;
                 await context.Set<EventStreamEntry>()
                     .Where(e => e.SequenceNumber == sequenceNumber)
                     .ExecuteUpdateAsync(set => set.SetProperty(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), position), cancellationToken);
@@ -84,7 +78,7 @@ public static class PartitionCounterBackfill
 
         await context.Set<PartitionPosition>()
             .Where(c => c.Partition == partition)
-            .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, counter + shift), cancellationToken);
+            .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, counter + unpositioned.Count), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return unpositioned.Count;
     }

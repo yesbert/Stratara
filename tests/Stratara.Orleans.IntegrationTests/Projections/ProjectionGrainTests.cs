@@ -176,7 +176,7 @@ public sealed class ProjectionGrainTests(PostgreSqlFixture postgres, RedisFixtur
             .AddTrustedType<Counter>()
             .AddProjectionsFromAssemblyContaining<CounterViewProjection>()
             .AddSingleton(control)
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraProjectionGrains(options =>

@@ -28,7 +28,7 @@ public sealed class ReaderHeadTests(PostgreSqlFixture postgres)
         var counted = readerName == "partition-counter";
         await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(
             postgres.ConnectionStringFor(counted ? "poc_reader_head_counted" : "poc_reader_head"),
-            options => options.MaintainPartitionCounter = counted);
+            maintainCounter: counted);
         ICommittedPositionReader reader = counted
             ? new PortableCounterReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options))
             : new PostgresTransactionIdReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
@@ -62,7 +62,7 @@ public sealed class ReaderHeadTests(PostgreSqlFixture postgres)
         var counted = readerName == "partition-counter";
         await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(
             postgres.ConnectionStringFor(counted ? "poc_reader_head_empty_counted" : "poc_reader_head_empty"),
-            options => options.MaintainPartitionCounter = counted);
+            maintainCounter: counted);
         ICommittedPositionReader reader = counted
             ? new PortableCounterReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options))
             : new PostgresTransactionIdReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));

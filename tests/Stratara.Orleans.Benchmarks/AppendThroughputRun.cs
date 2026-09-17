@@ -165,7 +165,7 @@ public static class AppendThroughputRun
             .AddTrustedType<CounterCreated>()
             .AddTrustedType<CounterIncremented>()
             .AddScoped<IEventBundleOutboxDispatcher, NoPublishDispatcher>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = layout == "counter");
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = layout == "counter");
 
         if (layout == "current")
         {
@@ -186,7 +186,7 @@ public static class AppendThroughputRun
             }
             else
             {
-                await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, options => options.MaintainPartitionCounter = layout == "counter");
+                await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: layout == "counter");
             }
         }
 

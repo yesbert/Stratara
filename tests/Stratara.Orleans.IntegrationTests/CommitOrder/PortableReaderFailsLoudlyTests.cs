@@ -12,8 +12,10 @@ namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 
 /// <summary>
 /// The portable reader fails loudly where it would otherwise lose facts: a read stops at an entry appended without
-/// a position, a host refuses to start with a partition count lower than the store's counters, and a save whose
-/// positioning failed leaves no transaction behind for the next save on the same context.
+/// a position — however many unpositioned entries other partitions hold — and resumes from its checkpoint once the
+/// entry is positioned after it, a host refuses to start with a partition count lower than the store's counters, and
+/// a save whose positioning failed leaves no transaction behind for the next save on the same context (scenarios <em>A
+/// late entry is positioned behind a checkpoint</em>, <em>Unpositioned entries pile up in other partitions</em>).
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class PortableReaderFailsLoudlyTests(PostgreSqlFixture postgres)
@@ -22,8 +24,8 @@ public sealed class PortableReaderFailsLoudlyTests(PostgreSqlFixture postgres)
     public async Task A_read_stops_at_an_entry_appended_without_a_position_until_it_is_positioned()
     {
         var connectionString = postgres.ConnectionStringFor("poc_portable_unpositioned");
-        await using var counted = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, options => options.MaintainPartitionCounter = true);
-        await using var uncounted = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, options => options.MaintainPartitionCounter = false);
+        await using var counted = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: true);
+        await using var uncounted = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
         await ResetAsync(counted);
         var reader = new PortableCounterReader<PocCommitOrderWriteDbContext>(counted.ContextFactory, Options.Create(counted.Options));
         var partitions = counted.Options.PartitionCount;
@@ -51,6 +53,64 @@ public sealed class PortableReaderFailsLoudlyTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public async Task A_late_entry_is_positioned_after_a_checkpoint_and_nothing_positioned_before_moves()
+    {
+        var connectionString = postgres.ConnectionStringFor("poc_portable_late_entry");
+        await using var counted = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: true);
+        await using var uncounted = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
+        await ResetAsync(counted);
+        var reader = new PortableCounterReader<PocCommitOrderWriteDbContext>(counted.ContextFactory, Options.Create(counted.Options));
+        const int bucket = 5;
+        var partition = PartitionMap.PartitionOf(bucket, counted.Options.PartitionCount);
+
+        var positioned = new List<Guid>();
+        for (var i = 0; i < 10; i++)
+        {
+            positioned.Add(await AppendAsync(counted, bucket));
+        }
+
+        var beforeBackfill = await reader.ReadAfterAsync(partition, 0, 100, TestContext.Current.CancellationToken);
+        var checkpoint = beforeBackfill.Position;
+        var late = await AppendAsync(uncounted, bucket);
+        await using (var context = await counted.CreateContextAsync())
+        {
+            Assert.Equal(1, await PartitionCounterBackfill.RunAsync(context, counted.Options, TestContext.Current.CancellationToken));
+        }
+
+        var resumed = await reader.ReadAfterAsync(partition, checkpoint, 100, TestContext.Current.CancellationToken);
+        Assert.Equal([late], resumed.Entries.Select(entry => entry.Entry.Id));
+        Assert.Equal(checkpoint + 1, resumed.Entries[0].Position);
+        var fromStart = await reader.ReadAfterAsync(partition, 0, 100, TestContext.Current.CancellationToken);
+        Assert.Equal(
+            beforeBackfill.Entries.Select(entry => (entry.Entry.Id, entry.Position)),
+            fromStart.Entries.Take(positioned.Count).Select(entry => (entry.Entry.Id, entry.Position)));
+    }
+
+    [Fact]
+    public async Task A_read_stops_at_its_own_unpositioned_entry_however_many_other_partitions_hold()
+    {
+        var connectionString = postgres.ConnectionStringFor("poc_portable_probe");
+        await using var uncounted = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
+        await ResetAsync(uncounted);
+        var reader = new PortableCounterReader<PocCommitOrderWriteDbContext>(uncounted.ContextFactory, Options.Create(uncounted.Options));
+        const int bucket = 5;
+        const int readSize = 100;
+        var partitions = uncounted.Options.PartitionCount;
+        var partition = PartitionMap.PartitionOf(bucket, partitions);
+        var foreignBucket = Enumerable.Range(0, 4096).First(b => PartitionMap.PartitionOf(b, partitions) != partition);
+
+        await AppendManyAsync(uncounted, foreignBucket, readSize + 1);
+        var own = await AppendAsync(uncounted, bucket);
+        await AppendManyAsync(uncounted, foreignBucket, readSize + 1);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => reader.ReadAfterAsync(partition, 0, readSize, TestContext.Current.CancellationToken));
+        Assert.Contains($"of partition {partition} ", refused.Message, StringComparison.Ordinal);
+        await using var context = await uncounted.CreateContextAsync();
+        var sequenceNumber = await context.Set<EventStreamEntry>().Where(e => e.Id == own).Select(e => e.SequenceNumber).SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Contains($"Entry {sequenceNumber} ", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_host_with_a_partition_count_lower_than_the_stores_counters_refuses_to_start()
     {
         var connectionString = postgres.ConnectionStringFor("poc_portable_partition_count");
@@ -68,7 +128,7 @@ public sealed class PortableReaderFailsLoudlyTests(PostgreSqlFixture postgres)
     public async Task A_save_whose_positioning_failed_leaves_no_transaction_for_the_next_save_on_the_context()
     {
         var connectionString = postgres.ConnectionStringFor("poc_portable_interceptor_failure");
-        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, options => options.MaintainPartitionCounter = true);
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: true);
         await ResetAsync(store);
         const int bucket = 3;
         var partition = PartitionMap.PartitionOf(bucket, store.Options.PartitionCount);
@@ -112,6 +172,17 @@ public sealed class PortableReaderFailsLoudlyTests(PostgreSqlFixture postgres)
         context.Set<EventStreamEntry>().Add(entry);
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         return entry.Id;
+    }
+
+    private static async Task AppendManyAsync(PocStore<PocCommitOrderWriteDbContext> store, int bucket, int count)
+    {
+        await using var context = await store.CreateContextAsync();
+        for (var i = 0; i < count; i++)
+        {
+            context.Set<EventStreamEntry>().Add(PocStore<PocCommitOrderWriteDbContext>.NewEntry(Guid.NewGuid(), 1, bucket, Guid.NewGuid()));
+        }
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
     private static async Task ResetAsync(PocStore<PocCommitOrderWriteDbContext> store)

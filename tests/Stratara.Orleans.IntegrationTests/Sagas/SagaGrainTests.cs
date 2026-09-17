@@ -65,7 +65,7 @@ public sealed class SagaGrainTests(PostgreSqlFixture postgres, RedisFixture redi
             .AddTrustedType<CounterIncremented>()
             .AddScoped<Stratara.Sagas.Abstractions.ISaga, CounterSaga>()
             .AddSingleton(log)
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraSagaGrains(options =>

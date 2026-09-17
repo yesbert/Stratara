@@ -89,7 +89,7 @@ public sealed class RebuildEndToEndTests(PostgreSqlFixture postgres, RedisFixtur
             .AddTrustedType<CounterIncremented>()
             .AddScoped<IProjection, RebuildProbeProjection>()
             .AddSingleton(control)
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraProjectionGrains(options =>

@@ -24,7 +24,7 @@ public sealed class PartitionCounterModelNamesTests(PostgreSqlFixture postgres)
     {
         await using var store = await PocStore<PascalCaseCounterWriteDbContext>.CreateAsync(
             postgres.ConnectionStringFor(Database),
-            options => options.MaintainPartitionCounter = true);
+            maintainCounter: true);
         var reader = new PortableCounterReader<PascalCaseCounterWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
 
         var bucketId = Random.Shared.Next(0, 4096);

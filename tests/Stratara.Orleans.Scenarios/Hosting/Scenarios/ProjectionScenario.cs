@@ -77,7 +77,7 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
             .AddSingleton(new ProjectionProbeControl())
             .AddSingleton(new KillSwitch())
             .AddScoped<IProjectionViewTruncator, ProbeViewTruncator>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false);
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false);
 
         if (path != ProjectionPath.Bus)
         {
