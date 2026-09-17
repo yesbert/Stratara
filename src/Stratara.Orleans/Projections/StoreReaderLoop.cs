@@ -18,9 +18,10 @@ namespace Stratara.Orleans.Projections;
 /// </summary>
 /// <remarks>
 /// The loop keeps the position it last wrote and reads the checkpoint store only while it has none —
-/// on activation, and after <see cref="Invalidate"/>, which a grain calls when something may have
-/// changed the checkpoint behind its back (a pause before a rebuild resets it). The grain is the only
-/// writer of its checkpoint otherwise, so the cached position is the stored one. A partition that
+/// on activation, after <see cref="Invalidate"/>, which a grain calls when something may have
+/// changed the checkpoint behind its back (a pause before a rebuild resets it), and after a catch-up that
+/// failed — a checkpoint the store refused to advance among the reasons. The grain is the only writer of its
+/// checkpoint otherwise, so the cached position is the stored one. A partition that
 /// stops at an entry is logged with the entry and counted as stalled until it advances again, and the
 /// time recorded with the oldest entry it has not applied is reported for the lag gauge. The token a
 /// catch-up receives reaches every store call it makes, and a cancelled catch-up stops at the next
@@ -164,6 +165,7 @@ internal sealed class StoreReaderLoop(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Invalidate();
             MarkStalled(onRead: true);
             logger.LogCatchUpFaulted(ex, consumer, partition);
             throw;
@@ -172,7 +174,10 @@ internal sealed class StoreReaderLoop(
 
     /// <summary>
     /// The catch-up proper. A store that cannot be read, a checkpoint the store refuses or a checkpoint that cannot
-    /// be written throws out of here and is counted and logged by the caller as a stall on the read; an entry that
+    /// be written throws out of here and is counted and logged by the caller as a stall on the read, and the caller
+    /// forgets the cached position, so the next catch-up starts from what the checkpoint store holds. The checkpoint
+    /// is advanced from the position the loop last saw, so a store that guards it refuses a write from an activation
+    /// that another has overtaken; an entry that
     /// cannot be applied is the batch's own affair. The checkpoint for the entries a cut batch applied is written
     /// with a token of its own, because those entries are applied whether or not the catch-up was cancelled.
     /// </summary>
@@ -214,7 +219,7 @@ internal sealed class StoreReaderLoop(
                 var resumeAt = batch.ResumePositionBefore(applied, _position);
                 if (resumeAt != _position)
                 {
-                    await checkpoints.SetAsync(consumer, partition, readerName, resumeAt, CancellationToken.None);
+                    await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, resumeAt, CancellationToken.None);
                     _position = resumeAt;
                 }
 
@@ -222,7 +227,7 @@ internal sealed class StoreReaderLoop(
             }
 
             MarkAdvancing(onRead: false);
-            await checkpoints.SetAsync(consumer, partition, readerName, batch.Position, cancellationToken);
+            await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, batch.Position, cancellationToken);
             _position = batch.Position;
             if (!batch.HasMore)
             {

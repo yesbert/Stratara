@@ -282,6 +282,12 @@ public static class LogEvents
         public const int CommandRecorded = 117_003;
         /// <summary>A recorded command whose hand-over was lost was handed over again.</summary>
         public const int CommandResumed = 117_004;
+        /// <summary>A store reader brought back for a partition beyond the host's partition count retired: it unregistered its keep-alive and reads nothing.</summary>
+        public const int StoreReaderRetired = 117_005;
+        /// <summary>The drain holds recorded commands back because a full replay is active; logged once when the holding back begins.</summary>
+        public const int ResumeHeldBackByReplay = 117_006;
+        /// <summary>The drain resumes recorded commands again after a full replay held them back.</summary>
+        public const int ResumeReleasedAfterReplay = 117_007;
         /// <summary>A store reader stopped at an entry it could not apply; its checkpoint stays before the entry (warning).</summary>
         public const int PartitionStalled = 117_101;
         /// <summary>One attempt to apply an entry failed and is retried under the preceding-fact policy (warning).</summary>

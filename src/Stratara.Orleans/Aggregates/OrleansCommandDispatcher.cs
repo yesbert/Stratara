@@ -34,6 +34,7 @@ internal sealed class OrleansCommandDispatcher(
     ISessionContextProvider sessionContextProvider,
     IProjectionReplayState replayState,
     AggregateSendLane lane,
+    ReplaySuspensionTracker replaySuspension,
     ILogger<OrleansCommandDispatcher> logger) : ICommandOutboxDispatcher
 {
     /// <inheritdoc/>
@@ -57,9 +58,18 @@ internal sealed class OrleansCommandDispatcher(
     public Task EnqueueOutboxEntriesAsync(IEnumerable<OutboxEntry> outboxEntries, CancellationToken cancellationToken = default) =>
         ResumeDueAsync(Math.Max(1, outboxEntries.Count()), cancellationToken);
 
-    /// <summary>Resumes up to <paramref name="batchSize"/> due commands, unless a replay is active.</summary>
-    public Task<int> ResumeDueAsync(int batchSize, CancellationToken cancellationToken) =>
-        replayState.IsReplayActive ? Task.FromResult(0) : resumer.ResumeDueAsync(batchSize, cancellationToken);
+    /// <summary>Resumes up to <paramref name="batchSize"/> due commands, unless a replay is active; a hold and its end are logged once each.</summary>
+    public Task<int> ResumeDueAsync(int batchSize, CancellationToken cancellationToken)
+    {
+        if (replayState.IsReplayActive)
+        {
+            replaySuspension.HeldBack(logger);
+            return Task.FromResult(0);
+        }
+
+        replaySuspension.Released(logger);
+        return resumer.ResumeDueAsync(batchSize, cancellationToken);
+    }
 }
 
 /// <summary>

@@ -193,6 +193,19 @@ on both paths. Since 4.1.1 a recorded command is stored under a kind of its own 
 a command recorded under 4.1.0 still carries the bus command kind, so stop every bus outbox worker before
 upgrading hosts that record commands, and keep it stopped until those records are gone.
 
+A store reader applies what it reads under the session each entry was recorded under, and one read may return
+entries of several tenants and users. A projection, a saga or a process — and every service it depends on — is
+resolved after that session is set: consecutive entries recorded under one session share one scope, as one
+bundle did on the bus, and an entry under another session gets a scope of its own. A dependency that takes the
+tenant when it is constructed, such as a connection routed per tenant through `IDbResolver` or a read-model
+context that captures the tenant, therefore sees the entry's tenant, never its neighbour's.
+
+A process's timeout is the exception: a timer carries its owner and purpose, not a session. The process grain
+reads the first entry of the process's state stream to find the session the process was started under, and it
+reads that entry **before** any session is in place. A host that routes connections per tenant must let its
+`IDbResolver` answer for an absent tenant with a connection that reaches the process state streams, or the
+timeouts fail.
+
 During a rollout a host can run both models at once — the bus consumer and the grains both apply
 idempotently. `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` take `hybrid: true` to keep
 publishing bundles to the bus while the grains read the store.

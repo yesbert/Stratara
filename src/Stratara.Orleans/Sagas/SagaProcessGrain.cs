@@ -17,8 +17,16 @@ namespace Stratara.Orleans.Sagas;
 internal interface ISagaProcessGrain : IGrainWithStringKey
 {
     /// <summary>Advances the process with the fact at <paramref name="version"/> of <paramref name="streamId"/>, read back from the store.</summary>
+    /// <remarks>Kept for a saga grain of the previous release in a rolling cluster; it reads the fact under no session.</remarks>
     [Alias("HandleAsync")]
     Task HandleAsync(Guid streamId, long version, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Advances the process with the fact at <paramref name="version"/> of <paramref name="streamId"/>, read back from the
+    /// store under <paramref name="session"/>, the session the fact was recorded under.
+    /// </summary>
+    [Alias("HandleUnderSessionAsync")]
+    Task HandleAsync(Guid streamId, long version, RecordedSessionCarrier session, CancellationToken cancellationToken);
 
     /// <summary>A timeout the process scheduled is due.</summary>
     [Alias("OnTimeoutAsync")]
@@ -41,7 +49,14 @@ internal interface ISagaProcessGrain : IGrainWithStringKey
 [SagasRolePlacementFilter]
 internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grain, ISagaProcessGrain
 {
-    public Task HandleAsync(Guid streamId, long version, CancellationToken cancellationToken) => RunAsync(async (process, state, context, services) =>
+    public Task HandleAsync(Guid streamId, long version, CancellationToken cancellationToken) => HandleAsync(streamId, version, session: null, cancellationToken);
+
+    /// <summary>
+    /// The carried session is set before the process is resolved and its state read, so a state stream reached through
+    /// a connection routed per tenant is read under the fact's tenant; the fact read back sets the session again, the
+    /// store being the truth.
+    /// </summary>
+    public Task HandleAsync(Guid streamId, long version, RecordedSessionCarrier? session, CancellationToken cancellationToken) => RunAsync(session, async (process, state, context, services) =>
     {
         var entry = await ReadEntryAsync(services, streamId, version, cancellationToken);
         services.GetRequiredService<ISessionContextProvider>().Set(RecordedSession.Of(entry));
@@ -56,7 +71,7 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
     /// A timeout has no fact to take a session from; it runs under the session the process's own
     /// stream was created with, so what it emits is owned by the same tenant.
     /// </summary>
-    public Task OnTimeoutAsync(string purpose, CancellationToken cancellationToken) => RunAsync(async (process, state, context, services) =>
+    public Task OnTimeoutAsync(string purpose, CancellationToken cancellationToken) => RunAsync(session: null, async (process, state, context, services) =>
     {
         var (_, stateStream) = ResolveProcess(services);
         var unitOfWork = services.GetRequiredService<IWriteUnitOfWork>();
@@ -78,10 +93,15 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
         return state is { Completed: false } && await scope.ServiceProvider.GetRequiredService<IEventSource>().ExistsAsync(stateStream, cancellationToken);
     }
 
-    private async Task RunAsync(Func<ISagaProcess, object, SagaProcessContext, IServiceProvider, Task> step, CancellationToken cancellationToken)
+    private async Task RunAsync(RecordedSessionCarrier? session, Func<ISagaProcess, object, SagaProcessContext, IServiceProvider, Task> step, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
+        if (session is not null)
+        {
+            services.GetRequiredService<ISessionContextProvider>().Set(RecordedSession.Of(session));
+        }
+
         var (process, stateStream) = ResolveProcess(services);
         var loader = StateLoaders.For(process.StateType);
 

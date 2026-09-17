@@ -37,6 +37,7 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
         Stratara.Orleans.Hosting.OrleansOptionsValidator.Register<SingletonWorkOptions>(services);
         Stratara.Orleans.Hosting.OrleansOptionsValidator.Register<OutboxDrainOptions>(services);
         services.AddScoped<ISingletonWork, TWork>();
+        services.TryAddSingleton<Stratara.Orleans.Aggregates.ReplaySuspensionTracker>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, SingletonWorkStarter>());
         Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         return services;

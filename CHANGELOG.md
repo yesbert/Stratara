@@ -18,6 +18,12 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **`IProjectionCheckpointStore.AdvanceAsync`** advances a checkpoint from the position its writer last saw. The
+  default replaces the position through `SetAsync`, so a store of the consumer's own keeps compiling; the shipped
+  store refuses a write that finds another position or another reader.
+- **Orleans: log events `117_005`–`117_007`** — `StoreReaderRetired` for a reader beyond the host's partition
+  count, `ResumeHeldBackByReplay` and `ResumeReleasedAfterReplay` once each when a full replay holds recorded
+  commands back and releases them.
 - **Orleans: a host seeds its store readers at the head.** `IStoreReaderSeeding.SeedAtHeadAsync`, registered
   with `AddStrataraProjectionGrains` and `AddStrataraSagaGrains`, writes a checkpoint at the store's current
   head for every registered projection and saga and partition that has none, and reports how many it wrote and
@@ -76,6 +82,15 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **Orleans: a store reader applies each entry under its own tenant.** A projection, a saga and the services they
+  depend on are resolved after the entry's session is set — one scope per run of entries recorded under one
+  session — so a dependency that takes the tenant when constructed no longer sees the first entry's tenant, or
+  none, for a whole read. A process reads its state under the session of the fact it is handed.
+- **Orleans: a checkpoint is no longer rewound by a stale activation**, nor written under another reader's name;
+  the refused reader reads the checkpoint again. `SetAsync` of the shipped store refuses a row held by another
+  reader.
+- **Orleans: a reader of a partition beyond a lowered partition count retires** instead of returning every
+  keep-alive period to be refused and counted as stalled.
 - **Orleans: an aggregate's order runs to the end however long it takes.** The grain ran its accepted
   commands through an ordinary call to itself, which the runtime timed out after `MessagingOptions.ResponseTimeout`
   (thirty seconds); the grain read the timeout as "the run never started" and failed every command still

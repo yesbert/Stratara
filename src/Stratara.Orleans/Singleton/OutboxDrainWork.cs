@@ -53,7 +53,8 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
     /// On the execution model the commands are resumed from the intent store, which knows which are due
     /// and how often each has been handed over; the store is not read for them as plain entries. The
     /// resume runs wherever an intent store is registered, whether or not this silo also dispatches
-    /// commands, because the commands may have been recorded by another host.
+    /// commands, because the commands may have been recorded by another host. A resumption held back by an active
+    /// replay is logged when the holding back begins and when it ends.
     /// </summary>
     /// <returns><see langword="true"/> when an intent store is registered on this silo.</returns>
     private async Task<bool> ResumeRecordedCommandsAsync(CancellationToken cancellationToken)
@@ -71,11 +72,15 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
             return true;
         }
 
+        var replaySuspension = services.GetRequiredService<Aggregates.ReplaySuspensionTracker>();
+        var logger = services.GetRequiredService<ILogger<OutboxDrainWork>>();
         if (services.GetService<IProjectionReplayState>() is { IsReplayActive: true })
         {
+            replaySuspension.HeldBack(logger);
             return true;
         }
 
+        replaySuspension.Released(logger);
         await Aggregates.IntentResumer.Create(services, intents).ResumeDueAsync(_options.BatchSize, cancellationToken);
         return true;
     }

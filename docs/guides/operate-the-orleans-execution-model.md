@@ -128,6 +128,16 @@ appended it without `PartitionCounterInterceptor`. The logged failure names the 
 to start naming a partition counter beyond its partition count was configured with a lower count than the
 store was counted with; restore the count.
 
+A checkpoint is advanced only from the position its reader last saw and never under another reader's name. An
+activation that outlived its successor — a silo suspected dead that is still writing — is refused with a message
+naming both positions, logged as `117_103`, and reads the checkpoint again instead of rewinding it; a write under
+another reader's name is refused naming both readers. A host that switches readers resets its checkpoints first.
+
+Under the native reader, a host that lowers its partition count and resets its checkpoints as documented may
+still have keep-alive reminders of readers beyond the new count, if the reminders were not reset. Such a reader,
+when a reminder brings it back, retires: it unregisters its keep-alive, logs `117_005` naming the consumer, the
+partition and the count, reads nothing and counts no stall. The event appears once per retired reader.
+
 ## What to watch
 
 Every instrument is published under the meter `Stratara` with the names in
@@ -145,7 +155,10 @@ Every instrument is published under the meter `Stratara` with the names in
 
 The log events to route to an alert: `117_101` and `117_103` (a partition stopped), `117_104` (a command
 kept), `117_111` (recorded commands on a silo without an intent store), `117_112` and `117_113` (a failing
-attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound). The whole band is listed in the [log events schema](../reference/log-events-schema.md).
+attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound). Worth routing to a
+dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded
+commands back and once when it releases them — a command that waits for the length of a replay is waiting, not
+lost. The whole band is listed in the [log events schema](../reference/log-events-schema.md).
 
 ## Reset what the model keeps
 
