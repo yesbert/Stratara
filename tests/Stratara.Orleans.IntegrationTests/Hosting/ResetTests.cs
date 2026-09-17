@@ -83,6 +83,62 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
         }
     }
 
+    /// <summary>
+    /// Scenario <em>The runtime tables live in a schema</em>: the scripts ran under a schema of their own, the host
+    /// names it, and the reset removes and counts the deployment's rows there — without a silo, from a composition
+    /// that registers no store reader.
+    /// </summary>
+    [Fact]
+    public async Task A_reset_that_names_the_schema_clears_the_tables_there()
+    {
+        const string schema = "orleans_alt";
+        const string deployment = "reset-in-a-schema";
+        var runtime = postgres.ConnectionStringFor("poc_reset_schema");
+        await PostgresTimerHostSchema.EnsureDatabaseAsync(runtime);
+        await PocReset.CreateRuntimeTablesInSchemaAsync(runtime, schema);
+        await PocReset.SeedDeploymentAsync(runtime, schema, deployment, reminders: 2, membershipRows: 1);
+        var read = postgres.ConnectionStringFor(ReadDatabase);
+        await PostgresTimerHostSchema.EnsureDatabaseAsync(read);
+
+        await using var services = ResetOnlyServices(runtime, read, deployment, schema);
+        await using var scope = services.CreateAsyncScope();
+        var report = await scope.ServiceProvider.GetRequiredService<IExecutionModelReset>().ResetAsync();
+
+        Assert.Equal(2, report.Reminders);
+        Assert.Equal(1, report.MembershipRows);
+        Assert.Equal(0, report.Checkpoints);
+        Assert.Equal(0, await PocReset.CountAsync(runtime, $"{schema}.orleansreminderstable", "serviceid", deployment));
+        Assert.Equal(0, await PocReset.CountAsync(runtime, $"{schema}.orleansmembershiptable", "deploymentid", deployment));
+        Assert.Equal(0, await PocReset.CountAsync(runtime, $"{schema}.orleansmembershipversiontable", "deploymentid", deployment));
+    }
+
+    /// <summary>Scenario <em>A runtime table is absent</em>: a reset against a database without the tables fails naming the first one.</summary>
+    [Fact]
+    public async Task A_reset_against_absent_tables_fails_naming_the_table()
+    {
+        var runtime = postgres.ConnectionStringFor("poc_reset_absent");
+        await PostgresTimerHostSchema.EnsureDatabaseAsync(runtime);
+        var read = postgres.ConnectionStringFor(ReadDatabase);
+        await PostgresTimerHostSchema.EnsureDatabaseAsync(read);
+
+        await using var services = ResetOnlyServices(runtime, read, "reset-absent", "public");
+        await using var scope = services.CreateAsyncScope();
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredService<IExecutionModelReset>().ResetAsync());
+
+        Assert.Contains("public.orleansreminderstable", failure.Message, StringComparison.Ordinal);
+    }
+
+    private static ServiceProvider ResetOnlyServices(string runtime, string read, string deployment, string schema) =>
+        new ServiceCollection()
+            .Configure<global::Orleans.Configuration.ClusterOptions>(options =>
+            {
+                options.ClusterId = deployment;
+                options.ServiceId = deployment;
+            })
+            .AddDbContextFactory<PocReadDbContext>(options => options.UseSnakeCaseNamingConvention().UseNpgsql(read))
+            .AddStrataraExecutionModelReset<PocReadDbContext>(runtime, (_, _) => Task.FromResult(0L), schema)
+            .BuildServiceProvider();
+
     private async Task<IHost> StartAsync(RecordingTimerHost timerHost, string orleansConnectionString, string readConnectionString, int gatewayPort)
     {
         await PocSilo.EnsureSchemaAsync(orleansConnectionString);

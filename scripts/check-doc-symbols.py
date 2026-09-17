@@ -46,7 +46,7 @@ EXTERNAL = {
     "IConnectionMultiplexer", "IEmailSender", "IStringLocalizer", "IAsyncDisposable",
     "AddHttpContextAccessor", "IUserClaimsPrincipalFactory", "AddAsync",
     "UseExceptionHandler", "AddProblemDetails", "AddExceptionHandler", "ProblemDetails",
-    "ValidationProblemDetails", "IExceptionHandler", "UseAuthentication", "AddOpenTelemetry", "UseOrleans",
+    "ValidationProblemDetails", "IExceptionHandler", "UseAuthentication", "AddOpenTelemetry", "UseOrleans", "UseOrleansClient",
     "UseAdoNetClustering", "UseAdoNetReminderService", "AddRedisGrainDirectory",
 }
 

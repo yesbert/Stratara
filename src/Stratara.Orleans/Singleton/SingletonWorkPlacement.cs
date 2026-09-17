@@ -40,10 +40,11 @@ internal sealed class SingletonWorkPlacementFilterDirector(IServiceProvider serv
 }
 
 /// <summary>
-/// The placement of singleton work. Every silo of the execution model registers the filter, because a grain
-/// class that names a filter cannot be placed from a silo that lacks it. A silo registered through
-/// <c>AddStrataraOrleans</c> also publishes, in its metadata, every singleton work registered on it — read when
-/// the silo builds its metadata, so the work may be registered before or after the silo.
+/// The placement of singleton work, and the metadata the role placement shares with it. Every silo of the execution
+/// model registers the filters, because a grain class that names a filter cannot be placed from a silo that lacks
+/// it. A silo registered through <c>AddStrataraOrleans</c> also publishes, in its metadata, every singleton work and
+/// every role registered on it — read when the silo builds its metadata, so both may be registered before or after
+/// the silo.
 /// </summary>
 internal static class SingletonWorkPlacement
 {
@@ -61,6 +62,7 @@ internal static class SingletonWorkPlacement
 
         services.AddSingleton<SingletonWorkPlacementFilterStrategy>();
         services.AddPlacementFilter<SingletonWorkPlacementFilterStrategy, SingletonWorkPlacementFilterDirector>(ServiceLifetime.Singleton);
+        Hosting.RolePlacement.AddFilters(services);
     }
 
     /// <summary>Publishes the singleton work registered on this silo in its metadata, and registers the filter.</summary>
@@ -80,7 +82,7 @@ internal static class SingletonWorkPlacement
         silo.UseSiloMetadata(metadata.Entries);
     }
 
-    /// <summary>The metadata entries naming the singleton work registered on this silo.</summary>
+    /// <summary>The metadata entries naming the singleton work and the execution-model roles registered on this silo.</summary>
     internal sealed class SingletonWorkSiloMetadata
     {
         public Dictionary<string, string> Entries { get; } = new(StringComparer.Ordinal);
@@ -92,6 +94,8 @@ internal static class SingletonWorkPlacement
             {
                 Entries[MetadataKeyOf(work.Name)] = "registered";
             }
+
+            Hosting.RolePlacement.Fill(Entries, scope.ServiceProvider);
         }
     }
 }

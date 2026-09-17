@@ -2,12 +2,14 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Concurrency;
+using Orleans.Runtime;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
 using IRequest = Stratara.Abstractions.Mediator.IRequest;
+using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -29,7 +31,12 @@ internal interface IAggregateGrain : IGrainWithGuidKey
     [Alias("AcceptIntentAsync")]
     Task AcceptIntentAsync(Guid intentId, AggregateCommandEnvelope envelope);
 
-    /// <summary>Runs the accepted commands one after another. The grain calls it on itself.</summary>
+    /// <summary>
+    /// Runs the accepted commands one after another. The grain calls it on itself, one-way: the call carries no
+    /// response and therefore no response timeout, so an order that takes longer than the runtime's response
+    /// timeout runs to its end instead of being abandoned as a call that was never delivered.
+    /// </summary>
+    [OneWay]
     [Alias("RunAcceptedAsync")]
     Task RunAcceptedAsync();
 }
@@ -59,6 +66,7 @@ internal interface ICommandRunnerGrain : IGrainWithGuidKey
 /// activation: an activation that ends before running what it accepted fails the forwarded commands back to their
 /// callers and stops renewing the recorded intents, which the drain resumes after the grace.
 /// </remarks>
+[CommandsRolePlacementFilter]
 internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain, IAggregateGrain
 {
     private readonly Queue<Accepted> _accepted = new();
@@ -68,7 +76,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
     public Task ExecuteAsync(AggregateCommandEnvelope envelope)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Accept(new Accepted(envelope, completion, Intent: null));
+        Accept(new Accepted(envelope, completion, Intent: null, RequestContext.Get(AggregateTurn.RequestContextKey) as Guid[]));
         return completion.Task;
     }
 
@@ -82,7 +90,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
 
         var scope = scopeFactory.CreateScope();
         var intent = new AcceptedIntent(intentId, scope, IntentLease.StartAsync(scope.ServiceProvider, intentId));
-        Accept(new Accepted(envelope, Completion: null, intent));
+        Accept(new Accepted(envelope, Completion: null, intent, CallerChain: null));
         await intent.Lease;
     }
 
@@ -104,7 +112,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
                     }
                     else
                     {
-                        await CommandExecution.RunAsync(scopeFactory, next.Envelope, intentId: null);
+                        await CommandExecution.RunAsync(scopeFactory, next.Envelope, intentId: null, around: null, next.CallerChain);
                         next.Completion?.TrySetResult();
                     }
                 }
@@ -136,6 +144,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
         }
 
         _running = true;
+        RequestContext.Remove(AggregateTurn.RequestContextKey);
         this.AsReference<IAggregateGrain>().RunAcceptedAsync().ContinueWith(
             static (_, state) => ((AggregateGrain)state!).OnRunNotDeliveredAsync().Ignore(),
             this,
@@ -148,7 +157,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
     {
         try
         {
-            await CommandExecution.RunIntentAsync(intent.Scope.ServiceProvider, envelope, intent.Id, await intent.Lease);
+            await CommandExecution.RunIntentAsync(intent.Scope.ServiceProvider, envelope, intent.Id, await intent.Lease, around: null, this.GetPrimaryKey());
         }
         finally
         {
@@ -156,7 +165,10 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
         }
     }
 
-    /// <summary>The call that runs the queue never ran: give up what it would have run, and let the next command ask again.</summary>
+    /// <summary>
+    /// The one-way call that runs the queue could not be sent — the activation is on its way out — so give up what it
+    /// would have run, and let the next command ask again.
+    /// </summary>
     private Task OnRunNotDeliveredAsync()
     {
         _running = false;
@@ -198,12 +210,13 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
         _heldIntents.Remove(intent.Id);
     }
 
-    private sealed record Accepted(AggregateCommandEnvelope Envelope, TaskCompletionSource? Completion, AcceptedIntent? Intent);
+    private sealed record Accepted(AggregateCommandEnvelope Envelope, TaskCompletionSource? Completion, AcceptedIntent? Intent, Guid[]? CallerChain);
 
     private sealed record AcceptedIntent(Guid Id, IServiceScope Scope, Task<IntentLease> Lease);
 }
 
 /// <summary>Runs an intent that names no aggregate: once, somewhere in the cluster, keyed by the intent.</summary>
+[CommandsRolePlacementFilter]
 internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory) : Grain, ICommandRunnerGrain
 {
     public Task ExecuteIntentAsync(AggregateCommandEnvelope envelope) => CommandExecution.RunAsync(scopeFactory, envelope, this.GetPrimaryKey());
@@ -227,7 +240,7 @@ internal static class CommandExecution
     /// acquires its permit there — inside the intent's lease, so a command waiting for a permit is not handed over
     /// again either.
     /// </summary>
-    public static async Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId, Func<Func<Task>, Task>? around)
+    public static async Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId, Func<Func<Task>, Task>? around, IReadOnlyList<Guid>? callerChain = null)
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
@@ -235,7 +248,7 @@ internal static class CommandExecution
         var services = scope.ServiceProvider;
         if (intentId is not { } id)
         {
-            await Wrap(() => InvokeAsync(services, envelope, throughMediator: false), around)();
+            await Wrap(() => InvokeAsync(services, envelope, throughMediator: false, callerChain), around)();
             return;
         }
 
@@ -247,7 +260,7 @@ internal static class CommandExecution
     /// the lease after the handler, records the failure of an attempt that throws, and hands the record to the
     /// completion queue once the handler has completed.
     /// </summary>
-    public static async Task RunIntentAsync(IServiceProvider services, AggregateCommandEnvelope envelope, Guid intentId, IntentLease lease, Func<Func<Task>, Task>? around = null)
+    public static async Task RunIntentAsync(IServiceProvider services, AggregateCommandEnvelope envelope, Guid intentId, IntentLease lease, Func<Func<Task>, Task>? around = null, Guid? aggregateId = null)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentNullException.ThrowIfNull(lease);
@@ -260,7 +273,7 @@ internal static class CommandExecution
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                await lease.RecordFailureAsync(ex);
+                await lease.RecordFailureAsync(ex, envelope.CommandTypeName, aggregateId);
                 throw;
             }
         }
@@ -277,7 +290,7 @@ internal static class CommandExecution
     /// command worker; a synchronous forward already ran that pipeline on the caller's side and invokes the
     /// handler directly, so no behaviour runs twice.
     /// </summary>
-    private static async Task InvokeAsync(IServiceProvider services, AggregateCommandEnvelope envelope, bool throughMediator)
+    private static async Task InvokeAsync(IServiceProvider services, AggregateCommandEnvelope envelope, bool throughMediator, IReadOnlyList<Guid>? callerChain = null)
     {
         var session = JsonSerializer.Deserialize<SessionContext>(envelope.SessionContextJson)
                       ?? throw new InvalidOperationException("The aggregate command envelope carries no session context.");
@@ -288,7 +301,7 @@ internal static class CommandExecution
                           .DeserializeAsync(envelope.CommandJson, type, session.TenantId, session.ActorUserId)
                       ?? throw new InvalidOperationException($"The aggregate command envelope's command of type {type.FullName} deserialised to nothing.");
 
-        using (AggregateTurn.Enter((command as IAggregateScopedCommand)?.AggregateId))
+        using (AggregateTurn.Enter((command as IAggregateScopedCommand)?.AggregateId, callerChain))
         {
             var invoker = Invokers.GetOrAdd(type, BuildInvoker);
             await (throughMediator
@@ -329,26 +342,56 @@ internal static class CommandExecution
 }
 
 /// <summary>
-/// Marks the ambient flow as running inside the turn of one aggregate, so the forwarding behaviour lets a
-/// command for that aggregate through instead of forwarding it again. A command for any other aggregate is
-/// forwarded to that aggregate's activation like any other.
+/// Marks the ambient flow as running inside the turn of one aggregate — and, behind it, the turns it was sent
+/// from — so the forwarding behaviour lets a command for the innermost aggregate through instead of forwarding it
+/// again, and refuses a command for an aggregate further out in the chain, whose turn is waiting on this one.
+/// A command for any other aggregate is forwarded to that aggregate's activation like any other. The chain
+/// travels with a forwarded call in the request context; a recorded command starts a chain of its own, because
+/// nobody waits for it.
 /// </summary>
 internal static class AggregateTurn
 {
-    private static readonly AsyncLocal<Guid?> Current = new();
+    /// <summary>The request-context key a forwarded call carries the sender's chain under.</summary>
+    public const string RequestContextKey = "stratara.aggregate-chain";
 
-    /// <summary>Whether the ambient flow runs inside the turn of <paramref name="aggregateId"/>.</summary>
-    public static bool IsInside(Guid aggregateId) => Current.Value == aggregateId;
+    private static readonly AsyncLocal<Guid[]?> Current = new();
 
-    /// <summary>Enters the turn of <paramref name="aggregateId"/>; <see langword="null"/> marks no aggregate.</summary>
-    public static IDisposable Enter(Guid? aggregateId)
+    /// <summary>The turns the ambient flow is inside, outermost first; empty outside any turn.</summary>
+    public static IReadOnlyList<Guid> Chain => Current.Value ?? [];
+
+    /// <summary>Whether the ambient flow runs inside the turn of <paramref name="aggregateId"/> — the innermost one.</summary>
+    public static bool IsInside(Guid aggregateId) => Current.Value is { Length: > 0 } chain && chain[^1] == aggregateId;
+
+    /// <summary>Whether a turn of <paramref name="aggregateId"/> further out in the chain is waiting on the ambient flow.</summary>
+    public static bool Encloses(Guid aggregateId) => Current.Value is { Length: > 1 } chain && Array.IndexOf(chain, aggregateId, 0, chain.Length - 1) >= 0;
+
+    /// <summary>The refusal a send that would close a cycle carries.</summary>
+    public static string CycleMessage(Guid target)
+    {
+        var chain = Chain;
+        var sender = chain.Count > 0 ? chain[^1].ToString() : "no aggregate";
+        return $"Aggregate {sender} sent a command to aggregate {target}, whose turn is waiting on this one (chain: {string.Join(" -> ", chain)} -> {target}). " +
+               "Sends between aggregates must not form a cycle: the receiving aggregate would wait for the sending one, which is waiting for it. " +
+               "Send the command from outside the turn — through the outbox dispatcher, which records it and hands it over without waiting — or restructure the handlers so the sends form a directed acyclic graph.";
+    }
+
+    /// <summary>The ambient chain as a forwarded call carries it, or <see langword="null"/> outside any turn.</summary>
+    public static Guid[]? Carry() => Current.Value is { Length: > 0 } chain ? chain : null;
+
+    /// <summary>
+    /// Enters the turn of <paramref name="aggregateId"/> behind <paramref name="callerChain"/> — the chain a forwarded
+    /// call arrived with — or behind the ambient chain where none was carried; <see langword="null"/> marks no aggregate
+    /// and enters nothing new.
+    /// </summary>
+    public static IDisposable Enter(Guid? aggregateId, IReadOnlyList<Guid>? callerChain = null)
     {
         var previous = Current.Value;
-        Current.Value = aggregateId;
+        var outer = callerChain ?? (IReadOnlyList<Guid>?)previous ?? [];
+        Current.Value = aggregateId is { } id ? [.. outer, id] : outer.Count == 0 ? null : [.. outer];
         return new Exit(previous);
     }
 
-    private sealed class Exit(Guid? previous) : IDisposable
+    private sealed class Exit(Guid[]? previous) : IDisposable
     {
         public void Dispose() => Current.Value = previous;
     }

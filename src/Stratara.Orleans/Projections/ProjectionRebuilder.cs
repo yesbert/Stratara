@@ -11,15 +11,24 @@ namespace Stratara.Orleans.Projections;
 /// Rebuilds one projection: pauses its readers, returns their checkpoints to the beginning, empties the
 /// projection, and resumes the readers however the truncation ended. The reset comes first, so no checkpoint
 /// is ever left past an effect the truncation removed; a truncation that fails part-way leaves readers that
-/// re-read from the beginning over a partly emptied model, which re-applying repairs.
+/// re-read from the beginning over a partly emptied model, which re-applying repairs. Two rebuilds of one
+/// projection may overlap: the readers count their pausers and resume only when the last has finished. A rebuild
+/// while a full replay is active is refused: the replay empties and refills every projection itself.
 /// </summary>
 internal sealed class ProjectionRebuilder(
     IGrainFactory grainFactory,
     IServiceScopeFactory scopeFactory,
-    IOptions<CommitOrderOptions> commitOrder) : IProjectionRebuilder
+    IOptions<CommitOrderOptions> commitOrder,
+    IProjectionReplayState replayState) : IProjectionRebuilder
 {
+    /// <exception cref="InvalidOperationException">A full replay is active, or the projection is unknown or not rebuildable.</exception>
     public async Task RebuildAsync(string projectionName, CancellationToken cancellationToken = default)
     {
+        if (replayState.IsReplayActive)
+        {
+            throw new InvalidOperationException($"Projection '{projectionName}' cannot be rebuilt while a full replay is active: the replay empties and refills every projection, this one included. Rebuild it once the replay has ended.");
+        }
+
         var partitions = Enumerable.Range(0, commitOrder.Value.PartitionCount)
             .Select(partition => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(projectionName, partition)))
             .ToList();

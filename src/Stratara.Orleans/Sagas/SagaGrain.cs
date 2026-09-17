@@ -9,6 +9,7 @@ using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
 using Stratara.Orleans.Projections;
 using Stratara.Sagas.Abstractions;
+using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Sagas;
 
@@ -53,6 +54,7 @@ internal interface ISagaGrain : IGrainWithStringKey
 /// process's grain.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
+[SagasRolePlacementFilter]
 internal sealed class SagaGrain(
     IServiceScopeFactory scopeFactory,
     IEventMapperFactory eventMapperFactory,

@@ -11,6 +11,7 @@ using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Projections.Abstractions;
+using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Projections;
 
@@ -78,6 +79,7 @@ internal interface IProjectionGrain : IGrainWithStringKey
 /// and the next nudge or poll tries again from there.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
+[ProjectionsRolePlacementFilter]
 internal sealed class ProjectionGrain(
     IServiceScopeFactory scopeFactory,
     IEventMapperFactory eventMapperFactory,
@@ -90,24 +92,37 @@ internal sealed class ProjectionGrain(
 {
     private HashSet<string>? _relevant;
     private Type? _projectionType;
-    private bool _paused;
+    private int _pausers;
 
-    protected override bool Suspended => _paused || base.Suspended;
+    protected override bool Suspended => _pausers > 0 || base.Suspended;
 
     /// <summary>
     /// Pauses, waits for a running loop to end, and forgets the cached position: whoever pauses is
-    /// about to change the checkpoint behind the grain's back.
+    /// about to change the checkpoint behind the grain's back. Pauses are counted, so two rebuilds
+    /// that overlap hold the reader until the last of them resumes.
     /// </summary>
     public async Task PauseAsync()
     {
-        _paused = true;
+        _pausers++;
         await Loop.WaitForRunningAsync(CancellationToken.None);
         Loop.Invalidate();
     }
 
+    /// <summary>Lets the last pauser's resume start the reader again; an earlier one changes nothing.</summary>
     public Task ResumeAsync()
     {
-        _paused = false;
+        if (_pausers == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        _pausers--;
+        if (_pausers > 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        Loop.Invalidate();
         return NudgeAsync();
     }
 

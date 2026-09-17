@@ -18,14 +18,18 @@ public static class OrleansResetServiceCollectionExtensions
     /// composition. The grain directory is cleared by
     /// <paramref name="clearDirectory"/>, because its backend is the host's choice. Binds no configuration.
     /// Requires a registered <see cref="IDbContextFactory{TContext}"/> for the read context. A reset registered
-    /// before this call is kept.
+    /// before this call is kept. The reset is scoped, like the store readers it reads; resolve it from a scope. A
+    /// runtime table absent under <paramref name="schema"/> fails the reset naming the table; the three runtime
+    /// tables are cleared in one transaction, and a failure after them leaves the checkpoints and the directory
+    /// as they were.
     /// </summary>
     /// <typeparam name="TReadContext">The read context that holds the checkpoint table.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <param name="runtimeConnectionString">The database of the runtime's reminder and membership tables.</param>
     /// <param name="clearDirectory">Removes the directory entries of the host's cluster and returns how many it removed.</param>
+    /// <param name="schema">The schema the runtime's tables live in; <c>public</c> unless the scripts ran under another.</param>
     /// <returns>The same service collection for chaining.</returns>
-    /// <exception cref="ArgumentException"><paramref name="runtimeConnectionString"/> is empty.</exception>
+    /// <exception cref="ArgumentException"><paramref name="runtimeConnectionString"/> or <paramref name="schema"/> is empty.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="clearDirectory"/> is <see langword="null"/>.</exception>
     /// <example>
     /// Run it while no silo of the cluster runs:
@@ -41,20 +45,23 @@ public static class OrleansResetServiceCollectionExtensions
     ///         return keys.Length == 0 ? 0 : await redis.GetDatabase().KeyDeleteAsync(keys);
     ///     });
     ///
-    /// var report = await app.Services.GetRequiredService&lt;IExecutionModelReset&gt;().ResetAsync();
+    /// await using var scope = app.Services.CreateAsyncScope();
+    /// var report = await scope.ServiceProvider.GetRequiredService&lt;IExecutionModelReset&gt;().ResetAsync();
     /// </code>
     /// </example>
     public static IServiceCollection AddStrataraExecutionModelReset<TReadContext>(
         this IServiceCollection services,
         string runtimeConnectionString,
-        Func<IServiceProvider, CancellationToken, Task<long>> clearDirectory)
+        Func<IServiceProvider, CancellationToken, Task<long>> clearDirectory,
+        string schema = "public")
         where TReadContext : DbContext
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runtimeConnectionString);
         ArgumentNullException.ThrowIfNull(clearDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
 
         services.AddOptions<ClusterOptions>();
-        services.TryAddSingleton(new ExecutionModelResetSettings(runtimeConnectionString, clearDirectory));
+        services.TryAddSingleton(new ExecutionModelResetSettings(runtimeConnectionString, clearDirectory, schema));
         services.TryAddScoped<IExecutionModelReset, ExecutionModelReset<TReadContext>>();
         return services;
     }

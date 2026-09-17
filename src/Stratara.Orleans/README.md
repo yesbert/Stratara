@@ -31,7 +31,7 @@ The commit-order readers, the checkpoint store and the store-schema additions li
 
 ```csharp
 builder.UseOrleans(silo => { /* clustering, reminders and the durable grain directory */ });
-builder.AddEventProjectionWorkerServices();
+builder.AddEventProjectionServices();
 builder.Services
     .AddProjectionsFromAssemblyContaining<IAppMarker>()
     .AddSingleton<ICommittedPositionReader, PostgresTransactionIdReader<AppWriteDbContext>>()

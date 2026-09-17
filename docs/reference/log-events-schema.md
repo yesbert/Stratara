@@ -44,6 +44,28 @@ Sub-buckets inside the framework's `100_000` range are defined in `src/Stratara.
 
 Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `100_101` error). Consult `src/Stratara.Diagnostics/LogEvents.cs` for the authoritative current list — buckets shift as features mature.
 
+### The Orleans execution model (`117_000s`)
+
+| Id | Constant | Level | When |
+|---|---|---|---|
+| `117_001` | StoreReaderStarted | Information | A store reader was activated for its consumer and partition |
+| `117_002` | StoreReaderStopped | Information | A store reader was deactivated |
+| `117_003` | CommandRecorded | Debug | A command was recorded before its dispatch returned |
+| `117_004` | CommandResumed | Information | A recorded command whose hand-over lapsed was handed over again; carries the attempt |
+| `117_101` | PartitionStalled | Warning | A store reader stopped at an entry it cannot apply; the checkpoint stays before it |
+| `117_102` | EntryAttemptFailed | Warning | One attempt to apply an entry failed and is retried under the preceding-fact policy |
+| `117_103` | CatchUpFaulted | Error | A read of the store failed; the partition counts as stalled and the next wake-up or poll reads again |
+| `117_104` | CommandKept | Warning | A recorded command exhausted its bound and was kept for an operator |
+| `117_105` | CompletionFlushFailed | Warning | Removing completed commands failed; the drain resumes them |
+| `117_106` | PermitReleasedByExpiry | Warning | A heavy-work permit was released because its holder left or its lease lapsed |
+| `117_107` | DirectoryCheckFailed | Error | No storage-backed grain directory is registered; the silo does not start |
+| `117_108` | IntentRenewalFailed | Warning | Renewing a running command's hand-over failed; the next renewal tries again |
+| `117_109` | PermitRenewalLost | Warning | A running heavy unit's permit was no longer held and is taken again |
+| `117_110` | PermitReleaseFailed | Warning | Releasing a heavy unit's permit failed; its lease releases it |
+| `117_111` | RecordedCommandsWithoutIntentStore | Warning | The drain found recorded commands on a silo without an intent store |
+| `117_112` | IntentAttemptFailed | Warning | One attempt to run a recorded command failed; carries the command, its type and its aggregate |
+| `117_113` | HandOverFailed | Warning | Handing a recorded command to its grain failed; the drain hands it over again after the grace |
+
 ## Authoring a new log event
 
 1. **Pick a bucket.** In your own app, start at `200_000+`; the `100_000` block is the framework's. Add a nested class per subsystem.

@@ -95,4 +95,16 @@ internal static partial class OrleansLog
         Level = LogLevel.Warning,
         Message = "The outbox drain found commands recorded by the execution model but no intent store is registered on this silo; register AddStrataraIntentStore where the drain runs, or they are not resumed.")]
     public static partial void LogRecordedCommandsWithoutIntentStore(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentAttemptFailed,
+        Level = LogLevel.Warning,
+        Message = "An attempt to run recorded command {IntentId} ({CommandType}) for aggregate {AggregateId} failed; the failure is recorded with the command, which is resumed within its bound.")]
+    public static partial void LogIntentAttemptFailed(this ILogger logger, Exception exception, Guid intentId, string commandType, Guid? aggregateId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.HandOverFailed,
+        Level = LogLevel.Warning,
+        Message = "Handing recorded command {IntentId} over to its grain failed (aggregate {AggregateId}, heavy {Heavy}); the drain hands it over again after the grace.")]
+    public static partial void LogHandOverFailed(this ILogger logger, Exception exception, Guid intentId, Guid? aggregateId, bool heavy);
 }

@@ -5,6 +5,7 @@ using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
 using Stratara.Abstractions.Timers;
+using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Timers;
 
@@ -18,6 +19,7 @@ namespace Stratara.Orleans.Timers;
 /// tick's own turn.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
+[TimersRolePlacementFilter]
 [Reentrant]
 internal sealed class TimerOwnerGrain(
     IServiceScopeFactory scopeFactory,

@@ -185,11 +185,14 @@ stops the bundle" into a guarantee that holds only where nobody used the helper.
 
 ## What the framework does not do
 
-There is **no checkpoint store**. Projections are driven push-wise off the event bus; Stratara does
-not track how far each projection has progressed, so there is no consumer-lag metric and no
-resume-from-sequence. The observability you get is throughput and latency
-(`projection.events.processed`, `projection.bundle.duration`). If you need lag, you own the
-checkpoint. Replay of the historical stream is coordinated separately, via the
+On the bus path there is **no checkpoint store**. Projections are driven push-wise off the event bus;
+Stratara does not track how far each projection has progressed, so there is no consumer-lag metric and
+no resume-from-sequence. The observability you get is throughput and latency
+(`projection.events.processed`, `projection.bundle.duration`). Under the
+[Orleans execution model](../concepts/orleans-execution-model.md) the same projection reads the store
+from a checkpoint per projection and partition, kept in the read store by
+`AddStrataraProjectionCheckpoints<TReadContext>()`, and its lag is measured; the checkpoint is keyed by
+the projection's name. Replay of the historical stream is coordinated separately, via the
 `IProjectionReplayState` in `Stratara.Outbox.RabbitMQ`.
 
 **Where that state lives depends on one registration.** With a Redis connection registered

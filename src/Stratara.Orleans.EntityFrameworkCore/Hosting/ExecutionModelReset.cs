@@ -23,6 +23,11 @@ internal sealed class ExecutionModelReset<TReadContext>(
     IServiceProvider services) : IExecutionModelReset
     where TReadContext : DbContext
 {
+    private const string RemindersTable = "orleansreminderstable";
+    private const string MembershipTable = "orleansmembershiptable";
+    private const string MembershipVersionTable = "orleansmembershipversiontable";
+
+    /// <exception cref="InvalidOperationException">A runtime table is absent under the named schema.</exception>
     public async Task<ExecutionModelResetReport> ResetAsync(CancellationToken cancellationToken = default)
     {
         int reminders;
@@ -30,9 +35,16 @@ internal sealed class ExecutionModelReset<TReadContext>(
         await using (var connection = new NpgsqlConnection(settings.RuntimeConnectionString))
         {
             await connection.OpenAsync(cancellationToken);
-            reminders = await DeleteAsync(connection, "orleansreminderstable", "serviceid", cluster.Value.ServiceId, cancellationToken);
-            membership = await DeleteAsync(connection, "orleansmembershiptable", "deploymentid", cluster.Value.ClusterId, cancellationToken);
-            await DeleteAsync(connection, "orleansmembershipversiontable", "deploymentid", cluster.Value.ClusterId, cancellationToken);
+            foreach (var table in new[] { RemindersTable, MembershipTable, MembershipVersionTable })
+            {
+                await EnsureExistsAsync(connection, settings.Schema, table, cancellationToken);
+            }
+
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            reminders = await DeleteAsync(connection, transaction, settings.Schema, RemindersTable, "serviceid", cluster.Value.ServiceId, cancellationToken);
+            membership = await DeleteAsync(connection, transaction, settings.Schema, MembershipTable, "deploymentid", cluster.Value.ClusterId, cancellationToken);
+            await DeleteAsync(connection, transaction, settings.Schema, MembershipVersionTable, "deploymentid", cluster.Value.ClusterId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         int checkpoints;
@@ -48,25 +60,37 @@ internal sealed class ExecutionModelReset<TReadContext>(
         return new ExecutionModelResetReport(reminders, membership, checkpoints, directoryEntries);
     }
 
-    /// <summary>Deletes the rows of one deployment; a table the runtime never created holds none.</summary>
-    private static async Task<int> DeleteAsync(NpgsqlConnection connection, string table, string column, string value, CancellationToken cancellationToken)
+    /// <summary>
+    /// A runtime table that does not exist under the schema is a reset against the wrong database or schema, which
+    /// would remove nothing and say so with a count of zero; it fails naming the table instead.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The table is absent.</exception>
+    private static async Task EnsureExistsAsync(NpgsqlConnection connection, string schema, string table, CancellationToken cancellationToken)
     {
-        await using (var exists = new NpgsqlCommand("SELECT to_regclass(@table)::text", connection))
+        await using var exists = new NpgsqlCommand("SELECT to_regclass(@qualified)::text", connection);
+        exists.Parameters.AddWithValue("qualified", $"{Quote(schema)}.{Quote(table)}");
+        if (await exists.ExecuteScalarAsync(cancellationToken) is string)
         {
-            exists.Parameters.AddWithValue("table", table);
-            if (await exists.ExecuteScalarAsync(cancellationToken) is not string)
-            {
-                return 0;
-            }
+            return;
         }
 
-        await using var delete = new NpgsqlCommand($"DELETE FROM {table} WHERE {column} = @value", connection);
+        throw new InvalidOperationException(
+            $"The Orleans runtime table {schema}.{table} does not exist, so the reset would remove nothing. Point the reset at the database that holds the reminder and membership tables, and name their schema where it is not the connection's default.");
+    }
+
+    /// <summary>Deletes the rows of one deployment.</summary>
+    private static async Task<int> DeleteAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string schema, string table, string column, string value, CancellationToken cancellationToken)
+    {
+        await using var delete = new NpgsqlCommand($"DELETE FROM {Quote(schema)}.{Quote(table)} WHERE {column} = @value", connection, transaction);
         delete.Parameters.AddWithValue("value", value);
         return await delete.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }
 
 /// <summary>Where the runtime keeps its tables, and how the host clears its grain directory.</summary>
 /// <param name="RuntimeConnectionString">The database of the runtime's reminder and membership tables.</param>
 /// <param name="ClearDirectory">Removes the directory entries of the host's cluster and returns how many.</param>
-internal sealed record ExecutionModelResetSettings(string RuntimeConnectionString, Func<IServiceProvider, CancellationToken, Task<long>> ClearDirectory);
+/// <param name="Schema">The schema the runtime tables live in.</param>
+internal sealed record ExecutionModelResetSettings(string RuntimeConnectionString, Func<IServiceProvider, CancellationToken, Task<long>> ClearDirectory, string Schema);

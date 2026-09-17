@@ -158,16 +158,24 @@ public sealed class RebuildEndToEndTests(PostgreSqlFixture postgres, RedisFixtur
     }
 }
 
-/// <summary>Whether the probe's next truncation fails after emptying the model, and how many truncations ran.</summary>
+/// <summary>
+/// Whether the probe's next truncation fails after emptying the model, what it waits for before emptying it, and
+/// how many truncations ran.
+/// </summary>
 public sealed class RebuildProbeControl
 {
     private int _truncations;
 
     public bool FailTruncation { get; set; }
 
+    /// <summary>The truncation with this number counts itself, then waits on <see cref="HoldTruncation"/> before it empties the model.</summary>
+    public int? HoldTruncationNumber { get; set; }
+
+    public TaskCompletionSource HoldTruncation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public int Truncations => _truncations;
 
-    public void CountTruncation() => Interlocked.Increment(ref _truncations);
+    public int CountTruncation() => Interlocked.Increment(ref _truncations);
 }
 
 /// <summary>
@@ -186,12 +194,17 @@ public sealed class RebuildProbeProjection(IServiceProvider services) : IRebuild
             return;
         }
 
+        var number = _control.CountTruncation();
+        if (number == _control.HoldTruncationNumber)
+        {
+            await _control.HoldTruncation.Task.WaitAsync(cancellationToken);
+        }
+
         await using (var context = await ContextFactory().CreateDbContextAsync(cancellationToken))
         {
             await context.Database.ExecuteSqlRawAsync("DELETE FROM poc_rebuild_probe", cancellationToken);
         }
 
-        _control.CountTruncation();
         if (_control.FailTruncation)
         {
             throw new InvalidOperationException("the probe's truncation failed after emptying the model");

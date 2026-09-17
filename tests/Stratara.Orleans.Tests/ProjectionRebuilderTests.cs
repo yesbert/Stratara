@@ -61,7 +61,8 @@ public sealed class ProjectionRebuilderTests
         var rebuilder = new ProjectionRebuilder(
             grainFactory.Object,
             services.GetRequiredService<IServiceScopeFactory>(),
-            Options.Create(new CommitOrderOptions { PartitionCount = Partitions }));
+            Options.Create(new CommitOrderOptions { PartitionCount = Partitions }),
+            NoReplay());
 
         var rebuild = rebuilder.RebuildAsync("View");
         var finished = await Task.WhenAny(rebuild, Task.Delay(TimeSpan.FromSeconds(5)));
@@ -136,8 +137,38 @@ public sealed class ProjectionRebuilderTests
             .AddScoped(_ => reader.Object)
             .BuildServiceProvider();
 
-        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }));
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay());
         return (rebuilder, projection, checkpoints);
+    }
+
+    /// <summary>Scenario <em>A rebuild is requested during a full replay</em>: refused, naming the replay, before any reader is paused.</summary>
+    [Fact]
+    public async Task A_rebuild_during_a_full_replay_is_refused_and_pauses_nothing()
+    {
+        var paused = 0;
+        var grainFactory = new Mock<IGrainFactory>();
+        grainFactory
+            .Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null))
+            .Returns((string _, string? _) => new FakeGrain(() => Interlocked.Increment(ref paused), () => Task.CompletedTask));
+        var replay = new Mock<IProjectionReplayState>();
+        replay.SetupGet(r => r.IsReplayActive).Returns(true);
+        var rebuilder = new ProjectionRebuilder(
+            grainFactory.Object,
+            new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new CommitOrderOptions { PartitionCount = Partitions }),
+            replay.Object);
+
+        var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
+
+        Assert.Contains("replay", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(0, paused);
+    }
+
+    private static IProjectionReplayState NoReplay()
+    {
+        var replay = new Mock<IProjectionReplayState>();
+        replay.SetupGet(r => r.IsReplayActive).Returns(false);
+        return replay.Object;
     }
 
     /// <summary>The grain interface is internal, which a proxy generator cannot reach; a fake can.</summary>

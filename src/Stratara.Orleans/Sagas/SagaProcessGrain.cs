@@ -8,6 +8,7 @@ using Stratara.Orleans.Timers;
 using Stratara.Sagas.Abstractions;
 using Orleans.GrainDirectory;
 using Stratara.Abstractions.Timers;
+using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Sagas;
 
@@ -37,6 +38,7 @@ internal interface ISagaProcessGrain : IGrainWithStringKey
 /// by stream and version rather than carried in the call: the store is the truth, the call is a hint.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
+[SagasRolePlacementFilter]
 internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grain, ISagaProcessGrain
 {
     public Task HandleAsync(Guid streamId, long version, CancellationToken cancellationToken) => RunAsync(async (process, state, context, services) =>
