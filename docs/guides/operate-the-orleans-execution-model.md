@@ -53,6 +53,13 @@ builder.UseOrleans(silo => silo
 
 A silo without a directory under that name fails at start and names the call.
 
+`AddStrataraOrleans` does a second thing: it publishes, in the silo's metadata, the roles and the singleton work
+the silo registers, which is what [placement by role](#placement-by-role) reads. A silo that registers the
+directory itself — `silo.AddRedisGrainDirectory(...)` under the model's name — and registers a role or a singleton
+work fails at start with `117_120`, naming the roles and works it found and `AddStrataraOrleans`; otherwise the
+other silos would place every role's grains on it. A silo that hosts nothing placed by role, such as an API host
+that joins as a silo with the command dispatcher only, starts either way.
+
 ## Placement by role
 
 A silo publishes the roles its composition registered — commands with `AddStrataraAggregateGrains`,
@@ -167,7 +174,9 @@ Every instrument is published under the meter `Stratara` with the names in
 
 The log events to route to an alert: `117_101` and `117_103` (a partition stopped), `117_104` (a command
 kept), `117_111` (recorded commands on a silo without an intent store), `117_112` and `117_113` (a failing
-attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound). `117_008` (a handler
+attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound), `117_119` (a run of a
+singleton work that threw — the work runs again at its next period, so a work that fails every run logs it every
+period). `117_008` (a handler
 stopped with its silo) explains a second run of a command or a timer after a deploy. `117_116` and `117_118` (a
 recorded command whose signature does not verify) mean the record was altered or the key differs; alert on them. Worth routing to a
 dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded

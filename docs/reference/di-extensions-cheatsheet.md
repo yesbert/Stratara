@@ -160,7 +160,7 @@ registered with `UseOrleans`. See [Choose an Execution Model](../getting-started
 
 | Extension | What it does |
 |---|---|
-| `silo.AddStrataraOrleans((s, name) => …)` | Extends `ISiloBuilder`. Registers the storage-backed grain directory the model's single-activation grains use, under the name it passes, and publishes the silo's singleton work in its metadata. A silo that runs the model's grains without it fails at start naming this call |
+| `silo.AddStrataraOrleans((s, name) => …)` | Extends `ISiloBuilder`. Registers the storage-backed grain directory the model's single-activation grains use, under the name it passes, and publishes the silo's roles and singleton work in its metadata. A silo that runs the model's grains without it fails at start naming this call, and so does a silo that registered the directory itself and registers a role or singleton work |
 | `services.AddStrataraAggregateGrains()` | Runs every command that names an aggregate in that aggregate's grain. Register it after every other pipeline behaviour |
 | `services.AddStrataraOrleansCommandDispatcher(opts?)` | Replaces the undecorated `ICommandOutboxDispatcher` with the durable-intent one: a command is recorded before the call returns and resumed after a crash, a bounded number of times. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order. Needs an intent store |
 | `services.AddStrataraIntentStore<TWriteContext>()` | The `ICommandIntentStore` in the write context's outbox table. The dispatcher's host fails at start without an intent store |
@@ -170,11 +170,12 @@ registered with `UseOrleans`. See [Choose an Execution Model](../getting-started
 | `services.AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the store readers' checkpoints in the read context, keyed by consumer and partition. Deployments sharing a read store need distinct projection names, and at most one of them runs saga grains |
 | `services.AddStrataraPortableCounterReader<TWriteContext>()` | The commit-order reader for any relational provider, and a start check that refuses a store holding an entry without a position. The write context adds `PartitionCounterInterceptor` itself, and a store with existing entries runs `PartitionCounterBackfill.RunAsync` once before the first start |
 | `services.AddStrataraDurableTimers(opts?)` | `IDurableTimers` over the silo's reminder service. The host supplies one `ITimerOwners` and one `ITimerHandler`, before or after this call |
-| `services.AddStrataraSingletonWork<TWork>(opts?)` | Runs an `ISingletonWork` once per cluster at its period, only on silos that registered it |
+| `services.AddStrataraSingletonWork<TWork>(opts?)` | Runs an `ISingletonWork` once per cluster at its period, only on silos that registered it. A run that throws is logged (`117_119`) and the work runs again at its next period. Constructs the work while the silo starts to publish its name |
+| `services.AddStrataraSingletonWork<TWork>(name, opts?)` | The same, published under the registered `name` without constructing the work; the work is first constructed when the silo is active, and a `Name` that differs fails the start naming both. `OutboxDrainWork.WorkName` names the drain |
 | `services.AddStrataraExecutionModelReset<TReadContext>(runtimeConnectionString, clearDirectory)` | `IExecutionModelReset`: clears the reminders and membership of the host's deployment, the checkpoints of the projections and sagas it registers, and the grain directory through the host's callback. Run it while no silo of the cluster runs |
 
 Every setting these calls bind is validated when the host starts, and an invalid one fails the start
-naming itself.
+naming itself. Every one of these registrations is idempotent: called twice, it registers what one call does.
 
 ## Observability (`Stratara.ServiceDefaults`)
 

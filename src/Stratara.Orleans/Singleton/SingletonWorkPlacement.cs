@@ -87,15 +87,46 @@ internal static class SingletonWorkPlacement
     {
         public Dictionary<string, string> Entries { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Writes the entries. A work registered with its name is published under that name without being constructed;
+        /// a work registered without one is constructed here, while the silo starts, to read its name.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">A work registered without a name could not be constructed.</exception>
         public void Fill(IServiceScopeFactory scopeFactory)
         {
             using var scope = scopeFactory.CreateScope();
-            foreach (var work in scope.ServiceProvider.GetServices<ISingletonWork>())
+            foreach (var name in PublishedNames(scope.ServiceProvider))
             {
-                Entries[MetadataKeyOf(work.Name)] = "registered";
+                Entries[MetadataKeyOf(name)] = "registered";
             }
 
             Hosting.RolePlacement.Fill(Entries, scope.ServiceProvider);
+        }
+
+        private static IEnumerable<string> PublishedNames(IServiceProvider services)
+        {
+            var registrations = services.GetService<SingletonWorkRegistrations>();
+            if (registrations is null)
+            {
+                return services.GetServices<ISingletonWork>().Select(work => work.Name);
+            }
+
+            return registrations.Works.Select(work => work.Name ?? Construct(services, work.WorkType).Name);
+        }
+
+        private static ISingletonWork Construct(IServiceProvider services, Type workType)
+        {
+            try
+            {
+                return (ISingletonWork)ActivatorUtilities.CreateInstance(services, workType);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidOperationException(
+                    $"The singleton work {workType} was registered without its name, so the silo constructed it while it starts to publish the name it runs under, and the construction failed. " +
+                    $"Register it with its name — AddStrataraSingletonWork<{workType.Name}>(name) — and it is first constructed when the silo is active.",
+                    exception);
+            }
         }
     }
 }

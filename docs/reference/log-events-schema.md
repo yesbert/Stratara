@@ -74,6 +74,8 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_116` | IntentIntegrityResumed | Warning | A recorded command whose signature does not verify was resumed under `Permissive` |
 | `117_117` | IntentUnsignedKept | Error | A recorded command without a signature was kept for an operator under `Strict` |
 | `117_118` | IntentIntegrityKept | Error | A recorded command whose signature does not verify was kept for an operator under `Strict` |
+| `117_119` | SingletonWorkFailed | Error | A run of a singleton work threw; the work runs again at its next period |
+| `117_120` | RolesUnpublished | Error | A silo registers roles or singleton work without publishing them — its directory was not registered with `AddStrataraOrleans` — and does not start |
 
 ## Authoring a new log event
 

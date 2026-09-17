@@ -326,5 +326,9 @@ public static class LogEvents
         public const int IntentUnsignedKept = 117_117;
         /// <summary>A recorded command whose signature does not verify was kept for an operator under strict integrity mode (error).</summary>
         public const int IntentIntegrityKept = 117_118;
+        /// <summary>A run of a singleton work failed; the work runs again at its next period (error).</summary>
+        public const int SingletonWorkFailed = 117_119;
+        /// <summary>A silo registered roles or singleton work without publishing them to the cluster and does not start (error).</summary>
+        public const int RolesUnpublished = 117_120;
     }
 }

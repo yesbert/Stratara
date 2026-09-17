@@ -20,8 +20,16 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
 {
     private readonly OutboxDrainOptions _options = options.Value;
 
+    /// <summary>The name the drain runs under, for the registration that names it.</summary>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddStrataraSingletonWork&lt;OutboxDrainWork&gt;(OutboxDrainWork.WorkName);
+    /// </code>
+    /// </example>
+    public const string WorkName = "outbox-drain";
+
     /// <inheritdoc/>
-    public string Name => "outbox-drain";
+    public string Name => WorkName;
 
     /// <inheritdoc/>
     public TimeSpan Period => _options.PollingInterval;

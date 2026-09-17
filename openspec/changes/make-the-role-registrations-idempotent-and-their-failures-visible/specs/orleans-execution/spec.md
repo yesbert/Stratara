@@ -10,6 +10,16 @@ SHALL NOT fire a further period late because the clocks of the silos differ slig
 timeout registered in a step SHALL survive a kill at any point of that step, and a timeout whose
 handling cancels or registers the process's timers SHALL complete.
 
+A timer's handler SHALL receive a cancellation token that is requested when the silo running it
+stops and the handler has not completed within the runtime's deactivation budget; a timer whose
+handler stops on that token SHALL stay registered and fire on the next silo, which is the at-least-once
+delivery the timers promise, and the stop SHALL be logged with the owner and the purpose. A timer
+registered for an owner and purpose while a tick for that owner and purpose is being handled SHALL be
+kept and SHALL fire, whether or not its due time is the one being handled. An owner id longer than
+the timer store holds SHALL be refused on registration, cancellation and listing with a message
+naming the limit and the length given, as a purpose is, so that the refusal is seen at the
+registration and not at the first tick.
+
 A run of a singleton work that fails SHALL be logged with an event of the framework's own, naming the
 work and carrying the failure, and SHALL NOT stop the work: the next run goes ahead at its period. A
 singleton work registered with the name it publishes under SHALL NOT be constructed before the silo
@@ -65,6 +75,35 @@ start with a message naming both.
 
 - **WHEN** a timer's handler is still running when the timer's next tick arrives
 - **THEN** the tick does not start the handler again, and the handler runs once
+
+#### Scenario: A silo stops while a timer's handler runs
+
+- **WHEN** a silo is stopped while a timer's handler is waiting on its cancellation token, and the
+  timer's owner still exists
+- **THEN** the handler observes the cancellation within the deactivation budget, the stop is logged
+  with the owner and the purpose, the timer is still registered, and it fires on the next silo that
+  serves the owner — verified on the PostgreSQL reminder table
+
+#### Scenario: A timer is re-registered from its own handler with the same due time
+
+- **WHEN** a timer's handler registers a timer for the same owner and purpose with the same due time
+  and returns
+- **THEN** the timer is still registered when the handler has returned, and it fires again within a
+  retry period
+
+#### Scenario: A timer is re-registered from its own handler with a later due time
+
+- **WHEN** a timer's handler registers a timer for the same owner and purpose with a later due time
+  and returns
+- **THEN** only the later timer is registered when the handler has returned, and it fires at its due
+  time
+
+#### Scenario: An owner id is longer than the timer store holds
+
+- **WHEN** a timer is registered, cancelled or listed for an owner id longer than the timer store
+  holds
+- **THEN** the call is refused with a message naming the limit and the length given, and nothing is
+  registered
 
 #### Scenario: A singleton work's run fails
 

@@ -187,7 +187,7 @@ timer owner check and handler with `AddStrataraDurableTimers`.
 |---|---|---|
 | API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order |
 | Command worker (`AddCommandWorkerServices`) | `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register it after every other pipeline behaviour. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
-| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>()` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace` and `MessageRetryOptions.MaxDeliveryAttempts` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. The Redis outbox lock is no longer needed |
+| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace` and `MessageRetryOptions.MaxDeliveryAttempts` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. Registered with its name, the drain is not constructed until the silo is active. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
 | Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>`. Processes own durable timers, so the silo runs a reminder service |
 | Heavy command worker (`AddHeavyCommandWorkerServices`) | `ConfigureStrataraHeavyWork(o => o.ClusterWideLimit = …)` | Heavy commands run in a bounded pool per silo under cluster-wide permits; the heavy lane and its host go |
@@ -217,6 +217,13 @@ timeouts fail.
 During a rollout a host can run both models at once — the bus consumer and the grains both apply
 idempotently. `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` take `hybrid: true` to keep
 publishing bundles to the bus while the grains read the store.
+
+Every registration of the model is idempotent in itself as well: a host whose feature modules or composites call
+the same registration twice gets the composition one call gives — each projection woken once per bundle, each
+singleton work started once. A singleton work is best registered with the name it runs under,
+`AddStrataraSingletonWork<TWork>(name)`: the silo publishes that name without constructing the work, where the
+overload without a name constructs every work while the silo starts, before any hosted service registered after
+the silo has run. A work whose `Name` differs from the name it was registered with fails the start naming both.
 
 ## A full replay on a host whose projections read the store
 

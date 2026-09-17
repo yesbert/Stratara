@@ -115,6 +115,18 @@ internal static partial class OrleansLog
     public static partial void LogDirectoryCheckFailed(this ILogger logger, string directoryName);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.RolesUnpublished,
+        Level = LogLevel.Error,
+        Message = "The silo registers {Registered} but publishes none of it to the cluster; the silo does not start. Register the grain directory with AddStrataraOrleans, which publishes them.")]
+    public static partial void LogRolesUnpublished(this ILogger logger, string registered);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.SingletonWorkFailed,
+        Level = LogLevel.Error,
+        Message = "A run of singleton work {WorkName} failed; it runs again at its next period.")]
+    public static partial void LogSingletonWorkFailed(this ILogger logger, Exception exception, string workName);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.CompletionFlushFailed,
         Level = LogLevel.Warning,
         Message = "Removing {Count} completed intents failed; the drain resumes them and their handlers may run again.")]

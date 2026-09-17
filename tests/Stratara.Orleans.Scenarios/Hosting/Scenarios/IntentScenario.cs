@@ -52,7 +52,7 @@ public sealed class IntentScenario : IPocScenario
             .AddStrataraAggregateGrains()
             .AddStrataraOrleansCommandDispatcher(options => options.IntentGrace = TimeSpan.FromSeconds(2))
             .AddStrataraIntentStore<PocWriteDbContext>()
-            .AddStrataraSingletonWork<OutboxDrainWork>(options => options.KeepAlivePeriod = settings.Profile == PocSiloProfile.Test ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(1));
+            .AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName, options => options.KeepAlivePeriod = settings.Profile == PocSiloProfile.Test ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(1));
 
         if (settings.Profile == PocSiloProfile.Test)
         {

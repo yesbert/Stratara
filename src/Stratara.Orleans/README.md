@@ -21,7 +21,7 @@ handlers, projections and sagas run unchanged.
 | Commands recorded before the call returns and resumed after a crash | `AddStrataraOrleansCommandDispatcher()` |
 | Projections that read the store in commit order from a checkpoint | `AddStrataraProjectionGrains()` |
 | Sagas that read the store in commit order from a checkpoint | `AddStrataraSagaGrains()` |
-| Work that runs once per cluster | `AddStrataraSingletonWork<TWork>()` |
+| Work that runs once per cluster | `AddStrataraSingletonWork<TWork>(name)` — the drain: `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` |
 | Owner-checked durable timers | `AddStrataraDurableTimers()` |
 
 A handler on these paths receives a `CancellationToken` that a stopping silo cancels once

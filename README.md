@@ -111,7 +111,7 @@ builder.Services
     .AddStrataraAggregateGrains()                 // one writer per aggregate, cluster-wide
     .AddStrataraOrleansCommandDispatcher()        // an accepted command is recorded before the call returns
     .AddStrataraIntentStore<AppWriteDbContext>()  // ... and resumed after a crash
-    .AddStrataraSingletonWork<OutboxDrainWork>(); // once per cluster, without a lock
+    .AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName); // once per cluster, without a lock
 ```
 
 → [The Orleans execution model](https://stratara.tech/concepts/orleans-execution-model.html) · [Choose an execution model](https://stratara.tech/getting-started/choose-an-execution-model.html) · [Migrate from the bus workers](https://stratara.tech/guides/migrate-to-the-orleans-execution-model.html)

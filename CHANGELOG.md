@@ -18,6 +18,13 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **Orleans: `AddStrataraSingletonWork<TWork>(string name, ...)` and `OutboxDrainWork.WorkName`.** A work registered
+  with its name is published in the silo's metadata without being constructed, so it is first constructed when the
+  silo is active; a work whose `Name` differs from the registered name fails the start naming both.
+- **Orleans: log event `117_119`** (`LogEvents.Orleans.SingletonWorkFailed`) for a run of a singleton work that threw;
+  the work runs again at its next period, as before. **`117_120`** (`LogEvents.Orleans.RolesUnpublished`) for a silo
+  that does not start because it hosts roles or work it does not publish.
+
 - **Orleans: a recorded command is signed and verified.** Where the host registered a bus-envelope signer, the record
   the execution model writes before a dispatch returns carries the signature a bus command carries, and the drain
   verifies it under `BusEnvelopeIntegrityOptions.Mode` before resuming it: under `Strict` an unsigned or invalid record
@@ -55,6 +62,14 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Orleans: every registration of the execution model is idempotent.** A second call of
+  `AddStrataraProjectionGrains`, `AddStrataraSagaGrains` or `AddStrataraSingletonWork<TWork>` registered its wake-up
+  target or its work again, so every projection was woken twice per bundle and the seeding and reset listed each
+  consumer twice.
+- **Orleans: a silo that hosts a role or singleton work without publishing it fails at start.** A silo that registered
+  the grain directory under the model's name itself rather than with `AddStrataraOrleans` started and was placed on as
+  if it hosted every role; it now fails naming the roles and works it found and `AddStrataraOrleans`. A silo that
+  hosts nothing placed by role is unaffected.
 - **Orleans: the drain resumes a backlog as fast as the handlers take it.** While a pass finds a full batch due, the
   next pass follows at once, for at most `OutboxDrainOptions.PollingInterval`; a backlog was resumed one batch per
   period.
