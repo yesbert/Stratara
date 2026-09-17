@@ -85,6 +85,12 @@ internal static partial class OrleansLog
     public static partial void LogPermitRenewalLost(this ILogger logger, Guid unitId);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.PermitReclaimRefused,
+        Level = LogLevel.Warning,
+        Message = "Running heavy unit {UnitId} on {Holder} was refused its permit when it registered again; it runs outside the cluster-wide bound and asks again at every renewal.")]
+    public static partial void LogPermitReclaimRefused(this ILogger logger, Guid unitId, string holder);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.PermitReleaseFailed,
         Level = LogLevel.Warning,
         Message = "Releasing the heavy-work permit of unit {UnitId} failed; its lease releases it.")]

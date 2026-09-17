@@ -60,11 +60,12 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_106` | PermitReleasedByExpiry | Warning | A heavy-work permit was released because its holder left or its lease lapsed |
 | `117_107` | DirectoryCheckFailed | Error | No storage-backed grain directory is registered; the silo does not start |
 | `117_108` | IntentRenewalFailed | Warning | Renewing a running command's hand-over failed; the next renewal tries again |
-| `117_109` | PermitRenewalLost | Warning | A running heavy unit's permit was no longer held and is taken again |
+| `117_109` | PermitRenewalLost | Warning | A running heavy unit's permit was no longer held and is reclaimed |
 | `117_110` | PermitReleaseFailed | Warning | Releasing a heavy unit's permit failed; its lease releases it |
 | `117_111` | RecordedCommandsWithoutIntentStore | Warning | The drain found recorded commands on a silo without an intent store |
 | `117_112` | IntentAttemptFailed | Warning | One attempt to run a recorded command failed; carries the command, its type and its aggregate |
 | `117_113` | HandOverFailed | Warning | Handing a recorded command to its grain failed; the drain hands it over again after the grace |
+| `117_114` | PermitReclaimRefused | Warning | A running heavy unit whose permit was lost was refused when it registered again; it runs outside the bound until a permit is free |
 
 ## Authoring a new log event
 

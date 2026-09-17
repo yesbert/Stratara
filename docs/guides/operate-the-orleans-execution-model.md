@@ -145,7 +145,7 @@ Every instrument is published under the meter `Stratara` with the names in
 
 The log events to route to an alert: `117_101` and `117_103` (a partition stopped), `117_104` (a command
 kept), `117_111` (recorded commands on a silo without an intent store), `117_112` and `117_113` (a failing
-attempt or hand-over). The whole band is listed in the [log events schema](../reference/log-events-schema.md).
+attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound). The whole band is listed in the [log events schema](../reference/log-events-schema.md).
 
 ## Reset what the model keeps
 
@@ -235,3 +235,15 @@ queues units for longer than `OrleansDispatchOptions.IntentGrace` hands none of 
 lease and the permit are renewed from timers of their own, off the activation's scheduler, so a handler
 that computes without yielding is renewed all the same: however long a handler runs, and whether or not it
 yields, it runs once.
+
+The permits are kept in memory by one activation in the durable directory, and the bound holds across the
+loss of its silo. A keeper that is activated — after a failover, and on a cluster's first heavy command,
+because it cannot tell the two apart — admits no new unit for one `HeavyWorkOptions.PermitLease`, the
+grace: a heavy command dispatched in that window waits, asking again every `PermitRetry`, as it does
+when the bound is full. Every unit still running registers with the new keeper at its next renewal, at the
+latest half a lease after the keeper is reachable, and counts against the bound again, so when the grace
+ends the table is whole. The first heavy commands of a fresh cluster therefore start one lease late —
+thirty seconds by default; shorten `PermitLease` if that is too long for the host. A unit that registers
+after the grace, when the bound is already full, is one that had stopped renewing for a whole lease; it
+keeps running, because a running handler is not paused, is logged as `117_114`, and asks again at every
+renewal until a permit is free.
