@@ -18,6 +18,12 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **`AddCommandServices()`** (`Stratara.EventSourcing.WorkerDefaults`): the command worker stack without the bus-fed
+  mediator worker, beside `AddEventProjectionServices` and `AddSagaServices`. `AddCommandWorkerServices` is now
+  `AddCommandServices` plus the worker. A silo composed with it, the execution model's command dispatcher and intent
+  store, the aggregate grains and a store-reading role runs commands and applies their facts without a message broker,
+  as does an API host that only dispatches through the execution model's dispatcher.
+
 - **Orleans: `AddStrataraSingletonWork<TWork>(string name, ...)` and `OutboxDrainWork.WorkName`.** A work registered
   with its name is published in the silo's metadata without being constructed, so it is first constructed when the
   silo is active; a work whose `Name` differs from the registered name fails the start naming both.
@@ -62,6 +68,9 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Migration guide: the command silo and the bus queues.** The command role's row names `AddCommandServices`, the
+  dispatcher and the intent store; *When the broker can go* states which hosts need the broker; *After the cut-over:
+  the bus queues* names the queues the bus workers own and the order in which to retire them.
 - **Orleans: every registration of the execution model is idempotent.** A second call of
   `AddStrataraProjectionGrains`, `AddStrataraSagaGrains` or `AddStrataraSingletonWork<TWork>` registered its wake-up
   target or its work again, so every projection was woken twice per bundle and the seeding and reset listed each

@@ -82,4 +82,7 @@ _None._
   composite registers no hosted worker and keeps the dispatchers); an integration test in
   `tests/Stratara.Orleans.IntegrationTests/Hosting` that composes a command silo and a client host
   without a broker and runs a command, a commit and a projection; documentation tests.
+- As implemented: tests `tests/Stratara.Orleans.IntegrationTests/Hosting/BrokerFreeSiloTests.cs` (a bus double
+  that records and refuses every use) and `WorkerDefaultsCompositesTests` (the composite, and the worker composite
+  as the composite plus the worker).
 - Versioning: patch.

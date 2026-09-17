@@ -125,7 +125,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   resumes it after a crash up to `MessageRetry:MaxDeliveryAttempts` times, then keeps it
   (`AddStrataraOrleansCommandDispatcher` + `AddStrataraIntentStore<TWriteContext>`), projections and
   sagas read the store in commit order from checkpoints instead of taking bundles from the bus
-  (`AddEventProjectionServices()` / `AddSagaServices()` then `AddStrataraProjectionGrains` /
+  (`AddCommandServices()` / `AddEventProjectionServices()` / `AddSagaServices()` then the execution model's registrations; a silo whose command and bundle dispatchers are both replaced needs no broker; `AddStrataraProjectionGrains` /
   `AddStrataraSagaGrains`), and singleton work runs once per cluster (`AddStrataraSingletonWork<T>(name)`; a failing run is logged as `117_119`
   and the work runs again). Every registration is idempotent, and a silo that registers the directory without
   `AddStrataraOrleans` while hosting a role or work fails at start.
@@ -178,7 +178,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [Stratara.EventSourcing.EntityFrameworkCore](https://www.nuget.org/packages/Stratara.EventSourcing.EntityFrameworkCore) (Tier-C): write/read/identity stores on PostgreSQL (Npgsql + pgvector) + UnitOfWork + opt-in health checks.
 - [Stratara.EventSourcing.Pipeline.CommandAudit](https://www.nuget.org/packages/Stratara.EventSourcing.Pipeline.CommandAudit) (Tier-C): command-audit pipeline behavior.
 - [Stratara.Validation](https://www.nuget.org/packages/Stratara.Validation) (Tier-C): vendor-neutral `IValidator<T>` + validation pipeline behavior via `AddStrataraValidation()`; throws `StrataraValidationException`.
-- [Stratara.EventSourcing.WorkerDefaults](https://www.nuget.org/packages/Stratara.EventSourcing.WorkerDefaults) (Tier-C): worker-host wiring composites (`AddCommandWorkerServices`, `AddHeavyCommandWorkerServices`, `AddEventProjectionWorkerServices`, `AddSagaWorkerServices`, `AddOutboxWorkerServices`, ...).
+- [Stratara.EventSourcing.WorkerDefaults](https://www.nuget.org/packages/Stratara.EventSourcing.WorkerDefaults) (Tier-C): worker-host wiring composites (`AddCommandWorkerServices`, `AddHeavyCommandWorkerServices`, `AddEventProjectionWorkerServices`, `AddSagaWorkerServices`, `AddOutboxWorkerServices`, ...), and `AddCommandServices` / `AddEventProjectionServices` / `AddSagaServices` without the bus-fed workers for the Orleans execution model.
 - [Stratara.Projections](https://www.nuget.org/packages/Stratara.Projections) (Tier-C): projection runtime + `ProjectionManager` (push-driven from the event bus).
 - [Stratara.Sagas](https://www.nuget.org/packages/Stratara.Sagas) (Tier-C): `ISaga` discovery + saga dispatcher + hosted `SagaWorker`.
 - [Stratara.Security](https://www.nuget.org/packages/Stratara.Security) (Tier-C): dependency-light `IKeyStore` (`EnvelopeFileKeyStore`, KEK-wrapped versioned DEKs, rotate/revoke/crypto-shred) + AES-GCM blob encryptor. No EF/RabbitMQ/Redis/cloud SDKs.

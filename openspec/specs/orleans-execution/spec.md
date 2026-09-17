@@ -363,6 +363,13 @@ the timer store holds SHALL be refused on registration, cancellation and listing
 naming the limit and the length given, as a purpose is, so that the refusal is seen at the
 registration and not at the first tick.
 
+A run of a singleton work that fails SHALL be logged with an event of the framework's own, naming the
+work and carrying the failure, and SHALL NOT stop the work: the next run goes ahead at its period. A
+singleton work registered with the name it publishes under SHALL NOT be constructed before the silo
+is active, so that a work whose construction needs the running host is not constructed while the
+silo starts; a work whose name differs from the one it was registered with SHALL fail the silo's
+start with a message naming both.
+
 #### Scenario: Two silos run the same singleton work
 
 - **WHEN** two silos register the same singleton work
@@ -440,6 +447,24 @@ registration and not at the first tick.
   holds
 - **THEN** the call is refused with a message naming the limit and the length given, and nothing is
   registered
+
+#### Scenario: A singleton work's run fails
+
+- **WHEN** a run of a singleton work throws
+- **THEN** an event of the framework's names the work and carries the failure, and the work runs again
+  at its next period
+
+#### Scenario: A work is registered with its name
+
+- **WHEN** a host registers a singleton work with the name it publishes under, and the work's
+  constructor records when it runs
+- **THEN** the work is not constructed before the silo is active, and it runs once per period on the
+  silo as any other
+
+#### Scenario: A work's name differs from the registered one
+
+- **WHEN** a host registers a singleton work under a name that is not the work's `Name`
+- **THEN** the silo fails at start with a message naming both
 
 ### Requirement: Heavy work is bounded across the cluster by permits that expire with their holder
 
@@ -621,7 +646,10 @@ membership table — rather than imply the runtime recovers on its own.
 
 Each role — commands, projections, sagas, outbox drain, timers, heavy work — SHALL be adopted with
 one registration after the role's existing composite, and a host SHALL be able to run both models
-at once during a rollout, because both apply idempotently. A role's work SHALL run only on a silo
+at once during a rollout, because both apply idempotently. Each of the model's registrations SHALL
+be idempotent in itself: called twice, whether by the host or by a composite of the host's that
+wraps it, it SHALL leave the composition as one call leaves it, so that no projection is woken twice,
+no consumer is listed twice, and no work is started twice. A role's work SHALL run only on a silo
 that registered the role: a cluster whose silos register different roles SHALL place each
 aggregate, projection, saga, timer owner and heavy unit on a silo that registered its role, and a
 call for a role no silo of the cluster registered SHALL fail with a message naming the role rather
@@ -629,7 +657,11 @@ than activate where the role is missing. A host that only dispatches commands MA
 as a client rather than a silo. A host that registers the execution model
 without the storage-backed grain directory it requires SHALL fail at start with a message naming
 what is missing, not at the first activation, and so SHALL a host with an invalid setting, naming the
-setting. The host's own timer owners and handlers SHALL be honoured whatever order they are registered
+setting. A silo that registers a role or a singleton work without publishing it to the cluster —
+because it registered the directory itself rather than through the call that publishes — SHALL fail
+at start with a message naming the roles and works it found and the call that publishes them, rather
+than start and be placed on as if it hosted everything. The host's own timer owners and handlers
+SHALL be honoured whatever order they are registered
 in relative to the execution model.
 
 #### Scenario: A host adopts the projection role
@@ -673,3 +705,23 @@ in relative to the execution model.
 
 - **WHEN** a host registers its own timer owners and handlers after the execution model's registrations
 - **THEN** its timers fire for its owners, and stateful processes' timeouts still fire
+
+#### Scenario: A registration is called twice
+
+- **WHEN** a host calls any of the model's registrations twice — the aggregate, projection, saga,
+  timer, dispatcher, heavy-work or singleton-work registration
+- **THEN** the composition is the one a single call leaves: each projection is woken once per bundle,
+  the seeding and the reset list each consumer once, and each work runs once per period
+
+#### Scenario: A silo registers the directory itself and hosts a role
+
+- **WHEN** a silo registers a grain directory under the model's name directly, not through the call
+  that publishes, and registers a role or a singleton work
+- **THEN** the silo fails at start with a message naming the roles and works it registered and the
+  call that publishes them, and a silo that registers neither a role nor a work starts
+
+#### Scenario: A silo registers the directory itself and hosts nothing
+
+- **WHEN** a silo registers a grain directory under the model's name directly and registers only the
+  command dispatcher
+- **THEN** it starts, because it hosts nothing that is placed by role
