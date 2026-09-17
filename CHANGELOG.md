@@ -18,6 +18,12 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **Orleans: a recorded command is signed and verified.** Where the host registered a bus-envelope signer, the record
+  the execution model writes before a dispatch returns carries the signature a bus command carries, and the drain
+  verifies it under `BusEnvelopeIntegrityOptions.Mode` before resuming it: under `Strict` an unsigned or invalid record
+  is kept at once with the reason, under `Permissive` it is resumed and logged. Log events `117_115`–`117_118`.
+- **`ICommandIntentStore.ClaimAsync`** claims a batch of due commands; the default claims row by row through
+  `TryClaimAsync`, the shipped store in two statements.
 - **Orleans: log event `117_008`** (`LogEvents.Orleans.HandlerStoppedWithSilo`) for a handler on a grain path cancelled
   because its silo stopped.
 - **`IProjectionCheckpointStore.AdvanceAsync`** advances a checkpoint from the position its writer last saw. The
@@ -49,6 +55,9 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Orleans: the drain resumes a backlog as fast as the handlers take it.** While a pass finds a full batch due, the
+  next pass follows at once, for at most `OutboxDrainOptions.PollingInterval`; a backlog was resumed one batch per
+  period.
 - **Orleans: a stopping silo tells the handlers on its grain paths.** Command handlers in an aggregate's activation or
   a runner, heavy work and timer handlers receive a `CancellationToken` that is cancelled once the silo has been
   stopping for `GrainCollectionOptions.DeactivationTimeout`; it was `CancellationToken.None`. A recorded command

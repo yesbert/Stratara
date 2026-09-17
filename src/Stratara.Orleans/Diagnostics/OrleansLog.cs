@@ -79,6 +79,30 @@ internal static partial class OrleansLog
     public static partial void LogCommandKept(this ILogger logger, Guid intentId, int attempts, string lastFailure);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentUnsignedResumed,
+        Level = LogLevel.Warning,
+        Message = "Recorded command {IntentId} carries no signature and is resumed because the integrity mode is Permissive.")]
+    public static partial void LogIntentUnsignedResumed(this ILogger logger, Guid intentId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentIntegrityResumed,
+        Level = LogLevel.Warning,
+        Message = "Recorded command {IntentId} carries a signature that does not verify and is resumed because the integrity mode is Permissive.")]
+    public static partial void LogIntentIntegrityResumed(this ILogger logger, Guid intentId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentUnsignedKept,
+        Level = LogLevel.Error,
+        Message = "Recorded command {IntentId} carries no signature and is kept for an operator because the integrity mode is Strict.")]
+    public static partial void LogIntentUnsignedKept(this ILogger logger, Guid intentId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentIntegrityKept,
+        Level = LogLevel.Error,
+        Message = "Recorded command {IntentId} carries a signature that does not verify and is kept for an operator because the integrity mode is Strict.")]
+    public static partial void LogIntentIntegrityKept(this ILogger logger, Guid intentId);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.PermitReleasedByExpiry,
         Level = LogLevel.Warning,
         Message = "Heavy-work permit of unit {UnitId} held by silo {Holder} was released: {Reason}.")]

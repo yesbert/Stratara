@@ -54,7 +54,8 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
     /// and how often each has been handed over; the store is not read for them as plain entries. The
     /// resume runs wherever an intent store is registered, whether or not this silo also dispatches
     /// commands, because the commands may have been recorded by another host. A resumption held back by an active
-    /// replay is logged when the holding back begins and when it ends.
+    /// replay is logged when the holding back begins and when it ends. While a pass finds a full batch due, the next
+    /// follows at once, for at most a period.
     /// </summary>
     /// <returns><see langword="true"/> when an intent store is registered on this silo.</returns>
     private async Task<bool> ResumeRecordedCommandsAsync(CancellationToken cancellationToken)
@@ -66,9 +67,10 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
             return false;
         }
 
+        var clock = services.GetService<TimeProvider>() ?? TimeProvider.System;
         if (services.GetService<Aggregates.OrleansCommandDispatcher>() is { } dispatcher)
         {
-            await dispatcher.ResumeDueAsync(_options.BatchSize, cancellationToken);
+            await WhileFullAsync(clock, ct => dispatcher.ResumeDueAsync(_options.BatchSize, ct), cancellationToken);
             return true;
         }
 
@@ -81,8 +83,24 @@ public sealed class OutboxDrainWork(IServiceScopeFactory scopeFactory, IOptions<
         }
 
         replaySuspension.Released(logger);
-        await Aggregates.IntentResumer.Create(services, intents).ResumeDueAsync(_options.BatchSize, cancellationToken);
+        var resumer = Aggregates.IntentResumer.Create(services, intents);
+        await WhileFullAsync(clock, ct => resumer.ResumeDueAsync(_options.BatchSize, ct), cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// Runs another pass at once while the last one found a full batch due, so a backlog is not resumed one batch per
+    /// period; the run ends at a short pass, at cancellation, or once it has lasted a period, and the next run continues.
+    /// </summary>
+    private async Task WhileFullAsync(TimeProvider clock, Func<CancellationToken, Task<Aggregates.ResumePass>> pass, CancellationToken cancellationToken)
+    {
+        var started = clock.GetTimestamp();
+        Aggregates.ResumePass last;
+        do
+        {
+            last = await pass(cancellationToken);
+        }
+        while (last.Full && !cancellationToken.IsCancellationRequested && clock.GetElapsedTime(started) < _options.PollingInterval);
     }
 
     /// <summary>

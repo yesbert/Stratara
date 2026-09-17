@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.Mediator;
+using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Security;
 using Stratara.Contracts.Messages;
@@ -14,9 +15,10 @@ namespace Stratara.Orleans.Aggregates;
 /// <summary>
 /// Records a command as a durable intent before it is handed to its grain: serialised under the
 /// session that issued it and kept by the intent store with the aggregate it names, so a resume never
-/// has to read the aggregate back from a payload that may be protected.
+/// has to read the aggregate back from a payload that may be protected. Where the host has a bus-envelope signer, the
+/// record is signed over the canonical form a bus command is signed over, so the drain can verify it before it resumes.
 /// </summary>
-internal sealed class IntentRecorder(ICommandIntentStore intents, ISecureJsonSerializer serializer, ILogger<IntentRecorder> logger)
+internal sealed class IntentRecorder(ICommandIntentStore intents, ISecureJsonSerializer serializer, ILogger<IntentRecorder> logger, IBusEnvelopeSigner? signer = null)
 {
     /// <summary>Records the intent and returns the payload its grain receives.</summary>
     public async Task<AggregateCommandEnvelope> RecordAsync<T>(Guid intentId, T command, SessionContext session, Guid? aggregateId, bool heavy, CancellationToken cancellationToken)
@@ -28,6 +30,10 @@ internal sealed class IntentRecorder(ICommandIntentStore intents, ISecureJsonSer
             command.GetType().GetQualifiedTypeName(),
             JsonSerializer.Serialize(session),
             Heavy: heavy);
+        if (signer is not null)
+        {
+            envelope = envelope with { Signature = signer.Sign(BusEnvelopeCanonical.Of(envelope)) };
+        }
 
         await intents.RecordAsync(intentId, envelope, aggregateId, heavy, cancellationToken);
         ApplicationDiagnostics.Metrics.OrleansIntentRecorded.Add(1);

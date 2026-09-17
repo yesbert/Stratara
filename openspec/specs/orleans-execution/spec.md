@@ -85,6 +85,18 @@ Every command on this path SHALL pass through the same mediator pipeline — val
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
 registered SHALL apply whatever order it and the execution model were registered in.
 
+A handler running on this path SHALL receive a cancellation token that is requested when the silo
+running it stops and the handler has not completed within the runtime's deactivation budget, so
+that a handler can stop cleanly instead of running on in a process that is going away. A recorded
+command whose handler stops on that token SHALL be resumed after the grace on a silo that is still
+running, as after a crash, and the stop SHALL NOT count as a failed attempt. A forwarded command
+whose handler stops on that token SHALL fail back to its caller with a message saying that the silo
+stopped and the command may be dispatched again. A handler that does not observe the token SHALL run
+to its end, and the silo SHALL wait for it as long as the runtime's deactivation allows. Every handler
+stopped this way SHALL be logged with the command's identity. The documentation SHALL name the
+deactivation budget as a setting the host sizes and SHALL say what a handler is expected to do with
+the token.
+
 #### Scenario: The host dies after acceptance
 
 - **WHEN** the dispatch has returned and the host is killed before the handler ran
@@ -173,6 +185,26 @@ registered SHALL apply whatever order it and the execution model were registered
 - **WHEN** a recorded command is due while a full replay is active, and the replay then ends
 - **THEN** the drain logs once that it is holding resumptions back and once that it has resumed them,
   not once per period in between, and the command is resumed after the replay
+
+#### Scenario: A silo stops while a recorded command's handler runs
+
+- **WHEN** a silo is stopped while a recorded command's handler is waiting on its cancellation token,
+  and another silo of the cluster stays
+- **THEN** the handler observes the cancellation within the deactivation budget, the stop is logged
+  with the command's identity, the command is resumed on the remaining silo after the grace with no
+  attempt counted, and it completes there — verified on the PostgreSQL store
+
+#### Scenario: A silo stops while a forwarded command's handler runs
+
+- **WHEN** a silo is stopped while a forwarded command's handler is waiting on its cancellation token
+- **THEN** the handler observes the cancellation, and the caller's dispatch fails with a message
+  saying the silo stopped and the command may be dispatched again
+
+#### Scenario: A handler ignores the cancellation
+
+- **WHEN** a silo is stopped while a handler that does not observe its token is running
+- **THEN** the handler runs to its end, and the silo waits for it up to the runtime's deactivation
+  budget before it stops
 
 ### Requirement: Projections and sagas read the store in commit order and never miss a committed fact
 
@@ -283,6 +315,16 @@ SHALL NOT fire a further period late because the clocks of the silos differ slig
 timeout registered in a step SHALL survive a kill at any point of that step, and a timeout whose
 handling cancels or registers the process's timers SHALL complete.
 
+A timer's handler SHALL receive a cancellation token that is requested when the silo running it
+stops and the handler has not completed within the runtime's deactivation budget; a timer whose
+handler stops on that token SHALL stay registered and fire on the next silo, which is the at-least-once
+delivery the timers promise, and the stop SHALL be logged with the owner and the purpose. A timer
+registered for an owner and purpose while a tick for that owner and purpose is being handled SHALL be
+kept and SHALL fire, whether or not its due time is the one being handled. An owner id longer than
+the timer store holds SHALL be refused on registration, cancellation and listing with a message
+naming the limit and the length given, as a purpose is, so that the refusal is seen at the
+registration and not at the first tick.
+
 #### Scenario: Two silos run the same singleton work
 
 - **WHEN** two silos register the same singleton work
@@ -331,6 +373,35 @@ handling cancels or registers the process's timers SHALL complete.
 
 - **WHEN** a timer's handler is still running when the timer's next tick arrives
 - **THEN** the tick does not start the handler again, and the handler runs once
+
+#### Scenario: A silo stops while a timer's handler runs
+
+- **WHEN** a silo is stopped while a timer's handler is waiting on its cancellation token, and the
+  timer's owner still exists
+- **THEN** the handler observes the cancellation within the deactivation budget, the stop is logged
+  with the owner and the purpose, the timer is still registered, and it fires on the next silo that
+  serves the owner — verified on the PostgreSQL reminder table
+
+#### Scenario: A timer is re-registered from its own handler with the same due time
+
+- **WHEN** a timer's handler registers a timer for the same owner and purpose with the same due time
+  and returns
+- **THEN** the timer is still registered when the handler has returned, and it fires again within a
+  retry period
+
+#### Scenario: A timer is re-registered from its own handler with a later due time
+
+- **WHEN** a timer's handler registers a timer for the same owner and purpose with a later due time
+  and returns
+- **THEN** only the later timer is registered when the handler has returned, and it fires at its due
+  time
+
+#### Scenario: An owner id is longer than the timer store holds
+
+- **WHEN** a timer is registered, cancelled or listed for an owner id longer than the timer store
+  holds
+- **THEN** the call is refused with a message naming the limit and the length given, and nothing is
+  registered
 
 ### Requirement: Heavy work is bounded across the cluster by permits that expire with their holder
 

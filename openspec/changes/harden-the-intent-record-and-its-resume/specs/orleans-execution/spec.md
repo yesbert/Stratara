@@ -21,7 +21,9 @@ runtime's response timeout bounds a caller's wait for one forwarded command, and
 SHALL name it as a setting the host sizes. Recorded commands SHALL be resumed by the
 execution model's drain wherever that drain runs with an intent store registered, whichever host
 dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
-without an intent store SHALL report it.
+without an intent store SHALL report it. A resumption the drain holds back because a full replay is
+active SHALL be logged when the holding back begins and when it ends, so that a recorded command
+that waits for the length of a replay is seen waiting rather than lost.
 
 Where the host has registered a bus-envelope signer, the record SHALL carry a signature over the same
 claims a command on the bus is signed over — its type, its session context, its heavy flag and a
@@ -43,6 +45,18 @@ NOT grow with the number of commands it claims.
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
 registered SHALL apply whatever order it and the execution model were registered in.
+
+A handler running on this path SHALL receive a cancellation token that is requested when the silo
+running it stops and the handler has not completed within the runtime's deactivation budget, so
+that a handler can stop cleanly instead of running on in a process that is going away. A recorded
+command whose handler stops on that token SHALL be resumed after the grace on a silo that is still
+running, as after a crash, and the stop SHALL NOT count as a failed attempt. A forwarded command
+whose handler stops on that token SHALL fail back to its caller with a message saying that the silo
+stopped and the command may be dispatched again. A handler that does not observe the token SHALL run
+to its end, and the silo SHALL wait for it as long as the runtime's deactivation allows. Every handler
+stopped this way SHALL be logged with the command's identity. The documentation SHALL name the
+deactivation budget as a setting the host sizes and SHALL say what a handler is expected to do with
+the token.
 
 #### Scenario: The host dies after acceptance
 
@@ -126,6 +140,32 @@ registered SHALL apply whatever order it and the execution model were registered
 - **WHEN** two heavy commands naming the same aggregate are due in one resumption, and further
   commands are due after them
 - **THEN** every due command is handed over without waiting for either heavy command to finish
+
+#### Scenario: A resumption is held back by a replay
+
+- **WHEN** a recorded command is due while a full replay is active, and the replay then ends
+- **THEN** the drain logs once that it is holding resumptions back and once that it has resumed them,
+  not once per period in between, and the command is resumed after the replay
+
+#### Scenario: A silo stops while a recorded command's handler runs
+
+- **WHEN** a silo is stopped while a recorded command's handler is waiting on its cancellation token,
+  and another silo of the cluster stays
+- **THEN** the handler observes the cancellation within the deactivation budget, the stop is logged
+  with the command's identity, the command is resumed on the remaining silo after the grace with no
+  attempt counted, and it completes there — verified on the PostgreSQL store
+
+#### Scenario: A silo stops while a forwarded command's handler runs
+
+- **WHEN** a silo is stopped while a forwarded command's handler is waiting on its cancellation token
+- **THEN** the handler observes the cancellation, and the caller's dispatch fails with a message
+  saying the silo stopped and the command may be dispatched again
+
+#### Scenario: A handler ignores the cancellation
+
+- **WHEN** a silo is stopped while a handler that does not observe its token is running
+- **THEN** the handler runs to its end, and the silo waits for it up to the runtime's deactivation
+  budget before it stops
 
 #### Scenario: A recorded command's session is altered in storage
 

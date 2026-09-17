@@ -78,6 +78,40 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         return claimed == 1;
     }
 
+    /// <summary>
+    /// Two statements whatever the batch: one guarded update over the due ids that stamps the hand-over and counts the
+    /// attempt where the row is not kept and its last hand-over is still no later than the latest one read — a claimer
+    /// that stamped a row since stamped a later time, so the row drops out — and one read of the rows that now carry
+    /// this call's stamp.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> ClaimAsync(IReadOnlyList<RecordedIntent> due, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(due);
+        if (due.Count == 0)
+        {
+            return [];
+        }
+
+        var stamp = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
+        var ids = due.Select(intent => intent.Id).ToList();
+        var latest = due.Max(intent => intent.LastHandedOverAt);
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var candidates = context.Set<OutboxEntry>().Where(e => ids.Contains(e.Id) && e.KeptAt == null);
+        candidates = latest is { } bound
+            ? candidates.Where(e => e.LastHandedOverAt == null || e.LastHandedOverAt <= bound)
+            : candidates.Where(e => e.LastHandedOverAt == null);
+        await candidates.ExecuteUpdateAsync(
+            set => set
+                .SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)stamp)
+                .SetProperty(e => e.AttemptCount, e => e.AttemptCount + 1),
+            cancellationToken);
+
+        return await context.Set<OutboxEntry>().AsNoTracking()
+            .Where(e => ids.Contains(e.Id) && e.LastHandedOverAt == stamp)
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task RenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);

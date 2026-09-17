@@ -110,6 +110,15 @@ A failing handler is seen before the command is kept: every attempt that fails i
 with the command's identity, its type and the aggregate it names, and a hand-over that fails as `117_113`;
 the resumption that follows logs `117_004` with the attempt number, and the keep logs `117_104`.
 
+Under `BusEnvelopeIntegrityMode.Strict` a command is also kept, at once and without an attempt, when its record
+carries no signature (`117_117`) or a signature that does not verify (`117_118`); `last_failure` says which. Returning
+such a command verifies its record again, so return it only once the record is correct — a record altered in storage
+stays kept. See [bus envelope integrity](hmac-bus-envelope.md).
+
+A backlog is resumed as fast as the handlers take it: while a pass of the drain finds `OutboxDrainOptions.BatchSize`
+commands due, the next pass follows at once, for at most `OutboxDrainOptions.PollingInterval`, and the next run
+continues. One pass claims its batch in two statements.
+
 ## A partition that stops advancing
 
 An entry a projection or saga cannot apply stops its partition. The checkpoint stays before the entry,
@@ -159,7 +168,8 @@ Every instrument is published under the meter `Stratara` with the names in
 The log events to route to an alert: `117_101` and `117_103` (a partition stopped), `117_104` (a command
 kept), `117_111` (recorded commands on a silo without an intent store), `117_112` and `117_113` (a failing
 attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound). `117_008` (a handler
-stopped with its silo) explains a second run of a command or a timer after a deploy. Worth routing to a
+stopped with its silo) explains a second run of a command or a timer after a deploy. `117_116` and `117_118` (a
+recorded command whose signature does not verify) mean the record was altered or the key differs; alert on them. Worth routing to a
 dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded
 commands back and once when it releases them — a command that waits for the length of a replay is waiting, not
 lost. The whole band is listed in the [log events schema](../reference/log-events-schema.md).

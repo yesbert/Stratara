@@ -82,4 +82,7 @@ _None._
   three modes with an unsigned and a tampered record, the drain's pass loop, the port's default;
   `tests/Stratara.Orleans.IntegrationTests/Aggregates/` — a record altered in PostgreSQL then resumed, a
   backlog of several batches resumed within one period, the statements of one pass.
+- As implemented: log event ids `117_115`–`117_118`; tests `tests/Stratara.Orleans.Tests/IntentRecordIntegrityTests.cs`,
+  `RecordedCommandDrainTests` (the pass loop), `tests/Stratara.Orleans.IntegrationTests/Aggregates/SignedIntentTests.cs`,
+  `ResumeBacklogTests.cs`, `IntentClaimTests.cs` and their in-process host `RecordedIntentHost.cs`.
 - Versioning: patch.

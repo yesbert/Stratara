@@ -70,6 +70,10 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_112` | IntentAttemptFailed | Warning | One attempt to run a recorded command failed; carries the command, its type and its aggregate |
 | `117_113` | HandOverFailed | Warning | Handing a recorded command to its grain failed; the drain hands it over again after the grace |
 | `117_114` | PermitReclaimRefused | Warning | A running heavy unit whose permit was lost was refused when it registered again; it runs outside the bound until a permit is free |
+| `117_115` | IntentUnsignedResumed | Warning | A recorded command without a signature was resumed under `Permissive` |
+| `117_116` | IntentIntegrityResumed | Warning | A recorded command whose signature does not verify was resumed under `Permissive` |
+| `117_117` | IntentUnsignedKept | Error | A recorded command without a signature was kept for an operator under `Strict` |
+| `117_118` | IntentIntegrityKept | Error | A recorded command whose signature does not verify was kept for an operator under `Strict` |
 
 ## Authoring a new log event
 

@@ -46,14 +46,23 @@ Roll-out pattern: deploy producers with `Permissive` first, wait for the entire 
 **What to expect in the log during a roll.** A consumer records the two failure cases as two
 different events, because they mean different things:
 
-| Event | Command worker | Projection / saga worker | Meaning |
-|---|---|---|---|
-| Unsigned envelope, dispatched | `105_004` | `111_004` | Expected while publishers are still being restarted. After the roll it means a publisher was missed |
-| Signature present but does not verify, dispatched | `105_003` | `111_003` | Not expected during a roll: the publisher holds a different key, or the envelope was altered in transit |
-| Unsigned envelope, rejected (`Strict`) | `105_105` | `111_105` | A publisher is not signing |
-| Signature does not verify, rejected (`Strict`) | `105_104` | `111_104` | Key mismatch or tampering |
+| Event | Command worker | Projection / saga worker | Recorded command (Orleans) | Meaning |
+|---|---|---|---|---|
+| Unsigned envelope, dispatched | `105_004` | `111_004` | `117_115` | Expected while publishers are still being restarted. After the roll it means a publisher was missed |
+| Signature present but does not verify, dispatched | `105_003` | `111_003` | `117_116` | Not expected during a roll: the publisher holds a different key, or the envelope was altered in transit |
+| Unsigned envelope, rejected (`Strict`) | `105_105` | `111_105` | `117_117` | A publisher is not signing |
+| Signature does not verify, rejected (`Strict`) | `105_104` | `111_104` | `117_118` | Key mismatch or tampering |
 
-Alert on `105_003` / `111_003`; watch `105_004` / `111_004` fall to zero before flipping to `Strict`.
+Alert on `105_003` / `111_003` / `117_116`; watch `105_004` / `111_004` / `117_115` fall to zero before flipping to
+`Strict`.
+
+**On the Orleans execution model** the command a host records before its dispatch returns is signed with the same
+signer over the same fields, and the drain verifies it under the same mode before it resumes it — a command handed
+over live, without passing through storage, is not verified. A record that does not verify under `Strict` is not
+retried: it is kept for an operator at once, with the reason recorded, and returning it verifies it again. Records
+written before the host signed carry no signature, so the roll is the same: `Permissive` until `117_115` has fallen to
+zero — one `OrleansDispatchOptions.IntentGrace` after the last host without a signer stopped recording — then
+`Strict`. The silo that runs the drain needs the signer and the mode as the recording hosts have them.
 
 **The same pattern applies when the projection itself changes**, and 3.4.0 is the first release where it does. Signatures produced by a pre-3.4.0 publisher do not verify against a 3.4.0 consumer. Move producers to 3.4.0 while consumers run `Permissive`, let the in-flight messages drain, then return consumers to `Strict`. Upgrading both sides straight into `Strict` rejects everything still in the queue.
 

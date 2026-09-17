@@ -22,7 +22,7 @@ them without further configuration.
 | `PartitionCounterBackfill` | Positions unpositioned entries after the partition's counter, never moving a position already handed out, so checkpoints stay true |
 | `CommitTransactionIdBackfill` | Stamps the entries a PostgreSQL store held before the commit record existed, in append order and bounded batches, once |
 | `AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the checkpoints in the read context |
-| `AddStrataraIntentStore<TWriteContext>()` | Records the commands the execution model's dispatcher accepts, in the outbox table |
+| `AddStrataraIntentStore<TWriteContext>()` | Records the commands the execution model's dispatcher accepts, in the outbox table, and claims a due batch in two statements |
 | `AddStrataraExecutionModelReset<TReadContext>()` | Clears reminders, membership, directory and the host's checkpoints while no silo runs |
 | `IStoreReaderSeeding` (registered with the store-reading roles) | Seeds the host's checkpoints at the store's head before a first start on a populated store |
 
