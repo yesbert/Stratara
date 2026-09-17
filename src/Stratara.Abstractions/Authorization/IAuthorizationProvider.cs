@@ -20,6 +20,12 @@ namespace Stratara.Abstractions.Authorization;
 ///     .AddAuthorizingMediator&lt;HttpContextAuthorizationProvider&gt;();
 /// </code>
 /// </example>
+/// <remarks>
+/// The example is the request-side shape. A command the Orleans execution model records is authorized again where it
+/// runs — possibly on another silo, resumed after a crash — from the session recorded with it and without a web request;
+/// a host that records commands needs a provider that answers from <c>ISessionContextProvider</c>, such as the
+/// membership provider, or every resumed command is refused.
+/// </remarks>
 public interface IAuthorizationProvider
 {
     /// <summary>

@@ -83,6 +83,37 @@ end however long the order takes, because the grain runs its order through a one
 The hand-over of a heavy command or of a command that names no aggregate spans the whole unit, so a unit
 longer than the timeout ends that call with a timeout nobody waits for; it is not logged.
 
+**A timeout does not mean the command did not run.** When a forwarded command's handler outlasts the
+timeout, the caller gets a `TimeoutException` while the handler goes on in the aggregate's activation, runs to
+its end and commits. A caller that retries on the timeout runs the command a second time — on an aggregate
+that already appended, a concurrency conflict at best. Do not retry on a timeout; choose one of these instead:
+
+- **Mark the command `IHeavyCommand`**, so it runs in the heavy pool and the caller does not wait for it.
+- **Size `MessagingOptions.ResponseTimeout`** above the longest handler of a forwarded command.
+- **Dispatch through `ICommandOutboxDispatcher`** where the caller need not wait for the result: the command is
+  recorded before the call returns, and the call returns without waiting for the handler.
+
+## Singleton work under a suspected death
+
+Singleton work runs in one place while the cluster agrees on its membership. When a silo stops answering, the
+work moves in steps, each bounded by a setting:
+
+1. **Suspicion.** A silo that misses `ClusterMembershipOptions.NumMissedProbesLimit` probes (3) of
+   `ProbeTimeout` (5 s) is suspected by the silo probing it.
+2. **Declaration.** Once `NumVotesForDeathDeclaration` silos (2) have voted, it is declared dead in the
+   membership table — with the defaults in the order of fifteen to thirty seconds after it stopped answering.
+3. **Takeover.** The work's keep-alive reminder now belongs to another silo and brings the work's grain up
+   there on its next tick, within `SingletonWorkOptions.KeepAlivePeriod` (one minute).
+4. **The declared silo stops.** A silo that is still running learns of its own declaration at the latest at
+   its next read of the membership table, every `TableRefreshTimeout` (one minute), usually sooner through
+   gossip, and stops itself.
+
+With the defaults a failover therefore completes within about a minute and a half. Between steps 3 and 4 the
+work **may run on two silos at once** — at most one table refresh period plus one run. Write a work so that an
+overlapping run does no harm: claim what it processes with a compare-and-set in its own store, as the
+framework's outbox drain claims recorded commands, or make each run idempotent. The integration suite measures
+the takeover under the test profile (a five-second keep-alive) and allows it three minutes.
+
 ## Sends between aggregates
 
 A handler running for one aggregate may send a command for another; the command runs in the other

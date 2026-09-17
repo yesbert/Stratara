@@ -18,6 +18,8 @@ public static class PocHostEntry
     {
         ["timers"] = () => new TimersScenario(),
         ["intent"] = () => new IntentScenario(),
+        ["intent-authorization-session"] = () => new IntentAuthorizationScenario(sessionDriven: true),
+        ["intent-authorization-request"] = () => new IntentAuthorizationScenario(sessionDriven: false),
         ["heavy"] = () => new HeavyScenario(),
         ["permit-keeper"] = () => new PermitKeeperScenario(),
         ["bus"] = () => new BusScenario(),

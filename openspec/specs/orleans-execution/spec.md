@@ -34,7 +34,8 @@ failing command — the guarantee the bus path gives heavy work.
 
 - **WHEN** a directory lapse lets two activations of one aggregate exist
 - **THEN** at most one of their appends succeeds and the other observes a concurrency conflict, as it
-  would on the bus path
+  would on the bus path — verified with two single-silo clusters that share one PostgreSQL store,
+  which is the shape a lapse produces, each running a command for the same aggregate at once
 
 #### Scenario: A handler sends a command for another aggregate
 
@@ -117,8 +118,8 @@ the token.
 #### Scenario: The host dies after acceptance
 
 - **WHEN** the dispatch has returned and the host is killed before the handler ran
-- **THEN** the command runs after the host or another silo resumes it — verified with twenty kills
-  on the PostgreSQL store
+- **THEN** the command runs after the host or another silo resumes it — verified with five kills per
+  path, recorded and heavy, on the PostgreSQL store
 
 #### Scenario: The host dies after the handler completed
 
@@ -141,7 +142,9 @@ the token.
 #### Scenario: A handler runs longer than the grace
 
 - **WHEN** a recorded command's handler is still running after the grace has passed
-- **THEN** it is not handed over again while it runs, and it runs once
+- **THEN** it is not handed over again while it runs, and it runs once — verified on the aggregate path
+  for a handler that awaits and for one that computes without yielding, and on the heavy path for a
+  handler that awaits
 
 #### Scenario: A heavy handler computes past the grace without yielding
 
@@ -267,7 +270,8 @@ returns every keep-alive period to be refused.
 
 - **WHEN** a host is killed after committing events and before any wake-up or publication
 - **THEN** every projection and saga applies those events after the host or another silo reads the
-  store — verified with twenty kills on the PostgreSQL store, none lost
+  store — verified with twenty kills on the PostgreSQL store, none lost and, the kill falling before
+  any read, none applied twice
 
 #### Scenario: Two transactions commit out of sequence order
 
@@ -320,7 +324,10 @@ returns every keep-alive period to be refused.
 Where an entry cannot be applied — a missing prerequisite past its retry policy, or a genuine
 failure — the reader SHALL stop at that entry, SHALL NOT advance its checkpoint past it, SHALL retry
 it on the next wake-up or poll, and SHALL log the entry and count the stall, so that a partition that
-stops advancing is seen and not inferred from a checkpoint that stands still. A read that fails
+stops advancing is seen and not inferred from a checkpoint that stands still. Where the failing entry
+shares its position with entries before it that did apply — one transaction wrote them all — the
+checkpoint SHALL stop below the whole group, and the group's applied entries SHALL be applied again
+when the entry is retried, which a projection tolerates as it tolerates any second delivery. A read that fails
 before any entry is applied — the store unreachable, a checkpoint the reader refuses — SHALL count as
 a stall and be logged whichever wake-up or poll started it. A batch whose application is cut short by
 the reader's own shutdown SHALL still record the checkpoint for the entries it applied.
@@ -330,6 +337,13 @@ the reader's own shutdown SHALL still record the checkpoint for the entries it a
 - **WHEN** a projection throws while applying an entry
 - **THEN** the checkpoint stays before that entry, the failure is logged with the entry's identity,
   the stall is counted, and the next wake-up tries the entry again
+
+#### Scenario: A projection throws on the second entry of one transaction
+
+- **WHEN** one transaction wrote two entries into a partition and a projection applies the first and
+  throws on the second
+- **THEN** the checkpoint stops below both, and the next read applies the first again before retrying
+  the second
 
 #### Scenario: A fact from another partition has not been applied yet
 

@@ -18,4 +18,14 @@ public static class PocSessions
         null);
 
     public static SessionContext New() => For(Guid.NewGuid());
+
+    /// <summary>A session whose actor is <paramref name="userId"/> in <paramref name="tenantId"/>.</summary>
+    public static SessionContext ForUser(Guid tenantId, Guid userId) => new(
+        Guid.CreateVersion7().ToString("N"),
+        Guid.CreateVersion7().ToString("N"),
+        null,
+        tenantId,
+        userId,
+        tenantId,
+        userId);
 }

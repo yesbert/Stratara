@@ -92,6 +92,12 @@ The provider resolves roles itself — `SessionContext` carries identity (`Actor
 **not** a role list. Roles are never embedded in the session, which is why revoking one takes effect
 on the next dispatch instead of when a token expires.
 
+**Answer from the session, not from the request, where commands are recorded.** A command dispatched through
+the Orleans execution model's recording dispatcher is authorized again when it runs — possibly resumed later,
+on another silo, where there is no web request, only the session recorded with the command. A provider that
+reads `HttpContext.User` refuses every such command, which is then kept after its attempts. A provider that
+reads `ISessionContextProvider`, as above, or `MembershipAuthorizationProvider` works on both paths.
+
 ## Why the check sits at the mediator, not the endpoint
 
 A common mistake is declaring `[Authorize]` on an ASP.NET endpoint and assuming that is the security

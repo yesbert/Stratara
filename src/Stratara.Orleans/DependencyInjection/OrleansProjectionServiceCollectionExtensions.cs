@@ -161,18 +161,32 @@ public static class OrleansProjectionServiceCollectionExtensions
         }
     }
 
+    /// <summary>
+    /// Replaces the bundle dispatcher with the wake-up hint. With <paramref name="hybrid"/> the dispatcher registered
+    /// before is kept inside it — by type, factory or instance, with its lifetime — so bundles still reach the bus.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><paramref name="hybrid"/> is set and no bundle dispatcher is registered to keep.</exception>
     private static void ReplaceBundleDispatcher(IServiceCollection services, bool hybrid)
     {
-        var existing = services.LastOrDefault(d => d.ServiceType == typeof(IEventBundleOutboxDispatcher));
+        var existing = services.LastOrDefault(d => d.ServiceType == typeof(IEventBundleOutboxDispatcher) && !d.IsKeyedService);
+        if (hybrid && existing is null)
+        {
+            throw new InvalidOperationException(
+                "hybrid: true keeps publishing bundles through the bus dispatcher registered before this call, and none is registered. " +
+                "Register one first — AddOutboxDispatcher(), which the worker composites call — or pass hybrid: false to read the store only.");
+        }
+
         if (existing is not null)
         {
             services.Remove(existing);
         }
 
-        if (hybrid && existing?.ImplementationType is { } innerType)
+        if (hybrid && existing is not null)
         {
-            services.AddScoped(innerType);
-            services.AddScoped(sp => new InnerBundleDispatcher((IEventBundleOutboxDispatcher)sp.GetRequiredService(innerType)));
+            services.Add(new ServiceDescriptor(
+                typeof(InnerBundleDispatcher),
+                sp => new InnerBundleDispatcher((IEventBundleOutboxDispatcher)Instantiate(sp, existing)),
+                existing.Lifetime == ServiceLifetime.Singleton ? ServiceLifetime.Singleton : ServiceLifetime.Scoped));
         }
 
         services.AddScoped<OrleansEventBundleDispatcher>();

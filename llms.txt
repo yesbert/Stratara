@@ -137,7 +137,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   (`IProjectionCheckpointStore.AdvanceAsync`). A handler on a grain path receives a token a stopping silo cancels
   after `GrainCollectionOptions.DeactivationTimeout`; what it did not finish runs again elsewhere. A recorded command
   is signed and verified under the bus-envelope integrity mode where the host signs, and the drain resumes a backlog
-  in consecutive passes. Handlers must stay idempotent: a command completed just before a
+  in consecutive passes. A forwarded command that outlasts the response timeout still commits (do not retry on a timeout); a resumed command is authorized from its recorded session; a full replay applies the store twice to store-reading projections; singleton work may briefly overlap after a silo is declared dead. Handlers must stay idempotent: a command completed just before a
   crash runs again.
 - **Source-generated logging only** (`[LoggerMessage]`) for new code — never `logger.LogInformation(...)`.
 

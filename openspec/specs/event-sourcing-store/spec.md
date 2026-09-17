@@ -303,7 +303,10 @@ provider's error means "someone else wrote first".
 The framework SHALL offer a reader that returns a partition's entries after a position, in an order
 in which no entry at or below the position of a returned batch can still commit later, so that a
 consumer resuming from a stored position never skips an entry. A batch SHALL say whether more
-entries exist, and a batch SHALL never end in the middle of one transaction's entries. A reader SHALL
+entries exist, and a batch SHALL never end in the middle of one transaction's entries: a transaction
+whose entries would straddle the end of a batch SHALL be held back whole for the next batch, and a
+transaction that alone holds more entries than a batch SHALL be returned whole, so that a batch MAY be
+larger than the size asked for. A reader SHALL
 report a partition's head: the position after which no entry committed at the time of the call exists,
 so that a consumer can start there. Two readers
 SHALL be offered: one native to PostgreSQL that adds no work to an append, and one for any relational
@@ -341,6 +344,15 @@ a store with entries it has not positioned.
   reads in between
 - **THEN** the entry of the long transaction is returned by a later read and never skipped — verified
   in two hundred randomised interleavings per reader on the PostgreSQL store
+
+#### Scenario: One transaction holds more entries than a batch
+
+- **WHEN** one transaction appends more entries to a partition than the batch size a consumer reads
+  with, and other transactions append before and after it
+- **THEN** a batch that reaches that transaction returns it whole and larger than the batch size, a
+  transaction that would straddle the end of a batch is held back whole for the next one, and
+  transactions that fit are cut at the batch size — verified for the native reader on the PostgreSQL
+  store
 
 #### Scenario: A reader reports its head
 

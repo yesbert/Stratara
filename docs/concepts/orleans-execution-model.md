@@ -36,7 +36,9 @@ between is resumed after a grace. A command whose handler keeps failing is resum
 times — the same bound the host configures for bus messages — and then kept for an operator, without
 holding back the commands after it; every attempt that fails is logged. A command whose handler is still
 running is never handed over twice — however long it runs, whether or not it yields, and while a heavy
-command waits for a worker. Every command on this path passes the same mediator pipeline as on
+command waits for a worker. The record is committed on its own, before the dispatch returns, and not with
+anything the caller writes: a caller that needs its own writes and the command together saves first and
+dispatches after. Every command on this path passes the same mediator pipeline as on
 the bus: validation, authorization, tenant isolation, audit.
 
 **No committed fact is missed.** Projections and sagas read the event store from a checkpoint, in commit
@@ -49,8 +51,10 @@ checkpoint stays before it, the failure is logged with the entry's identity, the
 the entry is tried again. A read that fails counts as a stall too. Two rebuilds of one projection never
 interleave, and a rebuild during a full replay is refused.
 
-**Once per cluster.** Singleton work runs in one place in the cluster, only on silos that registered
-it, and moves to another silo when its silo is lost. Durable timers belong to an owner, fire once on or
+**Once per cluster.** Singleton work runs in one place in the cluster while the cluster agrees on its
+membership, only on silos that registered it, and moves to another silo when its silo is lost; a silo declared
+dead that is still running may run it once more before it learns of the declaration, so a work tolerates an
+overlapping run. Durable timers belong to an owner, fire once on or
 after their due time, never fire for an owner that is gone, and survive a restart. A stateful process's
 timeout survives a kill at any point of the step that scheduled it.
 
@@ -70,6 +74,13 @@ it registers — and the event stream is never touched.
   passes. On the bus a failed bundle is dead-lettered and the stream moves on.
 - **At least once, still.** A handler that completed but whose completion was not recorded before a
   crash runs again. Handlers stay idempotent, as they are under the bus.
+- **A timeout is not a failure.** A forwarded command whose handler outlasts the response timeout fails its
+  caller with a timeout and commits all the same; a caller does not retry on it.
+- **A full replay reads the store twice.** Store-reading projections apply the store once in the replay and
+  once more from their checkpoints at the beginning, correctly because they apply idempotently; a single
+  projection's rebuild re-reads once.
+- **Authorization answers from the session.** A resumed command is authorized on a silo from the session
+  recorded with it, so a provider that reads the current web request refuses it.
 - **A single silo that dies hard.** A replacement on another network address does not join while the
   dead silo's membership entry is active. The operations page names the three ways out.
 
