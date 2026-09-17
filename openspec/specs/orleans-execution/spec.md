@@ -664,6 +664,20 @@ than start and be placed on as if it hosted everything. The host's own timer own
 SHALL be honoured whatever order they are registered
 in relative to the execution model.
 
+A message broker SHALL NOT be a runtime dependency of a host whose command dispatcher and bundle
+dispatcher the execution model has both replaced: a silo composed with the command services
+composite, the execution model's command dispatcher with an intent store, the aggregate grains and
+at least one store-reading role, and a host that only dispatches through the execution model's
+dispatcher, SHALL start, run commands, commit facts and apply them with no broker configured and SHALL
+open no broker connection. A silo that commits facts without a store-reading role SHALL keep
+publishing bundles to the bus, because it has no reader to wake, and the documentation SHALL say so.
+The documentation SHALL name the command composite without the bus-fed worker, SHALL state that it
+replaces the worker composite once no consumer of the deployment reads bundles from the bus, and
+SHALL say what becomes of the bus queues after the cut-over: which queues the bus workers own, that
+every publisher to an exchange is retired before its queues are deleted, that a dead-letter queue is
+emptied deliberately, and that a publication kept after its queues are deleted stores every bundle for
+a drain that cannot deliver it.
+
 #### Scenario: A host adopts the projection role
 
 - **WHEN** a host calls the projection services composite and then the execution model's projection
@@ -725,3 +739,19 @@ in relative to the execution model.
 - **WHEN** a silo registers a grain directory under the model's name directly and registers only the
   command dispatcher
 - **THEN** it starts, because it hosts nothing that is placed by role
+
+#### Scenario: A command silo runs without a broker
+
+- **WHEN** a silo is composed with the command services composite, the execution model's command
+  dispatcher and intent store, the aggregate grains and the projection role, a client host with the
+  dispatcher joins it, and neither has a broker configured
+- **THEN** both start, a command dispatched from the client runs in its aggregate's activation on the
+  silo, the facts it commits are applied by the projection, no bundle is stored in the outbox, and no
+  broker connection is attempted — verified on the PostgreSQL store
+
+#### Scenario: A silo commits without a store-reading role
+
+- **WHEN** a silo registers the command role and no projection or saga role, and a handler on it
+  commits facts
+- **THEN** the bundle is published to the bus as before, and the documentation states that such a
+  silo keeps the broker until it registers a store-reading role
