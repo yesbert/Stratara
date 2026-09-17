@@ -94,6 +94,7 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.TryAddScoped<IntentRecorder>();
         services.TryAddScoped<IntentHandOver>();
         services.TryAddScoped<IntentResumer>();
+        services.TryAddSingleton<ReplaySuspensionTracker>();
         services.AddOptions<HeavyWorkOptions>();
         OrleansOptionsValidator.Register<HeavyWorkOptions>(services);
         services.TryAddScoped<OrleansCommandDispatcher>();

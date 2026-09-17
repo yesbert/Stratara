@@ -6,7 +6,7 @@ using Polly.Registry;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
-using Stratara.Abstractions.Session;
+using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.Projections;
 using Stratara.Sagas.Abstractions;
 using Stratara.Orleans.Hosting;
@@ -61,24 +61,26 @@ internal sealed class SagaGrain(
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
     IOptions<SagaGrainOptions> options,
+    IOptions<CommitOrderOptions> commitOrder,
     Microsoft.Extensions.Logging.ILogger<SagaGrain> logger)
-    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod), logger),
+    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod, commitOrder.Value.PartitionCount), logger),
         ISagaGrain
 {
     public const string ConsumerName = "sagas";
 
-    /// <summary>One scope, one saga manager and one process list for the batch; per entry, the recorded session.</summary>
+    /// <summary>
+    /// One scope, one saga manager and one process list per session run, resolved after the run's session is set, so
+    /// a saga's dependency that takes its tenant when it is constructed takes the entry's; per entry, the recorded
+    /// session. A fact a process handles travels to its grain with the session it was recorded under.
+    /// </summary>
     protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
-        using var scope = ScopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
-        var sessions = services.GetRequiredService<ISessionContextProvider>();
-        var sagas = services.GetRequiredService<ISagaManager>();
-        var processes = services.GetServices<ISaga>().OfType<ISagaProcess>().ToList();
+        await using var runs = new SessionRuns<(ISagaManager Sagas, List<ISagaProcess> Processes)>(ScopeFactory, services =>
+            (services.GetRequiredService<ISagaManager>(), services.GetServices<ISaga>().OfType<ISagaProcess>().ToList()));
 
         return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
         {
-            sessions.Set(RecordedSession.Of(entry));
+            var (sagas, processes) = await runs.EnterAsync(entry);
             var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
             await sagas.HandleAsync(events, entryToken);
 
@@ -87,7 +89,7 @@ internal sealed class SagaGrain(
                 foreach (var @event in events.Where(process.Handles))
                 {
                     var key = SagaProcessKey.Of(process.GetType().Name, process.CorrelationOf(@event));
-                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version, entryToken);
+                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version, RecordedSession.KeyOf(entry), entryToken);
                 }
             }
         }, cancellationToken);

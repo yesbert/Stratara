@@ -89,12 +89,16 @@ _None._
   `OrleansSingletonWorkServiceCollectionExtensions` (the tracker's registration).
 - `Stratara.Orleans.EntityFrameworkCore` — `ProjectionCheckpointStore` (the guarded advance, the
   reader refusal on write).
-- `Stratara.Diagnostics` — three log event ids in `LogEvents.Orleans` at the next free positions of the band (`117_114`–`117_116` as of #109; renumbered at apply if another change takes them first).
+- `Stratara.Diagnostics` — three log event ids in `LogEvents.Orleans`, Information, so in the band's `117_0xx` range:
+  `117_005`–`117_007`.
 - `docs/guides/operate-the-orleans-execution-model.md` (the retired reader, the held-back resumption,
   the new event ids), `docs/guides/migrate-to-the-orleans-execution-model.md` (a batch is
   multi-tenant; the process timeout's session), `docs/guides/write-a-saga.md` (the timeout's session),
   `docs/reference/log-events-schema.md`, `CHANGELOG.md`, `llms.txt`.
-- Tests: a batch of two tenants against a projection whose service captures the tenant at
+- Tests (as implemented): `tests/Stratara.Orleans.IntegrationTests/Projections/TenantPerEntryTests.cs` and its
+  probes, `RetiredReaderTests.cs`; `tests/Stratara.Orleans.Tests/ProjectionCheckpointGuardTests.cs`,
+  `StoreReaderLoopTests`, `RecordedCommandDrainTests`; `IntentScenario`'s test profile shortens the permit lease.
+- Tests (as planned): a batch of two tenants against a projection whose service captures the tenant at
   construction, on the projection and the saga grain; a process fact under a tenant-routed context;
   a stale activation's checkpoint write refused and the successor unharmed; a write under another
   reader refused; a reader beyond the count retiring; the held-back resumption logged once.

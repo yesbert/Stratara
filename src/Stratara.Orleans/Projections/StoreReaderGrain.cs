@@ -9,18 +9,21 @@ using Stratara.Resilience;
 
 namespace Stratara.Orleans.Projections;
 
-/// <summary>How a store-reading grain reads: the batch it asks for, its poll and its keep-alive.</summary>
+/// <summary>How a store-reading grain reads: the batch it asks for, its poll, its keep-alive and the partitions the host has.</summary>
 /// <param name="BatchSize">How many entries one read from the store returns.</param>
 /// <param name="PollInterval">How often the grain reads the store without having been nudged.</param>
 /// <param name="KeepAlivePeriod">How often the cluster brings a lost grain back.</param>
-internal sealed record StoreReaderSettings(int BatchSize, TimeSpan PollInterval, TimeSpan KeepAlivePeriod);
+/// <param name="PartitionCount">How many partitions the host reads; a grain of a partition at or beyond it retires.</param>
+internal sealed record StoreReaderSettings(int BatchSize, TimeSpan PollInterval, TimeSpan KeepAlivePeriod, int PartitionCount);
 
 /// <summary>
 /// What every store-reading grain does, whatever it applies: parse its key into consumer and
 /// partition, run one catch-up loop at a time over its partition, read when nudged, when its poll
 /// fires and when its keep-alive reminder arrives, and wait for a running loop before it deactivates
-/// so a successor never applies beside it. A derived grain says what applying a batch means and when
-/// reading is suspended.
+/// so a successor never applies beside it. A grain of a partition the host no longer has — its count was lowered —
+/// retires when it is activated: it unregisters its keep-alive, logs that it did, reads nothing and deactivates, and
+/// every call it still receives does nothing. A derived grain says what applying a batch means and when reading is
+/// suspended.
 /// </summary>
 internal abstract class StoreReaderGrain(
     IServiceScopeFactory scopeFactory,
@@ -48,14 +51,24 @@ internal abstract class StoreReaderGrain(
     /// <exception cref="InvalidOperationException">The grain has not been activated.</exception>
     protected StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
+    /// <summary>Whether the grain's partition is beyond the host's partition count, so the grain reads nothing.</summary>
+    protected bool Retired { get; private set; }
+
     /// <summary>Whether reading stops at the next batch boundary; a replay suspends every reader.</summary>
     protected virtual bool Suspended => replayState.IsReplayActive;
 
-    public override Task OnActivateAsync(CancellationToken cancellationToken)
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var (consumer, partition) = StoreReaderGrainKey.Parse(this.GetPrimaryKeyString());
         Consumer = consumer;
         Partition = partition;
+        if (partition >= settings.PartitionCount)
+        {
+            await RetireAsync();
+            await base.OnActivateAsync(cancellationToken);
+            return;
+        }
+
         _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger);
         _poll ??= this.RegisterGrainTimer(
             _ => RequestCatchUp(),
@@ -67,10 +80,10 @@ internal abstract class StoreReaderGrain(
                 KeepAlive = true,
             });
         logger.LogStoreReaderStarted(consumer, partition);
-        return base.OnActivateAsync(cancellationToken);
+        await base.OnActivateAsync(cancellationToken);
     }
 
-    public Task EnsureRunningAsync() => this.RegisterOrUpdateReminder(KeepAliveReminder, settings.KeepAlivePeriod, settings.KeepAlivePeriod);
+    public Task EnsureRunningAsync() => Retired ? Task.CompletedTask : this.RegisterOrUpdateReminder(KeepAliveReminder, settings.KeepAlivePeriod, settings.KeepAlivePeriod);
 
     /// <summary>
     /// Requests a catch-up without waiting for it. A catch-up that fails is logged and counted by the loop itself,
@@ -78,15 +91,20 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public Task NudgeAsync()
     {
+        if (Retired)
+        {
+            return Task.CompletedTask;
+        }
+
         RequestCatchUp().Ignore();
         return Task.CompletedTask;
     }
 
-    public Task<int> CatchUpAsync() => RequestCatchUp();
+    public Task<int> CatchUpAsync() => Retired ? Task.FromResult(0) : RequestCatchUp();
 
-    public Task<long> PositionAsync() => Loop.PositionAsync();
+    public Task<long> PositionAsync() => Retired ? Task.FromResult(0L) : Loop.PositionAsync();
 
-    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => RequestCatchUp();
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => Retired ? Task.CompletedTask : RequestCatchUp();
 
     /// <summary>
     /// A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.
@@ -95,6 +113,13 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
+        if (Retired)
+        {
+            _stopping.Dispose();
+            await base.OnDeactivateAsync(reason, cancellationToken);
+            return;
+        }
+
         try
         {
             await Loop.WaitForRunningAsync(cancellationToken);
@@ -113,6 +138,18 @@ internal abstract class StoreReaderGrain(
         }
 
         await base.OnDeactivateAsync(reason, cancellationToken);
+    }
+
+    private async Task RetireAsync()
+    {
+        Retired = true;
+        if (await this.GetReminder(KeepAliveReminder) is { } keepAlive)
+        {
+            await this.UnregisterReminder(keepAlive);
+        }
+
+        logger.LogStoreReaderRetired(Consumer, Partition, settings.PartitionCount);
+        this.DeactivateOnIdle();
     }
 
     /// <summary>Applies a batch in order and returns the index of the first entry that did not apply.</summary>

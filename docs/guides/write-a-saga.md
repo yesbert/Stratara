@@ -123,6 +123,14 @@ as a rising failure series rather than only as a slower one; an in-flight count 
 means the saga lane is not keeping up. What to subscribe to and how to export it is in
 [Observe the Framework](observe-the-framework.md).
 
+## A process's timeout runs under the session it was started with
+
+On the Orleans execution model a stateful process — a `SagaProcess<TState>` — receives every fact under the
+session the fact was recorded under, set before its state is read. A timeout has no fact: it runs under the
+session the process's state stream was created with, and the framework reads that stream's first entry to find
+it before any session is in place. A host that routes its connection per tenant must therefore answer an
+absent tenant with a connection that reaches the state streams, or the process's timeouts fail.
+
 ## Compensation is your job
 
 Stratara does **not** provide a two-phase commit. If the `WithdrawCommand` succeeds and the `DepositCommand` fails (the destination account was closed mid-transfer), the saga's down-stream listener has to emit a compensating `RefundCommand` against the source account.

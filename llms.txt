@@ -129,7 +129,10 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   `AddStrataraSagaGrains`), and singleton work runs once per cluster (`AddStrataraSingletonWork<T>`).
   The silo needs a storage-backed grain directory registered with `silo.AddStrataraOrleans(...)` or it
   fails at start; every setting is validated at start. A failing entry stops its partition and is
-  retried — it is not dead-lettered. Handlers must stay idempotent: a command completed just before a
+  retried — it is not dead-lettered. Each entry is applied under the session it was recorded under, set
+  before the projection, saga or process and their dependencies are resolved, so a service that takes its
+  tenant at construction sees the entry's; a checkpoint advances only from the position its reader last saw
+  (`IProjectionCheckpointStore.AdvanceAsync`). Handlers must stay idempotent: a command completed just before a
   crash runs again.
 - **Source-generated logging only** (`[LoggerMessage]`) for new code — never `logger.LogInformation(...)`.
 

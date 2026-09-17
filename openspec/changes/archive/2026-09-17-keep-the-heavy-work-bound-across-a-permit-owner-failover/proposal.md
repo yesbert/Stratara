@@ -60,12 +60,15 @@ _None._
 ## Impact
 
 - `Stratara.Orleans` — `src/Stratara.Orleans/Aggregates/HeavyWorkGrain.cs` (the keeper's grace and
-  re-registration, `PermitRenewal` honouring the answer), `src/Stratara.Orleans/Diagnostics/OrleansLog.cs`
+  re-registration, `PermitRenewal` honouring the answer), `src/Stratara.Orleans/Aggregates/PermitLedger.cs`
+  (the keeper's bookkeeping, new), `src/Stratara.Orleans/Diagnostics/OrleansLog.cs`
   (one new event).
 - `Stratara.Diagnostics` — `src/Stratara.Diagnostics/LogEvents.cs`, one id in `LogEvents.Orleans`.
 - `docs/guides/operate-the-orleans-execution-model.md` (*Heavy commands and their aggregate*, the log
   events to route), `docs/reference/log-events-schema.md`, `docs/concepts/orleans-execution-model.md`
   (the sentence on permits), `CHANGELOG.md`.
 - Tests: `tests/Stratara.Orleans.IntegrationTests/HeavyWork/` — a keeper-failover kill test beside the
-  worker-failover one; `tests/Stratara.Orleans.Tests/` — the keeper's bookkeeping under a fake clock.
+  worker-failover one, and `HeavyOrderTests` on a store of its own; `tests/Stratara.Orleans.Scenarios/` — a
+  `permit-keeper` scenario host and run counting in the heavy scenario; `tests/Stratara.Orleans.Tests/` — the
+  keeper's bookkeeping under a fake clock and the renewal's answer.
 - Versioning: patch.

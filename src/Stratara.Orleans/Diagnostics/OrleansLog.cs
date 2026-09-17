@@ -13,6 +13,24 @@ internal static partial class OrleansLog
     public static partial void LogStoreReaderStarted(this ILogger logger, string consumer, int partition);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.StoreReaderRetired,
+        Level = LogLevel.Information,
+        Message = "Store reader for {Consumer} on partition {Partition} retired: the host reads {PartitionCount} partitions; its keep-alive is unregistered.")]
+    public static partial void LogStoreReaderRetired(this ILogger logger, string consumer, int partition, int partitionCount);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.ResumeHeldBackByReplay,
+        Level = LogLevel.Information,
+        Message = "Recorded commands are held back while a full replay is active; they are resumed once it ends.")]
+    public static partial void LogResumeHeldBackByReplay(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.ResumeReleasedAfterReplay,
+        Level = LogLevel.Information,
+        Message = "The full replay ended; recorded commands are resumed again.")]
+    public static partial void LogResumeReleasedAfterReplay(this ILogger logger);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.StoreReaderStopped,
         Level = LogLevel.Information,
         Message = "Store reader for {Consumer} stopped on partition {Partition}.")]

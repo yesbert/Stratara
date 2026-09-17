@@ -86,8 +86,9 @@ internal sealed class ProjectionGrain(
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
     IOptions<ProjectionGrainOptions> options,
+    IOptions<CommitOrderOptions> commitOrder,
     Microsoft.Extensions.Logging.ILogger<ProjectionGrain> logger)
-    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod), logger),
+    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod, commitOrder.Value.PartitionCount), logger),
         IProjectionGrain
 {
     private HashSet<string>? _relevant;
@@ -103,6 +104,11 @@ internal sealed class ProjectionGrain(
     /// </summary>
     public async Task PauseAsync()
     {
+        if (Retired)
+        {
+            return;
+        }
+
         _pausers++;
         await Loop.WaitForRunningAsync(CancellationToken.None);
         Loop.Invalidate();
@@ -111,7 +117,7 @@ internal sealed class ProjectionGrain(
     /// <summary>Lets the last pauser's resume start the reader again; an earlier one changes nothing.</summary>
     public Task ResumeAsync()
     {
-        if (_pausers == 0)
+        if (Retired || _pausers == 0)
         {
             return Task.CompletedTask;
         }
@@ -127,21 +133,23 @@ internal sealed class ProjectionGrain(
     }
 
     /// <summary>
-    /// One scope, one projection instance and one relevant-event set for the batch; per entry, the
-    /// recorded session and the retry policy, as the <c>projections</c> guarantees require.
+    /// One scope, one projection instance and one handler per session run — the consecutive entries recorded under one
+    /// session, what one bundle was on the bus — resolved after the run's session is set, so a dependency that takes
+    /// its tenant when it is constructed takes the entry's; per entry, the recorded session and the retry policy, as
+    /// the <c>projections</c> guarantees require. One relevant-event set for the grain.
     /// </summary>
     protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
-        using var scope = ScopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
-        var sessions = services.GetRequiredService<ISessionContextProvider>();
-        var handler = services.GetRequiredService<IProjectionHandler>();
-        var projection = ResolveProjection(services, handler);
-        _relevant ??= new HashSet<string>(handler.GetRelevantEventTypeNames(projection), StringComparer.Ordinal);
+        await using var runs = new SessionRuns<(IProjectionHandler Handler, IProjection Projection)>(ScopeFactory, services =>
+        {
+            var handler = services.GetRequiredService<IProjectionHandler>();
+            return (handler, ResolveProjection(services, handler));
+        });
 
         return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
         {
-            sessions.Set(RecordedSession.Of(entry));
+            var (handler, projection) = await runs.EnterAsync(entry);
+            _relevant ??= new HashSet<string>(handler.GetRelevantEventTypeNames(projection), StringComparer.Ordinal);
 
             var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
             var relevantEvents = events.Where(e => _relevant.Contains(e.EventTypeName)).ToList();
@@ -180,6 +188,19 @@ internal sealed class ProjectionGrain(
 /// <summary>The session an entry was recorded under, rebuilt for applying it.</summary>
 internal static class RecordedSession
 {
+    /// <summary>What decides whether two entries were recorded under one session; unlike the rebuilt session, an entry without a correlation keys as such.</summary>
+    public static RecordedSessionCarrier KeyOf(EventStreamEntry entry) =>
+        new(entry.CorrelationId, entry.CausationId, entry.ActorTenantId, entry.ActorUserId, entry.TenantId, entry.UserId);
+
+    public static SessionContext Of(RecordedSessionCarrier carrier) => new(
+        carrier.CorrelationId ?? Guid.CreateVersion7().ToString("N"),
+        carrier.CausationId,
+        null,
+        carrier.ActorTenantId,
+        carrier.ActorUserId,
+        carrier.TenantId,
+        carrier.UserId);
+
     public static SessionContext Of(EventStreamEntry entry) => new(
         entry.CorrelationId ?? Guid.CreateVersion7().ToString("N"),
         entry.CausationId,
@@ -188,6 +209,61 @@ internal static class RecordedSession
         entry.ActorUserId,
         entry.TenantId,
         entry.UserId);
+}
+
+/// <summary>The fields of an entry's recorded session, as they travel between grains and key a session run.</summary>
+[GenerateSerializer]
+[Alias("Stratara.Orleans.RecordedSessionCarrier")]
+[Immutable]
+internal sealed record RecordedSessionCarrier(
+    [property: Id(0)] string? CorrelationId,
+    [property: Id(1)] string? CausationId,
+    [property: Id(2)] Guid ActorTenantId,
+    [property: Id(3)] Guid ActorUserId,
+    [property: Id(4)] Guid TenantId,
+    [property: Id(5)] Guid? UserId);
+
+/// <summary>
+/// The scope a batch's entries are applied from, one per session run: an entry recorded under another session than the
+/// one before it opens a fresh scope, sets its session there first and only then resolves what applies it; an entry
+/// of the same run reuses them, with its own session set again. The last scope is disposed with the runs.
+/// </summary>
+internal sealed class SessionRuns<TRun>(IServiceScopeFactory scopeFactory, Func<IServiceProvider, TRun> resolve) : IAsyncDisposable
+{
+    private AsyncServiceScope? _scope;
+    private RecordedSessionCarrier? _key;
+    private ISessionContextProvider? _sessions;
+    private TRun? _run;
+
+    public async ValueTask<TRun> EnterAsync(EventStreamEntry entry)
+    {
+        var key = RecordedSession.KeyOf(entry);
+        if (_scope is { } scope && _sessions is { } sessions && _run is { } run && key == _key)
+        {
+            sessions.Set(RecordedSession.Of(entry));
+            return run;
+        }
+
+        await DisposeAsync();
+        var opened = scopeFactory.CreateAsyncScope();
+        _scope = opened;
+        _sessions = opened.ServiceProvider.GetRequiredService<ISessionContextProvider>();
+        _sessions.Set(RecordedSession.Of(entry));
+        _run = resolve(opened.ServiceProvider);
+        _key = key;
+        return _run;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_scope is { } scope)
+        {
+            _scope = null;
+            _key = null;
+            _run = default;
+            await scope.DisposeAsync();
+        }
+    }
 }
 
 /// <summary>The key of a store-reading grain: <c>consumer/partition</c>.</summary>

@@ -66,6 +66,27 @@ public sealed class StoreReaderLoopTests
                 .CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count)));
     }
 
+    [Fact]
+    public async Task A_refused_advance_is_followed_by_a_catch_up_from_the_position_the_store_holds()
+    {
+        var checkpoints = new GuardedCheckpoints();
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 6)), checkpoints, batchSize: 2);
+        var applied = new List<long>();
+        Task<int> Apply(CommittedBatch batch, CancellationToken _)
+        {
+            applied.AddRange(batch.Entries.Select(entry => entry.Position));
+            return Task.FromResult(batch.Entries.Count);
+        }
+
+        checkpoints.AdvancedElsewhereTo = 4;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => loop.CatchUpAsync(Apply));
+        applied.Clear();
+        await loop.CatchUpAsync(Apply);
+
+        Assert.Equal([5, 6], applied);
+        Assert.Equal(6, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)
     {
         var services = new ServiceCollection()
@@ -135,6 +156,39 @@ public sealed class StoreReaderLoopTests
         public Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
         {
             _stored[(projection, partition)] = (reader, position);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Refuses an advance from a position it no longer holds; <see cref="AdvancedElsewhereTo"/> stands for another activation's write.</summary>
+    private sealed class GuardedCheckpoints : IProjectionCheckpointStore
+    {
+        private long _position;
+
+        public long? AdvancedElsewhereTo { get; set; }
+
+        public Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) => Task.FromResult(_position);
+
+        public Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
+        {
+            _position = position;
+            return Task.CompletedTask;
+        }
+
+        public Task AdvanceAsync(string projection, int partition, string reader, long from, long to, CancellationToken cancellationToken = default)
+        {
+            if (AdvancedElsewhereTo is { } elsewhere)
+            {
+                _position = elsewhere;
+                AdvancedElsewhereTo = null;
+            }
+
+            if (_position != from)
+            {
+                throw new InvalidOperationException($"at {_position}, not at {from}");
+            }
+
+            _position = to;
             return Task.CompletedTask;
         }
     }

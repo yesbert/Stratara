@@ -4,6 +4,7 @@ using Moq;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
+using Stratara.Abstractions.Projections;
 using Stratara.Contracts.Messages;
 using Stratara.Diagnostics;
 using Stratara.Orleans.Aggregates;
@@ -89,14 +90,66 @@ public sealed class RecordedCommandDrainTests
         Assert.Contains("AddStrataraIntentStore", warning.Message, StringComparison.Ordinal);
     }
 
-    private static ServiceCollection Drain(Grains grains, ICommandIntentStore intents, ICommandOutboxDispatcher? bus)
+    [Fact]
+    public async Task A_resumption_held_back_by_a_replay_is_logged_once_when_it_begins_and_once_when_it_ends()
+    {
+        var logs = new RecordingLoggerProvider();
+        var active = true;
+        var replay = new Mock<IProjectionReplayState>();
+        replay.Setup(state => state.IsReplayActive).Returns(() => active);
+        var due = new RecordedIntent(Guid.NewGuid(), Envelope, Guid.NewGuid(), Heavy: false, 0, null, null);
+        var grains = new Grains();
+        var services = Drain(grains, IntentsReturning(due), bus: null, logs);
+        services.AddSingleton(replay.Object);
+        await using var provider = services.BuildServiceProvider();
+        var drain = provider.GetRequiredService<OutboxDrainWork>();
+
+        for (var run = 0; run < 3; run++)
+        {
+            await drain.RunAsync(CancellationToken.None);
+        }
+
+        Assert.Single(logs.Events, e => e.Id == LogEvents.Orleans.ResumeHeldBackByReplay);
+        Assert.DoesNotContain(logs.Events, e => e.Id == LogEvents.Orleans.ResumeReleasedAfterReplay);
+        Assert.Empty(grains.Accepted);
+
+        active = false;
+        await drain.RunAsync(CancellationToken.None);
+        await drain.RunAsync(CancellationToken.None);
+
+        var released = Assert.Single(logs.Events, e => e.Id == LogEvents.Orleans.ResumeReleasedAfterReplay);
+        Assert.Equal(LogLevel.Information, released.Level);
+        Assert.Single(logs.Events, e => e.Id == LogEvents.Orleans.ResumeHeldBackByReplay);
+        Assert.Contains(due.Id, grains.Accepted);
+    }
+
+    [Fact]
+    public async Task A_drain_that_was_never_held_back_logs_no_release()
+    {
+        var logs = new RecordingLoggerProvider();
+        var grains = new Grains();
+
+        await using var provider = Drain(grains, IntentsReturning(), bus: null, logs).BuildServiceProvider();
+        await provider.GetRequiredService<OutboxDrainWork>().RunAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(logs.Events, e => e.Id is LogEvents.Orleans.ResumeHeldBackByReplay or LogEvents.Orleans.ResumeReleasedAfterReplay);
+    }
+
+    private static ServiceCollection Drain(Grains grains, ICommandIntentStore intents, ICommandOutboxDispatcher? bus, RecordingLoggerProvider? logs = null)
     {
         var repository = new Mock<IOutboxRepository>();
         repository.Setup(r => r.GetManyAsync<EventBundle>(It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         var services = new ServiceCollection();
         services
-            .AddLogging()
+            .AddLogging(builder =>
+            {
+                if (logs is not null)
+                {
+                    builder.AddProvider(logs);
+                }
+            })
             .AddOptions()
+            .AddSingleton<ReplaySuspensionTracker>()
             .AddSingleton(grains.Factory)
             .AddScoped(_ => intents)
             .AddScoped(_ => UnitOfWork(repository.Object))

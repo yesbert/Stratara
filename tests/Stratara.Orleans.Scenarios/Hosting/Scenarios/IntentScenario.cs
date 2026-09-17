@@ -58,6 +58,9 @@ public sealed class IntentScenario : IPocScenario
         {
             // The kill tests want a lost hand-off resumed within seconds; a deployed silo drains at the default interval.
             builder.Services.Configure<OutboxDrainOptions>(options => options.PollingInterval = TimeSpan.FromSeconds(1));
+
+            // A new permit keeper admits no heavy unit for one lease; the default of thirty seconds is the whole resume timeout.
+            builder.Services.ConfigureStrataraHeavyWork(options => options.PermitLease = TimeSpan.FromSeconds(4));
         }
 
         var host = builder.Build();
