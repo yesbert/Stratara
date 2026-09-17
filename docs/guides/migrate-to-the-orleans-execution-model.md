@@ -116,8 +116,8 @@ the generated migration as it is.
 5. **Switch the API host** to the execution model's dispatcher; let the command worker's queue drain
    before stopping the command worker hosts.
 6. **Stop the bus projection and saga workers**, keeping `hybrid: true` only while a consumer outside this
-   deployment still needs the bundles on the bus, then delete the queues nothing consumes any more — a
-   quorum queue without a consumer grows.
+   deployment still needs the bundles on the bus, then retire the queues nothing consumes any more in the
+   order [After the cut-over: the bus queues](#after-the-cut-over-the-bus-queues) gives.
 
 ## Start on a populated store
 
@@ -186,7 +186,7 @@ timer owner check and handler with `AddStrataraDurableTimers`.
 | Role today | Add after the composite | What changes |
 |---|---|---|
 | API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order |
-| Command worker (`AddCommandWorkerServices`) | `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register it after every other pipeline behaviour. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
+| Command worker (`AddCommandWorkerServices`) | `builder.AddCommandServices()` instead, then `AddStrataraOrleansCommandDispatcher()`, `AddStrataraIntentStore<AppWriteDbContext>()` and `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register the aggregate grains after every other pipeline behaviour. The silo's own sends — from a handler or a saga — are recorded and handed over instead of published. The bus-fed mediator worker is not registered, so the silo consumes no command queue; keep `AddCommandWorkerServices` only while API hosts that still publish to the command topic remain. A silo that also registers a store-reading role needs no broker — see [when the broker can go](#when-the-broker-can-go); one without keeps publishing its bundles to the bus. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
 | Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace` and `MessageRetryOptions.MaxDeliveryAttempts` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. Registered with its name, the drain is not constructed until the silo is active. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
 | Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>`. Processes own durable timers, so the silo runs a reminder service |
@@ -224,6 +224,50 @@ singleton work started once. A singleton work is best registered with the name i
 `AddStrataraSingletonWork<TWork>(name)`: the silo publishes that name without constructing the work, where the
 overload without a name constructs every work while the silo starts, before any hosted service registered after
 the silo has run. A work whose `Name` differs from the name it was registered with fails the start naming both.
+
+### When the broker can go
+
+A host stops needing the message broker when the execution model has replaced both of the bus dispatchers it
+uses: the command dispatcher, by `AddStrataraOrleansCommandDispatcher` with an intent store, and the bundle
+dispatcher, by a store-reading role — `AddStrataraProjectionGrains` or `AddStrataraSagaGrains` without
+`hybrid` — on the same host. Then nothing on the host publishes to or consumes from the bus, and the bus the
+composites register is never connected; the connection string and the `Messaging` section may go.
+
+| Host | Composed as | Broker |
+|---|---|---|
+| API host | `AddBackendServices`, `AddStrataraOrleansCommandDispatcher`, `AddStrataraIntentStore` | not needed — it records commands and commits nothing itself |
+| Command silo with a store-reading role | `AddCommandServices`, the dispatcher and intent store, `AddStrataraAggregateGrains`, and `AddEventProjectionServices` with `AddStrataraProjectionGrains` or `AddSagaServices` with `AddStrataraSagaGrains` | not needed |
+| Command silo without a store-reading role | `AddCommandServices`, the dispatcher and intent store, `AddStrataraAggregateGrains` | **needed** — the facts its handlers commit are published as bundles to the bus, because it has no reader to wake |
+| Any host on a `*WorkerServices` composite | the bus-fed worker is registered | needed |
+
+A command silo without a store-reading role keeps the broker until it registers one; the readers on other
+silos read the store either way, so the bundles it publishes serve only the bus consumers that remain.
+
+## After the cut-over: the bus queues
+
+The bus workers own one durable queue per subscription, named after `IMessagingIdentifier`: the command
+subscription (`command-subscription` by default), the heavy-command subscription
+(`heavy-command-subscription`), and the two event-bundle subscriptions of the projection and saga workers
+(`event-bundle-subscription`, `event-bundle-saga-subscription`). On RabbitMQ each is the quorum queue
+`<subscription>.v2` with `<subscription>.dead-letter` beside it — see the
+[RabbitMQ outbox setup](outbox-setup-rabbitmq.md); on Azure Service Bus each is a subscription of the topic
+with its dead-letter sub-queue. Retire them in this order, which loses nothing:
+
+1. **Retire every publisher to the exchange first.** For the command and heavy-command topics, every host
+   that dispatches runs the execution model's dispatcher; for the event-bundle topic, no host runs a worker
+   composite that publishes bundles and no silo keeps `hybrid: true` or lacks a store-reading role. A
+   publication to an exchange whose queues are gone is returned by the broker, stored in the outbox table,
+   and retried by the outbox drain for ever — every bundle of such a host accumulates there.
+2. **Stop the last consumer of the queue and let it drain** until its depth is zero.
+3. **Look at the dead-letter queue before emptying it.** A message there is a command or a bundle the
+   bus workers gave up on — the bus-side counterpart of a kept command in the intent store. Decide for each
+   whether it is re-issued through the execution model or dropped.
+4. **Delete the queue and its dead-letter queue**, in the broker's management interface or with its
+   command-line tool.
+5. **Keep a queue for as long as a consumer outside this deployment subscribes to the exchange**, and keep
+   `hybrid: true` on the silos for exactly that long.
+
+The Redis key of the bus outbox worker's lock needs no cleanup; it expires on its own.
 
 ## A full replay on a host whose projections read the store
 

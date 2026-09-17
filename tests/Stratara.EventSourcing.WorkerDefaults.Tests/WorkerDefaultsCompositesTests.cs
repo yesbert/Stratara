@@ -45,6 +45,42 @@ public class WorkerDefaultsCompositesTests
     }
 
     [Fact]
+    public void AddCommandServices_RegistersTheCommandStackWithoutTheWorker()
+    {
+        var builder = NewBuilder();
+
+        builder.AddCommandServices();
+
+        Assert.DoesNotContain(builder.Services, d => d.ImplementationType == typeof(MediatorCommandWorker));
+        AssertRegistered<IMediator>(builder);
+        AssertRegistered<ICommandOutboxDispatcher>(builder);
+        AssertRegistered<IEventBundleOutboxDispatcher>(builder);
+        AssertRegistered<IMessageBus>(builder);
+        AssertRegistered<ISessionContextProvider>(builder);
+        AssertBoundOptions<EventSourcingOptions>(builder);
+    }
+
+    [Fact]
+    public void AddCommandWorkerServices_IsAddCommandServicesWithTheWorker()
+    {
+        var services = NewBuilder();
+        services.AddCommandServices();
+        var worker = NewBuilder();
+        worker.AddCommandWorkerServices();
+
+        var added = worker.Services.Select(Describe).ToList();
+        foreach (var descriptor in services.Services.Select(Describe))
+        {
+            Assert.True(added.Remove(descriptor), $"AddCommandWorkerServices lacks {descriptor}.");
+        }
+
+        Assert.Contains(added, descriptor => descriptor.Contains(nameof(MediatorCommandWorker), StringComparison.Ordinal));
+    }
+
+    private static string Describe(ServiceDescriptor descriptor) =>
+        $"{descriptor.ServiceType} [{descriptor.ServiceKey}] -> {(descriptor.IsKeyedService ? descriptor.KeyedImplementationType : descriptor.ImplementationType)?.ToString() ?? "instance or factory"}";
+
+    [Fact]
     public void AddHeavyCommandWorkerServices_RegistersHeavyWorkerHostedServiceAndDispatcher()
     {
         var builder = NewBuilder();

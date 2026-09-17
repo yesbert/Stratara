@@ -42,9 +42,8 @@ public static class WorkerDefaultsHostBuilderExtensions
     }
 
     /// <summary>
-    /// Registers the command-worker stack: common framework services + mediator + mediator-worker (hosted
-    /// service that consumes the command topic into the in-process mediator) + write store + event sourcing
-    /// + outbox dispatcher.
+    /// Registers the command-worker stack: <see cref="AddCommandServices"/> + mediator-worker (hosted service that
+    /// consumes the command topic into the in-process mediator).
     /// </summary>
     /// <param name="builder">The host application builder.</param>
     /// <returns>The same builder for chaining.</returns>
@@ -59,10 +58,38 @@ public static class WorkerDefaultsHostBuilderExtensions
     /// </example>
     public static IHostApplicationBuilder AddCommandWorkerServices(this IHostApplicationBuilder builder)
     {
+        builder.AddCommandServices();
+        builder.Services.AddMediatorWorker();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the command-handling stack without the bus-fed mediator worker: common framework services + mediator
+    /// + write store + event sourcing + outbox dispatcher. For a host whose commands reach their handlers by something
+    /// other than the bus — the Orleans execution model's aggregate grains and command dispatcher register after this
+    /// call and remove nothing. The bus dispatchers stay registered until the execution model replaces them; a host
+    /// whose command dispatcher and bundle dispatcher are both replaced opens no broker connection.
+    /// </summary>
+    /// <param name="builder">The host application builder.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <example>
+    /// Compose a command silo on the Orleans execution model:
+    /// <code>
+    /// var builder = Host.CreateApplicationBuilder(args);
+    /// builder.AddCommandServices();
+    /// builder.Services
+    ///     .AddCommandHandlersFromAssemblyContaining&lt;IAppMarker&gt;()
+    ///     .AddStrataraOrleansCommandDispatcher()
+    ///     .AddStrataraIntentStore&lt;AppWriteDbContext&gt;()
+    ///     .AddStrataraAggregateGrains();
+    /// builder.Build().Run();
+    /// </code>
+    /// </example>
+    public static IHostApplicationBuilder AddCommandServices(this IHostApplicationBuilder builder)
+    {
         builder.AddCommonFrameworkServices();
         builder.Services
             .AddMediator()
-            .AddMediatorWorker()
             .AddWriteStore(builder.Configuration)
             .AddEventSourcing()
             .AddOutboxDispatcher();

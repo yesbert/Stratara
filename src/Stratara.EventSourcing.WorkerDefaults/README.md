@@ -12,9 +12,12 @@ One-stop `IHostApplicationBuilder` composites that wire together the Stratara ev
 | Composite | Wires |
 |---|---|
 | `AddBackendServices` | Common framework services (messaging, identity, session, security, mapping, resilience) + mediator + write store + outbox dispatcher. For API hosts that dispatch commands but don't process them. |
-| `AddCommandWorkerServices` | Common + mediator + mediator-worker (hosted service that consumes the command topic into the in-process mediator) + write store + event sourcing + outbox dispatcher. |
+| `AddCommandWorkerServices` | `AddCommandServices` + mediator-worker (hosted service that consumes the command topic into the in-process mediator). |
+| `AddCommandServices` | Common + mediator + write store + event sourcing + outbox dispatcher, without the mediator worker. For command silos of the Orleans execution model. |
 | `AddEventProjectionWorkerServices` | Common + write store + projection-replay state + projection worker. |
+| `AddEventProjectionServices` | The same without the bus-fed projection worker. |
 | `AddSagaWorkerServices` | Common + write store + event sourcing + outbox dispatcher + saga worker. |
+| `AddSagaServices` | The same without the bus-fed saga worker. |
 | `AddEventStreamHashWorkerServices` | Common + write store + event-stream-hashing worker. |
 | `AddOutboxWorkerServices` | Common + write store + outbox dispatcher + outbox-retry worker. |
 

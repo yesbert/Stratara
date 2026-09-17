@@ -27,6 +27,8 @@ Stratara composes via à-la-carte `Add*Services()` extension methods on `IServic
    │  long-running commands?              (drains IHeavyCommand — see "Opt-in: heavy-command lane")
    ├─ Need to run projections?         → builder.AddEventProjectionWorkerServices()
    ├─ Need to run sagas?               → builder.AddSagaWorkerServices()
+   ├─ On the Orleans execution model?  → builder.AddCommandServices() / AddEventProjectionServices() /
+   │                                      AddSagaServices() — the same stacks without the bus-fed worker
    ├─ Need to hash event streams?      → builder.AddEventStreamHashWorkerServices()
    └─ Need to drain the outbox?        → builder.AddOutboxWorkerServices()
 ```

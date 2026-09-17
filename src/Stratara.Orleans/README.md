@@ -32,10 +32,17 @@ The commit-order readers, the checkpoint store and the store-schema additions li
 
 ## Quick start
 
+A command silo that also runs the projections, and needs no message broker:
+
 ```csharp
 builder.UseOrleans(silo => { /* clustering, reminders and the durable grain directory */ });
+builder.AddCommandServices();
 builder.AddEventProjectionServices();
 builder.Services
+    .AddCommandHandlersFromAssemblyContaining<IAppMarker>()
+    .AddStrataraOrleansCommandDispatcher()
+    .AddStrataraIntentStore<AppWriteDbContext>()
+    .AddStrataraAggregateGrains()
     .AddProjectionsFromAssemblyContaining<IAppMarker>()
     .AddSingleton<ICommittedPositionReader, PostgresTransactionIdReader<AppWriteDbContext>>()
     .AddStrataraProjectionCheckpoints<AppReadDbContext>()

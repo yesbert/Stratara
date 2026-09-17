@@ -20,6 +20,7 @@ These wire entire worker / host concerns in one call. **Pick one per host.**
 |---|---|---|
 | `builder.AddBackendServices()` | Mediator, Identity, Session, Security, Resilience | ASP.NET API hosts |
 | `builder.AddCommandWorkerServices()` | Common framework + command-handling worker (interactive lane) | Worker hosts that consume the `command` topic |
+| `builder.AddCommandServices()` | The command worker stack without the bus-fed mediator worker; the bus dispatchers stay until the execution model replaces them | Command silos of the Orleans execution model |
 | `builder.AddHeavyCommandWorkerServices(dop?)` | Common framework + dedicated heavy-command worker | Worker hosts that drain long-running `IHeavyCommand` commands on a separate lane, so they don't starve interactive commands |
 | `builder.AddEventProjectionWorkerServices()` | Common framework + projection worker | Worker hosts that update read-models |
 | `builder.AddSagaWorkerServices()` | Common framework + saga worker | Worker hosts that orchestrate processes |
