@@ -143,7 +143,11 @@ await using var seedingScope = app.Services.CreateAsyncScope();
 var seeded = await seedingScope.ServiceProvider.GetRequiredService<IStoreReaderSeeding>().SeedAtHeadAsync();
 ```
 
-Run it once, while no silo of the cluster runs, from the composition that calls `AddStrataraProjectionGrains`
+Run it once, while no silo of the cluster runs **and nothing appends**. A head is the position after which
+nothing committed at the time of the call exists, and the native reader cannot count what a write
+transaction still open might yet commit before what it already sees: taken while the old hosts still
+append, the head is held back, and the consumers seeded at it apply what those hosts commit in that
+window a second time. Run it from the composition that calls `AddStrataraProjectionGrains`
 or `AddStrataraSagaGrains` — the consumers it seeds are the ones registered there — after the schema is
 migrated and before the host is started. A consumer that already has a checkpoint is left as it is; a
 projection registered later starts at the beginning, which is what a new projection needs; and a read model

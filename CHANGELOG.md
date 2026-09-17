@@ -214,6 +214,18 @@ applies to the entire NuGet family.
   were reset.
 - **Orleans: the partition counter interceptor releases its transaction when positioning fails.** The
   transaction it opened stayed open on the context until the next save or the context's disposal.
+- **Orleans: both backfills of a populated store page by key.** Each batch of the transaction-id backfill asked
+  for the oldest entries without a commit record, which no index answers, so every batch walked everything the
+  batches before it had stamped — on a store with a long history the migration window it belongs to was measured in
+  hours. The partition counter's backfill held a partition's whole history in memory and its counter lock for the
+  whole run; it now takes one batch per transaction.
+- **Orleans: the head says what it is.** A head is taken while nothing appends: the native reader's head is held
+  back by an open write transaction, so a deployment that seeds while its old hosts still append applies what they
+  commit in that window a second time. The contract, the migration guide and a test now say so.
+- **Orleans: a singleton work's failure is logged whatever it failed with** — a cancellation the work was not
+  asked for, an HTTP client's timeout, went unlogged — except where its silo is stopping.
+- **Orleans: two singleton works under one name are refused at registration**, naming both: the name keys the
+  grain that runs the work, so the second never ran and nothing said so.
 - **Testing: `ExecutionModelTestHost.ResetAsync` works on a running host.** It deleted the checkpoints while the
   readers kept their cached positions, so a shared host reset between two tests either never finished
   `WaitForReadersAsync` — the checkpoint said nothing was applied, the store's head said otherwise — or applied the

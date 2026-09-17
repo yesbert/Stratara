@@ -7,10 +7,22 @@ namespace Stratara.Orleans.Tests;
 /// <summary>
 /// A work registered with its name is published without being constructed; one registered without it is
 /// constructed to read the name, and a failure there names the work and why it was constructed. A work whose name
-/// differs from its registered one is refused naming both.
+/// differs from its registered one is refused naming both, and so are two works that ask for one name.
 /// </summary>
 public sealed class SingletonWorkMetadataTests
 {
+    [Fact]
+    public void Two_works_registered_under_one_name_are_refused_naming_both()
+    {
+        var services = new ServiceCollection().AddStrataraSingletonWork<UnconstructableWork>("the-one-name");
+
+        var refused = Assert.Throws<InvalidOperationException>(() => services.AddStrataraSingletonWork<OtherWork>("the-one-name"));
+
+        Assert.Contains(nameof(UnconstructableWork), refused.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(OtherWork), refused.Message, StringComparison.Ordinal);
+        Assert.Contains("the-one-name", refused.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_named_work_is_published_without_being_constructed()
     {
@@ -103,6 +115,16 @@ public sealed class SingletonWorkMetadataTests
         public UnconstructableWork() => throw new InvalidOperationException("Needs the running host.");
 
         public string Name => WorkName;
+
+        public TimeSpan Period => TimeSpan.FromMinutes(1);
+
+        public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>A second work, for the case of two works asking for one name.</summary>
+    public sealed class OtherWork : ISingletonWork
+    {
+        public string Name => "other";
 
         public TimeSpan Period => TimeSpan.FromMinutes(1);
 

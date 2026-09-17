@@ -1,7 +1,10 @@
+using System.Data.Common;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 
@@ -38,28 +41,50 @@ public static class CommitTransactionIdBackfill
         ArgumentNullException.ThrowIfNull(context);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
 
-        var statement = Statement.For(context, batchSize);
+        var statements = Statement.For(context, batchSize);
         var stamped = 0;
+        var from = 0L;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
-            var affected = await context.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+
+            // Where the batch ends is read first, so the update that follows starts where the batch before it
+            // ended instead of walking every entry it has already stamped.
+            var to = await BoundAsync(context, statements.Bound, from, cancellationToken);
+            var affected = to is null
+                ? 0
+                : await context.Database.ExecuteSqlRawAsync(statements.Stamp, [Parameter("from", from), Parameter("to", to.Value)], cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            if (affected == 0)
+            if (affected == 0 || to is not { } bound)
             {
                 return stamped;
             }
 
             stamped += affected;
+            from = bound;
         }
     }
 
-    /// <summary>The update, with the table and columns named as the context's model maps them.</summary>
+    private static DbParameter Parameter(string name, long value) =>
+        new NpgsqlParameter(name, NpgsqlTypes.NpgsqlDbType.Bigint) { Value = value };
+
+    /// <summary>The highest sequence number of the next batch, or <see langword="null"/> where nothing is left.</summary>
+    private static async Task<long?> BoundAsync(DbContext context, string sql, long from, CancellationToken cancellationToken)
+    {
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = sql;
+        command.Transaction = context.Database.CurrentTransaction?.GetDbTransaction();
+        command.Parameters.Add(Parameter("from", from));
+        var bound = await command.ExecuteScalarAsync(cancellationToken);
+        return bound is null or DBNull ? null : Convert.ToInt64(bound, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>The statements, with the table and columns named as the context's model maps them.</summary>
     private static class Statement
     {
         /// <exception cref="InvalidOperationException">The model maps no event stream table, or lacks the commit-order column.</exception>
-        public static string For(DbContext context, int batchSize)
+        public static (string Bound, string Stamp) For(DbContext context, int batchSize)
         {
             var entity = context.Model.FindEntityType(typeof(EventStreamEntry))
                          ?? throw new InvalidOperationException($"The model of {context.GetType().Name} has no {nameof(EventStreamEntry)}.");
@@ -79,15 +104,21 @@ public static class CommitTransactionIdBackfill
             var sequence = Column(nameof(EventStreamEntry.SequenceNumber));
             var transaction = Column(CommitOrderSchema.TransactionIdColumn);
 
-            return $$"""
-                UPDATE {{from}} SET {{transaction}} = pg_current_xact_id()
-                WHERE {{sequence}} IN (
+            var bound = $$"""
+                SELECT max({{sequence}}) FROM (
                     SELECT {{sequence}} FROM {{from}}
-                    WHERE {{transaction}} IS NULL
+                    WHERE {{transaction}} IS NULL AND {{sequence}} > @from
                     ORDER BY {{sequence}}
                     LIMIT {{batchSize}}
-                )
+                ) AS batch
                 """;
+
+            var stamp = $$"""
+                UPDATE {{from}} SET {{transaction}} = pg_current_xact_id()
+                WHERE {{transaction}} IS NULL AND {{sequence}} > @from AND {{sequence}} <= @to
+                """;
+
+            return (bound, stamp);
         }
     }
 }

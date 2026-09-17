@@ -88,8 +88,10 @@ internal sealed class SingletonWorkGrain(
         {
             await ResolveWork(scope.ServiceProvider).RunAsync(cancellationToken);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
+            // A cancellation the work was not asked for — an HTTP client's timeout — is a failure like any other; only
+            // the stop this grain asked for passes through unlogged.
             logger.LogSingletonWorkFailed(exception, this.GetPrimaryKeyString());
             return;
         }

@@ -47,7 +47,27 @@ public static class PartitionCounterBackfill
         return positioned;
     }
 
+    /// <summary>
+    /// Positions a partition's entries in batches, each under the partition's counter lock and a transaction of its
+    /// own: a store with a long history is walked without holding the lock — or the entries — for the whole run, and
+    /// a batch always takes the oldest entries that have no position, so the order inside a stream is kept.
+    /// </summary>
     private static async Task<int> RunPartitionAsync(DbContext context, int partition, int partitionCount, CancellationToken cancellationToken)
+    {
+        var positioned = 0;
+        while (true)
+        {
+            var batch = await PositionBatchAsync(context, partition, partitionCount, cancellationToken);
+            if (batch == 0)
+            {
+                return positioned;
+            }
+
+            positioned += batch;
+        }
+    }
+
+    private static async Task<int> PositionBatchAsync(DbContext context, int partition, int partitionCount, CancellationToken cancellationToken)
     {
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         var counter = await LockCounterAsync(context, partition, cancellationToken);
@@ -56,6 +76,7 @@ public static class PartitionCounterBackfill
             .Where(e => e.BucketId % partitionCount == partition && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
             .OrderBy(e => e.SequenceNumber)
             .Select(e => e.SequenceNumber)
+            .Take(UpdateBatchSize)
             .ToListAsync(cancellationToken);
         if (unpositioned.Count == 0)
         {
@@ -63,17 +84,13 @@ public static class PartitionCounterBackfill
             return 0;
         }
 
-        for (var offset = 0; offset < unpositioned.Count; offset += UpdateBatchSize)
+        for (var i = 0; i < unpositioned.Count; i++)
         {
-            var batch = unpositioned.Skip(offset).Take(UpdateBatchSize).ToList();
-            for (var i = 0; i < batch.Count; i++)
-            {
-                var sequenceNumber = batch[i];
-                var position = counter + offset + i + 1;
-                await context.Set<EventStreamEntry>()
-                    .Where(e => e.SequenceNumber == sequenceNumber)
-                    .ExecuteUpdateAsync(set => set.SetProperty(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), position), cancellationToken);
-            }
+            var sequenceNumber = unpositioned[i];
+            var position = counter + i + 1;
+            await context.Set<EventStreamEntry>()
+                .Where(e => e.SequenceNumber == sequenceNumber)
+                .ExecuteUpdateAsync(set => set.SetProperty(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), position), cancellationToken);
         }
 
         await context.Set<PartitionPosition>()

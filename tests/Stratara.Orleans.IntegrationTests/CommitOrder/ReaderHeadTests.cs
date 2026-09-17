@@ -10,9 +10,11 @@ using Stratara.Orleans.IntegrationTests.Store;
 namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 
 /// <summary>
-/// Scenario <em>A reader reports its head</em>: both readers answer a partition's head in one query; a read after
-/// it returns nothing committed before the head was asked for and everything committed afterwards; an empty
-/// partition's head is zero.
+/// Scenarios <em>A reader reports its head</em> and <em>A head is taken while a writer's transaction is open</em>:
+/// both readers answer a partition's head in one query; a read after it returns nothing committed before the head
+/// was asked for and everything committed afterwards; an empty partition's head is zero; and a head taken while a
+/// write transaction is still open names no position an entry of that transaction could yet precede, so what it
+/// commits is read rather than skipped.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class ReaderHeadTests(PostgreSqlFixture postgres)
@@ -68,6 +70,34 @@ public sealed class ReaderHeadTests(PostgreSqlFixture postgres)
             : new PostgresTransactionIdReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
 
         Assert.Equal(0, await reader.HeadAsync(store.Options.PartitionCount - 1));
+    }
+
+    [Fact]
+    public async Task A_head_taken_while_a_transaction_is_open_does_not_skip_what_it_commits()
+    {
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(
+            postgres.ConnectionStringFor("poc_reader_head_open"), maintainCounter: false);
+        var reader = new PostgresTransactionIdReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
+        var tenantId = Guid.NewGuid();
+        var bucketId = Random.Shared.Next(0, 4096);
+        var partition = PartitionMap.PartitionOf(bucketId, store.Options.PartitionCount);
+        var held = Guid.NewGuid();
+
+        long head;
+        await using (var context = await store.CreateContextAsync())
+        {
+            // A writer's transaction is open while the head is taken, and commits afterwards.
+            await using var transaction = await context.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+            context.Set<EventStreamEntry>().Add(PocStore<PocCommitOrderWriteDbContext>.NewEntry(held, 1, bucketId, tenantId));
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+            head = await reader.HeadAsync(partition, TestContext.Current.CancellationToken);
+            await transaction.CommitAsync(TestContext.Current.CancellationToken);
+        }
+
+        var afterHead = await reader.ReadAfterAsync(partition, head, 10_000, TestContext.Current.CancellationToken);
+
+        Assert.Contains(held, afterHead.Entries.Select(entry => entry.Entry.StreamId));
     }
 
     private static async Task AppendAsync(PocStore<PocCommitOrderWriteDbContext> store, Guid streamId, long version, int bucketId, Guid tenantId)
