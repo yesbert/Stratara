@@ -115,9 +115,9 @@ work moves in steps, each bounded by a setting:
 
 With the defaults a failover therefore completes within about a minute and a half. Between steps 3 and 4 the
 work **may run on two silos at once** — at most one table refresh period plus one run, and only as long as the
-declared silo can still read the membership table. A silo partitioned from it never learns of its declaration
-and runs the work until something stops it, so the overlap is bounded by the table refresh only where the
-table is reachable. Write a work so that an
+declared silo can still read the membership table. A silo partitioned from it may never learn of its
+declaration — gossip reaches it only from silos it can still talk to — and runs the work until something stops
+it, so the table refresh bounds the overlap only where the table is reachable. Write a work so that an
 overlapping run does no harm: claim what it processes with a compare-and-set in its own store, as the
 framework's outbox drain claims recorded commands, or make each run idempotent. The integration suite measures
 the takeover under the test profile (a five-second keep-alive) and allows it three minutes.

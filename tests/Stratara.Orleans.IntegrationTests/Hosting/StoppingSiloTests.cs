@@ -78,9 +78,10 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
 
         Assert.Equal(1, control.Cancelled(probe.ToString()));
         Assert.Contains(control.Logs.Entries, e => e.EventId == LogEvents.Orleans.HandlerStoppedWithSilo && e.Message.Contains(nameof(BlockingProbe), StringComparison.Ordinal) && e.Message.Contains("intent ", StringComparison.Ordinal));
-        // The handler that stopped with its silo counts no attempt, so the record carries none when it is resumed.
-        Assert.Equal(0, await RecordedIntentHost.ScalarAsync<int>(
-            postgres.ConnectionStringFor("poc_stopping_store"), "SELECT attempt_count FROM outbox_entry WHERE id = @id", ("id", intentId)));
+        // The handler that stopped with its silo counts the stop as no attempt of its own: the record carries no
+        // failure. Its attempt count is not asserted, because the drain that resumes it counts its own claim.
+        Assert.Null(await RecordedIntentHost.ScalarAsync<string>(
+            postgres.ConnectionStringFor("poc_stopping_store"), "SELECT last_failure FROM outbox_entry WHERE id = @id", ("id", intentId)));
 
         control.Block = false;
         Assert.True(await WaitUntilAsync(() => control.Completed(probe.ToString()) == 1, TakeoverTimeout), "the recorded command was not resumed on the remaining silo");

@@ -110,20 +110,26 @@ the generated migration as it is.
    first append. On a populated PostgreSQL table, migrate as the previous section says.
 2. **Stop the bus outbox worker before the first silo with an intent store runs the drain**
    (see [Adopt the roles](#adopt-the-roles)).
-3. **Let the event-bundle queues drain, then stop the bus projection and saga workers.** Every fact whose
-   bundle is still queued is applied by them; a fact the silos will read from the store before their seeded
-   head is applied by nobody else, so the queues have to be empty before the workers go. This step comes
-   before the seeding: a bus worker that keeps applying past the head applies everything the grains then
-   apply again — projections double-count and sagas act twice. Where the workers have to stay up for a
-   consumer outside this deployment, register the store-reading roles with `hybrid: true` and accept the
-   overlap only for read models and sagas whose application is idempotent.
-4. **Seed the checkpoints** of the projections and sagas the silos will register, from the silo's own
-   composition, while no silo runs — see [Start on a populated store](#start-on-a-populated-store).
-5. **Start the silos**, at least two, and watch [what to watch](operate-the-orleans-execution-model.md#what-to-watch).
-6. **Switch the API host** to the execution model's dispatcher; let the command worker's queue drain
+3. **Hand the read side over in one window, while nothing appends.** The seeded head is the line between what
+   the bus workers apply and what the grains apply, so it has to be drawn while it cannot move: stop the hosts
+   that append, let the event-bundle queues drain so the bus workers have applied everything committed, stop
+   the bus projection and saga workers, and only then **seed the checkpoints** of the projections and sagas the
+   silos will register, from the silo's own composition — see
+   [Start on a populated store](#start-on-a-populated-store). Every fact is then applied once: below the head
+   by the bus workers, above it by the grains.
+4. **Start the silos**, at least two, and watch [what to watch](operate-the-orleans-execution-model.md#what-to-watch).
+5. **Switch the API host** to the execution model's dispatcher; let the command worker's queue drain
    before stopping the command worker hosts.
-7. **Retire the queues** nothing consumes any more, in the order
+6. **Retire the queues** nothing consumes any more, in the order
    [After the cut-over: the bus queues](#after-the-cut-over-the-bus-queues) gives.
+
+**Without a window for step 3**, the choice is between applying twice and not applying at all, and only the
+first is recoverable: keep the bus projection and saga workers running until the silos are up — with
+`hybrid: true` where a consumer outside this deployment still needs the bundles — and accept that everything
+committed between the seeding and their stop is applied by them and by the grains. Do that only where every
+projection and saga of the deployment applies idempotently. Stopping them before the seeding instead, while
+appends continue, leaves the facts committed in between to nobody: their bundles are consumed by no worker and
+they are below the head the grains start at.
 
 ## Start on a populated store
 
