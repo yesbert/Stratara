@@ -303,10 +303,17 @@ provider's error means "someone else wrote first".
 The framework SHALL offer a reader that returns a partition's entries after a position, in an order
 in which no entry at or below the position of a returned batch can still commit later, so that a
 consumer resuming from a stored position never skips an entry. A batch SHALL say whether more
-entries exist, and a batch SHALL never end in the middle of one transaction's entries. Two readers
+entries exist, and a batch SHALL never end in the middle of one transaction's entries. A reader SHALL
+report a partition's head: the position after which no entry committed at the time of the call exists,
+so that a consumer can start there. Two readers
 SHALL be offered: one native to PostgreSQL that adds no work to an append, and one for any relational
 provider the framework ships a store registration for, under which concurrent appends to one partition
-wait for each other. The portable reader SHALL see only entries appended by a process that maintains
+wait for each other. A store that holds entries from before the native reader's commit record was
+added SHALL be adoptable without rewriting its event table: the documented migration adds the record
+without a rewrite, and the framework's backfill stamps the existing entries in the order they were
+appended, in bounded batches each committed on its own, so that the reader returns history in bounded
+batches and in append order; the backfill SHALL run while nothing appends, and the documentation SHALL
+say so. The portable reader SHALL see only entries appended by a process that maintains
 its partition counter; every process that appends to a store read by it SHALL maintain the counter, and
 a reader that finds an entry appended without it SHALL stop its partition and report the entry rather
 than read past it. The partition count of a store read by the portable reader SHALL NOT change without
@@ -322,6 +329,20 @@ a store with entries it has not positioned.
   reads in between
 - **THEN** the entry of the long transaction is returned by a later read and never skipped — verified
   in two hundred randomised interleavings per reader on the PostgreSQL store
+
+#### Scenario: A reader reports its head
+
+- **WHEN** a consumer asks a reader for a partition's head and then reads after that position
+- **THEN** no entry committed before the head was asked for is returned, and an entry committed
+  afterwards is — verified for both readers on the PostgreSQL store
+
+#### Scenario: A populated PostgreSQL store adopts the native reader
+
+- **WHEN** a store holding entries written before the commit record existed is migrated as documented
+  and backfilled while nothing appends
+- **THEN** the event table is not rewritten by the migration, a reader returns the history in batches
+  no larger than the backfill's batch and in the order the entries were appended, and a batch never
+  holds more than one backfill batch's entries — verified on the PostgreSQL store
 
 #### Scenario: A consumer switches readers
 
