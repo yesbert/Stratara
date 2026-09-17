@@ -139,6 +139,9 @@ What the host exposes:
   partition.
 - **`Timers`** is the `IDurableTimers` of `AddStrataraDurableTimers`. A timer due in a second fires within a few
   seconds, and a process timeout reaches its `SagaProcess<TState>` the same way.
+- **`ResetAsync` on a running host** stops the registered readers, puts each at the store's head and starts them
+  again, which is what a shared host needs between two tests: what follows is applied, what went before is not
+  applied again. It does not empty the read models.
 - **`SeedAtHeadAsync`** and **`ResetAsync`** are the execution model's own seeding and reset. Seeding belongs before
   the silo starts, as in a deployment, so the host offers `ExecutionModelTestHostOptions.BeforeStart` for it.
 - **`Session`** is the context every scope starts under, `ExecutionModelTestHost.DefaultTenantId` by default.

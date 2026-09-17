@@ -23,7 +23,7 @@ internal sealed record StoreReaderSettings(int BatchSize, TimeSpan PollInterval,
 /// so a successor never applies beside it. A grain of a partition the host no longer has — its count was lowered —
 /// retires when it is activated: it unregisters its keep-alive, logs that it did, reads nothing and deactivates, and
 /// every call it still receives does nothing. A derived grain says what applying a batch means and when reading is
-/// suspended.
+/// suspended beyond the pauses and the replay this one already counts.
 /// </summary>
 internal abstract class StoreReaderGrain(
     IServiceScopeFactory scopeFactory,
@@ -37,6 +37,7 @@ internal abstract class StoreReaderGrain(
     private readonly CancellationTokenSource _stopping = new();
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
+    private int _pausers;
 
     /// <summary>The consumer this grain reads for, from its key.</summary>
     protected string Consumer { get; private set; } = string.Empty;
@@ -54,8 +55,43 @@ internal abstract class StoreReaderGrain(
     /// <summary>Whether the grain's partition is beyond the host's partition count, so the grain reads nothing.</summary>
     protected bool Retired { get; private set; }
 
-    /// <summary>Whether reading stops at the next batch boundary; a replay suspends every reader.</summary>
-    protected virtual bool Suspended => replayState.IsReplayActive;
+    /// <summary>Whether reading stops at the next batch boundary; a replay suspends every reader, and so does a pauser.</summary>
+    protected virtual bool Suspended => _pausers > 0 || replayState.IsReplayActive;
+
+    /// <summary>
+    /// Pauses, waits for a running loop to end, and forgets the cached position: whoever pauses is about to change
+    /// the checkpoint behind the grain's back. Pauses are counted, so two callers that overlap hold the reader until
+    /// the last of them resumes.
+    /// </summary>
+    public async Task PauseAsync()
+    {
+        if (Retired)
+        {
+            return;
+        }
+
+        _pausers++;
+        await Loop.WaitForRunningAsync(CancellationToken.None);
+        Loop.Invalidate();
+    }
+
+    /// <summary>Lets the last pauser's resume start the reader again; an earlier one changes nothing.</summary>
+    public Task ResumeAsync()
+    {
+        if (Retired || _pausers == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        _pausers--;
+        if (_pausers > 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        Loop.Invalidate();
+        return NudgeAsync();
+    }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {

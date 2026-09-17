@@ -32,9 +32,7 @@ internal sealed class ReplayCheckpointResetTruncator(
         var handler = services.GetRequiredService<IProjectionHandler>();
         var names = services.GetServices<IProjection>().Select(handler.GetProjectionName).Distinct(StringComparer.Ordinal).ToList();
         var grains = names
-            .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => new PausedReader(
-                StoreReaderGrainKey.Of(name, partition),
-                grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)))))
+            .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => Reader(StoreReaderGrainKey.Of(name, partition))))
             .ToList();
 
         var paused = await StoreReaderPause.PauseAllAsync(grains);
@@ -54,6 +52,12 @@ internal sealed class ReplayCheckpointResetTruncator(
         }
 
         await StoreReaderPause.ResumeAllAsync(paused);
+    }
+
+    private PausedReader Reader(string key)
+    {
+        var grain = grainFactory.GetGrain<IProjectionGrain>(key);
+        return new PausedReader(key, grain.PauseAsync, grain.ResumeAsync);
     }
 
     /// <summary>

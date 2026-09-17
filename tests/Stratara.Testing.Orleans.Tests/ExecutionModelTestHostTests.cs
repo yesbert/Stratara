@@ -112,8 +112,40 @@ public sealed class ExecutionModelTestHostTests
         var name = scope.ServiceProvider.GetRequiredService<IProjectionHandler>().GetProjectionName(new BalanceProjection(runs));
         for (var partition = 0; partition < 4; partition++)
         {
-            Assert.Equal(0, await checkpoints.GetAsync(name, partition, reader.Name, TestContext.Current.CancellationToken));
+            Assert.Equal(
+                await reader.HeadAsync(partition, TestContext.Current.CancellationToken),
+                await checkpoints.GetAsync(name, partition, reader.Name, TestContext.Current.CancellationToken));
         }
+    }
+
+    /// <summary>
+    /// The reset between two tests of one host: the readers keep running, so a reset that only removed the
+    /// checkpoints would leave them at the position they had cached — waiting for readers would then never end, and a
+    /// reader that did read again would apply the first test's entries a second time.
+    /// </summary>
+    [Fact]
+    public async Task A_host_reset_between_two_tests_reads_on_without_applying_anything_twice()
+    {
+        var runs = new Runs();
+        await using var host = await ExecutionModelTestHost.CreateAsync(services => Commands(services, runs).AddStrataraProjectionGrains());
+        var first = Guid.NewGuid();
+        await host.DispatchAsync(new OpenAccount(first, 1m), TestContext.Current.CancellationToken);
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(1m, runs.Balances[first]);
+        var appliedBefore = runs.Applied;
+
+        await host.ResetAsync(TestContext.Current.CancellationToken);
+
+        // Nothing new has been committed: the readers are at the head, so the wait ends at once.
+        await host.WaitForReadersAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(appliedBefore, runs.Applied);
+
+        var second = Guid.NewGuid();
+        await host.DispatchAsync(new OpenAccount(second, 2m), TestContext.Current.CancellationToken);
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2m, runs.Balances[second]);
+        Assert.Equal(appliedBefore + 1, runs.Applied);
     }
 
     [Fact]

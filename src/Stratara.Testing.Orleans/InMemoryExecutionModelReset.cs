@@ -1,6 +1,8 @@
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Orleans;
-using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Abstractions.Projections;
+using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.Hosting;
 using Stratara.Orleans.Projections;
 
@@ -11,10 +13,19 @@ namespace Stratara.Testing.Orleans;
 /// the in-memory grain directory, and the checkpoints of the store readers the host registers. Membership is the one
 /// silo's own and is left alone.
 /// </summary>
+/// <remarks>
+/// The silo keeps running while this runs, which is what a test between two tests wants, so the readers are stopped
+/// first, put at the store's head, and started again: a reader stopped this way forgets the position it had cached,
+/// and a reader at the head applies what the next test commits and nothing the last one did. Deleting the checkpoints
+/// instead would leave the readers reading the whole store again — into read models this reset does not empty.
+/// </remarks>
 internal sealed class InMemoryExecutionModelReset(
-    IDbContextFactory<StrataraTestReadDbContext> readContextFactory,
+    IGrainFactory grainFactory,
     IReminderTable reminders,
     InMemoryGrainDirectory directory,
+    ICommittedPositionReader positions,
+    IProjectionCheckpointStore checkpoints,
+    IOptions<CommitOrderOptions> commitOrder,
     IEnumerable<INudgeTarget> storeReaders) : IExecutionModelReset
 {
     public async Task<ExecutionModelResetReport> ResetAsync(CancellationToken cancellationToken = default)
@@ -22,15 +33,59 @@ internal sealed class InMemoryExecutionModelReset(
         var registered = (await reminders.ReadRows(0, uint.MaxValue)).Reminders.Count;
         await reminders.TestOnlyClearTable();
 
-        int checkpoints;
-        await using (var context = await readContextFactory.CreateDbContextAsync(cancellationToken))
+        var targets = storeReaders.ToList();
+        var partitions = commitOrder.Value.PartitionCount;
+        var paused = new List<(INudgeTarget Target, int Partition)>(targets.Count * partitions);
+        var moved = 0;
+        try
         {
-            var consumers = storeReaders.SelectMany(reader => reader.ConsumerNames).Distinct(StringComparer.Ordinal).ToList();
-            checkpoints = consumers.Count == 0
-                ? 0
-                : await context.Set<ProjectionCheckpoint>().Where(c => consumers.Contains(c.Projection)).ExecuteDeleteAsync(cancellationToken);
+            foreach (var target in targets)
+            {
+                for (var partition = 0; partition < partitions; partition++)
+                {
+                    await target.PauseAsync(grainFactory, partition);
+                    paused.Add((target, partition));
+                }
+            }
+
+            moved = await AtTheHeadAsync(targets, partitions, cancellationToken);
+        }
+        finally
+        {
+            foreach (var (target, partition) in paused)
+            {
+                await target.ResumeAsync(grainFactory, partition);
+            }
         }
 
-        return new ExecutionModelResetReport(registered, MembershipRows: 0, checkpoints, directory.Clear());
+        return new ExecutionModelResetReport(registered, MembershipRows: 0, moved, directory.Clear());
+    }
+
+    /// <summary>Puts every registered consumer's checkpoint at the store's head, and says how many it moved.</summary>
+    private async Task<int> AtTheHeadAsync(IReadOnlyList<INudgeTarget> targets, int partitions, CancellationToken cancellationToken)
+    {
+        var consumers = targets.SelectMany(target => target.ConsumerNames).Distinct(StringComparer.Ordinal).ToList();
+        if (consumers.Count == 0)
+        {
+            return 0;
+        }
+
+        var moved = 0;
+        for (var partition = 0; partition < partitions; partition++)
+        {
+            var head = await positions.HeadAsync(partition, cancellationToken);
+            foreach (var consumer in consumers)
+            {
+                await checkpoints.ResetAsync(consumer, partition, positions.Name, cancellationToken);
+                if (head > 0)
+                {
+                    await checkpoints.SetAsync(consumer, partition, positions.Name, head, cancellationToken);
+                }
+
+                moved++;
+            }
+        }
+
+        return moved;
     }
 }

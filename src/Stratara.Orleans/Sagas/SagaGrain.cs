@@ -44,6 +44,18 @@ internal interface ISagaGrain : IGrainWithStringKey
 
     [Alias("PositionAsync")]
     Task<long> PositionAsync();
+
+    /// <summary>
+    /// Stops reading until <see cref="ResumeAsync"/>; returns once no batch is in flight. Interleaves with a running
+    /// catch-up, which stops at its next batch boundary.
+    /// </summary>
+    [AlwaysInterleave]
+    [Alias("PauseAsync")]
+    Task PauseAsync();
+
+    /// <summary>Reads again, from whatever the checkpoint now says; returns once the read is requested, not once it is done.</summary>
+    [Alias("ResumeAsync")]
+    Task ResumeAsync();
 }
 
 /// <summary>
@@ -109,4 +121,17 @@ internal sealed class SagaNudgeTarget : INudgeTarget
 
     public Task EnsureRunningAsync(IGrainFactory grainFactory, int partition) =>
         grainFactory.GetGrain<ISagaGrain>(StoreReaderGrainKey.Of(SagaGrain.ConsumerName, partition)).EnsureRunningAsync();
+
+    public Task PauseAsync(IGrainFactory grainFactory, int partition) =>
+        StoreReaderPause.PauseAllAsync([Reader(grainFactory, partition)]).AsTask();
+
+    public Task ResumeAsync(IGrainFactory grainFactory, int partition) =>
+        StoreReaderPause.ResumeAllAsync([Reader(grainFactory, partition)]);
+
+    private static PausedReader Reader(IGrainFactory grainFactory, int partition)
+    {
+        var key = StoreReaderGrainKey.Of(SagaGrain.ConsumerName, partition);
+        var grain = grainFactory.GetGrain<ISagaGrain>(key);
+        return new PausedReader(key, grain.PauseAsync, grain.ResumeAsync);
+    }
 }

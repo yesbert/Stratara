@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Placement;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.Runtime.MembershipService.SiloMetadata;
 using Orleans.Runtime.Placement;
@@ -181,6 +182,7 @@ internal sealed class RolePlacementFilterDirector(IServiceProvider services) : I
 {
     private readonly ISiloMetadataCache? _siloMetadata = services.GetService<ISiloMetadataCache>();
     private readonly Singleton.SingletonWorkPlacement.SingletonWorkSiloMetadata? _ownMetadata = services.GetService<Singleton.SingletonWorkPlacement.SingletonWorkSiloMetadata>();
+    private readonly IOptions<SiloMetadata>? _publishing = services.GetService<IOptions<SiloMetadata>>();
     private readonly SiloAddress? _localSilo = services.GetService<ILocalSiloDetails>()?.SiloAddress;
 
     public IEnumerable<SiloAddress> Filter(PlacementFilterStrategy filterStrategy, PlacementTarget target, IEnumerable<SiloAddress> silos)

@@ -86,10 +86,31 @@ internal static class SingletonWorkPlacement
         silo.UseSiloMetadata(metadata.Entries);
     }
 
-    /// <summary>The metadata entries naming the singleton work and the execution-model roles registered on this silo.</summary>
+    /// <summary>
+    /// Makes sure this silo's own entries are written before a placement filter judges it by them. The runtime writes
+    /// them when it first materialises the silo's metadata, and nothing in this model orders that before the first
+    /// placement: reading the options here does it, once, under the options' own lock.
+    /// </summary>
+    internal static void EnsurePublished(SingletonWorkSiloMetadata metadata, IOptions<SiloMetadata>? publishing)
+    {
+        if (!metadata.Published)
+        {
+            _ = publishing?.Value;
+        }
+    }
+
+    /// <summary>
+    /// The metadata entries naming the singleton work and the execution-model roles registered on this silo. The
+    /// runtime is handed this very dictionary and fills it through <see cref="Fill"/> when it first materialises the
+    /// silo's metadata; the placement filters force that before they read it — see <see cref="EnsurePublished"/> —
+    /// so a filter never judges the silo by a table that is not written yet, and nothing writes it afterwards.
+    /// </summary>
     internal sealed class SingletonWorkSiloMetadata
     {
         public Dictionary<string, string> Entries { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Whether <see cref="Fill"/> has run, which the runtime does when it materialises the silo's metadata.</summary>
+        public bool Published { get; private set; }
 
         /// <summary>
         /// Writes the entries. A work registered with its name is published under that name without being constructed;
@@ -105,6 +126,7 @@ internal static class SingletonWorkPlacement
             }
 
             Hosting.RolePlacement.Fill(Entries, scope.ServiceProvider);
+            Published = true;
         }
 
         private static IEnumerable<string> PublishedNames(IServiceProvider services)

@@ -17,7 +17,7 @@ internal static class StoreReaderPause
     /// <param name="readers">The readers to pause, by the name of the partition they read.</param>
     /// <returns>The readers to resume.</returns>
     /// <exception cref="InvalidOperationException">A reader could not be paused; the message names which.</exception>
-    public static async Task<IReadOnlyList<PausedReader>> PauseAllAsync(IReadOnlyList<PausedReader> readers)
+    public static async ValueTask<IReadOnlyList<PausedReader>> PauseAllAsync(IReadOnlyList<PausedReader> readers)
     {
         var pausing = new List<(PausedReader Reader, Task Pause)>(readers.Count);
         var refused = new List<string>();
@@ -26,7 +26,7 @@ internal static class StoreReaderPause
         {
             try
             {
-                pausing.Add((reader, reader.Grain.PauseAsync()));
+                pausing.Add((reader, reader.Pause()));
             }
             catch (Exception ex)
             {
@@ -94,7 +94,7 @@ internal static class StoreReaderPause
         {
             try
             {
-                resuming.Add((reader, reader.Grain.ResumeAsync()));
+                resuming.Add((reader, reader.Resume()));
             }
             catch (Exception ex)
             {
@@ -118,5 +118,5 @@ internal static class StoreReaderPause
     }
 }
 
-/// <summary>One store reader a rebuild or a replay pauses, and the name its failure is reported under.</summary>
-internal readonly record struct PausedReader(string Name, IProjectionGrain Grain);
+/// <summary>One store reader a rebuild, a replay or a reset pauses, and the name its failure is reported under.</summary>
+internal readonly record struct PausedReader(string Name, Func<Task> Pause, Func<Task> Resume);

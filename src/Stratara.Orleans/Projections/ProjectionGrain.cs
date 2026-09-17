@@ -93,44 +93,6 @@ internal sealed class ProjectionGrain(
 {
     private HashSet<string>? _relevant;
     private Type? _projectionType;
-    private int _pausers;
-
-    protected override bool Suspended => _pausers > 0 || base.Suspended;
-
-    /// <summary>
-    /// Pauses, waits for a running loop to end, and forgets the cached position: whoever pauses is
-    /// about to change the checkpoint behind the grain's back. Pauses are counted, so two rebuilds
-    /// that overlap hold the reader until the last of them resumes.
-    /// </summary>
-    public async Task PauseAsync()
-    {
-        if (Retired)
-        {
-            return;
-        }
-
-        _pausers++;
-        await Loop.WaitForRunningAsync(CancellationToken.None);
-        Loop.Invalidate();
-    }
-
-    /// <summary>Lets the last pauser's resume start the reader again; an earlier one changes nothing.</summary>
-    public Task ResumeAsync()
-    {
-        if (Retired || _pausers == 0)
-        {
-            return Task.CompletedTask;
-        }
-
-        _pausers--;
-        if (_pausers > 0)
-        {
-            return Task.CompletedTask;
-        }
-
-        Loop.Invalidate();
-        return NudgeAsync();
-    }
 
     /// <summary>
     /// One scope, one projection instance and one handler per session run — the consecutive entries recorded under one
@@ -286,6 +248,15 @@ internal interface INudgeTarget
     Task NudgeAsync(IGrainFactory grainFactory, int partition);
 
     Task EnsureRunningAsync(IGrainFactory grainFactory, int partition);
+
+    /// <summary>
+    /// Stops the target's readers of the partition, so their checkpoints can be changed behind them. A target whose
+    /// readers cannot be stopped — one that stands for a consumer of its own in a test — does nothing.
+    /// </summary>
+    Task PauseAsync(IGrainFactory grainFactory, int partition) => Task.CompletedTask;
+
+    /// <summary>Starts them again, from whatever the checkpoints now say.</summary>
+    Task ResumeAsync(IGrainFactory grainFactory, int partition) => Task.CompletedTask;
 }
 
 /// <summary>Every registered projection's grain for the partition.</summary>
@@ -325,6 +296,19 @@ internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler
         {
             await grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)).EnsureRunningAsync();
         }
+    }
+
+    public Task PauseAsync(IGrainFactory grainFactory, int partition) =>
+        StoreReaderPause.PauseAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))]).AsTask();
+
+    public Task ResumeAsync(IGrainFactory grainFactory, int partition) =>
+        StoreReaderPause.ResumeAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))]);
+
+    private static PausedReader Reader(IGrainFactory grainFactory, string name, int partition)
+    {
+        var key = StoreReaderGrainKey.Of(name, partition);
+        var grain = grainFactory.GetGrain<IProjectionGrain>(key);
+        return new PausedReader(key, grain.PauseAsync, grain.ResumeAsync);
     }
 }
 

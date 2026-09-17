@@ -116,6 +116,45 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         var settings = new ExecutionModelTestHostOptions();
         options?.Invoke(settings);
 
+        // Hosts created at the same moment can be handed the same free port, because the port is free until the silo
+        // binds it. Such a start is tried again from the beginning — a database of its own, ports of its own.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await CreateOnceAsync(settings, configure, cancellationToken);
+            }
+            catch (Exception failure) when (attempt < 3 && TakenPort(failure))
+            {
+                _ = failure;
+            }
+        }
+    }
+
+    /// <summary>Whether the failure is a port another host bound first.</summary>
+    private static bool TakenPort(Exception failure)
+    {
+        for (var inner = failure; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is SocketException { SocketErrorCode: SocketError.AddressAlreadyInUse })
+            {
+                return true;
+            }
+
+            if (inner is AggregateException aggregate && aggregate.InnerExceptions.Any(TakenPort))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<ExecutionModelTestHost> CreateOnceAsync(
+        ExecutionModelTestHostOptions settings,
+        Action<IServiceCollection>? configure,
+        CancellationToken cancellationToken)
+    {
         var connectionString = $"Data Source=stratara-execution-model-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
         var keeper = new SqliteConnection(connectionString);
         await keeper.OpenAsync(cancellationToken);
@@ -132,7 +171,18 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(settings.StartTimeout);
-            await host.StartAsync(timeout.Token);
+            try
+            {
+                await host.StartAsync(timeout.Token);
+            }
+            catch
+            {
+                // A silo that started part-way holds its ports, threads and timers until it is stopped, and the noise
+                // it goes on making would bury the failure the test is about to see.
+                await StopQuietlyAsync(host);
+                throw;
+            }
+
             return testHost;
         }
         catch
@@ -340,6 +390,27 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         await read.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(cancellationToken);
     }
 
+    private static async Task StopQuietlyAsync(IHost host)
+    {
+        try
+        {
+            await host.StopAsync();
+        }
+        catch (Exception stopping) when (stopping is not OperationCanceledException)
+        {
+            _ = stopping;
+        }
+        finally
+        {
+            host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A port the operating system is not using. Two hosts created at the same moment can be handed the same one —
+    /// the listener is closed before the silo binds — so a start that fails on the address is tried again with
+    /// another port.
+    /// </summary>
     private static int FreePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
