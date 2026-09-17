@@ -1,6 +1,6 @@
 # Keep a store reader batch tenant-correct and its checkpoint guarded
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-17 — recorded at the owner's request)
 
 ## Why
 

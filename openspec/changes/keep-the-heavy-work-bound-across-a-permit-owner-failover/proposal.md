@@ -1,6 +1,6 @@
 # keep-the-heavy-work-bound-across-a-permit-owner-failover
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-17 — recorded at the owner's request)
 
 ## Why
 
