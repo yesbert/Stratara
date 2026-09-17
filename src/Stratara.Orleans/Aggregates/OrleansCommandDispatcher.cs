@@ -59,12 +59,12 @@ internal sealed class OrleansCommandDispatcher(
         ResumeDueAsync(Math.Max(1, outboxEntries.Count()), cancellationToken);
 
     /// <summary>Resumes up to <paramref name="batchSize"/> due commands, unless a replay is active; a hold and its end are logged once each.</summary>
-    public Task<int> ResumeDueAsync(int batchSize, CancellationToken cancellationToken)
+    public Task<ResumePass> ResumeDueAsync(int batchSize, CancellationToken cancellationToken)
     {
         if (replayState.IsReplayActive)
         {
             replaySuspension.HeldBack(logger);
-            return Task.FromResult(0);
+            return Task.FromResult(ResumePass.None);
         }
 
         replaySuspension.Released(logger);
@@ -122,11 +122,19 @@ internal sealed class IntentHandOver(IGrainFactory grainFactory, IOptions<HeavyW
     }
 }
 
+/// <summary>What one resume pass did: how many commands it handed over, and whether it found as many due as it asked for.</summary>
+internal readonly record struct ResumePass(int Resumed, bool Full)
+{
+    public static ResumePass None => new(0, false);
+}
+
 /// <summary>
 /// The bounded resume. A due command whose attempts have reached the bound the host configures for bus
-/// messages is kept for an operator; any other due command is claimed — its hand-over stamped and its
-/// attempt counted — and handed over in the order of the aggregate the record names. A hand-over that
-/// cannot be issued is recorded as the command's failure and does not end the pass.
+/// messages is kept for an operator; a due command whose record does not verify under the host's integrity mode is
+/// kept at once under strict mode, with the reason, and resumed with the failure logged under permissive mode; every
+/// other due command is claimed in one call — its hand-over stamped and its attempt counted — and handed over in the
+/// order it was read, in the order of the aggregate the record names. A hand-over that cannot be issued is recorded as
+/// the command's failure and does not end the pass.
 /// </summary>
 internal sealed class IntentResumer(
     ICommandIntentStore intents,
@@ -135,10 +143,16 @@ internal sealed class IntentResumer(
     IOptions<OrleansDispatchOptions> options,
     IOptions<MessageRetryOptions> retry,
     TimeProvider timeProvider,
-    ILogger<IntentResumer> logger)
+    ILogger<IntentResumer> logger,
+    IBusEnvelopeSigner? signer = null,
+    IOptions<BusEnvelopeIntegrityOptions>? integrity = null)
 {
+    private const string UnsignedReason = "The recorded command carries no signature and the integrity mode is Strict.";
+    private const string InvalidReason = "The recorded command's signature does not verify and the integrity mode is Strict.";
+
     private readonly TimeSpan _grace = options.Value.IntentGrace;
     private readonly int _maxAttempts = retry.Value.MaxDeliveryAttempts;
+    private readonly BusEnvelopeIntegrityMode _mode = integrity?.Value.Mode ?? BusEnvelopeIntegrityMode.Off;
 
     /// <summary>
     /// A resumer for a silo that runs the drain but does not dispatch commands itself: the grace and the attempt
@@ -152,13 +166,15 @@ internal sealed class IntentResumer(
             services.GetService<IOptions<OrleansDispatchOptions>>() ?? Options.Create(new OrleansDispatchOptions()),
             services.GetService<IOptions<MessageRetryOptions>>() ?? Options.Create(new MessageRetryOptions()),
             services.GetService<TimeProvider>() ?? TimeProvider.System,
-            services.GetRequiredService<ILogger<IntentResumer>>());
+            services.GetRequiredService<ILogger<IntentResumer>>(),
+            services.GetService<IBusEnvelopeSigner>(),
+            services.GetService<IOptions<BusEnvelopeIntegrityOptions>>());
 
-    public async Task<int> ResumeDueAsync(int batchSize, CancellationToken cancellationToken)
+    public async Task<ResumePass> ResumeDueAsync(int batchSize, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
         var due = await intents.GetDueAsync(now - _grace, batchSize, cancellationToken);
-        var resumed = 0;
+        var claimable = new List<RecordedIntent>(due.Count);
         foreach (var intent in due)
         {
             if (intent.AttemptCount >= _maxAttempts)
@@ -169,10 +185,18 @@ internal sealed class IntentResumer(
                 continue;
             }
 
-            if (!await intents.TryClaimAsync(intent.Id, intent.LastHandedOverAt, now, cancellationToken))
+            if (await KeptForIntegrityAsync(intent, now, cancellationToken))
             {
                 continue;
             }
+
+            claimable.Add(intent);
+        }
+
+        var claimed = claimable.Count == 0 ? [] : new HashSet<Guid>(await intents.ClaimAsync(claimable, now, cancellationToken));
+        var resumed = 0;
+        foreach (var intent in claimable.Where(intent => claimed.Contains(intent.Id)))
+        {
 
             ApplicationDiagnostics.Metrics.OrleansIntentResumed.Add(1);
             logger.LogCommandResumed(intent.Id, intent.AttemptCount + 1);
@@ -191,7 +215,44 @@ internal sealed class IntentResumer(
             resumed++;
         }
 
-        return resumed;
+        return new ResumePass(resumed, due.Count >= batchSize);
+    }
+
+    /// <summary>
+    /// Verifies the record under the host's integrity mode. A record that does not verify is kept at once under strict
+    /// mode, with the reason recorded and no attempt counted, because resuming it again cannot change the answer; under
+    /// permissive mode the failure is logged and the record is resumed.
+    /// </summary>
+    /// <returns><see langword="true"/> when the record was kept.</returns>
+    private async Task<bool> KeptForIntegrityAsync(RecordedIntent intent, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var result = BusEnvelopeIntegrityVerifier.Verify(signer, _mode, BusEnvelopeCanonical.Of(intent.Envelope), intent.Envelope.Signature, out var failure);
+        var unsigned = failure == BusEnvelopeIntegrityFailure.Absent;
+        switch (result)
+        {
+            case BusEnvelopeIntegrityResult.RejectedStrict:
+                await intents.RecordFailureAsync(intent.Id, unsigned ? UnsignedReason : InvalidReason, cancellationToken);
+                await intents.KeepAsync(intent.Id, now, cancellationToken);
+                ApplicationDiagnostics.Metrics.OrleansIntentKept.Add(1);
+                if (unsigned)
+                {
+                    logger.LogIntentUnsignedKept(intent.Id);
+                }
+                else
+                {
+                    logger.LogIntentIntegrityKept(intent.Id);
+                }
+
+                return true;
+            case BusEnvelopeIntegrityResult.RejectedPermissive when unsigned:
+                logger.LogIntentUnsignedResumed(intent.Id);
+                return false;
+            case BusEnvelopeIntegrityResult.RejectedPermissive:
+                logger.LogIntentIntegrityResumed(intent.Id);
+                return false;
+            default:
+                return false;
+        }
     }
 }
 

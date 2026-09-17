@@ -42,6 +42,34 @@ public interface ICommandIntentStore
     /// <returns><see langword="true"/> when this call claimed the hand-over.</returns>
     Task<bool> TryClaimAsync(Guid intentId, DateTimeOffset? expectedLastHandedOverAt, DateTimeOffset now, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Claims the hand-over of several due commands read together: for each, what <see cref="TryClaimAsync"/> does, and
+    /// returns the ones this call claimed.
+    /// </summary>
+    /// <param name="due">The due commands, as <see cref="GetDueAsync"/> returned them.</param>
+    /// <param name="now">The time of this hand-over.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The identities of the commands this call claimed.</returns>
+    /// <remarks>
+    /// The default claims one command at a time through <see cref="TryClaimAsync"/>, one round trip each. A store that
+    /// overrides it claims the batch in a number of round trips that does not grow with the batch, so that a drain
+    /// resuming a backlog pays per pass, not per command.
+    /// </remarks>
+    async Task<IReadOnlyList<Guid>> ClaimAsync(IReadOnlyList<RecordedIntent> due, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(due);
+        var claimed = new List<Guid>(due.Count);
+        foreach (var intent in due)
+        {
+            if (await TryClaimAsync(intent.Id, intent.LastHandedOverAt, now, cancellationToken))
+            {
+                claimed.Add(intent.Id);
+            }
+        }
+
+        return claimed;
+    }
+
     /// <summary>Renews the hand-over of a command whose handler is running, so it does not become due again while it runs.</summary>
     /// <param name="intentId">The recorded command.</param>
     /// <param name="now">The time of the renewal.</param>

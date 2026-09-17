@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
@@ -135,6 +136,61 @@ public sealed class RecordedCommandDrainTests
         Assert.DoesNotContain(logs.Events, e => e.Id is LogEvents.Orleans.ResumeHeldBackByReplay or LogEvents.Orleans.ResumeReleasedAfterReplay);
     }
 
+    [Fact]
+    public async Task A_run_passes_again_while_its_passes_are_full_and_ends_at_the_first_short_one()
+    {
+        var calls = 0;
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(s => s.GetDueAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DateTimeOffset _, int batchSize, CancellationToken _) => Due(++calls <= 3 ? batchSize : 1));
+        ClaimEverything(intents);
+        var services = Drain(new Grains(), intents.Object, bus: null);
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider(DateTimeOffset.UtcNow))
+            .Configure<OutboxDrainOptions>(options => options.BatchSize = 2);
+        await using var provider = services.BuildServiceProvider();
+
+        await provider.GetRequiredService<OutboxDrainWork>().RunAsync(CancellationToken.None);
+
+        Assert.Equal(4, calls);
+    }
+
+    [Fact]
+    public async Task A_run_of_full_passes_ends_once_it_has_lasted_its_period()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var calls = 0;
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(s => s.GetDueAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DateTimeOffset _, int batchSize, CancellationToken _) =>
+            {
+                calls++;
+                clock.Advance(TimeSpan.FromSeconds(2));
+                return Due(batchSize);
+            });
+        ClaimEverything(intents);
+        var services = Drain(new Grains(), intents.Object, bus: null);
+        services.AddSingleton<TimeProvider>(clock)
+            .Configure<OutboxDrainOptions>(options =>
+            {
+                options.BatchSize = 2;
+                options.PollingInterval = TimeSpan.FromSeconds(5);
+            });
+        await using var provider = services.BuildServiceProvider();
+
+        await provider.GetRequiredService<OutboxDrainWork>().RunAsync(CancellationToken.None);
+
+        Assert.Equal(3, calls);
+    }
+
+    private static IReadOnlyList<RecordedIntent> Due(int count) =>
+    [
+        .. Enumerable.Range(0, count).Select(_ => new RecordedIntent(Guid.NewGuid(), Envelope, Guid.NewGuid(), Heavy: false, 0, null, null)),
+    ];
+
+    private static void ClaimEverything(Mock<ICommandIntentStore> intents) =>
+        intents.Setup(s => s.ClaimAsync(It.IsAny<IReadOnlyList<RecordedIntent>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<RecordedIntent> claimed, DateTimeOffset _, CancellationToken _) => [.. claimed.Select(intent => intent.Id)]);
+
     private static ServiceCollection Drain(Grains grains, ICommandIntentStore intents, ICommandOutboxDispatcher? bus, RecordingLoggerProvider? logs = null)
     {
         var repository = new Mock<IOutboxRepository>();
@@ -169,6 +225,8 @@ public sealed class RecordedCommandDrainTests
         var intents = new Mock<ICommandIntentStore>();
         intents.Setup(s => s.GetDueAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync(due);
         intents.Setup(s => s.TryClaimAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset?>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        intents.Setup(s => s.ClaimAsync(It.IsAny<IReadOnlyList<RecordedIntent>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<RecordedIntent> claimed, DateTimeOffset _, CancellationToken _) => [.. claimed.Select(intent => intent.Id)]);
         return intents.Object;
     }
 
@@ -181,7 +239,7 @@ public sealed class RecordedCommandDrainTests
     }
 
     /// <summary>Grains that record what was handed to them; a heavy unit never finishes.</summary>
-    private sealed class Grains
+    internal sealed class Grains
     {
         private readonly RecordingAggregate _aggregate = new();
         private readonly EndlessHeavyWork _heavy = new();
@@ -201,7 +259,7 @@ public sealed class RecordedCommandDrainTests
         public List<Guid> HeavyStarted => _heavy.Started;
     }
 
-    private sealed class RecordingAggregate : IAggregateGrain
+    internal sealed class RecordingAggregate : IAggregateGrain
     {
         private readonly List<Guid> _accepted = [];
 
@@ -222,7 +280,7 @@ public sealed class RecordedCommandDrainTests
         public Task RunAcceptedAsync() => Task.CompletedTask;
     }
 
-    private sealed class EndlessHeavyWork : IHeavyWorkGrain
+    internal sealed class EndlessHeavyWork : IHeavyWorkGrain
     {
         private readonly List<Guid> _started = [];
 

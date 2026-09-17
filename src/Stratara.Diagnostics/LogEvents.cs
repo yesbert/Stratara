@@ -318,5 +318,13 @@ public static class LogEvents
         public const int HandOverFailed = 117_113;
         /// <summary>A running heavy unit whose permit was lost was refused when it registered again and runs outside the bound until a permit is free (warning).</summary>
         public const int PermitReclaimRefused = 117_114;
+        /// <summary>A recorded command without a signature was resumed under permissive integrity mode (warning).</summary>
+        public const int IntentUnsignedResumed = 117_115;
+        /// <summary>A recorded command whose signature does not verify was resumed under permissive integrity mode (warning).</summary>
+        public const int IntentIntegrityResumed = 117_116;
+        /// <summary>A recorded command without a signature was kept for an operator under strict integrity mode (error).</summary>
+        public const int IntentUnsignedKept = 117_117;
+        /// <summary>A recorded command whose signature does not verify was kept for an operator under strict integrity mode (error).</summary>
+        public const int IntentIntegrityKept = 117_118;
     }
 }
