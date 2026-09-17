@@ -147,7 +147,7 @@ public sealed class TenantPerEntryTests(PostgreSqlFixture postgres, RedisFixture
             .AddTrustedType<CounterIncremented>()
             .AddSingleton(captures)
             .AddScoped<TenantAtConstruction>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>();
         if (sagas)

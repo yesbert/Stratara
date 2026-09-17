@@ -119,7 +119,7 @@ public sealed class SeededStartTests(PostgreSqlFixture postgres, RedisFixture re
             .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<Counter>()
             .AddTrustedType<CounterCreated>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false);
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false);
         using var writer = builder.Build();
         await using (var scope = writer.Services.CreateAsyncScope())
         {
@@ -168,7 +168,7 @@ public sealed class SeededStartTests(PostgreSqlFixture postgres, RedisFixture re
             .AddTrustedType<CounterCreated>()
             .AddSingleton(seen)
             .AddScoped<IProjection, SeedProbeProjection>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraProjectionGrains(options =>

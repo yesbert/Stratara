@@ -77,7 +77,9 @@ runtime's response timeout bounds a caller's wait for one forwarded command, and
 SHALL name it as a setting the host sizes. Recorded commands SHALL be resumed by the
 execution model's drain wherever that drain runs with an intent store registered, whichever host
 dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
-without an intent store SHALL report it.
+without an intent store SHALL report it. A resumption the drain holds back because a full replay is
+active SHALL be logged when the holding back begins and when it ends, so that a recorded command
+that waits for the length of a replay is seen waiting rather than lost.
 
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
@@ -166,16 +168,30 @@ registered SHALL apply whatever order it and the execution model were registered
   commands are due after them
 - **THEN** every due command is handed over without waiting for either heavy command to finish
 
+#### Scenario: A resumption is held back by a replay
+
+- **WHEN** a recorded command is due while a full replay is active, and the replay then ends
+- **THEN** the drain logs once that it is holding resumptions back and once that it has resumed them,
+  not once per period in between, and the command is resumed after the replay
+
 ### Requirement: Projections and sagas read the store in commit order and never miss a committed fact
 
 Where a host has registered the Orleans execution model for projections or sagas, each SHALL read
 the event store from a checkpoint, in an order in which no entry at or below a checkpoint can still
-commit later, and apply what it reads under the session recorded with each entry. A commit SHALL
+commit later, and apply what it reads under the session recorded with each entry. The recorded
+session SHALL be in place before the projection or the sagas, and anything they depend on, are
+resolved for the entry, so that a service that takes its tenant or its user when it is constructed
+— a connection routed per tenant, a read-model context that captures the tenant — takes the entry's;
+one read of the store MAY return entries recorded under several sessions, and each SHALL be applied
+as it would have been had it arrived on its own. A commit SHALL
 wake the readers of the partitions it touched; a wake-up that is lost costs latency and never a
 fact, because a poll reads the store regardless. A committed fact SHALL reach every projection and
 saga whatever dies after the commit. Two rebuilds of one projection SHALL NOT interleave: the
 projection's readers SHALL resume only when every rebuild that paused them has finished, and a
-rebuild requested while a full replay is active SHALL be refused with a message that says so.
+rebuild requested while a full replay is active SHALL be refused with a message that says so. A
+reader brought back for a partition the host's partition count no longer has SHALL retire itself —
+stop returning, log that it did, and read nothing — so that lowering the count leaves no reader that
+returns every keep-alive period to be refused.
 
 #### Scenario: The host dies between the commit and the wake-up
 
@@ -212,6 +228,22 @@ rebuild requested while a full replay is active SHALL be refused with a message 
 
 - **WHEN** a projection's rebuild is requested while a full replay is active
 - **THEN** the rebuild is refused with a message naming the replay, and the replay is not disturbed
+
+#### Scenario: One read returns entries of several tenants
+
+- **WHEN** a partition holds entries recorded under two tenants within one read, and a projection or
+  saga depends on a service that takes the tenant when it is constructed
+- **THEN** each entry is applied with that service constructed under the entry's own tenant, and none
+  under the other's or under no tenant — verified on the PostgreSQL store with the native reader, for
+  a projection and for a saga
+
+#### Scenario: The partition count is lowered under the native reader
+
+- **WHEN** a host that reads with the native reader lowers its partition count and its readers'
+  checkpoints are reset as documented, and the keep-alive of a reader beyond the new count brings it
+  back
+- **THEN** that reader stops returning, reads nothing, logs that it retired, and no stall is counted
+  for it — verified on the PostgreSQL store
 
 ### Requirement: A failing entry stops its partition, is retried, and is visible
 
@@ -390,7 +422,14 @@ A checkpoint SHALL be identified by the consumer that reads the store and the pa
 by the deployment that runs the consumer. Two deployments SHALL be able to keep their checkpoints in
 one read store only when no consumer name is registered by both; store-reading sagas count as one
 consumer across all deployments, so at most one deployment sharing a read store SHALL run them. The
-documentation SHALL state this where a read store is configured for the execution model.
+documentation SHALL state this where a read store is configured for the execution model. A reader
+that advances a checkpoint SHALL advance it only from the position it last saw: a write that finds
+another position SHALL be refused with a message naming the position found and the one expected,
+and the refused reader SHALL read the checkpoint again rather than trust its own, so that an
+activation that outlived its successor never rewinds or overtakes what the successor wrote. A
+checkpoint SHALL NOT be written under another reader's name than the one it holds — advancing or
+replacing it — and such a write SHALL be refused with a message naming both readers, as a read under
+another reader is; a host switching readers resets its checkpoints first, as documented.
 
 #### Scenario: Two deployments share a read store with distinct projections
 
@@ -403,6 +442,18 @@ documentation SHALL state this where a read store is configured for the executio
 
 - **WHEN** two deployments that share a read store both run store-reading sagas
 - **THEN** the documentation names this as unsupported, because both write the same checkpoints
+
+#### Scenario: A stale activation writes a checkpoint
+
+- **WHEN** an activation that last saw a checkpoint at one position writes after another activation
+  of the same reader has advanced it
+- **THEN** the write is refused naming both positions, the successor's checkpoint stands, and the
+  refused activation reads the checkpoint again before it reads the store again
+
+#### Scenario: A checkpoint is written under another reader's name
+
+- **WHEN** a checkpoint written by one reader is advanced or replaced under another reader's name
+- **THEN** the write is refused with a message naming both readers, and the checkpoint is unchanged
 
 ### Requirement: A host can start its store readers at the head of a populated store
 

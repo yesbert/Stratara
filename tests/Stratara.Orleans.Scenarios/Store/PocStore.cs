@@ -31,7 +31,7 @@ public sealed class PocStore<TContext> : IAsyncDisposable
 
     public IServiceProvider Services => _provider;
 
-    public static async Task<PocStore<TContext>> CreateAsync(string connectionString, Action<CommitOrderOptions>? configure = null)
+    public static async Task<PocStore<TContext>> CreateAsync(string connectionString, Action<CommitOrderOptions>? configure = null, bool maintainCounter = true)
     {
         var options = new CommitOrderOptions();
         configure?.Invoke(options);
@@ -45,6 +45,7 @@ public sealed class PocStore<TContext> : IAsyncDisposable
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Microsoft.Extensions.Options.Options.Create(options));
+        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new PocCounterOptions { MaintainPartitionCounter = maintainCounter }));
         services.AddNpgsqlWriteDbContextFactory<TContext>();
 
         var provider = services.BuildServiceProvider();

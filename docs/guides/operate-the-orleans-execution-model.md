@@ -124,7 +124,10 @@ partition is retried under the preceding-fact policy in the same way.
 Under the portable reader a partition also stops at an entry that has **no partition position**: a process
 appended it without `PartitionCounterInterceptor`. The logged failure names the entry, the interceptor and
 `PartitionCounterBackfill`. Add the interceptor to the write context of that process, then run
-`PartitionCounterBackfill.RunAsync` once; the partition continues from where it stopped. A host that refuses
+`PartitionCounterBackfill.RunAsync` once; the partition continues from where it stopped. The backfill gives the
+entry a position after everything the partition had positioned, so a stream whose later versions were appended
+with the counter meanwhile is read with the late entry after them; a read model that then stops on a missing
+preceding fact is rebuilt. A host that refuses
 to start naming a partition counter beyond its partition count was configured with a lower count than the
 store was counted with; restore the count.
 

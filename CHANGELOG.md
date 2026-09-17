@@ -80,8 +80,20 @@ applies to the entire NuGet family.
   when it does; and the partition count cannot change once the store holds positions. On PostgreSQL the
   native reader remains the one to use.
 
+### Deprecated
+
+- **`CommitOrderOptions.MaintainPartitionCounter`** is obsolete: the framework never read it. A write context that
+  maintains the partition counter adds `PartitionCounterInterceptor`. The member is removed with the next major.
+
 ### Fixed
 
+- **Orleans: `PartitionCounterBackfill` no longer renumbers positioned entries.** Unpositioned entries take the
+  positions after the partition's counter, so a checkpoint written before a backfill stays true; previously the
+  backfill shifted every positioned entry and a resumed reader re-applied one entry and lost another.
+- **Orleans: the portable reader stops at its partition's unpositioned entry however many other partitions hold.**
+  The probe was cut at 64 unordered rows of any partition.
+- **Orleans: positions within one save follow each stream's version order**, by contract rather than by the change
+  tracker's enumeration.
 - **Orleans: a store reader applies each entry under its own tenant.** A projection, a saga and the services they
   depend on are resolved after the entry's session is set — one scope per run of entries recorded under one
   session — so a dependency that takes the tenant when constructed no longer sees the first entry's tenant, or

@@ -24,7 +24,7 @@ public sealed class NativeReaderModelNamesTests(PostgreSqlFixture postgres)
     {
         await using var store = await PocStore<PascalCaseWriteDbContext>.CreateAsync(
             postgres.ConnectionStringFor(Database),
-            options => options.MaintainPartitionCounter = false);
+            maintainCounter: false);
         var reader = new PostgresTransactionIdReader<PascalCaseWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
 
         var bucketId = Random.Shared.Next(0, 4096);

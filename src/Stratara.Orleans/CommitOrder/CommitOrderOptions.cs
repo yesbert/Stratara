@@ -25,9 +25,10 @@ public sealed class CommitOrderOptions
     /// partition's counter lock until it commits.
     /// </summary>
     /// <remarks>
-    /// The framework does not read this value: a write context reads it when it decides whether to add
-    /// <c>PartitionCounterInterceptor</c> to its interceptors. Every process that appends to a store read by the
-    /// portable counter must add the interceptor; an entry appended without it stops its partition's reader.
+    /// The framework does not read this value, and setting it changes nothing. Every process that appends to a store
+    /// read by the portable counter adds <c>PartitionCounterInterceptor</c> to its write context's interceptors; an
+    /// entry appended without it stops its partition's reader. The member is removed with the next major version.
     /// </remarks>
+    [Obsolete("The framework does not read this value. A write context that maintains the partition counter adds PartitionCounterInterceptor to its interceptors; see the migration guide.")]
     public bool MaintainPartitionCounter { get; set; } = true;
 }

@@ -148,7 +148,7 @@ public sealed class RoleSplitTests(PostgreSqlFixture postgres, RedisFixture redi
             .AddTrustedType<Counter>()
             .AddTrustedType<CounterCreated>()
             .AddTrustedType<RecordWhere>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddStrataraAggregateGrains()
             .AddStrataraOrleansCommandDispatcher()
             .AddStrataraIntentStore<PocCommitOrderWriteDbContext>()
@@ -194,7 +194,7 @@ public sealed class RoleSplitTests(PostgreSqlFixture postgres, RedisFixture redi
             .AddTrustedType<CounterCreated>()
             .AddScoped<IProjection, WhereProjection>()
             .AddScoped<ISaga, WhereSaga>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraProjectionGrains(options =>

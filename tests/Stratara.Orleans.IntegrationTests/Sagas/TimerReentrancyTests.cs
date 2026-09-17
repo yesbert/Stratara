@@ -86,7 +86,7 @@ public sealed class TimerReentrancyTests(PostgreSqlFixture postgres, RedisFixtur
             .AddSingleton(TimeProvider.System)
             .AddSingleton(log)
             .AddScoped<ISaga, TickingSaga>()
-            .Configure<CommitOrderOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraSagaGrains(options =>

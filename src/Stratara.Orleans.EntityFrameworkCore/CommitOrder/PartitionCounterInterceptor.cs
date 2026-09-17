@@ -16,7 +16,7 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// are written, the counter row of each touched partition is incremented and locked, and the
 /// positions it hands out are stamped on the entries. The lock is held until the commit, so no
 /// later transaction in the same partition can commit first — which is what lets the portable reader
-/// order by position and never skip.
+/// order by position and never skip. Within one save, the positions follow each stream's version order.
 /// </summary>
 /// <remarks>
 /// Where the save runs outside a transaction the interceptor opens one and commits it after the
@@ -42,9 +42,7 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
             return result;
         }
 
-        var added = context.ChangeTracker.Entries<EventStreamEntry>()
-            .Where(entry => entry.State == EntityState.Added)
-            .ToList();
+        var added = InStreamOrder(context.ChangeTracker.Entries<EventStreamEntry>().Where(entry => entry.State == EntityState.Added));
         if (added.Count == 0)
         {
             return result;
@@ -130,6 +128,22 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
             _ownedTransactions.Remove(context);
             await transaction.DisposeAsync();
         }
+    }
+
+    /// <summary>
+    /// The added entries in the order positions are handed out: the streams in the order they first appear in the
+    /// tracker, each stream's entries in version order — the tracker's own order is not a contract.
+    /// </summary>
+    private static List<EntityEntry<EventStreamEntry>> InStreamOrder(IEnumerable<EntityEntry<EventStreamEntry>> added)
+    {
+        var entries = added.ToList();
+        var firstAppearance = new Dictionary<Guid, int>();
+        foreach (var entry in entries)
+        {
+            firstAppearance.TryAdd(entry.Entity.StreamId, firstAppearance.Count);
+        }
+
+        return [.. entries.OrderBy(entry => firstAppearance[entry.Entity.StreamId]).ThenBy(entry => entry.Entity.Version)];
     }
 
     private static async Task StampPositionsAsync(DbContext context, int partition, IReadOnlyList<EntityEntry<EventStreamEntry>> entries, CancellationToken cancellationToken)

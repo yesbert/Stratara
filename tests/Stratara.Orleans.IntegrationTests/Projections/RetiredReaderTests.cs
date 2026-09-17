@@ -86,11 +86,8 @@ public sealed class RetiredReaderTests(PostgreSqlFixture postgres, RedisFixture 
             .AddScoped<TenantAtConstruction>()
             .AddScoped<IProjection, TenantCaptureProjection>()
             .AddScoped<TenantCaptureProjection>()
-            .Configure<CommitOrderOptions>(options =>
-            {
-                options.MaintainPartitionCounter = false;
-                options.PartitionCount = partitionCount;
-            })
+            .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
+            .Configure<CommitOrderOptions>(options => options.PartitionCount = partitionCount)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
             .AddStrataraProjectionGrains(options =>
