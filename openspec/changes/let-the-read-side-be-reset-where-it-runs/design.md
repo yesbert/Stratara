@@ -21,10 +21,13 @@ failed — resumes the ones that succeeded and throws naming the partitions it c
 caller resumes what it holds in a `catch` (best effort, keeping the original exception) and in the
 happy path with a resume whose failure is allowed to surface.
 
-**Why not a pauser lease.** A lease would survive a caller that dies mid-rebuild, which the counting
-pauser does not — a real gap, but one that costs a grain-side timer and a spec sentence of its own. The
-pause failing is the case the review found in the code; the caller dying is a case for a change that
-can state it.
+**Why not a pauser lease.** A lease, or a pauser with an identity, would close two gaps the counting
+pauser leaves open: a caller that dies mid-rebuild, and a resume whose own answer is lost, which
+decrements a second time on the retry and can release a pauser another rebuild holds. Both cost a
+grain-side timer or a request identity and a spec sentence of their own. This change takes the trade
+knowingly: a reader stuck paused until its silo restarts is worse than a reader that resumes once too
+early, because the first is invisible and permanent and the second is a rebuild reading live events a
+moment too soon, which re-reading repairs.
 
 ## D3 — Hybrid is decided before the "already replaced" guard
 

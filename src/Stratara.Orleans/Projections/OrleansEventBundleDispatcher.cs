@@ -66,7 +66,8 @@ internal sealed class OrleansEventBundleDispatcher(
     /// A nudge that cannot be sent — before the silo has started, while it stops — is a lost nudge like any other: the
     /// facts are committed and the poll reads them, so it must not fail the commit that already happened. It is
     /// logged at debug with the consumers it was meant for, so that a wake-up path that is always lost can be told
-    /// from one that was lost once.
+    /// from one that was lost once. What is seen here is a wake-up that could not be sent; one that was sent and
+    /// never arrived is lost silently, by design, because nobody waits for it.
     /// </summary>
     private async Task NudgeAsync(INudgeTarget target, int partition)
     {

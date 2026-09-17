@@ -153,6 +153,7 @@ public sealed class ProjectionRebuilderTests
 
         Assert.Equal(1, refusing);
         Assert.Contains("could not be paused", failed.Message, StringComparison.Ordinal);
+        Assert.Contains(StoreReaderGrainKey.Of("View", 3), failed.Message, StringComparison.Ordinal);
         Assert.Equal(journal.Count(entry => entry == "pause"), journal.Count(entry => entry == "resume"));
         projection.Verify(p => p.TruncateAsync(It.IsAny<CancellationToken>()), Times.Never);
         checkpoints.Verify(c => c.ResetAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -258,7 +259,6 @@ public sealed class ProjectionRebuilderTests
         return replay.Object;
     }
 
-    /// <summary>The grain interface is internal, which a proxy generator cannot reach; a fake can.</summary>
     /// <summary>A reader that counts its pauser before it answers, and whose answer is lost where it is told to lose it.</summary>
     private sealed class LosingGrain(bool losesTheAnswer, List<string> journal) : IProjectionGrain
     {
@@ -291,6 +291,7 @@ public sealed class ProjectionRebuilderTests
         }
     }
 
+    /// <summary>The grain interface is internal, which a proxy generator cannot reach; a fake can.</summary>
     private sealed class FakeGrain(Action onPause, Func<Task> onResume) : IProjectionGrain
     {
         public Task EnsureRunningAsync() => Task.CompletedTask;
