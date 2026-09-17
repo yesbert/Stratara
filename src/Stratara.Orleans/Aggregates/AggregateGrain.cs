@@ -104,7 +104,9 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
 
     /// <summary>
     /// Runs until the queue is empty. A recorded intent's failure is recorded with it and resumed by the drain; a
-    /// forwarded command's failure goes back to its caller. Neither stops the commands behind it.
+    /// forwarded command's failure goes back to its caller. Neither stops the commands behind it. A stop ends the
+    /// loop and gives up what is still queued, so the callers waiting for those commands are answered at once
+    /// instead of when the activation is finally deactivated.
     /// </summary>
     public async Task RunAcceptedAsync()
     {
@@ -142,6 +144,13 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
             _running = false;
             turn.TrySetResult();
         }
+
+        if (_stopping.IsCancellationRequested)
+        {
+            // Nothing will run what is still queued, and the runtime deactivates this activation only once the
+            // requests waiting for those commands have ended: give them up here rather than hold up the stop.
+            await AbandonAsync();
+        }
     }
 
     /// <summary>
@@ -168,8 +177,10 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
         {
             await running.WaitAsync(deactivation);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || deactivation.IsCancellationRequested)
+        catch (Exception ex)
         {
+            // Whatever the wait ends with — the budget, a handler that threw, a handler that observed the stop —
+            // the rest of the deactivation has to run: what is queued is given up and the token source disposed.
             _ = ex;
         }
 
@@ -189,10 +200,19 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
         }
     }
 
-    /// <summary>Queues the command and, unless the queue is already being run, asks the grain to run it.</summary>
+    /// <summary>
+    /// Queues the command and, unless the queue is already being run, asks the grain to run it. A command accepted
+    /// while the silo stops is given up at once: its caller is told, and its record is left to the drain.
+    /// </summary>
     private void Accept(Accepted accepted)
     {
         _accepted.Enqueue(accepted);
+        if (_stopping.IsCancellationRequested)
+        {
+            AbandonAsync().Ignore();
+            return;
+        }
+
         if (_running)
         {
             return;

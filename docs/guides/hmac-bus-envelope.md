@@ -73,6 +73,15 @@ Every field of the message except the signature itself:
 - **CommandEnvelope**: the envelope id, the command type, the session context, the heavy-lane flag, and a digest of the command body.
 - **EventBundle**: the session context, and a digest over every field of every event it carries.
 
+**A recorded command carries the same signature, and the same coverage.** The Orleans execution model
+records a command before it hands it over, and the record holds the envelope above. Where the command
+runs is taken from what the signature covers — the heavy-lane flag and the envelope's id — so a record
+whose stored row says something else is treated like one that does not verify: kept for an operator
+under strict mode, resumed as the envelope says under permissive mode. The aggregate the record names
+is **not** covered: it decides which activation accepts the command, not what the command writes. What
+it writes comes from the command body, which the digest covers, and the append is held to its stream's
+version, so a changed aggregate id costs the command its place in an order and nothing else.
+
 Two properties of the projection are load-bearing, and both are why it looks the way it does.
 
 **Every field is length-prefixed.** Joining fields with a separator that a field is allowed to contain would let content be shifted across a boundary without changing the projection — so a signature captured from one message could be presented with a *different command type* and still verify, defeating the guard the type name is signed for.

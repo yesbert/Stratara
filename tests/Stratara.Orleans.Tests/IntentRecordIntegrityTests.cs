@@ -18,7 +18,9 @@ namespace Stratara.Orleans.Tests;
 /// A recorded command is signed where the host has a signer, and verified under the host's integrity mode before it is
 /// resumed: under strict mode an unsigned or tampered record is kept at once with the reason and no attempt, under
 /// permissive mode it is resumed and the failure logged, and off verifies nothing (scenario <em>A record written before
-/// the host signed is resumed</em>). A pass claims its batch in one call, and the port's default claims row by row.
+/// the host signed is resumed</em>). Where it runs is taken from the signed envelope, and a row that disagrees with it
+/// is treated as a record that does not verify (scenario <em>A record's row disagrees with its signed envelope</em>).
+/// A pass claims its batch in one call, and the port's default claims row by row.
 /// </summary>
 public sealed class IntentRecordIntegrityTests
 {
@@ -117,6 +119,43 @@ public sealed class IntentRecordIntegrityTests
 
         Assert.Equal([due[0].Id, due[2].Id], claimed);
         Assert.Equal(due.Select(d => (d.Id, d.LastHandedOverAt)), store.Calls);
+    }
+
+    [Theory]
+    [InlineData(BusEnvelopeIntegrityMode.Strict, true)]
+    [InlineData(BusEnvelopeIntegrityMode.Permissive, false)]
+    public async Task A_row_that_disagrees_with_its_signed_envelope_about_the_heavy_lane_is_kept_or_resumed_by_the_claim(BusEnvelopeIntegrityMode mode, bool kept)
+    {
+        var signer = new FakeSigner();
+        var intentId = Guid.NewGuid();
+        var envelope = new CommandEnvelope(intentId, "{}", "Probe", "{}", Heavy: false);
+        envelope = envelope with { Signature = FakeSigner.SignatureOf(BusEnvelopeCanonical.Of(envelope)) };
+
+        // The row claims the heavy lane; the signed envelope does not.
+        var intent = new RecordedIntent(intentId, envelope, Guid.NewGuid(), Heavy: true, AttemptCount: 0, LastHandedOverAt: null, LastFailure: null);
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(s => s.GetDueAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync([intent]);
+        intents.Setup(s => s.ClaimAsync(It.IsAny<IReadOnlyList<RecordedIntent>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<RecordedIntent> due, DateTimeOffset _, CancellationToken _) => [.. due.Select(d => d.Id)]);
+        var grains = new RecordedCommandDrainTests.Grains();
+
+        var pass = await Resumer(intents.Object, grains, new RecordingLogger(), signer, mode).ResumeDueAsync(10, CancellationToken.None);
+
+        if (kept)
+        {
+            Assert.Equal(0, pass.Resumed);
+            Assert.Empty(grains.HeavyStarted);
+            Assert.Empty(grains.Accepted);
+            intents.Verify(s => s.KeepAsync(intentId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+            intents.Verify(s => s.RecordFailureAsync(intentId, It.Is<string>(reason => reason.Contains("where it runs", StringComparison.Ordinal)), It.IsAny<CancellationToken>()), Times.Once);
+        }
+        else
+        {
+            // Resumed by the signed claim: not in the heavy pool the row asked for.
+            Assert.Equal(1, pass.Resumed);
+            Assert.Empty(grains.HeavyStarted);
+            Assert.Equal([intentId], grains.Accepted);
+        }
     }
 
     private static IntentResumer Resumer(ICommandIntentStore intents, RecordedCommandDrainTests.Grains grains, RecordingLogger logger, IBusEnvelopeSigner? signer, BusEnvelopeIntegrityMode mode) => new(

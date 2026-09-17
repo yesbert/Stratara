@@ -20,13 +20,25 @@ namespace Stratara.Orleans.Tests;
 /// </summary>
 public sealed class RecordedCommandDrainTests
 {
-    private static readonly CommandEnvelope Envelope = new(Guid.NewGuid(), "{}", "Probe", "{}");
+    /// <summary>A record as the recorder writes it: the envelope carries the intent's own id and its heavy claim.</summary>
+    private static RecordedIntent Recorded(Guid? aggregateId, bool heavy = false, int attempts = 0)
+    {
+        var intentId = Guid.NewGuid();
+        return new RecordedIntent(
+            intentId,
+            new CommandEnvelope(intentId, "{}", "Probe", "{}", Heavy: heavy),
+            aggregateId,
+            heavy,
+            attempts,
+            LastHandedOverAt: null,
+            LastFailure: null);
+    }
 
     [Fact]
     public async Task A_drain_with_an_intent_store_and_no_dispatcher_resumes_the_due_commands()
     {
         var aggregateId = Guid.NewGuid();
-        var due = new RecordedIntent(Guid.NewGuid(), Envelope, aggregateId, Heavy: false, AttemptCount: 0, LastHandedOverAt: null, LastFailure: null);
+        var due = Recorded(aggregateId);
         var grains = new Grains();
         var bus = new Mock<ICommandOutboxDispatcher>(MockBehavior.Strict);
 
@@ -40,9 +52,9 @@ public sealed class RecordedCommandDrainTests
     public async Task Two_due_heavy_commands_on_one_aggregate_hold_back_nothing_after_them()
     {
         var aggregateId = Guid.NewGuid();
-        var firstHeavy = new RecordedIntent(Guid.NewGuid(), Envelope, aggregateId, Heavy: true, 0, null, null);
-        var secondHeavy = new RecordedIntent(Guid.NewGuid(), Envelope, aggregateId, Heavy: true, 0, null, null);
-        var sameAggregate = new RecordedIntent(Guid.NewGuid(), Envelope, aggregateId, Heavy: false, 0, null, null);
+        var firstHeavy = Recorded(aggregateId, heavy: true);
+        var secondHeavy = Recorded(aggregateId, heavy: true);
+        var sameAggregate = Recorded(aggregateId);
         var grains = new Grains();
 
         await using var provider = Drain(grains, IntentsReturning(firstHeavy, secondHeavy, sameAggregate), bus: null).BuildServiceProvider();
@@ -98,7 +110,7 @@ public sealed class RecordedCommandDrainTests
         var active = true;
         var replay = new Mock<IProjectionReplayState>();
         replay.Setup(state => state.IsReplayActive).Returns(() => active);
-        var due = new RecordedIntent(Guid.NewGuid(), Envelope, Guid.NewGuid(), Heavy: false, 0, null, null);
+        var due = Recorded(Guid.NewGuid());
         var grains = new Grains();
         var services = Drain(grains, IntentsReturning(due), bus: null, logs);
         services.AddSingleton(replay.Object);
@@ -184,7 +196,7 @@ public sealed class RecordedCommandDrainTests
 
     private static IReadOnlyList<RecordedIntent> Due(int count) =>
     [
-        .. Enumerable.Range(0, count).Select(_ => new RecordedIntent(Guid.NewGuid(), Envelope, Guid.NewGuid(), Heavy: false, 0, null, null)),
+        .. Enumerable.Range(0, count).Select(_ => Recorded(Guid.NewGuid())),
     ];
 
     private static void ClaimEverything(Mock<ICommandIntentStore> intents) =>

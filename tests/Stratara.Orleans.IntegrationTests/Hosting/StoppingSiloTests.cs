@@ -115,6 +115,49 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
     }
 
     [Fact]
+    public async Task The_callers_of_commands_queued_behind_a_stopped_handler_are_told_when_the_silo_stops()
+    {
+        var control = new StopProbeControl();
+        var cluster = $"stratara-poc-stop-queued-{Guid.NewGuid():N}";
+        using var first = await StartSiloAsync(control, cluster, 11346, 30236, ShortBudget);
+        var aggregate = Guid.NewGuid();
+        control.Block = false;
+        await SendAsync(first, new BlockingProbe(aggregate, Guid.NewGuid()));
+        control.Block = true;
+
+        using var second = await StartSiloAsync(control, cluster, 11347, 30237, ShortBudget);
+        var running = Guid.NewGuid();
+        var runningCall = SendAsync(second, new BlockingProbe(aggregate, running));
+        Assert.True(await WaitUntilAsync(() => control.Started(running.ToString()) == 1, StartedTimeout), "the first command's handler never started");
+        var behind = Enumerable.Range(0, 2).Select(_ => Guid.NewGuid()).ToList();
+        var queued = behind.Select(probe => SendAsync(second, new BlockingProbe(aggregate, probe))).ToList();
+
+        await StopAsync(first);
+
+        // The queue is given up with the stop, not when the activation is finally collected: every caller is answered.
+        var answered = Task.WhenAll(queued.Select(Failed));
+        Assert.Same(answered, await Task.WhenAny(answered, Task.Delay(TimeSpan.FromSeconds(30))));
+        Assert.All(await answered, failure => Assert.Contains("dispatch it again", failure.Message, StringComparison.Ordinal));
+        await Assert.ThrowsAnyAsync<Exception>(() => runningCall.WaitAsync(TakeoverTimeout));
+        Assert.All(behind, probe => Assert.Equal(0, control.Started(probe.ToString())));
+        await second.StopAsync();
+    }
+
+    private static async Task<Exception> Failed(Task call)
+    {
+        try
+        {
+            await call;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+
+        throw new InvalidOperationException("the queued command's caller was told the command ran.");
+    }
+
+    [Fact]
     public async Task A_handler_that_ignores_its_token_runs_to_its_end_before_the_silo_stops()
     {
         var control = new StopProbeControl();

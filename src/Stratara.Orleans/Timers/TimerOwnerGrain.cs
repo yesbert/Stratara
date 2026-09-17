@@ -181,9 +181,19 @@ internal sealed class TimerOwnerGrain(
         var handler = TimerPorts.HandlerFor(scope.ServiceProvider, ownerId);
         await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), _stopping.Token);
 
-        if (!_renewed.Contains(reminderName))
+        // Under the gate: a registration for the same purpose and due time that lands between the handler's return
+        // and the unregister is a renewal, and its reminder must not be deleted by the tick it renewed.
+        await _changes.WaitAsync(CancellationToken.None);
+        try
         {
-            await UnregisterByNameAsync(reminderName);
+            if (!_renewed.Contains(reminderName))
+            {
+                await UnregisterByNameAsync(reminderName);
+            }
+        }
+        finally
+        {
+            _changes.Release();
         }
     }
 
