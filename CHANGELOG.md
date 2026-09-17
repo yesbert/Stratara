@@ -218,15 +218,15 @@ applies to the entire NuGet family.
   columns, which the signature never covered: a stored heavy flag flipped in the store sent a signed command past
   the heavy pool's bound or outside its aggregate's order, and the signature still verified. The row's identity and
   heavy claim are now held to the envelope — a record that disagrees is kept under strict mode and resumed by the
-  signed claim under permissive mode — and the HMAC guide says what the signature covers and what it does not.
+  signed claim under permissive mode, logged as `117_122` — and the HMAC guide says what the signature covers and
+  what it does not. A command the bus outbox stored during a rolling adoption carries no routing beside its
+  envelope and is resumed as before.
 - **Orleans: an aggregate gives up its queue when its silo stops.** The queue was given up in the deactivation,
   which the runtime starts only once the requests waiting for those commands have ended: the callers waited for
   the runtime to give up instead of being told, and the silo's stop waited with them.
 - **Orleans: a timer's tick no longer deletes the reminder that renewed it.** The renewal check and the
   unregister now run under the grain's own gate, so a registration for the same purpose and due time from another
   turn — a saga re-applying a fact — cannot land between them.
-- **Orleans: two claimers that stamp a batch in the same millisecond no longer read each other's rows back.** The
-  command still ran once, the grain refusing a hand-over it already holds, but both attempts were counted.
 - **Orleans: a read model can be rebuilt after its reader or partition count changed.** The checkpoint guard
   refused every write under another reader's name — including the two verbs that recover from it, a projection's
   rebuild and the full replay's reset, which write the beginning under the host's new name. Returning a checkpoint

@@ -18,13 +18,6 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     where TContext : DbContext, IWriteDbContext
 {
     private const int FailureLength = 2048;
-
-    /// <summary>
-    /// What tells this store's stamps from another claimer's inside one millisecond: a fixed number of microseconds,
-    /// drawn once per store, so a batch this store claimed is read back by it alone.
-    /// </summary>
-    private readonly long _discriminator = Random.Shared.Next(1, 1000) * TimeSpan.TicksPerMicrosecond;
-
     private static string CommandTypeName => CommandIntentRecord.CommandTypeName;
 
     public async Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, CancellationToken cancellationToken)
@@ -65,7 +58,8 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
                 e.Heavy,
                 e.AttemptCount,
                 e.LastHandedOverAt,
-                e.LastFailure))
+                e.LastFailure,
+                e.DataTypeName == CommandTypeName))
         ];
     }
 
@@ -92,12 +86,11 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     /// this call's stamp.
     /// </summary>
     /// <remarks>
-    /// The stamp carries a discriminator of this store's own below the millisecond, so two claimers that stamp in the
-    /// same millisecond — the drain of a rolling adoption beside the bus outbox worker — do not read each other's
-    /// rows back as their own. A store whose provider keeps no sub-millisecond precision falls back to the
-    /// millisecond, where two claimers may both hand the same command over; the grain that receives it holds one
-    /// activation per aggregate, per intent or per pool and refuses a hand-over it already holds, so the command
-    /// still runs once and only its attempt is counted twice.
+    /// The stamp is truncated to the millisecond, because that is what every provider stores and the read-back
+    /// compares it. Two claimers that stamp in the same millisecond — the drain of a rolling adoption beside the bus
+    /// outbox worker — therefore read each other's rows back as their own and both hand those commands over. The
+    /// command still runs once: the grain that receives it holds one activation per aggregate, per intent or per
+    /// pool and refuses a hand-over it already holds. Only the attempt is counted twice.
     /// </remarks>
     public async Task<IReadOnlyList<Guid>> ClaimAsync(IReadOnlyList<RecordedIntent> due, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -107,7 +100,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             return [];
         }
 
-        var stamp = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerMillisecond + _discriminator, TimeSpan.Zero);
+        var stamp = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
         var ids = due.Select(intent => intent.Id).ToList();
         var latest = due.Max(intent => intent.LastHandedOverAt);
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);

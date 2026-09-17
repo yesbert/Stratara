@@ -121,6 +121,12 @@ internal static partial class OrleansLog
     public static partial void LogRolesUnpublished(this ILogger logger, string registered);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentRoutingRefused,
+        Level = LogLevel.Warning,
+        Message = "The recorded command {IntentId} carries a stored routing its signed envelope does not: {Outcome}.")]
+    public static partial void LogIntentRoutingRefused(this ILogger logger, Guid intentId, string outcome);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.NudgeFailed,
         Level = LogLevel.Debug,
         Message = "The wake-up of {Consumers} for partition {Partition} was not delivered; the readers' poll reads the commit instead.")]

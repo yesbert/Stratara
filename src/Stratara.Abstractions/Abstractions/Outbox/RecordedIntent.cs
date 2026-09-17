@@ -11,6 +11,11 @@ namespace Stratara.Abstractions.Outbox;
 /// <param name="AttemptCount">How often it has been handed over since it was recorded or returned.</param>
 /// <param name="LastHandedOverAt">When it was last handed over, or <see langword="null"/> if never.</param>
 /// <param name="LastFailure">The failure of its last attempt, if one was recorded.</param>
+/// <param name="RecordedByTheExecutionModel">
+/// Whether the execution model wrote this record itself, rather than it being a command the bus outbox stored — a
+/// store may hold both during a rolling adoption, and only the model's own records carry the routing beside the
+/// envelope. Defaults to <see langword="true"/>.
+/// </param>
 [ExcludeFromCodeCoverage]
 public sealed record RecordedIntent(
     Guid Id,
@@ -19,4 +24,5 @@ public sealed record RecordedIntent(
     bool Heavy,
     int AttemptCount,
     DateTimeOffset? LastHandedOverAt,
-    string? LastFailure);
+    string? LastFailure,
+    bool RecordedByTheExecutionModel = true);

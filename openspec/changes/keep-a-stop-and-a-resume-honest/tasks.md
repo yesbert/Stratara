@@ -2,8 +2,9 @@
 
 ## 1. The resume
 
-- [x] 1.1 Hold the row's identity and heavy claim to the signed envelope; a disagreement is kept under
-      strict mode with the reason recorded and resumed by the signed claim under permissive mode.
+- [x] 1.1 Hold the row's identity and heavy claim to the signed envelope, for the records the model
+      wrote itself; a disagreement is kept under strict mode with the reason recorded and resumed by the
+      signed claim under permissive mode, logged as `117_122`.
 - [x] 1.2 Route the hand-over by the signed heavy claim.
 - [x] 1.3 Unit tests for both modes, and the drain's fixtures record envelopes as the recorder writes
       them.
@@ -19,7 +20,8 @@
 ## 3. The timer and the claim
 
 - [x] 3.1 The tick's renewal check and unregister run under the grain's gate.
-- [x] 3.2 The claim's stamp carries a per-store discriminator below the millisecond.
+- [x] 3.2 Write down what the claim's millisecond stamp can and cannot tell apart, and why the
+      truncation stays.
 
 ## 4. Documentation and the run
 

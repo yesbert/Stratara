@@ -75,9 +75,9 @@ Every field of the message except the signature itself:
 
 **A recorded command carries the same signature, and the same coverage.** The Orleans execution model
 records a command before it hands it over, and the record holds the envelope above. Where the command
-runs is taken from what the signature covers — the heavy-lane flag and the envelope's id — so a record
-whose stored row says something else is treated like one that does not verify: kept for an operator
-under strict mode, resumed as the envelope says under permissive mode. The aggregate the record names
+runs is taken from what the signature covers — the heavy-lane flag — and the record's stored row is held
+to the envelope's id and flag: a row that says something else is kept for an operator under strict mode
+and resumed as the envelope says otherwise, logged either way. The aggregate the record names
 is **not** covered: it decides which activation accepts the command, not what the command writes. What
 it writes comes from the command body, which the digest covers, and the append is held to its stream's
 version, so a changed aggregate id costs the command its place in an order and nothing else.

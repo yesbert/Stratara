@@ -182,8 +182,9 @@ internal sealed class TimerOwnerGrain(
         await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), _stopping.Token);
 
         // Under the gate: a registration for the same purpose and due time that lands between the handler's return
-        // and the unregister is a renewal, and its reminder must not be deleted by the tick it renewed.
-        await _changes.WaitAsync(CancellationToken.None);
+        // and the unregister is a renewal, and its reminder must not be deleted by the tick it renewed. A silo that
+        // stops while the gate is held leaves the reminder registered, which fires it again — the safe direction.
+        await _changes.WaitAsync(_stopping.Token);
         try
         {
             if (!_renewed.Contains(reminderName))

@@ -234,18 +234,20 @@ internal sealed class IntentResumer(
     /// <returns><see langword="true"/> when the record was kept.</returns>
     private async Task<bool> KeptForIntegrityAsync(RecordedIntent intent, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        if (intent.Envelope.Id != intent.Id || intent.Envelope.Heavy != intent.Heavy)
+        // Only the model's own records carry a routing beside the envelope; a command the bus outbox stored during a
+        // rolling adoption carries a row id of its own and no routing, and is resumed by its envelope like any other.
+        if (intent.RecordedByTheExecutionModel && (intent.Envelope.Id != intent.Id || intent.Envelope.Heavy != intent.Heavy))
         {
             if (_mode != BusEnvelopeIntegrityMode.Strict)
             {
-                logger.LogIntentIntegrityResumed(intent.Id);
+                logger.LogIntentRoutingRefused(intent.Id, "resumed as the envelope says");
                 return false;
             }
 
             await intents.RecordFailureAsync(intent.Id, RoutingReason, cancellationToken);
             await intents.KeepAsync(intent.Id, now, cancellationToken);
             ApplicationDiagnostics.Metrics.OrleansIntentKept.Add(1);
-            logger.LogIntentIntegrityKept(intent.Id);
+            logger.LogIntentRoutingRefused(intent.Id, "kept for an operator under strict integrity mode");
             return true;
         }
 

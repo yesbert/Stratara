@@ -138,8 +138,9 @@ public sealed class IntentRecordIntegrityTests
         intents.Setup(s => s.ClaimAsync(It.IsAny<IReadOnlyList<RecordedIntent>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<RecordedIntent> due, DateTimeOffset _, CancellationToken _) => [.. due.Select(d => d.Id)]);
         var grains = new RecordedCommandDrainTests.Grains();
+        var logger = new RecordingLogger();
 
-        var pass = await Resumer(intents.Object, grains, new RecordingLogger(), signer, mode).ResumeDueAsync(10, CancellationToken.None);
+        var pass = await Resumer(intents.Object, grains, logger, signer, mode).ResumeDueAsync(10, CancellationToken.None);
 
         if (kept)
         {
@@ -148,6 +149,7 @@ public sealed class IntentRecordIntegrityTests
             Assert.Empty(grains.Accepted);
             intents.Verify(s => s.KeepAsync(intentId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
             intents.Verify(s => s.RecordFailureAsync(intentId, It.Is<string>(reason => reason.Contains("where it runs", StringComparison.Ordinal)), It.IsAny<CancellationToken>()), Times.Once);
+            Assert.Contains(logger.Entries, entry => entry.EventId.Id == LogEvents.Orleans.IntentRoutingRefused);
         }
         else
         {
@@ -156,6 +158,29 @@ public sealed class IntentRecordIntegrityTests
             Assert.Empty(grains.HeavyStarted);
             Assert.Equal([intentId], grains.Accepted);
         }
+    }
+
+    [Fact]
+    public async Task A_command_the_bus_outbox_stored_keeps_its_own_row_id_and_is_resumed()
+    {
+        var signer = new FakeSigner();
+        var envelope = new CommandEnvelope(Guid.NewGuid(), "{}", "Probe", "{}", Heavy: false);
+        envelope = envelope with { Signature = FakeSigner.SignatureOf(BusEnvelopeCanonical.Of(envelope)) };
+
+        // What the bus outbox writes during a rolling adoption: a row of its own, no routing beside the envelope.
+        var intent = new RecordedIntent(Guid.NewGuid(), envelope, AggregateId: null, Heavy: false, AttemptCount: 0, LastHandedOverAt: null, LastFailure: null, RecordedByTheExecutionModel: false);
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(s => s.GetDueAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync([intent]);
+        intents.Setup(s => s.ClaimAsync(It.IsAny<IReadOnlyList<RecordedIntent>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<RecordedIntent> due, DateTimeOffset _, CancellationToken _) => [.. due.Select(d => d.Id)]);
+        var grains = new RecordedCommandDrainTests.Grains();
+        var logger = new RecordingLogger();
+
+        var pass = await Resumer(intents.Object, grains, logger, signer, BusEnvelopeIntegrityMode.Strict).ResumeDueAsync(10, CancellationToken.None);
+
+        Assert.Equal(1, pass.Resumed);
+        intents.Verify(s => s.KeepAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId.Id == LogEvents.Orleans.IntentRoutingRefused);
     }
 
     private static IntentResumer Resumer(ICommandIntentStore intents, RecordedCommandDrainTests.Grains grains, RecordingLogger logger, IBusEnvelopeSigner? signer, BusEnvelopeIntegrityMode mode) => new(

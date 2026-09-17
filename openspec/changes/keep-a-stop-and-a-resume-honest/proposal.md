@@ -25,7 +25,9 @@ keeps.
 
 A fourth, smaller: two claimers that stamp a batch in the same millisecond read each other's rows back
 as their own, so a command is handed over twice. It runs once all the same, because the grain that
-receives it refuses a hand-over it already holds, but both attempts are counted.
+receives it refuses a hand-over it already holds, and only the attempt is counted twice — which is why
+this change writes it down rather than changing the stamp, whose millisecond truncation is what lets
+every provider compare it.
 
 ## What Changes
 
@@ -37,8 +39,7 @@ receives it refuses a hand-over it already holds, but both attempts are counted.
 - **A stopping aggregate gives up its queue at once.** The loop abandons what is still queued when it
   ends on the stop, and a command accepted afterwards is given up as it arrives.
 - **The tick's unregister runs under the gate**, so a renewal cannot be deleted by the tick it renewed.
-- **A claim's stamp carries a discriminator below the millisecond**, so two claimers do not read each
-  other's rows back.
+- **What the claim's stamp can and cannot tell apart is written down** where the claim is implemented.
 - **A deactivation runs to its end** whatever the wait for the running handler ended with.
 
 ## Impact
@@ -48,6 +49,6 @@ receives it refuses a hand-over it already holds, but both attempts are counted.
   `src/Stratara.Orleans/Aggregates/AggregateGrain.cs`,
   `src/Stratara.Orleans/Timers/TimerOwnerGrain.cs`,
   `src/Stratara.Orleans.EntityFrameworkCore/Intents/CommandIntentStore.cs`
-- Affected docs: `docs/guides/secure-the-bus-envelope.md` (what the record's signature covers),
-  `CHANGELOG.md`
+- Affected docs: `docs/guides/hmac-bus-envelope.md` (what the record's signature covers),
+  `docs/reference/log-events-schema.md`, `CHANGELOG.md`
 - No public API changes.
