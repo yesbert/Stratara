@@ -83,13 +83,18 @@ public sealed class ReaderHeadTests(PostgreSqlFixture postgres)
         var partition = PartitionMap.PartitionOf(bucketId, store.Options.PartitionCount);
         var held = Guid.NewGuid();
 
+        var later = Guid.NewGuid();
         long head;
         await using (var context = await store.CreateContextAsync())
         {
-            // A writer's transaction is open while the head is taken, and commits afterwards.
+            // A writer's transaction is open while the head is taken, and commits afterwards — while another writer
+            // commits in between, so a head that only took the highest committed transaction would leave the held
+            // entry behind it.
             await using var transaction = await context.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
             context.Set<EventStreamEntry>().Add(PocStore<PocCommitOrderWriteDbContext>.NewEntry(held, 1, bucketId, tenantId));
             await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+            await AppendAsync(store, later, 1, bucketId, tenantId);
 
             head = await reader.HeadAsync(partition, TestContext.Current.CancellationToken);
             await transaction.CommitAsync(TestContext.Current.CancellationToken);

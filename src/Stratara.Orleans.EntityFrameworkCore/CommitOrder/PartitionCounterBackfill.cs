@@ -49,31 +49,42 @@ public static class PartitionCounterBackfill
 
     /// <summary>
     /// Positions a partition's entries in batches, each under the partition's counter lock and a transaction of its
-    /// own: a store with a long history is walked without holding the lock — or the entries — for the whole run, and
-    /// a batch always takes the oldest entries that have no position, so the order inside a stream is kept.
+    /// own, starting where the batch before it ended: a store with a long history is walked once rather than once per
+    /// batch, and the counter — with the appends waiting behind it — is held for a batch rather than for the run. An
+    /// entry appended between two batches is positioned before the entries the next batch positions, so a stream
+    /// written to while it is repaired is read out of order and its read model rebuilt, which is what repairing an
+    /// unpositioned entry already costs.
     /// </summary>
     private static async Task<int> RunPartitionAsync(DbContext context, int partition, int partitionCount, CancellationToken cancellationToken)
     {
         var positioned = 0;
+        var from = 0L;
         while (true)
         {
-            var batch = await PositionBatchAsync(context, partition, partitionCount, cancellationToken);
-            if (batch == 0)
+            var batch = await PositionBatchAsync(context, partition, partitionCount, from, cancellationToken);
+            if (batch.Count == 0)
             {
                 return positioned;
             }
 
-            positioned += batch;
+            positioned += batch.Count;
+            from = batch.Last;
         }
     }
 
-    private static async Task<int> PositionBatchAsync(DbContext context, int partition, int partitionCount, CancellationToken cancellationToken)
+    /// <summary>
+    /// Positions the oldest entries after <paramref name="from"/> that have none, and says where it ended — so the
+    /// batch after it starts there instead of walking everything this one positioned.
+    /// </summary>
+    private static async Task<(int Count, long Last)> PositionBatchAsync(DbContext context, int partition, int partitionCount, long from, CancellationToken cancellationToken)
     {
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         var counter = await LockCounterAsync(context, partition, cancellationToken);
 
         var unpositioned = await context.Set<EventStreamEntry>()
-            .Where(e => e.BucketId % partitionCount == partition && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
+            .Where(e => e.SequenceNumber > from
+                        && e.BucketId % partitionCount == partition
+                        && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
             .OrderBy(e => e.SequenceNumber)
             .Select(e => e.SequenceNumber)
             .Take(UpdateBatchSize)
@@ -81,7 +92,7 @@ public static class PartitionCounterBackfill
         if (unpositioned.Count == 0)
         {
             await transaction.CommitAsync(cancellationToken);
-            return 0;
+            return (0, from);
         }
 
         for (var i = 0; i < unpositioned.Count; i++)
@@ -97,7 +108,7 @@ public static class PartitionCounterBackfill
             .Where(c => c.Partition == partition)
             .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, counter + unpositioned.Count), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return unpositioned.Count;
+        return (unpositioned.Count, unpositioned[^1]);
     }
 
     /// <summary>

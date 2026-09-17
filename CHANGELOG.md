@@ -224,8 +224,9 @@ applies to the entire NuGet family.
   commit in that window a second time. The contract, the migration guide and a test now say so.
 - **Orleans: a singleton work's failure is logged whatever it failed with** — a cancellation the work was not
   asked for, an HTTP client's timeout, went unlogged — except where its silo is stopping.
-- **Orleans: two singleton works under one name are refused at registration**, naming both: the name keys the
-  grain that runs the work, so the second never ran and nothing said so.
+- **Orleans: two singleton works under one name are refused** — at registration where the name is given, and when
+  the silo starts where two registered works return the same one. The name keys the grain that runs the work, so
+  the second never ran and nothing said so.
 - **Testing: `ExecutionModelTestHost.ResetAsync` works on a running host.** It deleted the checkpoints while the
   readers kept their cached positions, so a shared host reset between two tests either never finished
   `WaitForReadersAsync` — the checkpoint said nothing was applied, the store's head said otherwise — or applied the

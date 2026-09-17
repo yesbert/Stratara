@@ -56,7 +56,7 @@ public static class CommitTransactionIdBackfill
                 ? 0
                 : await context.Database.ExecuteSqlRawAsync(statements.Stamp, [Parameter("from", from), Parameter("to", to.Value)], cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            if (affected == 0 || to is not { } bound)
+            if (to is not { } bound)
             {
                 return stamped;
             }

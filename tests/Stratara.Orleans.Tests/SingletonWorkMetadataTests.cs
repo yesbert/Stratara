@@ -12,6 +12,17 @@ namespace Stratara.Orleans.Tests;
 public sealed class SingletonWorkMetadataTests
 {
     [Fact]
+    public void Two_registered_works_that_return_one_name_are_refused_when_the_silo_starts()
+    {
+        var works = new ISingletonWork[] { new WorkCalled("one"), new WorkCalled("one") };
+
+        var refused = Assert.Throws<InvalidOperationException>(() => SingletonWorkStarter.EnsureOneWorkPerName(works));
+
+        Assert.Contains("'one'", refused.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(WorkCalled), refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Two_works_registered_under_one_name_are_refused_naming_both()
     {
         var services = new ServiceCollection().AddStrataraSingletonWork<UnconstructableWork>("the-one-name");
@@ -125,6 +136,16 @@ public sealed class SingletonWorkMetadataTests
     public sealed class OtherWork : ISingletonWork
     {
         public string Name => "other";
+
+        public TimeSpan Period => TimeSpan.FromMinutes(1);
+
+        public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>A work whose name the test gives it, for the case of two works carrying one name.</summary>
+    public sealed class WorkCalled(string name) : ISingletonWork
+    {
+        public string Name => name;
 
         public TimeSpan Period => TimeSpan.FromMinutes(1);
 

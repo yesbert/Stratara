@@ -11,9 +11,13 @@ backfill and dropped after it, in a migration the consumer edits by hand; the ke
 ordered by answers the same question for nothing.
 
 **What the batching costs.** The counter's backfill now commits per batch, so an append that arrives
-between two batches takes a position before entries the next batch positions. That is the same
-condition the migration already states — run it while nothing appends — and it is now the only thing
-that condition protects.
+between two batches takes a position before the entries the next batch positions. Its own repair path
+runs on a live cluster — the operate guide tells an operator to run it when a partition stops at an
+unpositioned entry — so this is a real window, not one the migration's "nothing appends" already
+covers: the guide and the backfill's own remark now say it. It is the inversion that path already
+accepts, on a stream written to while it is repaired, and its price is the same: that read model is
+rebuilt. What the batching buys is that the counter, and every append behind it, is held for a batch
+instead of for a history.
 
 ## D2 — The head is as honest as the store lets it be
 

@@ -12,9 +12,10 @@ overlapping with one on another host, as the framework's own outbox drain does; 
 SHALL state that window, SHALL name how long a failover takes in terms of the cluster's membership
 settings and the work's keep-alive period, and SHALL say that the window is bounded by those settings
 only while the declared silo can still read the cluster's membership — one that cannot never learns of
-its declaration. A run that fails SHALL be logged with an event of the framework's own, whatever it
-failed with, except where the silo it runs on is stopping. Two works SHALL NOT be registered under one
-name: the name is what a work's single run is keyed by, so the second would never run. Owner-checked durable
+its declaration. A run that fails SHALL be logged whatever it failed with,
+including a cancellation the work was not asked for, except where the silo it runs on is stopping. Two
+works SHALL NOT carry one name: the name is what a work's single run is keyed by, so the second would
+never run, and a host that registers two SHALL fail rather than run one of them. Owner-checked durable
 timers SHALL fire once per cluster on or after their due time, SHALL fire for an owner that exists and
 never for one that was removed, and SHALL survive a restart of the silo that registered them. A timer
 SHALL NOT fire a further period late because the clocks of the silos differ slightly. A process
@@ -37,6 +38,11 @@ singleton work registered with the name it publishes under SHALL NOT be construc
 is active, so that a work whose construction needs the running host is not constructed while the
 silo starts; a work whose name differs from the one it was registered with SHALL fail the silo's
 start with a message naming both.
+
+#### Scenario: Two singleton works carry one name
+
+- **WHEN** a host registers two works under the same name, or two registered works return the same name
+- **THEN** the host fails naming both works and the name, rather than running one of them
 
 #### Scenario: Two silos run the same singleton work
 
@@ -247,11 +253,6 @@ sample that does so.
   timer, dispatcher, heavy-work or singleton-work registration
 - **THEN** the composition is the one a single call leaves: each projection is woken once per bundle,
   the seeding and the reset list each consumer once, and each work runs once per period
-
-#### Scenario: Two singleton works ask for one name
-
-- **WHEN** a host registers two works under the same name
-- **THEN** the registration fails naming both works and the name
 
 #### Scenario: A silo registers the directory itself and hosts a role
 
