@@ -60,7 +60,10 @@ failing command — the guarantee the bus path gives heavy work.
 ### Requirement: An accepted command is recorded before the call returns and resumed after a crash
 
 Where a host has registered the Orleans execution model's command dispatcher, dispatching a command
-SHALL record it durably before the dispatch returns and hand it to its activation afterwards. A
+SHALL record it durably before the dispatch returns and hand it to its activation afterwards. The
+record SHALL be committed on its own, not with anything the caller writes in its own unit of work,
+so that a caller whose own save fails after the dispatch still has a recorded command that runs, and
+the documentation SHALL say so where it introduces the record. A
 host that dies between acceptance and completion SHALL resume the command after a configurable
 grace. A command whose completion the host had not recorded before it died SHALL run again. A command
 whose handler keeps failing SHALL be resumed a bounded number of times and then kept for an operator,
@@ -75,7 +78,10 @@ it names whatever protection its payload carries. Heavy commands SHALL be exempt
 promises, and a heavy command SHALL NOT hold back a command or a resumption that follows it. The
 commands waiting in an aggregate's order SHALL run to the end however long the order takes; the
 runtime's response timeout bounds a caller's wait for one forwarded command, and the documentation
-SHALL name it as a setting the host sizes. Recorded commands SHALL be resumed by the
+SHALL name it as a setting the host sizes. A forwarded command whose handler outlasts that timeout
+SHALL be reported to its caller as timed out while its handler runs to the end and its append commits;
+the documentation SHALL state this and SHALL say that a caller does not retry on a timeout, because
+the retry would run the command a second time. Recorded commands SHALL be resumed by the
 execution model's drain wherever that drain runs with an intent store registered, whichever host
 dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
 without an intent store SHALL report it. A resumption the drain holds back because a full replay is
@@ -101,7 +107,11 @@ NOT grow with the number of commands it claims.
 
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
-registered SHALL apply whatever order it and the execution model were registered in.
+registered SHALL apply whatever order it and the execution model were registered in. A resumed command
+SHALL run under the session recorded with it, on a silo and without the request that dispatched it, so
+an authorization the host registers SHALL be answered from that session; the documentation SHALL say
+that a provider which answers from the current web request refuses every resumed command, which is
+then kept after its attempts, and SHALL name a session-driven provider as the shape this path needs.
 
 A handler running on this path SHALL receive a cancellation token that is requested when the silo
 running it stops and the handler has not completed within the runtime's deactivation budget, so
@@ -164,6 +174,30 @@ the token.
   runtime's response timeout
 - **THEN** every accepted command runs, in order, and none is failed back to its caller as not having
   run
+
+#### Scenario: A forwarded command's handler outlasts the response timeout
+
+- **WHEN** a command that names an aggregate is dispatched through the mediator and its handler runs
+  longer than the runtime's response timeout
+- **THEN** the caller observes a timeout, the handler runs once to the end, its append is committed,
+  and the operations documentation says that a caller does not retry on a timeout — verified with a
+  shortened response timeout on the PostgreSQL store
+
+#### Scenario: A caller's own unit of work fails after the dispatch
+
+- **WHEN** a caller dispatches a command through the recording dispatcher inside a unit of work of its
+  own and that unit of work is then abandoned without a save
+- **THEN** the command is recorded and runs, because the record was committed on its own — verified on
+  the PostgreSQL store
+
+#### Scenario: A resumed command is authorized from its recorded session
+
+- **WHEN** a host registers an authorization provider that answers from the session context, dispatches
+  a role-guarded command that the dispatching session is entitled to, and is killed before the handler
+  ran
+- **THEN** the resumed command is authorized on the silo as it was at dispatch and its handler runs;
+  and where the host's provider answers from the current web request instead, every resumed command is
+  refused and kept after its attempts, as the documentation says — verified on the PostgreSQL store
 
 #### Scenario: A resumed command's payload is encrypted
 
@@ -261,7 +295,13 @@ wake the readers of the partitions it touched; a wake-up that is lost costs late
 fact, because a poll reads the store regardless. A committed fact SHALL reach every projection and
 saga whatever dies after the commit. Two rebuilds of one projection SHALL NOT interleave: the
 projection's readers SHALL resume only when every rebuild that paused them has finished, and a
-rebuild requested while a full replay is active SHALL be refused with a message that says so. A
+rebuild requested while a full replay is active SHALL be refused with a message that says so. A full
+replay on a host whose projections read the store SHALL return every such projection's checkpoint to
+the beginning before the read models are emptied, and the replay's own pass over the store SHALL be
+followed by the readers' pass from the beginning once the replay ends, so that every store-reading
+projection applies the store twice under a full replay and is correct because it applies idempotently;
+the documentation SHALL say so where it describes the full replay and SHALL name the rebuild of a
+single projection as the way to re-read a read model once. A
 reader brought back for a partition the host's partition count no longer has SHALL retire itself —
 stop returning, log that it did, and read nothing — so that lowering the count leaves no reader that
 returns every keep-alive period to be refused.
@@ -302,6 +342,14 @@ returns every keep-alive period to be refused.
 
 - **WHEN** a projection's rebuild is requested while a full replay is active
 - **THEN** the rebuild is refused with a message naming the replay, and the replay is not disturbed
+
+#### Scenario: A full replay runs on a host whose projections read the store
+
+- **WHEN** a full replay is requested on a host whose projections read the store
+- **THEN** every store-reading projection's checkpoint is at the beginning when its read model is
+  emptied, its read model holds every fact once the readers have caught up after the replay, and a
+  projection that counts its applications has applied each fact twice — verified on the PostgreSQL
+  store with the native reader
 
 #### Scenario: One read returns entries of several tenants
 
@@ -360,7 +408,12 @@ the reader's own shutdown SHALL still record the checkpoint for the entries it a
 ### Requirement: Work that must happen once happens once per cluster
 
 Singleton work SHALL run in one place in the cluster at its period, without a lock, only on a silo
-that registered it, and SHALL resume elsewhere when the silo running it is lost. Owner-checked durable
+that registered it, and SHALL resume elsewhere when the silo running it is lost. Where the cluster
+declares a silo dead that is still running, the work MAY run on a second silo from that declaration
+until the declared silo learns of it and stops, so a consumer's singleton work SHALL tolerate a run
+overlapping with one on another host, as the framework's own outbox drain does; the documentation
+SHALL state that window and SHALL name how long a failover takes in terms of the cluster's membership
+settings and the work's keep-alive period. Owner-checked durable
 timers SHALL fire once per cluster on or after their due time, SHALL fire for an owner that exists and
 never for one that was removed, and SHALL survive a restart of the silo that registered them. A timer
 SHALL NOT fire a further period late because the clocks of the silos differ slightly. A process
@@ -409,6 +462,14 @@ start with a message naming both.
 
 - **WHEN** the silo running a singleton work is killed while another silo that registered it stays
 - **THEN** the work runs on the remaining silo at its period
+
+#### Scenario: The silo running singleton work is declared dead while it still runs
+
+- **WHEN** the cluster declares dead a silo that is still running a singleton work, because its probes
+  went unanswered
+- **THEN** the work is brought up on another silo that registered it, both MAY run until the declared
+  silo has stopped itself, and the operations documentation names that window and the settings that
+  bound the failover — the membership probe settings, the reminder refresh and the keep-alive period
 
 #### Scenario: A timeout changes the process's timers
 
@@ -660,7 +721,11 @@ membership table — rather than imply the runtime recovers on its own.
 
 Each role — commands, projections, sagas, outbox drain, timers, heavy work — SHALL be adopted with
 one registration after the role's existing composite, and a host SHALL be able to run both models
-at once during a rollout, because both apply idempotently. Each of the model's registrations SHALL
+at once during a rollout, because both apply idempotently. A host that asks the projection or saga
+registration to keep publishing bundles to the bus SHALL keep the bus dispatcher it registered
+whatever the shape of that registration, and a host that asks for it without having registered a
+bus dispatcher SHALL fail at registration with a message naming what is missing rather than run
+without publishing. Each of the model's registrations SHALL
 be idempotent in itself: called twice, whether by the host or by a composite of the host's that
 wraps it, it SHALL leave the composition as one call leaves it, so that no projection is woken twice,
 no consumer is listed twice, and no work is started twice. A role's work SHALL run only on a silo
@@ -701,6 +766,19 @@ sample that does so.
 - **WHEN** a host calls the projection services composite and then the execution model's projection
   registration
 - **THEN** the bus-fed projection worker is not registered and the store-reading projections are
+
+#### Scenario: A host keeps the bus beside the grains with a dispatcher registered by a factory
+
+- **WHEN** a host registers its bus bundle dispatcher through a factory or an instance and then asks
+  the projection registration to keep publishing to the bus
+- **THEN** a committed bundle still reaches the bus dispatcher, and the store-reading grains are woken
+
+#### Scenario: A host asks to keep the bus without a bus dispatcher
+
+- **WHEN** a host asks the projection or saga registration to keep publishing to the bus while no bus
+  bundle dispatcher is registered
+- **THEN** the registration fails with a message naming the parameter and the registration that
+  supplies a bus dispatcher
 
 #### Scenario: Silos register different roles
 
