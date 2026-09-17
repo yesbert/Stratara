@@ -62,6 +62,18 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
         };
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">An entry of <paramref name="partition"/> was appended without a position.</exception>
+    public async Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await RefuseUnpositionedAsync(context, partition, cancellationToken);
+        var head = await context.Set<EventStreamEntry>().AsNoTracking()
+            .Where(e => e.BucketId % _partitionCount == partition)
+            .MaxAsync(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), cancellationToken);
+        return head.GetValueOrDefault();
+    }
+
     /// <summary>
     /// Looks up unpositioned entries through the position index — the partition is derived in memory, because a
     /// filter on the bucket cannot use it — and refuses to read a partition that holds one.

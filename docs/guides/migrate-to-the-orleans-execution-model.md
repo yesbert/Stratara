@@ -69,7 +69,73 @@ execution model carries the columns and never fills them.
 | Write, PostgreSQL only | `event_stream_entry.commit_transaction_id` (`xid8`, filled by the database, indexed) | The transaction that inserted the entry, for the native reader |
 | Write | `outbox_entry.aggregate_id`, `heavy` | Where a recorded command runs |
 | Write | `outbox_entry.attempt_count`, `last_handed_over_at`, `kept_at`, `last_failure` (up to 2048 characters) | The bounded resume of a recorded command |
-| Read | table `projection_checkpoint` (`projection`, `partition`, `reader`, `position`) | Where each store reader resumes. Keyed by consumer, not by deployment — see [Sharing a read store](operate-the-orleans-execution-model.md#sharing-a-read-store) |
+| Read | table `projection_checkpoint` (`projection`, `partition`, `reader`, `position`) | Where each store reader resumes. Keyed by consumer — the projection class's simple name, `sagas` for every saga — not by deployment, so renaming a projection class starts it at the beginning; see [Sharing a read store](operate-the-orleans-execution-model.md#sharing-a-read-store) |
+
+### A populated event table on PostgreSQL
+
+The migration EF Core generates for `commit_transaction_id` adds the column non-null with its volatile
+default, and PostgreSQL rewrites the whole table for that under an exclusive lock, stamping every existing
+row with the migration's own transaction id. The native reader never ends a batch inside one transaction,
+so it would return each partition's entire history as one batch. On a populated table, edit the generated
+migration into three steps and run the backfill between them, **while nothing appends**:
+
+```sql
+ALTER TABLE event_stream_entry ADD COLUMN commit_transaction_id xid8 NULL;
+```
+
+```csharp
+await using var backfillScope = app.Services.CreateAsyncScope();
+await using var writeContext = await backfillScope.ServiceProvider.GetRequiredService<IDbContextFactory<AppWriteDbContext>>().CreateDbContextAsync();
+var stamped = await CommitTransactionIdBackfill.RunAsync(writeContext, batchSize: 1_000);
+```
+
+```sql
+ALTER TABLE event_stream_entry ALTER COLUMN commit_transaction_id SET DEFAULT pg_current_xact_id();
+ALTER TABLE event_stream_entry ALTER COLUMN commit_transaction_id SET NOT NULL;
+CREATE INDEX ix_event_stream_entry_commit_transaction_id ON event_stream_entry (commit_transaction_id);
+```
+
+Adding the column nullable without a default is a metadata change; the backfill stamps the history in the
+order it was appended, in batches of the given size, each under a transaction of its own, so the reader
+returns history in batch-sized groups in append order; setting the default and the constraint afterwards
+touches no row. An entry appended during the backfill receives no id before the default is set and a
+later id than newer entries after it, which inverts the order inside its stream — stop the appending
+hosts for the window. Running the backfill again on a stamped table changes nothing. An empty table takes
+the generated migration as it is.
+
+## Upgrade in this order
+
+1. **Migrate the schema before the first 4.1 host starts.** Every addition is nullable or defaulted, so
+   the 4.0 hosts keep running against the migrated schema; a 4.1 host against the old schema fails its
+   first append. On a populated PostgreSQL table, migrate as the previous section says.
+2. **Stop the bus outbox worker before the first silo with an intent store runs the drain**
+   (see [Adopt the roles](#adopt-the-roles)).
+3. **Seed the checkpoints** of the projections and sagas the silos will register, from the silo's own
+   composition, while no silo runs — see [Start on a populated store](#start-on-a-populated-store).
+4. **Start the silos**, at least two, and watch [what to watch](operate-the-orleans-execution-model.md#what-to-watch).
+5. **Switch the API host** to the execution model's dispatcher; let the command worker's queue drain
+   before stopping the command worker hosts.
+6. **Stop the bus projection and saga workers**, keeping `hybrid: true` only while a consumer outside this
+   deployment still needs the bundles on the bus, then delete the queues nothing consumes any more — a
+   quorum queue without a consumer grows.
+
+## Start on a populated store
+
+A store reader without a checkpoint starts at the beginning of the store. A host whose read models are
+already current seeds a checkpoint at the store's head for every projection and saga it registers before
+its first start, so that its first start applies only what commits afterwards:
+
+```csharp
+await using var seedingScope = app.Services.CreateAsyncScope();
+var seeded = await seedingScope.ServiceProvider.GetRequiredService<IStoreReaderSeeding>().SeedAtHeadAsync();
+```
+
+Run it once, while no silo of the cluster runs, from the composition that calls `AddStrataraProjectionGrains`
+or `AddStrataraSagaGrains` — the consumers it seeds are the ones registered there — after the schema is
+migrated and before the host is started. A consumer that already has a checkpoint is left as it is; a
+projection registered later starts at the beginning, which is what a new projection needs; and a read model
+that is to be rebuilt from the beginning is not seeded, or is reset first. The report says how many
+checkpoints were seeded and how many already existed.
 
 ## Choose a commit-order reader
 
