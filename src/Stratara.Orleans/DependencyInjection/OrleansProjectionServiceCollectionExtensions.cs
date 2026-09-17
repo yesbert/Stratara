@@ -161,11 +161,6 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// <summary>
     /// Replaces the bundle dispatcher with the wake-up hint. With <paramref name="hybrid"/> the dispatcher registered
     /// before is kept inside it — by type, factory or instance, with its lifetime — so bundles still reach the bus.
-    /// </summary>
-    /// <exception cref="InvalidOperationException"><paramref name="hybrid"/> is set and no bundle dispatcher is registered to keep.</exception>
-    /// <summary>
-    /// Replaces the bundle dispatcher with the wake-up hint. With <paramref name="hybrid"/> the dispatcher registered
-    /// before is kept inside it — by type, factory or instance, with its lifetime — so bundles still reach the bus.
     /// Every registration that asks for it is answered, whether it is the first store-reading role of the host or a
     /// later one: a later call finds the kept dispatcher already in place, or fails because there is none to keep.
     /// </summary>
@@ -202,20 +197,24 @@ public static class OrleansProjectionServiceCollectionExtensions
         services.AddScoped<IEventBundleOutboxDispatcher>(sp => sp.GetRequiredService<OrleansEventBundleDispatcher>());
     }
 
+    /// <summary>The key the kept dispatcher's own registration carries, so it never collides with the host's.</summary>
+    private const string KeptDispatcherKey = "stratara.orleans.kept-bundle-dispatcher";
+
     /// <summary>
     /// Keeps the dispatcher that was registered before, under its own descriptor's shape. A type-shaped registration
-    /// is registered by its type, so the container builds it and disposes it with the scope it belongs to; a factory
-    /// or an instance is used as it was given, because its owner is whoever supplied it.
+    /// is registered again under a key of the framework's own — so the container builds it and disposes it with the
+    /// scope it belongs to, without touching a registration of that type the host made for itself; a factory or an
+    /// instance is used as it was given, because its owner is whoever supplied it.
     /// </summary>
     private static void Keep(IServiceCollection services, ServiceDescriptor existing)
     {
         var lifetime = existing.Lifetime == ServiceLifetime.Singleton ? ServiceLifetime.Singleton : ServiceLifetime.Scoped;
         if (existing is { ImplementationInstance: null, ImplementationFactory: null, ImplementationType: { } implementationType })
         {
-            services.TryAdd(new ServiceDescriptor(implementationType, implementationType, lifetime));
+            services.Add(new ServiceDescriptor(implementationType, KeptDispatcherKey, implementationType, lifetime));
             services.Add(new ServiceDescriptor(
                 typeof(InnerBundleDispatcher),
-                sp => new InnerBundleDispatcher((IEventBundleOutboxDispatcher)sp.GetRequiredService(implementationType)),
+                sp => new InnerBundleDispatcher((IEventBundleOutboxDispatcher)sp.GetRequiredKeyedService(implementationType, KeptDispatcherKey)),
                 lifetime));
             return;
         }

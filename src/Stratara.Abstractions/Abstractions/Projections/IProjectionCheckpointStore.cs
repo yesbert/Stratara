@@ -57,7 +57,8 @@ public interface IProjectionCheckpointStore
     /// <remarks>
     /// The beginning means the same under every reader and every partition count, so a store that refuses a write
     /// under another reader's name accepts this one and takes the row over: it is how a deployment whose reader or
-    /// partition count changed rebuilds without being stopped. The default writes through <see cref="SetAsync"/>.
+    /// partition count changed rebuilds without being stopped. The default writes through <see cref="SetAsync"/> and
+    /// therefore takes nothing over — a store that guards the reader's name overrides this, as the framework's does.
     /// </remarks>
     Task ResetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) =>
         SetAsync(projection, partition, reader, 0, cancellationToken);

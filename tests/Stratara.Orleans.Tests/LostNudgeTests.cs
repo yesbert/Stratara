@@ -6,6 +6,7 @@ using Stratara.Diagnostics;
 using Stratara.Contracts.Messages;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.Projections;
+using Stratara.Projections.Abstractions;
 
 namespace Stratara.Orleans.Tests;
 
@@ -52,6 +53,69 @@ public sealed class LostNudgeTests
         var logged = Assert.Single(logger.Entries, entry => entry.EventId.Id == LogEvents.Orleans.NudgeFailed);
         Assert.Equal(LogLevel.Debug, logged.Level);
         Assert.Contains("probe", logged.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_projection_whose_wake_up_cannot_be_sent_does_not_cost_the_others_theirs()
+    {
+        var woken = new List<string>();
+        var handler = new Mock<IProjectionHandler>();
+        var projections = new[] { Named(handler, "first"), Named(handler, "second"), Named(handler, "third") };
+        var target = new ProjectionNudgeTarget(handler.Object, projections);
+        var grains = new[] { "first", "second", "third" }.ToDictionary(
+            name => StoreReaderGrainKey.Of(name, 0),
+            name => name == "second" ? Refusing() : Woken(woken, name));
+        var grainFactory = new Mock<IGrainFactory>();
+        grainFactory.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => grains[key]);
+
+        var nudge = target.NudgeAsync(grainFactory.Object, partition: 0);
+
+        await Assert.ThrowsAsync<AggregateException>(() => nudge);
+        Assert.Equal(2, woken.Count);
+    }
+
+    private static IProjection Named(Mock<IProjectionHandler> handler, string name)
+    {
+        var projection = new Mock<IProjection>();
+        handler.Setup(h => h.GetProjectionName(projection.Object)).Returns(name);
+        return projection.Object;
+    }
+
+    private static IProjectionGrain Woken(List<string> woken, string name) => new NudgedGrain(woken, name);
+
+    /// <summary>A grain whose wake-up cannot even be sent — the call fails where it is made, not in a task.</summary>
+    private static IProjectionGrain Refusing() => new NudgedGrain(woken: null, name: "refusing");
+
+    /// <summary>
+    /// A store reader that records its wake-up, or refuses it where it was given no list — the internal grain
+    /// interface cannot be proxied, so the double is written by hand.
+    /// </summary>
+    private sealed class NudgedGrain(List<string>? woken, string name) : IProjectionGrain
+    {
+        public Task EnsureRunningAsync() => Task.CompletedTask;
+
+        public Task NudgeAsync()
+        {
+            if (woken is null)
+            {
+                throw new InvalidOperationException("no silo of the cluster registered the projections role");
+            }
+
+            lock (woken)
+            {
+                woken.Add(name);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<int> CatchUpAsync() => Task.FromResult(0);
+
+        public Task<long> PositionAsync() => Task.FromResult(0L);
+
+        public Task PauseAsync() => Task.CompletedTask;
+
+        public Task ResumeAsync() => Task.CompletedTask;
     }
 
     /// <summary>A typed logger over the recording one, which the dispatcher takes.</summary>

@@ -34,7 +34,7 @@ checkpoint to the beginning SHALL be accepted whatever reader last wrote it — 
 the same under every reader and every partition count — so that a deployment whose reader or
 partition count changed can rebuild or replay from inside the running cluster, and the documentation
 SHALL name that as the way to recover from a refused checkpoint. A wake-up that cannot be sent SHALL
-be logged with the consumer it was meant for, so that a wake-up path that is always lost is visible
+be logged with the consumers it was meant for, so that a wake-up path that is always lost is visible
 as more than latency, and one wake-up that fails SHALL NOT keep the other consumers of that commit
 from being woken.
 
@@ -73,7 +73,7 @@ from being woken.
 #### Scenario: A reader cannot be paused for a rebuild
 
 - **WHEN** one partition's reader cannot be paused for a rebuild
-- **THEN** the rebuild fails naming that partition, and no reader it had paused stays paused
+- **THEN** the rebuild fails naming that partition, and no reader the rebuild reached stays paused
 
 #### Scenario: A read model is rebuilt after the partition count changed
 
@@ -84,8 +84,8 @@ from being woken.
 
 #### Scenario: A wake-up cannot be sent
 
-- **WHEN** a commit's wake-up cannot be delivered for one consumer
-- **THEN** it is logged naming that consumer, and the commit's other consumers are woken all the same
+- **WHEN** a commit's wake-up cannot be delivered
+- **THEN** it is logged naming the consumers it was meant for, and the consumers it could still reach are woken
 
 #### Scenario: A rebuild is requested during a full replay
 

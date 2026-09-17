@@ -115,13 +115,35 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
     public async Task ResetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await ResetRowAsync(context, projection, partition, reader, cancellationToken))
+        {
+            return;
+        }
+
+        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = 0, Reader = reader });
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Another writer inserted the row between the update and the insert — under any reader's name, which the
+            // reset takes over like any other.
+            context.ChangeTracker.Clear();
+            if (!await ResetRowAsync(context, projection, partition, reader, cancellationToken))
+            {
+                throw;
+            }
+        }
+    }
+
+    /// <summary>Returns the row to the beginning under <paramref name="reader"/>, whatever reader holds it.</summary>
+    private static async Task<bool> ResetRowAsync(TContext context, string projection, int partition, string reader, CancellationToken cancellationToken)
+    {
         var rows = await context.Set<ProjectionCheckpoint>()
             .Where(c => c.Projection == projection && c.Partition == partition)
             .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, 0L).SetProperty(c => c.Reader, reader), cancellationToken);
-        if (rows == 0)
-        {
-            await InsertAsync(context, projection, partition, reader, expected: null, position: 0, cancellationToken);
-        }
+        return rows > 0;
     }
 
     private async Task InsertAsync(TContext context, string projection, int partition, string reader, long? expected, long position, CancellationToken cancellationToken)

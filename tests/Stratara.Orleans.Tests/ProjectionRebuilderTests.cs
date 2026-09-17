@@ -158,6 +158,38 @@ public sealed class ProjectionRebuilderTests
         checkpoints.Verify(c => c.ResetAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// The pause a reader counted before its answer was lost: the grain is paused, the caller's call fails, and the
+    /// reader would stay paused for good unless the rebuild resumes every reader it reached.
+    /// </summary>
+    [Fact]
+    public async Task A_pause_whose_answer_is_lost_is_resumed_all_the_same()
+    {
+        var journal = new List<string>();
+        var grains = Enumerable.Range(0, Partitions).ToDictionary(
+            partition => StoreReaderGrainKey.Of("View", partition),
+            partition => (IProjectionGrain)new LosingGrain(partition == 3, journal));
+        var grainFactory = new Mock<IGrainFactory>();
+        grainFactory.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => grains[key]);
+        var projection = new Mock<IRebuildableProjection>();
+        var handler = new Mock<IProjectionHandler>();
+        handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
+        var reader = new Mock<ICommittedPositionReader>();
+        reader.SetupGet(r => r.Name).Returns("reader/16");
+        var services = new ServiceCollection()
+            .AddScoped(_ => handler.Object)
+            .AddScoped<IProjection>(_ => projection.Object)
+            .AddScoped(_ => new Mock<IProjectionCheckpointStore>().Object)
+            .AddScoped(_ => reader.Object)
+            .BuildServiceProvider();
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
+
+        Assert.Equal(Partitions, journal.Count(entry => entry == "pause"));
+        Assert.Equal(Partitions, journal.Count(entry => entry == "resume"));
+    }
+
     private static (ProjectionRebuilder Rebuilder, Mock<IRebuildableProjection> Projection, Mock<IProjectionCheckpointStore> Checkpoints) Build(List<string> journal)
     {
         var grains = Enumerable.Range(0, Partitions).ToDictionary(
@@ -227,6 +259,38 @@ public sealed class ProjectionRebuilderTests
     }
 
     /// <summary>The grain interface is internal, which a proxy generator cannot reach; a fake can.</summary>
+    /// <summary>A reader that counts its pauser before it answers, and whose answer is lost where it is told to lose it.</summary>
+    private sealed class LosingGrain(bool losesTheAnswer, List<string> journal) : IProjectionGrain
+    {
+        public Task EnsureRunningAsync() => Task.CompletedTask;
+
+        public Task NudgeAsync() => Task.CompletedTask;
+
+        public Task<int> CatchUpAsync() => Task.FromResult(0);
+
+        public Task<long> PositionAsync() => Task.FromResult(0L);
+
+        public Task PauseAsync()
+        {
+            lock (journal)
+            {
+                journal.Add("pause");
+            }
+
+            return losesTheAnswer ? Task.FromException(new TimeoutException("the answer was lost")) : Task.CompletedTask;
+        }
+
+        public Task ResumeAsync()
+        {
+            lock (journal)
+            {
+                journal.Add("resume");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FakeGrain(Action onPause, Func<Task> onResume) : IProjectionGrain
     {
         public Task EnsureRunningAsync() => Task.CompletedTask;

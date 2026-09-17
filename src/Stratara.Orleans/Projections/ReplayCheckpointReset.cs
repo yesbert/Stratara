@@ -32,7 +32,9 @@ internal sealed class ReplayCheckpointResetTruncator(
         var handler = services.GetRequiredService<IProjectionHandler>();
         var names = services.GetServices<IProjection>().Select(handler.GetProjectionName).Distinct(StringComparer.Ordinal).ToList();
         var grains = names
-            .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition))))
+            .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => new PausedReader(
+                StoreReaderGrainKey.Of(name, partition),
+                grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)))))
             .ToList();
 
         var paused = await StoreReaderPause.PauseAllAsync(grains);

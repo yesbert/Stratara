@@ -32,7 +32,9 @@ internal sealed class ProjectionRebuilder(
         }
 
         var partitions = Enumerable.Range(0, commitOrder.Value.PartitionCount)
-            .Select(partition => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(projectionName, partition)))
+            .Select(partition => new PausedReader(
+                StoreReaderGrainKey.Of(projectionName, partition),
+                grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(projectionName, partition))))
             .ToList();
 
         var paused = await StoreReaderPause.PauseAllAsync(partitions);
