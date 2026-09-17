@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Placement;
-using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.Runtime.MembershipService.SiloMetadata;
 using Orleans.Runtime.Placement;

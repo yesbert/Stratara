@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Orleans.Hosting;
 using Orleans.Placement;
 using Orleans.Runtime;
@@ -105,7 +104,7 @@ internal static class SingletonWorkPlacement
     internal sealed class SingletonWorkSiloMetadata
     {
         private readonly Lock _gate = new();
-        private bool _filled;
+        private volatile bool _filled;
         private bool _filling;
 
         public Dictionary<string, string> Entries { get; } = new(StringComparer.Ordinal);
@@ -121,6 +120,11 @@ internal static class SingletonWorkPlacement
         /// <exception cref="InvalidOperationException">A work registered without a name could not be constructed.</exception>
         public void Fill(IServiceScopeFactory scopeFactory)
         {
+            if (_filled)
+            {
+                return;
+            }
+
             lock (_gate)
             {
                 if (_filled || _filling)
@@ -131,13 +135,21 @@ internal static class SingletonWorkPlacement
                 _filling = true;
                 try
                 {
+                    // Written aside and copied in one go: a work's own constructor may make the runtime read the
+                    // entries while this runs, and what it reads must be all of them or none.
+                    var entries = new Dictionary<string, string>(StringComparer.Ordinal);
                     using var scope = scopeFactory.CreateScope();
                     foreach (var name in PublishedNames(scope.ServiceProvider))
                     {
-                        Entries[MetadataKeyOf(name)] = "registered";
+                        entries[MetadataKeyOf(name)] = "registered";
                     }
 
-                    Hosting.RolePlacement.Fill(Entries, scope.ServiceProvider);
+                    Hosting.RolePlacement.Fill(entries, scope.ServiceProvider);
+                    foreach (var (key, value) in entries)
+                    {
+                        Entries[key] = value;
+                    }
+
                     _filled = true;
                 }
                 finally

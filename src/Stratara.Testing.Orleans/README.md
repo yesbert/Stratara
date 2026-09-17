@@ -64,12 +64,11 @@ public sealed class ExecutionModelFixture : IAsyncLifetime
 }
 ```
 
-`ResetAsync` runs the execution model's reset port — the timers, the grain directory's entries and
-the registered readers' checkpoints — — on this host, where the silo keeps running. It stops the readers, puts each of them at the store's head and starts
-them again: the
-next test's facts are applied, the last test's are not applied a second time, and `WaitForReadersAsync`
-returns at once. The read models themselves are not emptied — empty or rebuild them in the fixture
-where a test needs them clean.
+`ResetAsync` runs the execution model's reset port on this host, where the silo keeps running: the timers
+and the grain directory's entries go, and every registered reader is put at the store's head. The next
+test's facts are applied, the last test's are not applied a second time, and `WaitForReadersAsync` returns
+at once. The read models themselves are not emptied — empty or rebuild them in the fixture where a test
+needs them clean.
 
 ## Where the host stops
 

@@ -171,6 +171,48 @@ public sealed class ExecutionModelTestHostTests
         Assert.Equal(appliedBefore + 1, runs.Applied);
     }
 
+    /// <summary>A reader left behind the head is moved up to it, and the report counts it.</summary>
+    [Fact]
+    public async Task A_reset_moves_a_reader_that_is_behind_the_head_and_counts_it()
+    {
+        var runs = new Runs();
+        await using var host = await ExecutionModelTestHost.CreateAsync(services => Commands(services, runs).AddStrataraProjectionGrains());
+        await host.DispatchAsync(new OpenAccount(Guid.NewGuid(), 1m), TestContext.Current.CancellationToken);
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        string name;
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var checkpoints = scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+            var reader = scope.ServiceProvider.GetRequiredService<Stratara.Abstractions.CommitOrder.ICommittedPositionReader>();
+            name = scope.ServiceProvider.GetRequiredService<IProjectionHandler>().GetProjectionName(new BalanceProjection(runs));
+
+            // Put one partition's reader back at the beginning behind the grain's back, as a test that plants a
+            // position does; the reset is what brings it up to the head again.
+            for (var partition = 0; partition < 4; partition++)
+            {
+                if (await checkpoints.GetAsync(name, partition, reader.Name, TestContext.Current.CancellationToken) > 0)
+                {
+                    await checkpoints.SetAsync(name, partition, reader.Name, 0, TestContext.Current.CancellationToken);
+                    break;
+                }
+            }
+        }
+
+        var report = await host.ResetAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, report.Checkpoints);
+        await using var after = host.Services.CreateAsyncScope();
+        var store = after.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+        var positions = after.ServiceProvider.GetRequiredService<Stratara.Abstractions.CommitOrder.ICommittedPositionReader>();
+        for (var partition = 0; partition < 4; partition++)
+        {
+            Assert.Equal(
+                await positions.HeadAsync(partition, TestContext.Current.CancellationToken),
+                await store.GetAsync(name, partition, positions.Name, TestContext.Current.CancellationToken));
+        }
+    }
+
     [Fact]
     public async Task A_test_shortens_a_period_to_one_second()
     {
