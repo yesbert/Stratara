@@ -116,15 +116,16 @@ the generated migration as it is.
    the bus projection and saga workers, and only then **seed the checkpoints** of the projections and sagas the
    silos will register, from the silo's own composition — see
    [Start on a populated store](#start-on-a-populated-store). Every fact is then applied once: below the head
-   by the bus workers, above it by the grains.
+   by the bus workers, above it by the grains. The freeze lasts no longer than this step — once the checkpoints
+   are seeded, let the appending hosts run again, because everything they commit from then on is above the head
+   and the grains apply it.
 4. **Start the silos**, at least two, and watch [what to watch](operate-the-orleans-execution-model.md#what-to-watch).
 5. **Switch the API host** to the execution model's dispatcher; let the command worker's queue drain
    before stopping the command worker hosts.
 6. **Retire the queues** nothing consumes any more, in the order
    [After the cut-over: the bus queues](#after-the-cut-over-the-bus-queues) gives.
 
-**Without a window for step 3**, the choice is between applying twice and not applying at all, and only the
-first is recoverable: keep the bus projection and saga workers running until the silos are up — with
+**Without a window for step 3**, the choice is between applying twice and not applying at all: keep the bus projection and saga workers running until the silos are up — with
 `hybrid: true` where a consumer outside this deployment still needs the bundles — and accept that everything
 committed between the seeding and their stop is applied by them and by the grains. Do that only where every
 projection and saga of the deployment applies idempotently. Stopping them before the seeding instead, while
