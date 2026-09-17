@@ -24,6 +24,9 @@ handlers, projections and sagas run unchanged.
 | Work that runs once per cluster | `AddStrataraSingletonWork<TWork>()` |
 | Owner-checked durable timers | `AddStrataraDurableTimers()` |
 
+A handler on these paths receives a `CancellationToken` that a stopping silo cancels once
+`GrainCollectionOptions.DeactivationTimeout` has passed; what it did not finish runs again elsewhere.
+
 The commit-order readers, the checkpoint store and the store-schema additions live in
 `Stratara.Orleans.EntityFrameworkCore`.
 

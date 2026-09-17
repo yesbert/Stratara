@@ -93,6 +93,7 @@ internal sealed class HeavyWorkGrain(
     IOptions<HeavyWorkOptions> options,
     ILocalSiloDetails localSilo,
     TimeProvider timeProvider,
+    SiloStopSignal stopSignal,
     ILogger<HeavyWorkGrain> logger) : Grain, IHeavyWorkGrain
 {
     public const int MaxLocalWorkers = 8;
@@ -103,6 +104,8 @@ internal sealed class HeavyWorkGrain(
     private readonly TimeSpan _renewal = options.Value.PermitLease / 2;
     private readonly SemaphoreSlim _slots = new(MaxLocalWorkers, MaxLocalWorkers);
     private readonly HashSet<Guid> _held = [];
+    private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
+    private readonly HashSet<Task> _inFlight = [];
 
     private readonly ResiliencePipeline<bool> _acquirePermit = new ResiliencePipelineBuilder<bool>()
         .AddRetry(new RetryStrategyOptions<bool>
@@ -121,20 +124,34 @@ internal sealed class HeavyWorkGrain(
             return;
         }
 
+        var run = CommandExecution.RunAsync(scopeFactory, envelope, intentId, UnderSlotAndPermitAsync, callerChain: null, _stopping.Token);
+        _inFlight.Add(run);
         try
         {
-            await CommandExecution.RunAsync(scopeFactory, envelope, intentId, UnderSlotAndPermitAsync);
+            await run;
         }
         finally
         {
+            _inFlight.Remove(run);
             _held.Remove(intentId);
         }
+    }
+
+    /// <summary>
+    /// Waits for the units in flight within the deactivation budget; past it, cancels their token — a unit waiting for
+    /// a slot or a permit stops waiting, a running handler is told to stop — and waits for them to end.
+    /// </summary>
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        await AggregateGrain.StopRunningAsync(_stopping, _inFlight.Count == 0 ? null : Task.WhenAll(_inFlight), cancellationToken);
+        _stopping.Dispose();
+        await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
     /// <summary>Runs the unit in one of the activation's slots, under a permit; the intent's lease is already renewing.</summary>
     private async Task UnderSlotAndPermitAsync(Func<Task> run)
     {
-        await _slots.WaitAsync();
+        await _slots.WaitAsync(_stopping.Token);
         try
         {
             await UnderPermitAsync(run);
@@ -153,7 +170,7 @@ internal sealed class HeavyWorkGrain(
     {
         var permits = GrainFactory.GetGrain<IHeavyWorkPermitGrain>(0);
         var unitId = Guid.NewGuid();
-        await _acquirePermit.ExecuteAsync(async _ => await permits.TryAcquireAsync(unitId, localSilo.SiloAddress));
+        await _acquirePermit.ExecuteAsync(async _ => await permits.TryAcquireAsync(unitId, localSilo.SiloAddress), _stopping.Token);
 
         var renewal = new PermitRenewal(permits, unitId, localSilo.SiloAddress, logger);
         var renewing = timeProvider.CreateTimer(static state => ((PermitRenewal)state!).Tick(), renewal, _renewal, _renewal);

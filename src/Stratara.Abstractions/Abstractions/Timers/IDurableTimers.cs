@@ -18,24 +18,30 @@ public interface IDurableTimers
     /// <param name="registration">The owner, purpose and due time.</param>
     /// <param name="cancellationToken">Propagated to the registration.</param>
     /// <returns>A task that completes when the timer is registered.</returns>
-    /// <exception cref="ArgumentException">The purpose is empty, contains <c>@</c>, or is longer than the timer store holds (130 characters).</exception>
+    /// <exception cref="ArgumentException">
+    /// The purpose is empty, contains <c>@</c>, or is longer than the timer store holds (130 characters); or the owner id
+    /// is empty or longer than the timer store holds (139 characters).
+    /// </exception>
     Task RegisterAsync(TimerRegistration registration, CancellationToken cancellationToken = default);
 
     /// <summary>Cancels one timer of an owner. Cancelling a timer that does not exist is not an error.</summary>
     /// <param name="ownerId">The owner.</param>
     /// <param name="purpose">The purpose the timer was registered with.</param>
     /// <param name="cancellationToken">Propagated to the cancellation.</param>
+    /// <exception cref="ArgumentException">The owner id is empty or longer than the timer store holds (139 characters).</exception>
     Task CancelAsync(string ownerId, string purpose, CancellationToken cancellationToken = default);
 
     /// <summary>Cancels every timer of an owner — the call the operation that ends the owner makes.</summary>
     /// <param name="ownerId">The owner.</param>
     /// <param name="cancellationToken">Propagated to the cancellation.</param>
+    /// <exception cref="ArgumentException">The owner id is empty or longer than the timer store holds (139 characters).</exception>
     Task CancelAllAsync(string ownerId, CancellationToken cancellationToken = default);
 
     /// <summary>Lists the timers an owner currently has, for diagnostics and tests.</summary>
     /// <param name="ownerId">The owner.</param>
     /// <param name="cancellationToken">Propagated to the lookup.</param>
     /// <returns>The registrations, or an empty list.</returns>
+    /// <exception cref="ArgumentException">The owner id is empty or longer than the timer store holds (139 characters).</exception>
     Task<IReadOnlyList<TimerRegistration>> ListAsync(string ownerId, CancellationToken cancellationToken = default);
 }
 
@@ -72,6 +78,10 @@ public interface ITimerHandler
 {
     /// <summary>Handles a due timer. Throwing keeps the timer registered for a retry.</summary>
     /// <param name="due">The timer that fired.</param>
-    /// <param name="cancellationToken">Propagated to the handling.</param>
+    /// <param name="cancellationToken">
+    /// Requested when the process running the handler stops and the handler has not completed within the time the host
+    /// gives a stop. A handler that observes it stops; the timer stays registered and fires again elsewhere, as after a
+    /// failure. A handler that ignores it runs to its end.
+    /// </param>
     Task OnDueAsync(TimerDue due, CancellationToken cancellationToken);
 }

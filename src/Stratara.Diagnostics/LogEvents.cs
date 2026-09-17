@@ -288,6 +288,8 @@ public static class LogEvents
         public const int ResumeHeldBackByReplay = 117_006;
         /// <summary>The drain resumes recorded commands again after a full replay held them back.</summary>
         public const int ResumeReleasedAfterReplay = 117_007;
+        /// <summary>A handler on a grain path was cancelled because its silo stopped; what it did not finish runs again elsewhere.</summary>
+        public const int HandlerStoppedWithSilo = 117_008;
         /// <summary>A store reader stopped at an entry it could not apply; its checkpoint stays before the entry (warning).</summary>
         public const int PartitionStalled = 117_101;
         /// <summary>One attempt to apply an entry failed and is retried under the preceding-fact policy (warning).</summary>

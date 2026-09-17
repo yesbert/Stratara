@@ -158,7 +158,8 @@ Every instrument is published under the meter `Stratara` with the names in
 
 The log events to route to an alert: `117_101` and `117_103` (a partition stopped), `117_104` (a command
 kept), `117_111` (recorded commands on a silo without an intent store), `117_112` and `117_113` (a failing
-attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound). Worth routing to a
+attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound). `117_008` (a handler
+stopped with its silo) explains a second run of a command or a timer after a deploy. Worth routing to a
 dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded
 commands back and once when it releases them — a command that waits for the length of a replay is waiting, not
 lost. The whole band is listed in the [log events schema](../reference/log-events-schema.md).
@@ -233,7 +234,33 @@ waiting a whole retry period.
 
 A timer fires once however long its handler runs. When a handler outlasts the reminder call's response
 timeout, the runtime delivers the next tick while it still runs; that tick does nothing, and the timer is
-unregistered once the handler has completed.
+unregistered once the handler has completed — or stays registered, and fires again on another silo, when the
+handler was stopped with its silo. A handler may register its own owner and purpose again, with the due time it
+fired for or a later one; the new timer is kept.
+
+An owner id is at most 139 characters and a purpose at most 130: the reminder table holds 150 for each, with the
+grain type's name or the due time taking the rest. A longer one is refused by `IDurableTimers` on every member,
+with a message naming the limit.
+
+## Stopping a silo
+
+A silo stopped gracefully waits for the handlers running on its grain paths — a command in its aggregate's
+activation, a command without an aggregate, heavy work, a timer — for the deactivation budget,
+`GrainCollectionOptions.DeactivationTimeout` (30 s by default), a setting the host sizes. A handler that completes
+within it is never interrupted. Past it, the `CancellationToken` each handler received is cancelled, and each
+stopped handler is logged as `117_008` with what it was running:
+
+| Path | What happens after the stop |
+|---|---|
+| Recorded command | Its hand-over lapses; another silo resumes it after `OrleansDispatchOptions.IntentGrace`, and no attempt is counted |
+| Forwarded command | The caller's dispatch fails with a message saying the silo stopped; dispatch it again |
+| Heavy work | A unit still waiting for a worker or a permit stops waiting; a running one is resumed like a recorded command |
+| Timer | The timer stays registered and fires on the next silo that serves its owner |
+
+Pass the token to every await of a handler, and observe it before the handler commits rather than after: a
+handler stopped after its commit runs again, which it tolerates as it tolerates any at-least-once delivery. A
+handler that ignores the token runs to its end, and the silo waits for it as long as the runtime allows. A silo
+that dies hard has none of this; its work is resumed as after any crash.
 
 ## Heavy commands and their aggregate
 

@@ -44,6 +44,7 @@ public static class OrleansTimersServiceCollectionExtensions
         Stratara.Orleans.Hosting.OrleansOptionsValidator.Register<DurableTimerOptions>(services);
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IDurableTimers, DurableTimers>();
+        Stratara.Orleans.Hosting.SiloStopSignal.Register(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.Extensions.Hosting.IHostedService, TimerPortsStartupCheck>());
         Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         Stratara.Orleans.Hosting.RolePlacement.Publish(services, Stratara.Orleans.Hosting.ExecutionRole.Timers);
