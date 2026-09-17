@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using Stratara.Abstractions.Mediator;
@@ -9,6 +10,7 @@ using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
 using IRequest = Stratara.Abstractions.Mediator.IRequest;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Aggregates;
@@ -64,13 +66,19 @@ internal interface ICommandRunnerGrain : IGrainWithGuidKey
 /// starts when it is accepted, so an intent waiting behind a long handler is not handed over again, and an intent the
 /// drain hands over while the activation still holds it is not queued a second time. The queue lives in the
 /// activation: an activation that ends before running what it accepted fails the forwarded commands back to their
-/// callers and stops renewing the recorded intents, which the drain resumes after the grace.
+/// callers and stops renewing the recorded intents, which the drain resumes after the grace. A command running when
+/// the silo stops is waited for within the runtime's deactivation budget; past it, its handler's token is cancelled — a recorded intent is then resumed elsewhere without an attempt counted, and a forwarded command's
+/// caller is told the silo stopped.
 /// </remarks>
 [CommandsRolePlacementFilter]
-internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain, IAggregateGrain
+internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStopSignal stopSignal, ILogger<AggregateGrain> logger) : Grain, IAggregateGrain
 {
+    public const string StoppedMessage = "The silo running the aggregate's activation stopped before the handler completed; dispatch the command again.";
+
     private readonly Queue<Accepted> _accepted = new();
     private readonly HashSet<Guid> _heldIntents = [];
+    private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
+    private TaskCompletionSource? _turn;
     private bool _running;
 
     public Task ExecuteAsync(AggregateCommandEnvelope envelope)
@@ -100,9 +108,11 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
     /// </summary>
     public async Task RunAcceptedAsync()
     {
+        var turn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _turn = turn;
         try
         {
-            while (_accepted.TryDequeue(out var next))
+            while (!_stopping.IsCancellationRequested && _accepted.TryDequeue(out var next))
             {
                 try
                 {
@@ -112,9 +122,14 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
                     }
                     else
                     {
-                        await CommandExecution.RunAsync(scopeFactory, next.Envelope, intentId: null, around: null, next.CallerChain);
+                        await CommandExecution.RunAsync(scopeFactory, next.Envelope, intentId: null, around: null, next.CallerChain, _stopping.Token);
                         next.Completion?.TrySetResult();
                     }
+                }
+                catch (OperationCanceledException) when (_stopping.IsCancellationRequested && next.Intent is null)
+                {
+                    logger.LogHandlerStoppedWithSilo(next.Envelope.CommandTypeName, $"aggregate {this.GetPrimaryKey()}");
+                    next.Completion?.TrySetException(new InvalidOperationException(StoppedMessage));
                 }
                 catch (Exception ex)
                 {
@@ -125,13 +140,53 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
         finally
         {
             _running = false;
+            turn.TrySetResult();
         }
     }
 
+    /// <summary>
+    /// Waits for the command running within the deactivation budget; past it, cancels the handler's token and waits
+    /// for it to stop. What is still queued is abandoned afterwards.
+    /// </summary>
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
+        await StopRunningAsync(_stopping, _turn?.Task, cancellationToken);
         await AbandonAsync();
+        _stopping.Dispose();
         await base.OnDeactivateAsync(reason, cancellationToken);
+    }
+
+    /// <summary>Waits for <paramref name="running"/> until <paramref name="deactivation"/> fires, then cancels <paramref name="stopping"/> and waits for it once more.</summary>
+    internal static async Task StopRunningAsync(CancellationTokenSource stopping, Task? running, CancellationToken deactivation)
+    {
+        if (running is null || running.IsCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            await running.WaitAsync(deactivation);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || deactivation.IsCancellationRequested)
+        {
+            _ = ex;
+        }
+
+        if (running.IsCompleted)
+        {
+            return;
+        }
+
+        await stopping.CancelAsync();
+        try
+        {
+            await running;
+        }
+        catch (Exception ex)
+        {
+            _ = ex;
+        }
     }
 
     /// <summary>Queues the command and, unless the queue is already being run, asks the grain to run it.</summary>
@@ -157,7 +212,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
     {
         try
         {
-            await CommandExecution.RunIntentAsync(intent.Scope.ServiceProvider, envelope, intent.Id, await intent.Lease, around: null, this.GetPrimaryKey());
+            await CommandExecution.RunIntentAsync(intent.Scope.ServiceProvider, envelope, intent.Id, await intent.Lease, around: null, this.GetPrimaryKey(), _stopping.Token);
         }
         finally
         {
@@ -215,11 +270,29 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory) : Grain,
     private sealed record AcceptedIntent(Guid Id, IServiceScope Scope, Task<IntentLease> Lease);
 }
 
-/// <summary>Runs an intent that names no aggregate: once, somewhere in the cluster, keyed by the intent.</summary>
+/// <summary>
+/// Runs an intent that names no aggregate: once, somewhere in the cluster, keyed by the intent. A run outlasting the
+/// deactivation budget has its handler's token cancelled and is resumed elsewhere.
+/// </summary>
 [CommandsRolePlacementFilter]
-internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory) : Grain, ICommandRunnerGrain
+internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory, SiloStopSignal stopSignal) : Grain, ICommandRunnerGrain
 {
-    public Task ExecuteIntentAsync(AggregateCommandEnvelope envelope) => CommandExecution.RunAsync(scopeFactory, envelope, this.GetPrimaryKey());
+    private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
+    private Task? _running;
+
+    public Task ExecuteIntentAsync(AggregateCommandEnvelope envelope)
+    {
+        var running = CommandExecution.RunAsync(scopeFactory, envelope, this.GetPrimaryKey(), _stopping.Token);
+        _running = running;
+        return running;
+    }
+
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        await AggregateGrain.StopRunningAsync(_stopping, _running, cancellationToken);
+        _stopping.Dispose();
+        await base.OnDeactivateAsync(reason, cancellationToken);
+    }
 }
 
 /// <summary>
@@ -232,15 +305,15 @@ internal static class CommandExecution
 {
     private static readonly ConcurrentDictionary<Type, IHandlerInvoker> Invokers = new();
 
-    public static Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId) =>
-        RunAsync(scopeFactory, envelope, intentId, around: null);
+    public static Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId, CancellationToken stopping) =>
+        RunAsync(scopeFactory, envelope, intentId, around: null, callerChain: null, stopping);
 
     /// <summary>
     /// Runs the command in a scope of its own. <paramref name="around"/> wraps the handler's run — heavy work
     /// acquires its permit there — inside the intent's lease, so a command waiting for a permit is not handed over
-    /// again either.
+    /// again either. <paramref name="stopping"/> reaches the handler, and is cancelled when the silo stops.
     /// </summary>
-    public static async Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId, Func<Func<Task>, Task>? around, IReadOnlyList<Guid>? callerChain = null)
+    public static async Task RunAsync(IServiceScopeFactory scopeFactory, AggregateCommandEnvelope envelope, Guid? intentId, Func<Func<Task>, Task>? around, IReadOnlyList<Guid>? callerChain = null, CancellationToken stopping = default)
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
@@ -248,19 +321,20 @@ internal static class CommandExecution
         var services = scope.ServiceProvider;
         if (intentId is not { } id)
         {
-            await Wrap(() => InvokeAsync(services, envelope, throughMediator: false, callerChain), around)();
+            await Wrap(() => InvokeAsync(services, envelope, throughMediator: false, stopping, callerChain), around)();
             return;
         }
 
-        await RunIntentAsync(services, envelope, id, await IntentLease.StartAsync(services, id), around);
+        await RunIntentAsync(services, envelope, id, await IntentLease.StartAsync(services, id), around, aggregateId: null, stopping);
     }
 
     /// <summary>
     /// Runs a recorded intent under a lease that is already renewing its hand-over, and takes the lease over: it ends
     /// the lease after the handler, records the failure of an attempt that throws, and hands the record to the
-    /// completion queue once the handler has completed.
+    /// completion queue once the handler has completed. A handler cancelled because the silo stops counts no attempt
+    /// and is logged; the lease ends, so the drain resumes the intent elsewhere after the grace.
     /// </summary>
-    public static async Task RunIntentAsync(IServiceProvider services, AggregateCommandEnvelope envelope, Guid intentId, IntentLease lease, Func<Func<Task>, Task>? around = null, Guid? aggregateId = null)
+    public static async Task RunIntentAsync(IServiceProvider services, AggregateCommandEnvelope envelope, Guid intentId, IntentLease lease, Func<Func<Task>, Task>? around = null, Guid? aggregateId = null, CancellationToken stopping = default)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentNullException.ThrowIfNull(lease);
@@ -269,7 +343,13 @@ internal static class CommandExecution
         {
             try
             {
-                await Wrap(() => InvokeAsync(services, envelope, throughMediator: true), around)();
+                await Wrap(() => InvokeAsync(services, envelope, throughMediator: true, stopping), around)();
+            }
+            catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+            {
+                services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(CommandExecution)).LogHandlerStoppedWithSilo(
+                    envelope.CommandTypeName, $"intent {intentId}, aggregate {(aggregateId is { } id ? id.ToString() : "none")}");
+                throw;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -290,7 +370,7 @@ internal static class CommandExecution
     /// command worker; a synchronous forward already ran that pipeline on the caller's side and invokes the
     /// handler directly, so no behaviour runs twice.
     /// </summary>
-    private static async Task InvokeAsync(IServiceProvider services, AggregateCommandEnvelope envelope, bool throughMediator, IReadOnlyList<Guid>? callerChain = null)
+    private static async Task InvokeAsync(IServiceProvider services, AggregateCommandEnvelope envelope, bool throughMediator, CancellationToken stopping, IReadOnlyList<Guid>? callerChain = null)
     {
         var session = JsonSerializer.Deserialize<SessionContext>(envelope.SessionContextJson)
                       ?? throw new InvalidOperationException("The aggregate command envelope carries no session context.");
@@ -305,8 +385,8 @@ internal static class CommandExecution
         {
             var invoker = Invokers.GetOrAdd(type, BuildInvoker);
             await (throughMediator
-                ? invoker.DispatchAsync(services, command, CancellationToken.None)
-                : invoker.InvokeHandlerAsync(services, command, CancellationToken.None));
+                ? invoker.DispatchAsync(services, command, stopping)
+                : invoker.InvokeHandlerAsync(services, command, stopping));
         }
     }
 

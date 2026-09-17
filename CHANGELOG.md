@@ -18,6 +18,8 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **Orleans: log event `117_008`** (`LogEvents.Orleans.HandlerStoppedWithSilo`) for a handler on a grain path cancelled
+  because its silo stopped.
 - **`IProjectionCheckpointStore.AdvanceAsync`** advances a checkpoint from the position its writer last saw. The
   default replaces the position through `SetAsync`, so a store of the consumer's own keeps compiling; the shipped
   store refuses a write that finds another position or another reader.
@@ -47,6 +49,15 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Orleans: a stopping silo tells the handlers on its grain paths.** Command handlers in an aggregate's activation or
+  a runner, heavy work and timer handlers receive a `CancellationToken` that is cancelled once the silo has been
+  stopping for `GrainCollectionOptions.DeactivationTimeout`; it was `CancellationToken.None`. A recorded command
+  stopped this way is resumed elsewhere with no attempt counted, a forwarded command fails back with a message saying
+  the silo stopped, and a timer stays registered and fires on the next silo.
+- **Orleans: a timer registered from its own handler is kept.** A handler that registered its owner and purpose again
+  with the same due time lost the new timer when its tick unregistered itself.
+- **Orleans: `IDurableTimers` refuses an owner id longer than the reminder table holds** (139 characters) on every
+  member, with a message naming the limit, instead of failing at the first tick.
 - **Orleans: the heavy-work bound holds across the loss of the silo keeping the permits.** A permit keeper
   that is activated admits no new heavy unit for one `PermitLease` and takes back every running unit that
   registers again, so the units the lost keeper had admitted count against the bound before new ones start;

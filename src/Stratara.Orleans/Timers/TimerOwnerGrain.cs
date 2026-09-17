@@ -1,10 +1,12 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
 using Stratara.Abstractions.Timers;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Timers;
@@ -16,7 +18,8 @@ namespace Stratara.Orleans.Timers;
 /// unregisters itself afterwards — or at once, if the owner is gone. The grain is reentrant: its only state
 /// is the reminder table, and registering or cancelling by name is idempotent, so a handler that cancels or
 /// reschedules its owner's timers, or a fact that reaches the owner while a tick runs, does not wait on the
-/// tick's own turn.
+/// tick's own turn. A tick whose handler outlasts the deactivation budget of a stopping silo has its token cancelled;
+/// the reminder stays, so the timer fires again on the next silo.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 [TimersRolePlacementFilter]
@@ -24,7 +27,9 @@ namespace Stratara.Orleans.Timers;
 internal sealed class TimerOwnerGrain(
     IServiceScopeFactory scopeFactory,
     IOptions<DurableTimerOptions> options,
-    TimeProvider timeProvider) : Grain, ITimerOwnerGrain, IRemindable
+    TimeProvider timeProvider,
+    SiloStopSignal stopSignal,
+    ILogger<TimerOwnerGrain> logger) : Grain, ITimerOwnerGrain, IRemindable
 {
     private readonly TimeSpan _retryPeriod = options.Value.RetryPeriod;
     private readonly TimeSpan _dueTolerance = options.Value.DueTolerance;
@@ -37,6 +42,13 @@ internal sealed class TimerOwnerGrain(
     // A tick that arrives while the same timer's handler runs — a handler that outlasts the retry period — must not
     // start the handler again; the timer is only unregistered once its handler has completed.
     private readonly HashSet<string> _firing = new(StringComparer.Ordinal);
+
+    // A registration with the purpose and due time of a tick in flight carries that tick's reminder name; the tick must
+    // not unregister it once its handler returns, because it is no longer the reminder that fired.
+    private readonly HashSet<string> _renewed = new(StringComparer.Ordinal);
+
+    private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
+    private readonly HashSet<Task> _ticks = [];
 
     public async Task RegisterAsync(string purpose, DateTimeOffset dueAt, CancellationToken cancellationToken)
     {
@@ -52,7 +64,12 @@ internal sealed class TimerOwnerGrain(
                 dueIn = TimeSpan.Zero;
             }
 
-            await this.RegisterOrUpdateReminder(ReminderName.Encode(purpose, dueAt), dueIn, _retryPeriod);
+            var reminderName = ReminderName.Encode(purpose, dueAt);
+            await this.RegisterOrUpdateReminder(reminderName, dueIn, _retryPeriod);
+            if (_firing.Contains(reminderName))
+            {
+                _renewed.Add(reminderName);
+            }
         }
         finally
         {
@@ -115,14 +132,32 @@ internal sealed class TimerOwnerGrain(
             return;
         }
 
+        var tick = FireAsync(reminderName);
+        _ticks.Add(tick);
         try
         {
-            await FireAsync(reminderName);
+            await tick;
+        }
+        catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
+        {
+            var (purpose, _) = ReminderName.Decode(reminderName);
+            logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {purpose}");
+            throw;
         }
         finally
         {
+            _ticks.Remove(tick);
             _firing.Remove(reminderName);
+            _renewed.Remove(reminderName);
         }
+    }
+
+    /// <summary>Waits for the ticks in flight within the deactivation budget; past it, cancels their handlers' token and waits for them to end.</summary>
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        await Aggregates.AggregateGrain.StopRunningAsync(_stopping, _ticks.Count == 0 ? null : Task.WhenAll(_ticks), cancellationToken);
+        _stopping.Dispose();
+        await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
     private async Task FireAsync(string reminderName)
@@ -132,7 +167,7 @@ internal sealed class TimerOwnerGrain(
 
         using var scope = scopeFactory.CreateScope();
         var owners = TimerPorts.OwnersFor(scope.ServiceProvider, ownerId);
-        if (!await owners.ExistsAsync(ownerId, CancellationToken.None))
+        if (!await owners.ExistsAsync(ownerId, _stopping.Token))
         {
             await UnregisterByNameAsync(reminderName);
             return;
@@ -144,9 +179,12 @@ internal sealed class TimerOwnerGrain(
         }
 
         var handler = TimerPorts.HandlerFor(scope.ServiceProvider, ownerId);
-        await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), CancellationToken.None);
+        await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), _stopping.Token);
 
-        await UnregisterByNameAsync(reminderName);
+        if (!_renewed.Contains(reminderName))
+        {
+            await UnregisterByNameAsync(reminderName);
+        }
     }
 
     private async Task UnregisterByNameAsync(string reminderName)
@@ -168,6 +206,18 @@ internal static class ReminderName
     /// </summary>
     public const int MaxPurposeLength = 130;
 
+    /// <summary>
+    /// The longest owner id a timer holds: the owner id is the timer grain's key, and the reminder table's grain-id
+    /// column is 150 characters, of which the grain type's name and its separator take the rest.
+    /// </summary>
+    public const int MaxOwnerIdLength = ReminderStoreGrainIdLength - TimerGrainIdPrefixLength;
+
+    /// <summary>The width of the reminder table's grain-id column.</summary>
+    public const int ReminderStoreGrainIdLength = 150;
+
+    /// <summary>What the runtime's string form of the timer grain's id puts before the key: <c>timerowner/</c>.</summary>
+    public const int TimerGrainIdPrefixLength = 11;
+
     private const char Separator = '@';
 
     /// <summary>Refuses a purpose the reminder table cannot hold or the name cannot be decoded from.</summary>
@@ -183,6 +233,17 @@ internal static class ReminderName
         if (purpose.Length > MaxPurposeLength)
         {
             throw new ArgumentException($"A timer purpose holds at most {MaxPurposeLength} characters; '{purpose[..20]}…' has {purpose.Length}.", nameof(purpose));
+        }
+    }
+
+    /// <summary>Refuses an owner id the reminder table cannot hold as a grain key.</summary>
+    /// <exception cref="ArgumentException">The owner id is empty or longer than <see cref="MaxOwnerIdLength"/>.</exception>
+    public static void EnsureValidOwnerId(string ownerId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(ownerId);
+        if (ownerId.Length > MaxOwnerIdLength)
+        {
+            throw new ArgumentException($"A timer owner id holds at most {MaxOwnerIdLength} characters; '{ownerId[..20]}…' has {ownerId.Length}.", nameof(ownerId));
         }
     }
 

@@ -2,7 +2,10 @@ using Stratara.Abstractions.Timers;
 
 namespace Stratara.Orleans.Timers;
 
-/// <summary>The host-facing side of the timers: one call per owner grain, carrying the caller's token.</summary>
+/// <summary>
+/// The host-facing side of the timers: one call per owner grain, carrying the caller's token. An owner id or a purpose
+/// the reminder table cannot hold is refused before any call, on every member.
+/// </summary>
 internal sealed class DurableTimers(IGrainFactory grainFactory) : IDurableTimers
 {
     public Task RegisterAsync(TimerRegistration registration, CancellationToken cancellationToken = default)
@@ -24,5 +27,9 @@ internal sealed class DurableTimers(IGrainFactory grainFactory) : IDurableTimers
         return [.. names.Select(name => ReminderName.ToRegistration(ownerId, name))];
     }
 
-    private ITimerOwnerGrain Owner(string ownerId) => grainFactory.GetGrain<ITimerOwnerGrain>(ownerId);
+    private ITimerOwnerGrain Owner(string ownerId)
+    {
+        ReminderName.EnsureValidOwnerId(ownerId);
+        return grainFactory.GetGrain<ITimerOwnerGrain>(ownerId);
+    }
 }

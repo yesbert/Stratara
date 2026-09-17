@@ -38,6 +38,7 @@ public static class OrleansAggregateServiceCollectionExtensions
         }
 
         AddIntentCompletion(services);
+        Stratara.Orleans.Hosting.SiloStopSignal.Register(services);
         RolePlacement.Publish(services, ExecutionRole.Commands);
         DurableDirectoryCheck.Register(services);
         return services;

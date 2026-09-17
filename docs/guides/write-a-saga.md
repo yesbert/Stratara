@@ -131,6 +131,10 @@ session the process's state stream was created with, and the framework reads tha
 it before any session is in place. A host that routes its connection per tenant must therefore answer an
 absent tenant with a connection that reaches the state streams, or the process's timeouts fail.
 
+A timeout may schedule the process's next timeout from its own handling, for the same purpose and even the same
+due time; the new timeout is kept and fires. A timeout whose handling is interrupted because its silo stops fires
+again on another silo, with the state as recorded.
+
 ## Compensation is your job
 
 Stratara does **not** provide a two-phase commit. If the `WithdrawCommand` succeeds and the `DepositCommand` fails (the destination account was closed mid-transfer), the saga's down-stream listener has to emit a compensating `RefundCommand` against the source account.

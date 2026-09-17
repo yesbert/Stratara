@@ -21,7 +21,9 @@ runtime's response timeout bounds a caller's wait for one forwarded command, and
 SHALL name it as a setting the host sizes. Recorded commands SHALL be resumed by the
 execution model's drain wherever that drain runs with an intent store registered, whichever host
 dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
-without an intent store SHALL report it.
+without an intent store SHALL report it. A resumption the drain holds back because a full replay is
+active SHALL be logged when the holding back begins and when it ends, so that a recorded command
+that waits for the length of a replay is seen waiting rather than lost.
 
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
@@ -121,6 +123,12 @@ the token.
 - **WHEN** two heavy commands naming the same aggregate are due in one resumption, and further
   commands are due after them
 - **THEN** every due command is handed over without waiting for either heavy command to finish
+
+#### Scenario: A resumption is held back by a replay
+
+- **WHEN** a recorded command is due while a full replay is active, and the replay then ends
+- **THEN** the drain logs once that it is holding resumptions back and once that it has resumed them,
+  not once per period in between, and the command is resumed after the replay
 
 #### Scenario: A silo stops while a recorded command's handler runs
 

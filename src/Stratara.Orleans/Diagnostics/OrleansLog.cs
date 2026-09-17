@@ -31,6 +31,12 @@ internal static partial class OrleansLog
     public static partial void LogResumeReleasedAfterReplay(this ILogger logger);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.HandlerStoppedWithSilo,
+        Level = LogLevel.Information,
+        Message = "The {Handler} handler for {Identity} was cancelled because its silo stopped; what it did not finish runs again elsewhere.")]
+    public static partial void LogHandlerStoppedWithSilo(this ILogger logger, string handler, string identity);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.StoreReaderStopped,
         Level = LogLevel.Information,
         Message = "Store reader for {Consumer} stopped on partition {Partition}.")]

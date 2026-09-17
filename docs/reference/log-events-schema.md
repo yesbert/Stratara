@@ -55,6 +55,7 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_005` | StoreReaderRetired | Information | A store reader of a partition beyond the host's partition count unregistered its keep-alive and reads nothing |
 | `117_006` | ResumeHeldBackByReplay | Information | The drain holds recorded commands back while a full replay is active; logged once when it begins |
 | `117_007` | ResumeReleasedAfterReplay | Information | The drain resumes recorded commands again after a full replay held them back |
+| `117_008` | HandlerStoppedWithSilo | Information | A handler on a grain path was cancelled because its silo stopped; carries the handler and what it ran for |
 | `117_101` | PartitionStalled | Warning | A store reader stopped at an entry it cannot apply; the checkpoint stays before it |
 | `117_102` | EntryAttemptFailed | Warning | One attempt to apply an entry failed and is retried under the preceding-fact policy |
 | `117_103` | CatchUpFaulted | Error | A read of the store failed; the partition counts as stalled and the next wake-up or poll reads again |

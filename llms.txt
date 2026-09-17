@@ -132,7 +132,8 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   retried — it is not dead-lettered. Each entry is applied under the session it was recorded under, set
   before the projection, saga or process and their dependencies are resolved, so a service that takes its
   tenant at construction sees the entry's; a checkpoint advances only from the position its reader last saw
-  (`IProjectionCheckpointStore.AdvanceAsync`). Handlers must stay idempotent: a command completed just before a
+  (`IProjectionCheckpointStore.AdvanceAsync`). A handler on a grain path receives a token a stopping silo cancels
+  after `GrainCollectionOptions.DeactivationTimeout`; what it did not finish runs again elsewhere. Handlers must stay idempotent: a command completed just before a
   crash runs again.
 - **Source-generated logging only** (`[LoggerMessage]`) for new code — never `logger.LogInformation(...)`.
 

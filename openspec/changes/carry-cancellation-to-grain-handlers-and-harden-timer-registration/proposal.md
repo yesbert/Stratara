@@ -73,7 +73,11 @@ _None._
   `ReminderName` (owner-id limit), `DurableTimers` (validation on every member), `OrleansLog`.
 - `Stratara.Abstractions` — `IDurableTimers` documentation of the owner-id limit and the token's
   meaning on `ITimerHandler.OnDueAsync`.
-- `Stratara.Diagnostics` — one log event id in `LogEvents.Orleans`.
+- `Stratara.Diagnostics` — one log event id in `LogEvents.Orleans`: `117_008`, Information.
+- As implemented, also: `src/Stratara.Orleans/Hosting/SiloStopSignal.cs` (the stop token's source, registered by
+  `AddStrataraOrleans`, `AddStrataraAggregateGrains` and `AddStrataraDurableTimers`); tests
+  `tests/Stratara.Orleans.IntegrationTests/Hosting/StoppingSiloTests.cs`, `Timers/ReRegisteredTimerTests.cs`,
+  `tests/Stratara.Orleans.Tests/SurfaceTrimTests.cs`.
 - `docs/guides/operate-the-orleans-execution-model.md` (a *Stopping a silo* section: the token, the
   deactivation timeout as the host's setting, what a handler should do), `docs/guides/write-a-saga.md`
   or wherever process timeouts are written (the re-registration case), `docs/reference/log-events-schema.md`,

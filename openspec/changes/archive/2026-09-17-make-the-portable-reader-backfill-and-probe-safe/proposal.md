@@ -78,6 +78,12 @@ _None._
   `docs/guides/operate-the-orleans-execution-model.md` (a partition that stopped at an unpositioned
   entry: what the positioned order is and when to rebuild), `src/Stratara.Orleans.EntityFrameworkCore/README.md`,
   `CHANGELOG.md`, `llms.txt`.
+- Tests as implemented: `PortableReaderFailsLoudlyTests` (the late entry, the probe), `PartitionCounterStampOrderTests`
+  (new), `PartitionCounterBackfillTests` (flipped expectation, a history-only case), `SurfaceTests` (the obsolete
+  switch); the test store's switch is `PocCounterOptions` beside `PocCommitOrderWriteDbContext`, set through
+  `PocStore.CreateAsync(…, maintainCounter)`.
+- Open question resolved by the owner, 2026-09-17: the backfill positions a late entry and documents the rebuild,
+  rather than refusing it.
 - Tests: `PartitionCounterBackfillTests` (its expectation flips from history-first to
   positioned-first), `PortableReaderFailsLoudlyTests` (a checkpointed reader across a backfill; the
   probe under many foreign unpositioned entries), an interceptor order test, and every test and test

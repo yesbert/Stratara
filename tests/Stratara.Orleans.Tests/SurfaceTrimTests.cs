@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Moq;
+using Orleans.Runtime;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Projections;
@@ -42,6 +43,39 @@ public sealed class SurfaceTrimTests
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             timers.RegisterAsync(new TimerRegistration("owner", purpose, DateTimeOffset.UtcNow)));
+    }
+
+    [Fact]
+    public async Task An_owner_id_longer_than_the_store_holds_is_refused_on_every_member_before_any_call()
+    {
+        var grains = new Mock<IGrainFactory>(MockBehavior.Strict);
+        var timers = new DurableTimers(grains.Object);
+        var owner = new string('o', ReminderName.MaxOwnerIdLength + 1);
+
+        var refusals = new[]
+        {
+            await Assert.ThrowsAsync<ArgumentException>(() => timers.RegisterAsync(new TimerRegistration(owner, "expire", DateTimeOffset.UtcNow))),
+            await Assert.ThrowsAsync<ArgumentException>(() => timers.CancelAsync(owner, "expire")),
+            await Assert.ThrowsAsync<ArgumentException>(() => timers.CancelAllAsync(owner)),
+            await Assert.ThrowsAsync<ArgumentException>(() => timers.ListAsync(owner)),
+        };
+
+        Assert.All(refusals, refused =>
+        {
+            Assert.Contains($"at most {ReminderName.MaxOwnerIdLength}", refused.Message, StringComparison.Ordinal);
+            Assert.Contains($"has {owner.Length}", refused.Message, StringComparison.Ordinal);
+        });
+        grains.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void An_owner_id_of_the_longest_length_renders_to_a_grain_id_the_reminder_table_holds()
+    {
+        var atLimit = GrainId.Create("timerowner", new string('o', ReminderName.MaxOwnerIdLength)).ToString();
+        var overLimit = GrainId.Create("timerowner", new string('o', ReminderName.MaxOwnerIdLength + 1)).ToString();
+
+        Assert.Equal(ReminderName.ReminderStoreGrainIdLength, atLimit.Length);
+        Assert.True(overLimit.Length > ReminderName.ReminderStoreGrainIdLength);
     }
 
     [Fact]
