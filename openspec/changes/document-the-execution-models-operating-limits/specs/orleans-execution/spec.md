@@ -27,7 +27,26 @@ the documentation SHALL state this and SHALL say that a caller does not retry on
 the retry would run the command a second time. Recorded commands SHALL be resumed by the
 execution model's drain wherever that drain runs with an intent store registered, whichever host
 dispatched them, SHALL never be published to a message bus, and a drain that finds recorded commands
-without an intent store SHALL report it.
+without an intent store SHALL report it. A resumption the drain holds back because a full replay is
+active SHALL be logged when the holding back begins and when it ends, so that a recorded command
+that waits for the length of a replay is seen waiting rather than lost.
+
+Where the host has registered a bus-envelope signer, the record SHALL carry a signature over the same
+claims a command on the bus is signed over — its type, its session context, its heavy flag and a
+digest of its body — and a command resumed from its record SHALL be verified under the host's
+integrity mode before it is handed over, so that the session a resumed command runs under is the one
+it was dispatched under. Under strict mode a record that carries no signature or one that does not
+verify SHALL be kept for an operator at once, without an attempt, with the reason recorded with it;
+under permissive mode it SHALL be resumed and the failure recorded; the two failures SHALL be
+distinguishable by the identity of the record, as they are on the bus. A command handed over without
+passing through storage is not verified. A record written before the host signed carries no
+signature, and the documentation SHALL name the rollout through permissive mode, as it does for the
+bus.
+
+The resumption of a backlog SHALL NOT be bounded by the drain's period: while a pass finds as many
+due commands as it asked for, the next pass SHALL follow at once, until a pass finds fewer or the run
+has lasted its period, and the next run SHALL continue; and the store round trips of one pass SHALL
+NOT grow with the number of commands it claims.
 
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
@@ -37,11 +56,23 @@ an authorization the host registers SHALL be answered from that session; the doc
 that a provider which answers from the current web request refuses every resumed command, which is
 then kept after its attempts, and SHALL name a session-driven provider as the shape this path needs.
 
+A handler running on this path SHALL receive a cancellation token that is requested when the silo
+running it stops and the handler has not completed within the runtime's deactivation budget, so
+that a handler can stop cleanly instead of running on in a process that is going away. A recorded
+command whose handler stops on that token SHALL be resumed after the grace on a silo that is still
+running, as after a crash, and the stop SHALL NOT count as a failed attempt. A forwarded command
+whose handler stops on that token SHALL fail back to its caller with a message saying that the silo
+stopped and the command may be dispatched again. A handler that does not observe the token SHALL run
+to its end, and the silo SHALL wait for it as long as the runtime's deactivation allows. Every handler
+stopped this way SHALL be logged with the command's identity. The documentation SHALL name the
+deactivation budget as a setting the host sizes and SHALL say what a handler is expected to do with
+the token.
+
 #### Scenario: The host dies after acceptance
 
 - **WHEN** the dispatch has returned and the host is killed before the handler ran
-- **THEN** the command runs after the host or another silo resumes it — verified with twenty kills
-  on the PostgreSQL store
+- **THEN** the command runs after the host or another silo resumes it — verified with five kills per
+  path, recorded and heavy, on the PostgreSQL store
 
 #### Scenario: The host dies after the handler completed
 
@@ -64,7 +95,9 @@ then kept after its attempts, and SHALL name a session-driven provider as the sh
 #### Scenario: A handler runs longer than the grace
 
 - **WHEN** a recorded command's handler is still running after the grace has passed
-- **THEN** it is not handed over again while it runs, and it runs once
+- **THEN** it is not handed over again while it runs, and it runs once — verified on the aggregate path
+  for a handler that awaits and for one that computes without yielding, and on the heavy path for a
+  handler that awaits
 
 #### Scenario: A heavy handler computes past the grace without yielding
 
@@ -144,11 +177,63 @@ then kept after its attempts, and SHALL name a session-driven provider as the sh
   commands are due after them
 - **THEN** every due command is handed over without waiting for either heavy command to finish
 
+#### Scenario: A resumption is held back by a replay
+
+- **WHEN** a recorded command is due while a full replay is active, and the replay then ends
+- **THEN** the drain logs once that it is holding resumptions back and once that it has resumed them,
+  not once per period in between, and the command is resumed after the replay
+
+#### Scenario: A silo stops while a recorded command's handler runs
+
+- **WHEN** a silo is stopped while a recorded command's handler is waiting on its cancellation token,
+  and another silo of the cluster stays
+- **THEN** the handler observes the cancellation within the deactivation budget, the stop is logged
+  with the command's identity, the command is resumed on the remaining silo after the grace with no
+  attempt counted, and it completes there — verified on the PostgreSQL store
+
+#### Scenario: A silo stops while a forwarded command's handler runs
+
+- **WHEN** a silo is stopped while a forwarded command's handler is waiting on its cancellation token
+- **THEN** the handler observes the cancellation, and the caller's dispatch fails with a message
+  saying the silo stopped and the command may be dispatched again
+
+#### Scenario: A handler ignores the cancellation
+
+- **WHEN** a silo is stopped while a handler that does not observe its token is running
+- **THEN** the handler runs to its end, and the silo waits for it up to the runtime's deactivation
+  budget before it stops
+
+#### Scenario: A recorded command's session is altered in storage
+
+- **WHEN** a host with a signer in strict mode has recorded a command, its stored session context is
+  altered before the host dies, and the drain finds the record due
+- **THEN** the command is kept at once with the reason that its signature did not verify, its handler
+  does not run, and the record that says so is distinct from the one for an unsigned command —
+  verified on the PostgreSQL store
+
+#### Scenario: A record written before the host signed is resumed
+
+- **WHEN** a record without a signature is due on a host with a signer
+- **THEN** in permissive mode it is resumed and a record states that it was unsigned; in strict mode it
+  is kept at once with that reason; with the mode off it is resumed as it always was
+
+#### Scenario: A backlog larger than one batch is due
+
+- **WHEN** more recorded commands than the drain's batch size are due when the drain runs — as after
+  an outage of the hosts that dispatch
+- **THEN** every one of them is handed over within one period of the drain, not one batch per period
+  — verified on the PostgreSQL store with a backlog of several batches
+
 ### Requirement: Projections and sagas read the store in commit order and never miss a committed fact
 
 Where a host has registered the Orleans execution model for projections or sagas, each SHALL read
 the event store from a checkpoint, in an order in which no entry at or below a checkpoint can still
-commit later, and apply what it reads under the session recorded with each entry. A commit SHALL
+commit later, and apply what it reads under the session recorded with each entry. The recorded
+session SHALL be in place before the projection or the sagas, and anything they depend on, are
+resolved for the entry, so that a service that takes its tenant or its user when it is constructed
+— a connection routed per tenant, a read-model context that captures the tenant — takes the entry's;
+one read of the store MAY return entries recorded under several sessions, and each SHALL be applied
+as it would have been had it arrived on its own. A commit SHALL
 wake the readers of the partitions it touched; a wake-up that is lost costs latency and never a
 fact, because a poll reads the store regardless. A committed fact SHALL reach every projection and
 saga whatever dies after the commit. Two rebuilds of one projection SHALL NOT interleave: the
@@ -159,13 +244,17 @@ the beginning before the read models are emptied, and the replay's own pass over
 followed by the readers' pass from the beginning once the replay ends, so that every store-reading
 projection applies the store twice under a full replay and is correct because it applies idempotently;
 the documentation SHALL say so where it describes the full replay and SHALL name the rebuild of a
-single projection as the way to re-read a read model once.
+single projection as the way to re-read a read model once. A
+reader brought back for a partition the host's partition count no longer has SHALL retire itself —
+stop returning, log that it did, and read nothing — so that lowering the count leaves no reader that
+returns every keep-alive period to be refused.
 
 #### Scenario: The host dies between the commit and the wake-up
 
 - **WHEN** a host is killed after committing events and before any wake-up or publication
 - **THEN** every projection and saga applies those events after the host or another silo reads the
-  store — verified with twenty kills on the PostgreSQL store, none lost
+  store — verified with twenty kills on the PostgreSQL store, none lost and, the kill falling before
+  any read, none applied twice
 
 #### Scenario: Two transactions commit out of sequence order
 
@@ -205,6 +294,22 @@ single projection as the way to re-read a read model once.
   projection that counts its applications has applied each fact twice — verified on the PostgreSQL
   store with the native reader
 
+#### Scenario: One read returns entries of several tenants
+
+- **WHEN** a partition holds entries recorded under two tenants within one read, and a projection or
+  saga depends on a service that takes the tenant when it is constructed
+- **THEN** each entry is applied with that service constructed under the entry's own tenant, and none
+  under the other's or under no tenant — verified on the PostgreSQL store with the native reader, for
+  a projection and for a saga
+
+#### Scenario: The partition count is lowered under the native reader
+
+- **WHEN** a host that reads with the native reader lowers its partition count and its readers'
+  checkpoints are reset as documented, and the keep-alive of a reader beyond the new count brings it
+  back
+- **THEN** that reader stops returning, reads nothing, logs that it retired, and no stall is counted
+  for it — verified on the PostgreSQL store
+
 ### Requirement: Work that must happen once happens once per cluster
 
 Singleton work SHALL run in one place in the cluster at its period, without a lock, only on a silo
@@ -219,6 +324,23 @@ never for one that was removed, and SHALL survive a restart of the silo that reg
 SHALL NOT fire a further period late because the clocks of the silos differ slightly. A process
 timeout registered in a step SHALL survive a kill at any point of that step, and a timeout whose
 handling cancels or registers the process's timers SHALL complete.
+
+A timer's handler SHALL receive a cancellation token that is requested when the silo running it
+stops and the handler has not completed within the runtime's deactivation budget; a timer whose
+handler stops on that token SHALL stay registered and fire on the next silo, which is the at-least-once
+delivery the timers promise, and the stop SHALL be logged with the owner and the purpose. A timer
+registered for an owner and purpose while a tick for that owner and purpose is being handled SHALL be
+kept and SHALL fire, whether or not its due time is the one being handled. An owner id longer than
+the timer store holds SHALL be refused on registration, cancellation and listing with a message
+naming the limit and the length given, as a purpose is, so that the refusal is seen at the
+registration and not at the first tick.
+
+A run of a singleton work that fails SHALL be logged with an event of the framework's own, naming the
+work and carrying the failure, and SHALL NOT stop the work: the next run goes ahead at its period. A
+singleton work registered with the name it publishes under SHALL NOT be constructed before the silo
+is active, so that a work whose construction needs the running host is not constructed while the
+silo starts; a work whose name differs from the one it was registered with SHALL fail the silo's
+start with a message naming both.
 
 #### Scenario: Two silos run the same singleton work
 
@@ -277,6 +399,53 @@ handling cancels or registers the process's timers SHALL complete.
 - **WHEN** a timer's handler is still running when the timer's next tick arrives
 - **THEN** the tick does not start the handler again, and the handler runs once
 
+#### Scenario: A silo stops while a timer's handler runs
+
+- **WHEN** a silo is stopped while a timer's handler is waiting on its cancellation token, and the
+  timer's owner still exists
+- **THEN** the handler observes the cancellation within the deactivation budget, the stop is logged
+  with the owner and the purpose, the timer is still registered, and it fires on the next silo that
+  serves the owner — verified on the PostgreSQL reminder table
+
+#### Scenario: A timer is re-registered from its own handler with the same due time
+
+- **WHEN** a timer's handler registers a timer for the same owner and purpose with the same due time
+  and returns
+- **THEN** the timer is still registered when the handler has returned, and it fires again within a
+  retry period
+
+#### Scenario: A timer is re-registered from its own handler with a later due time
+
+- **WHEN** a timer's handler registers a timer for the same owner and purpose with a later due time
+  and returns
+- **THEN** only the later timer is registered when the handler has returned, and it fires at its due
+  time
+
+#### Scenario: An owner id is longer than the timer store holds
+
+- **WHEN** a timer is registered, cancelled or listed for an owner id longer than the timer store
+  holds
+- **THEN** the call is refused with a message naming the limit and the length given, and nothing is
+  registered
+
+#### Scenario: A singleton work's run fails
+
+- **WHEN** a run of a singleton work throws
+- **THEN** an event of the framework's names the work and carries the failure, and the work runs again
+  at its next period
+
+#### Scenario: A work is registered with its name
+
+- **WHEN** a host registers a singleton work with the name it publishes under, and the work's
+  constructor records when it runs
+- **THEN** the work is not constructed before the silo is active, and it runs once per period on the
+  silo as any other
+
+#### Scenario: A work's name differs from the registered one
+
+- **WHEN** a host registers a singleton work under a name that is not the work's `Name`
+- **THEN** the silo fails at start with a message naming both
+
 ### Requirement: The execution model can be adopted per role beside the bus workers
 
 Each role — commands, projections, sagas, outbox drain, timers, heavy work — SHALL be adopted with
@@ -285,7 +454,10 @@ at once during a rollout, because both apply idempotently. A host that asks the 
 registration to keep publishing bundles to the bus SHALL keep the bus dispatcher it registered
 whatever the shape of that registration, and a host that asks for it without having registered a
 bus dispatcher SHALL fail at registration with a message naming what is missing rather than run
-without publishing. A role's work SHALL run only on a silo
+without publishing. Each of the model's registrations SHALL
+be idempotent in itself: called twice, whether by the host or by a composite of the host's that
+wraps it, it SHALL leave the composition as one call leaves it, so that no projection is woken twice,
+no consumer is listed twice, and no work is started twice. A role's work SHALL run only on a silo
 that registered the role: a cluster whose silos register different roles SHALL place each
 aggregate, projection, saga, timer owner and heavy unit on a silo that registered its role, and a
 call for a role no silo of the cluster registered SHALL fail with a message naming the role rather
@@ -293,8 +465,30 @@ than activate where the role is missing. A host that only dispatches commands MA
 as a client rather than a silo. A host that registers the execution model
 without the storage-backed grain directory it requires SHALL fail at start with a message naming
 what is missing, not at the first activation, and so SHALL a host with an invalid setting, naming the
-setting. The host's own timer owners and handlers SHALL be honoured whatever order they are registered
+setting. A silo that registers a role or a singleton work without publishing it to the cluster —
+because it registered the directory itself rather than through the call that publishes — SHALL fail
+at start with a message naming the roles and works it found and the call that publishes them, rather
+than start and be placed on as if it hosted everything. The host's own timer owners and handlers
+SHALL be honoured whatever order they are registered
 in relative to the execution model.
+
+A message broker SHALL NOT be a runtime dependency of a host whose command dispatcher and bundle
+dispatcher the execution model has both replaced: a silo composed with the command services
+composite, the execution model's command dispatcher with an intent store, the aggregate grains and
+at least one store-reading role, and a host that only dispatches through the execution model's
+dispatcher, SHALL start, run commands, commit facts and apply them with no broker configured and SHALL
+open no broker connection. A silo that commits facts without a store-reading role SHALL keep
+publishing bundles to the bus, because it has no reader to wake, and the documentation SHALL say so.
+The documentation SHALL name the command composite without the bus-fed worker, SHALL state that it
+replaces the worker composite once no consumer of the deployment reads bundles from the bus, and
+SHALL say what becomes of the bus queues after the cut-over: which queues the bus workers own, that
+every publisher to an exchange is retired before its queues are deleted, that a dead-letter queue is
+emptied deliberately, and that a publication kept after its queues are deleted stores every bundle for
+a drain that cannot deliver it.
+
+The documentation SHALL show how a consumer tests its handlers, projections, sagas and timers on the
+execution model in one process, with the registrations it uses in production, and SHALL ship a runnable
+sample that does so.
 
 #### Scenario: A host adopts the projection role
 
@@ -350,3 +544,46 @@ in relative to the execution model.
 
 - **WHEN** a host registers its own timer owners and handlers after the execution model's registrations
 - **THEN** its timers fire for its owners, and stateful processes' timeouts still fire
+
+#### Scenario: A registration is called twice
+
+- **WHEN** a host calls any of the model's registrations twice — the aggregate, projection, saga,
+  timer, dispatcher, heavy-work or singleton-work registration
+- **THEN** the composition is the one a single call leaves: each projection is woken once per bundle,
+  the seeding and the reset list each consumer once, and each work runs once per period
+
+#### Scenario: A silo registers the directory itself and hosts a role
+
+- **WHEN** a silo registers a grain directory under the model's name directly, not through the call
+  that publishes, and registers a role or a singleton work
+- **THEN** the silo fails at start with a message naming the roles and works it registered and the
+  call that publishes them, and a silo that registers neither a role nor a work starts
+
+#### Scenario: A silo registers the directory itself and hosts nothing
+
+- **WHEN** a silo registers a grain directory under the model's name directly and registers only the
+  command dispatcher
+- **THEN** it starts, because it hosts nothing that is placed by role
+
+#### Scenario: A command silo runs without a broker
+
+- **WHEN** a silo is composed with the command services composite, the execution model's command
+  dispatcher and intent store, the aggregate grains and the projection role, a client host with the
+  dispatcher joins it, and neither has a broker configured
+- **THEN** both start, a command dispatched from the client runs in its aggregate's activation on the
+  silo, the facts it commits are applied by the projection, no bundle is stored in the outbox, and no
+  broker connection is attempted — verified on the PostgreSQL store
+
+#### Scenario: A silo commits without a store-reading role
+
+- **WHEN** a silo registers the command role and no projection or saga role, and a handler on it
+  commits facts
+- **THEN** the bundle is published to the bus as before, and the documentation states that such a
+  silo keeps the broker until it registers a store-reading role
+
+#### Scenario: A consumer tests on the execution model
+
+- **WHEN** a consumer follows the testing documentation for the execution model
+- **THEN** its handlers, projections, sagas and timers run through the registrations it uses in
+  production, in the test's process, without a cluster, a broker or a database server — and the
+  shipped sample runs the same in one console run

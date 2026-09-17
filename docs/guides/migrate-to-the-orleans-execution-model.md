@@ -185,7 +185,7 @@ timer owner check and handler with `AddStrataraDurableTimers`.
 
 | Role today | Add after the composite | What changes |
 |---|---|---|
-| API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order |
+| API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. The record is committed on its own before the call returns, not with anything the caller writes: a caller whose own writes and the command must stand or fall together saves its own writes first and dispatches after. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order. A resumed command is authorized on a silo from the session recorded with it, where no web request exists: the `IAuthorizationProvider` behind `AddAuthorizingMediator` must answer from the session context — `MembershipAuthorizationProvider` does — or every resumed command is refused and, after its attempts, kept |
 | Command worker (`AddCommandWorkerServices`) | `builder.AddCommandServices()` instead, then `AddStrataraOrleansCommandDispatcher()`, `AddStrataraIntentStore<AppWriteDbContext>()` and `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register the aggregate grains after every other pipeline behaviour. The silo's own sends — from a handler or a saga — are recorded and handed over instead of published. The bus-fed mediator worker is not registered, so the silo consumes no command queue; keep `AddCommandWorkerServices` only while API hosts that still publish to the command topic remain. A silo that also registers a store-reading role needs no broker — see [when the broker can go](#when-the-broker-can-go); one without keeps publishing its bundles to the bus. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
 | Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace` and `MessageRetryOptions.MaxDeliveryAttempts` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. Registered with its name, the drain is not constructed until the silo is active. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
@@ -216,7 +216,9 @@ timeouts fail.
 
 During a rollout a host can run both models at once — the bus consumer and the grains both apply
 idempotently. `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` take `hybrid: true` to keep
-publishing bundles to the bus while the grains read the store.
+publishing bundles to the bus while the grains read the store. `hybrid: true` keeps the bus dispatcher registered
+before the call, however it was registered — by type, by factory or as an instance — and fails at registration
+when none is registered, naming `AddOutboxDispatcher`, rather than run without publishing.
 
 Every registration of the model is idempotent in itself as well: a host whose feature modules or composites call
 the same registration twice gets the composition one call gives — each projection woken once per bundle, each
@@ -278,8 +280,15 @@ The Redis key of the bus outbox worker's lock needs no cleanup; it expires on it
 A full replay returns every store reader's checkpoint to the beginning before the read models are
 emptied, and the readers read from the beginning once the replay ends. Register the host's
 `IProjectionViewTruncator` **before** `AddStrataraProjectionGrains`; a truncator registered after it fails
-the host at start. To rebuild a single projection, implement `IRebuildableProjection` and call
-`IProjectionRebuilder.RebuildAsync` — only that projection's model is emptied and re-read.
+the host at start.
+
+A full replay therefore applies the store **twice** to a projection that reads the store: once by the replay
+itself, in sequence order, and once more by the projection's readers from the beginning, in commit order. The
+second pass is the one the commit-order guarantee stands on — it catches an entry the sequence-order pass
+could miss under interleaved commits — and the result is correct because projections apply idempotently. A
+projection that counts its applications sees each fact twice. To re-read one read model once, implement
+`IRebuildableProjection` and call `IProjectionRebuilder.RebuildAsync` — only that projection's model is
+emptied and re-read, and nothing else is.
 
 ## Settings
 

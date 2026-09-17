@@ -80,6 +80,15 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Orleans: `hybrid: true` without a bus dispatcher fails at registration** naming `AddOutboxDispatcher`; it ran
+  grain-only without a word.
+- **The execution model's operating limits are documented**: a forwarded command whose handler outlasts the response
+  timeout fails its caller and commits (do not retry on a timeout); a resumed command is authorized from its recorded
+  session, so the authorization provider answers from the session, not the web request; the record of a command is
+  committed on its own, not with the caller's writes; a full replay applies the store twice to store-reading
+  projections; singleton work may overlap on two silos for one membership refresh after a death declaration, and the
+  failover latency follows from the membership settings. `ISingletonWork` and `IAuthorizationProvider` say so in their
+  XML documentation.
 - **Orleans: a silo places grains on itself by the roles and work it publishes, before its own metadata reaches its
   cache.** A silo that became active and started its store readers at once could fail its start with *No silo of the
   cluster registered the projections role*, because its own metadata was not yet known to it.
@@ -150,6 +159,9 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **Orleans: `hybrid: true` keeps a bus dispatcher registered by factory or as an instance.** `AddStrataraProjectionGrains`
+  and `AddStrataraSagaGrains` kept publishing bundles to the bus only when the dispatcher had been registered by type; a
+  factory- or instance-registered one was removed and bundles stopped reaching the bus.
 - **Orleans: `PartitionCounterBackfill` no longer renumbers positioned entries.** Unpositioned entries take the
   positions after the partition's counter, so a checkpoint written before a backfill stays true; previously the
   backfill shifted every positioned entry and a resumed reader re-applied one entry and lost another.

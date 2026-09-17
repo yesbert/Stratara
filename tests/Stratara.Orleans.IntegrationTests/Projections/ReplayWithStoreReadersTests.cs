@@ -19,7 +19,8 @@ namespace Stratara.Orleans.IntegrationTests.Projections;
 /// <summary>
 /// Task 4.4: a full replay on a host whose projections read the store. The readers' checkpoints are back
 /// at the beginning when the read models are emptied, and once the replay ends every read model is filled
-/// again and the readers have advanced from the beginning.
+/// again and the readers have advanced from the beginning. The store is applied twice — once by the replay, once by
+/// the readers from the beginning — which the unguarded running total shows and the version-guarded view does not.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class ReplayWithStoreReadersTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
@@ -60,6 +61,19 @@ public sealed class ReplayWithStoreReadersTests(PostgreSqlFixture postgres, Redi
         foreach (var streamId in streams)
         {
             Assert.True(await WaitUntilAsync(async () => (await ReadViewAsync(app.Services, streamId))?.Value == 6), $"the view for {streamId} was not refilled after the replay");
+        }
+
+        // The replay applies every entry once in sequence order and the readers, from the beginning, once more: the
+        // unguarded total counts each fact twice, the version-guarded view holds each once.
+        var (created, incremented) = await StoreCountsAsync(app.Services);
+        Assert.True(
+            await WaitUntilAsync(async () => await TotalsAsync(app.Services) == (2 * created, 2 * incremented)),
+            $"the running total is {await TotalsAsync(app.Services)}, not twice the store's {(created, incremented)}");
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        Assert.Equal((2 * created, 2 * incremented), await TotalsAsync(app.Services));
+        foreach (var streamId in streams)
+        {
+            Assert.Equal(6, (await ReadViewAsync(app.Services, streamId))?.Value);
         }
 
         await using var scope = app.Services.CreateAsyncScope();
@@ -141,6 +155,23 @@ public sealed class ReplayWithStoreReadersTests(PostgreSqlFixture postgres, Redi
     }
 
     private static int PartitionOf(Guid streamId) => PartitionMap.PartitionOf(BucketCalculator.GetBucketId(streamId), new CommitOrderOptions().PartitionCount);
+
+    private static async Task<(long Created, long Incremented)> StoreCountsAsync(IServiceProvider services)
+    {
+        await using var scope = services.CreateAsyncScope();
+        await using var context = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<PocCommitOrderWriteDbContext>>().CreateDbContextAsync();
+        var created = await context.Set<EventStreamEntry>().CountAsync(e => e.EventTypeName.Contains(nameof(CounterCreated)));
+        var incremented = await context.Set<EventStreamEntry>().CountAsync(e => e.EventTypeName.Contains(nameof(CounterIncremented)));
+        return (created, incremented);
+    }
+
+    private static async Task<(long Created, long Incremented)> TotalsAsync(IServiceProvider services)
+    {
+        await using var scope = services.CreateAsyncScope();
+        await using var context = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<PocReadDbContext>>().CreateDbContextAsync();
+        var totals = await context.CounterTotals.AsNoTracking().SingleOrDefaultAsync();
+        return (totals?.Created ?? 0, totals?.Incremented ?? 0);
+    }
 
     private static async Task<CounterView?> ReadViewAsync(IServiceProvider services, Guid streamId)
     {

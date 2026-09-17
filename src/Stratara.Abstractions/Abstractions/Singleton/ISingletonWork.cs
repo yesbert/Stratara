@@ -3,8 +3,11 @@ namespace Stratara.Abstractions.Singleton;
 /// <summary>
 /// A unit of work that runs once per cluster, on a period: an outbox drain, a flush, a recovery
 /// sweep. The host registers an implementation and the execution model runs it in one place in the
-/// cluster, identified by <see cref="Name"/>, so no two hosts run it at the same time and no lock is
-/// needed to make that so. Two runs of the same work never overlap.
+/// cluster, identified by <see cref="Name"/>, while the cluster agrees on its membership, and no lock is
+/// needed to make that so; two runs on one silo never overlap. A silo the cluster has declared dead may
+/// still be running the work until it learns of the declaration, while another silo has already taken it
+/// over, so a run should tolerate an overlapping run elsewhere — claim what it processes with a
+/// compare-and-set, or be idempotent.
 /// </summary>
 public interface ISingletonWork
 {

@@ -17,7 +17,7 @@ them without further configuration.
 | Part | What it does |
 |---|---|
 | `PostgresTransactionIdReader<TContext>` | Reads in commit order on PostgreSQL, adding no work to an append |
-| `PortableCounterReader<TContext>`, `AddStrataraPortableCounterReader<TWriteContext>()` | Reads in commit order on any relational provider, through a per-partition counter; verified on PostgreSQL only |
+| `PortableCounterReader<TContext>`, `AddStrataraPortableCounterReader<TWriteContext>()` | Reads in commit order on any relational provider, through a per-partition counter; verified on PostgreSQL and on SQLite |
 | `PartitionCounterInterceptor` | Maintains the per-partition counter inside the appending transaction — in every process that appends |
 | `PartitionCounterBackfill` | Positions unpositioned entries after the partition's counter, never moving a position already handed out, so checkpoints stay true |
 | `CommitTransactionIdBackfill` | Stamps the entries a PostgreSQL store held before the commit record existed, in append order and bounded batches, once |
@@ -28,9 +28,22 @@ them without further configuration.
 
 ## Quick start
 
+The read side — projections that read the store in commit order from a checkpoint:
+
 ```csharp
 builder.Services
     .AddSingleton<ICommittedPositionReader, PostgresTransactionIdReader<AppWriteDbContext>>()
     .AddStrataraProjectionCheckpoints<AppReadDbContext>()
     .AddStrataraProjectionGrains();
 ```
+
+The write side — commands recorded before the dispatch returns and resumed after a crash:
+
+```csharp
+builder.Services
+    .AddStrataraOrleansCommandDispatcher()
+    .AddStrataraIntentStore<AppWriteDbContext>()
+    .AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName);
+```
+
+The record is committed in a transaction of its own, not with what the caller writes.
