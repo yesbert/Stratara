@@ -41,7 +41,9 @@ Assert.Single(host.Outbox.Bundles);   // the SaveChanges emitted one bundle
   exposes `ExecuteAsync(IEventSource)`, `AggregateAsync<T>(streamId)`, the preset `Session`, and the
   recording `Outbox`. `IAsyncDisposable`.
 - `AddStrataraTestingEventStore<TWriteDbContext>(connection, tenantId)` — the lower-level DI
-  extension if you compose the provider yourself.
+  extension if you compose the provider yourself. The overload that takes a connection string opens a
+  connection per context to a shared-cache in-memory database — for a store used from several threads,
+  such as a silo's — and applies an `Action<DbContextOptionsBuilder>` after the provider, for an interceptor.
 - `StrataraTestWriteDbContext` — a ready-made concrete write context (no subclass boilerplate).
 - `RecordingEventBundleOutboxDispatcher` — captures emitted bundles for assertions.
 

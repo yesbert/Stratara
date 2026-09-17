@@ -9,7 +9,7 @@ description: "Every Stratara package with what it does and what it pulls in, plu
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
-Stratara ships as **27 NuGet packages at one lockstep version** — every package below carries the
+Stratara ships as **28 NuGet packages at one lockstep version** — every package below carries the
 same `<VersionPrefix>`, bumped together, the way the `Microsoft.Extensions.*` family does. Take one
 package or take twenty; they never disagree about which version of each other they expect.
 
@@ -47,6 +47,7 @@ a consumer can adopt the contracts without any infrastructure.
 | C | `Stratara.Orleans.EntityFrameworkCore` | The execution model's persistence: commit-order readers, checkpoint store, intent store, reset |
 | — | `Stratara.Testing` | Test doubles (in-memory key store / message bus / session) + given/when/then aggregate harness — reference from test projects only |
 | — | `Stratara.Testing.EntityFrameworkCore` | The real event-sourcing write stack on in-memory SQLite (`EventStoreTestHost`) — reference from test projects only |
+| — | `Stratara.Testing.Orleans` | The Orleans execution model in the test's process — one silo, in-memory reminders and directory, SQLite store (`ExecutionModelTestHost`) — reference from test projects only |
 
 ## Which packages for which door
 
@@ -59,7 +60,7 @@ a consumer can adopt the contracts without any infrastructure.
 | Commands, projections, sagas and timers on an Orleans cluster | `+ Stratara.Orleans` `+ Stratara.Orleans.EntityFrameworkCore` — see [Choose an Execution Model](../getting-started/choose-an-execution-model.md) |
 | Field-level encryption and crypto-shredding without the event store | `Stratara.Security` |
 | Tenant membership, permissions, API keys | `Stratara.Identity.EntityFrameworkCore` `+ Stratara.Identity.AspNetCore` |
-| Tests | `Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore` (test projects only) |
+| Tests | `Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`, `Stratara.Testing.Orleans` for the execution model (test projects only) |
 
 ## Debugging into the framework
 

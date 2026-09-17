@@ -11,7 +11,7 @@ description: "A family of 25 lockstep-versioned NuGet packages for .NET 10 — m
 
 **Stratara takes the boring decisions for you so you can spend your time on aggregates and use-cases — not on wiring an outbox to a mediator to an event store.**
 
-It's a family of 27 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
+It's a family of 28 NuGet packages for .NET 10 — application-agnostic, lockstep-versioned, opt-in à la carte. Use as little or as much as you need.
 
 What sets it apart from "compose Marten + Wolverine + MassTransit yourself" is the **integration** plus two properties that none of the standalone libraries ship today:
 
@@ -64,12 +64,12 @@ The architecture is strict: **no consumer-specific code** lives in the framework
 
 ## How it's structured
 
-27 packages: 25 runtime packages organized into three tiers, plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
+28 packages: 25 runtime packages organized into three tiers, plus three test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`, `Stratara.Testing.Orleans`) referenced only from test projects — see **[Architecture at a glance](architecture-at-a-glance.md)** for the diagram + dependency rules.
 
 ## License + versioning
 
 - Licensed under the [MIT License](https://opensource.org/license/mit) — OSI-approved open source, free for any use including commercial.
-- Lockstep versioning — all 27 packages ship at the same `<VersionPrefix>`.
+- Lockstep versioning — all 28 packages ship at the same `<VersionPrefix>`.
 - See `CHANGELOG.md` in the repo root for release notes. Every published version is also announced
   on the repository's [releases page](https://github.com/yesbert/Stratara/releases), carrying that
   same changelog section — a prerelease is marked as one, so the version listed as latest is always

@@ -33,6 +33,8 @@
         <InternalsVisibleTo Include="Stratara.Orleans.IntegrationTests"/>
         <InternalsVisibleTo Include="Stratara.Orleans.Benchmarks"/>
         <InternalsVisibleTo Include="Stratara.Orleans.Scenarios"/>
+        <!-- The test host reads the consumer names of the registered store readers, as the seeding and the reset do. -->
+        <InternalsVisibleTo Include="Stratara.Testing.Orleans"/>
     </ItemGroup>
 
     <ItemGroup>

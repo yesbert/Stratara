@@ -1,7 +1,7 @@
 # Reviewing a pull request in this repository
 
 Stratara is an application-agnostic CQRS, Event-Sourcing and Mediator framework for .NET 10,
-shipped as 27 NuGet packages at one lockstep version. It is a library, not an application: what a
+shipped as 28 NuGet packages at one lockstep version. It is a library, not an application: what a
 consumer relies on is the published API of those packages, and almost every judgement about a
 change follows from that.
 
@@ -39,7 +39,7 @@ them to skim your review.
   public setters because snapshot JSON deserialization needs them.
 - **Do not suggest an underscore prefix on a private field.** camelCase, no prefix, throughout.
 - **Do not suggest a per-project `<Version>`.** One `<VersionPrefix>` in `Directory.Build.props`
-  governs all 27 packable packages, and lockstep is the point.
+  governs all 28 packable packages, and lockstep is the point.
 - **Do not ask for a factoring-out on the second repetition.** DRY applies from the third.
 - **Do not cite a decision record or an ADR number.** That corpus was dissolved into
   `openspec/changes/archive/`; a number resolves to nothing. Say the thing itself.

@@ -57,7 +57,7 @@ a guarantee without touching its specification will be asked about it.
 
 ## Releases
 
-Versions are lockstep: one `<VersionPrefix>` in `Directory.Build.props` governs all 27 packages, and
+Versions are lockstep: one `<VersionPrefix>` in `Directory.Build.props` governs all 28 packages, and
 a `v*` tag publishes them to nuget.org. What is not tagged is not published — there is no feed that
 fills itself from `main`, so a change reaches a consumer when someone decides to release it.
 

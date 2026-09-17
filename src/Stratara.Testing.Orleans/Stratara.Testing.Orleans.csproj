@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>true</IsPackable>
+        <PackageId>Stratara.Testing.Orleans</PackageId>
+        <Description>Run the Stratara Orleans execution model in a test's own process — one silo with in-memory reminders and grain directory, the real write stack, commit-order reader and checkpoint store on in-memory SQLite, and every period shortened to seconds. Register handlers, projections, sagas and timers with the production calls; no cluster, broker or database server. Builds on Stratara.Testing.EntityFrameworkCore.</Description>
+        <PackageTags>testing;orleans;in-process;event-sourcing;cqrs;dotnet;stratara</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Hosting"/>
+        <PackageReference Include="Microsoft.Orleans.Server" VersionOverride="[10.3.1, 11.0.0)"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Stratara.Orleans\Stratara.Orleans.csproj"/>
+        <ProjectReference Include="..\Stratara.Orleans.EntityFrameworkCore\Stratara.Orleans.EntityFrameworkCore.csproj"/>
+        <ProjectReference Include="..\Stratara.Testing.EntityFrameworkCore\Stratara.Testing.EntityFrameworkCore.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Stratara.Testing.Orleans.Tests"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="build\Stratara.Testing.Orleans.targets" Pack="true" PackagePath="build\"/>
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+</Project>

@@ -20,22 +20,26 @@ internal sealed class SingletonWorkPlacementFilterStrategy() : PlacementFilterSt
 /// Keeps the silos whose metadata names the work the grain runs — its key — so a work registered on some
 /// silos is never activated on one that lacks it, where the activation would fail. A silo that publishes no
 /// metadata, because it was not registered through <c>AddStrataraOrleans</c>, places the work as the runtime
-/// would without the filter.
+/// would without the filter. The silo placing is judged by the entries it publishes itself, because its own metadata
+/// may not have reached its cache yet while it becomes active.
 /// </summary>
 internal sealed class SingletonWorkPlacementFilterDirector(IServiceProvider services) : IPlacementFilterDirector
 {
     private readonly ISiloMetadataCache? _siloMetadata = services.GetService<ISiloMetadataCache>();
-    private readonly bool _publishesWork = services.GetService<SingletonWorkPlacement.SingletonWorkSiloMetadata>() is not null;
+    private readonly SingletonWorkPlacement.SingletonWorkSiloMetadata? _ownMetadata = services.GetService<SingletonWorkPlacement.SingletonWorkSiloMetadata>();
+    private readonly SiloAddress? _localSilo = services.GetService<ILocalSiloDetails>()?.SiloAddress;
 
     public IEnumerable<SiloAddress> Filter(PlacementFilterStrategy filterStrategy, PlacementTarget target, IEnumerable<SiloAddress> silos)
     {
-        if (_siloMetadata is null || !_publishesWork)
+        if (_siloMetadata is null || _ownMetadata is null)
         {
             return silos;
         }
 
         var key = SingletonWorkPlacement.MetadataKeyOf(target.GrainIdentity.Key.ToString());
-        return silos.Where(silo => _siloMetadata.GetSiloMetadata(silo).Metadata.ContainsKey(key));
+        return silos.Where(silo => silo.Equals(_localSilo)
+            ? _ownMetadata.Entries.ContainsKey(key)
+            : _siloMetadata.GetSiloMetadata(silo).Metadata.ContainsKey(key));
     }
 }
 

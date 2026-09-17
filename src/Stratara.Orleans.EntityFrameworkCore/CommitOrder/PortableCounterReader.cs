@@ -19,7 +19,7 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// without renumbering the entries, which the framework does not offer. An entry written without the interceptor
 /// carries no position; rather than read past it, a read of its partition fails naming it until the entry is
 /// positioned with <see cref="PartitionCounterBackfill"/>. The reader's name carries the partition count, because
-/// a position is only meaningful under the count its partition was counted with. Verified on PostgreSQL only.
+/// a position is only meaningful under the count its partition was counted with. Verified on PostgreSQL, and on SQLite through the test host of <c>Stratara.Testing.Orleans</c>.
 /// </remarks>
 /// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> contextFactory, IOptions<CommitOrderOptions> options)

@@ -27,6 +27,9 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Stratara.Testing.EntityFrameworkCore.Tests"/>
+        <!-- The environment guard is shared with the execution-model test host. -->
+        <InternalsVisibleTo Include="Stratara.Testing.Orleans"/>
+        <InternalsVisibleTo Include="Stratara.Testing.Orleans.Tests"/>
     </ItemGroup>
 
     <ItemGroup>

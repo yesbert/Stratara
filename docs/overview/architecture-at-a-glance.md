@@ -1,6 +1,6 @@
 ---
 title: "Architecture at a glance"
-description: "How the 27 packages are cut into three tiers, which tier may reference which, and why the contracts stay adoptable without the infrastructure."
+description: "How the 28 packages are cut into three tiers, which tier may reference which, and why the contracts stay adoptable without the infrastructure."
 ---
 
 # Architecture at a glance
@@ -9,7 +9,7 @@ description: "How the 27 packages are cut into three tiers, which tier may refer
 > under `openspec/specs/`. That specification is the source; this page explains and
 > illustrates it. Where the two disagree, the specification is right and this page is a bug.
 
-Stratara ships **27 packages**: 25 runtime packages organized into three tiers (below), plus two test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
+Stratara ships **28 packages**: 25 runtime packages organized into three tiers (below), plus three test-support packages (`Stratara.Testing`, `Stratara.Testing.EntityFrameworkCore`, `Stratara.Testing.Orleans`) referenced only from test projects. Each tier may only depend on tiers **at or below** its own number. The dependency direction is enforced by ProjectReferences in the repo — no cyclic references, no consumer references.
 
 ## Tier layout
 
@@ -45,6 +45,11 @@ Tier-C  (builds on Tier-B + Tier-A)
 ├── Stratara.ServiceDefaults.AspNetCore              ASP.NET OTel + health + endpoints
 ├── Stratara.Orleans                                 Orleans execution model: aggregate, store-reader, timer and singleton grains
 └── Stratara.Orleans.EntityFrameworkCore             Commit-order readers, checkpoint and intent stores, reset
+
+Test-support  (referenced only from test projects — not a runtime tier)
+├── Stratara.Testing                                 In-memory doubles + aggregate harness
+├── Stratara.Testing.EntityFrameworkCore             The real write stack on in-memory SQLite
+└── Stratara.Testing.Orleans                         The Orleans execution model in the test's process
 ```
 
 ## Read the tiers as a dependency-direction promise

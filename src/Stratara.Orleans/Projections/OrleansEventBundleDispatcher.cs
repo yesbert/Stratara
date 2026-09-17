@@ -47,7 +47,7 @@ internal sealed class OrleansEventBundleDispatcher(
             {
                 foreach (var partition in partitions)
                 {
-                    await target.NudgeAsync(grainFactory, partition);
+                    await NudgeAsync(target, partition);
                 }
             }
         }
@@ -55,6 +55,22 @@ internal sealed class OrleansEventBundleDispatcher(
         if (inner is not null)
         {
             await inner.EnqueueEventBundleAsync(eventBundle, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// A nudge that cannot be sent — before the silo has started, while it stops — is a lost nudge like any other: the
+    /// facts are committed and the poll reads them, so it must not fail the commit that already happened.
+    /// </summary>
+    private async Task NudgeAsync(INudgeTarget target, int partition)
+    {
+        try
+        {
+            await target.NudgeAsync(grainFactory, partition);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Lost; the poll is the safety net.
         }
     }
 

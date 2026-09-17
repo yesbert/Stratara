@@ -37,6 +37,7 @@
     <Project Path="src/Stratara.Shared/Stratara.Shared.csproj" />
     <Project Path="src/Stratara.Testing/Stratara.Testing.csproj" />
     <Project Path="src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj" />
+    <Project Path="src/Stratara.Testing.Orleans/Stratara.Testing.Orleans.csproj" />
     <Project Path="src/Stratara.Validation/Stratara.Validation.csproj" />
   </Folder>
   <Folder Name="/samples/">
@@ -47,6 +48,7 @@
     <Project Path="samples/Stratara.Sample.Identity/Stratara.Sample.Identity.csproj" />
     <Project Path="samples/Stratara.Sample.IdentityDirectory/Stratara.Sample.IdentityDirectory.csproj" />
     <Project Path="samples/Stratara.Sample.MoneyTransferSaga/Stratara.Sample.MoneyTransferSaga.csproj" />
+    <Project Path="samples/Stratara.Sample.OrleansExecutionModel/Stratara.Sample.OrleansExecutionModel.csproj" />
     <Project Path="samples/Stratara.Sample.OutboxWorker/Stratara.Sample.OutboxWorker.csproj" />
     <Project Path="samples/Stratara.Sample.TamperProof/Stratara.Sample.TamperProof.csproj" />
     <Project Path="samples/Stratara.Sample.Validation/Stratara.Sample.Validation.csproj" />
@@ -80,6 +82,7 @@
     <Project Path="tests/Stratara.SmokeTests/Stratara.SmokeTests.csproj" />
     <Project Path="tests/Stratara.Testing.Tests/Stratara.Testing.Tests.csproj" />
     <Project Path="tests/Stratara.Testing.EntityFrameworkCore.Tests/Stratara.Testing.EntityFrameworkCore.Tests.csproj" />
+    <Project Path="tests/Stratara.Testing.Orleans.Tests/Stratara.Testing.Orleans.Tests.csproj" />
     <Project Path="tests/Stratara.Validation.Tests/Stratara.Validation.Tests.csproj" />
     <Project Path="tests/Stratara.WriteStore.Tests/Stratara.WriteStore.Tests.csproj" />
   </Folder>
