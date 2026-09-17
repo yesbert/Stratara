@@ -1,8 +1,11 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Projections;
 using Stratara.Contracts.Messages;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Shared.Partitioning;
 
 namespace Stratara.Orleans.Projections;
@@ -18,6 +21,7 @@ internal sealed class OrleansEventBundleDispatcher(
     IEnumerable<INudgeTarget> targets,
     IProjectionReplayState replayState,
     IOptions<CommitOrderOptions> commitOrder,
+    ILogger<OrleansEventBundleDispatcher>? logger = null,
     InnerBundleDispatcher? innerDispatcher = null) : IEventBundleOutboxDispatcher
 {
     private readonly int _partitionCount = commitOrder.Value.PartitionCount;
@@ -60,7 +64,9 @@ internal sealed class OrleansEventBundleDispatcher(
 
     /// <summary>
     /// A nudge that cannot be sent — before the silo has started, while it stops — is a lost nudge like any other: the
-    /// facts are committed and the poll reads them, so it must not fail the commit that already happened.
+    /// facts are committed and the poll reads them, so it must not fail the commit that already happened. It is
+    /// logged at debug with the consumers it was meant for, so that a wake-up path that is always lost can be told
+    /// from one that was lost once.
     /// </summary>
     private async Task NudgeAsync(INudgeTarget target, int partition)
     {
@@ -70,7 +76,7 @@ internal sealed class OrleansEventBundleDispatcher(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // Lost; the poll is the safety net.
+            (logger ?? (ILogger)NullLogger.Instance).LogNudgeFailed(exception, string.Join(", ", target.ConsumerNames), partition);
         }
     }
 

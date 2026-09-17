@@ -214,6 +214,22 @@ applies to the entire NuGet family.
   were reset.
 - **Orleans: the partition counter interceptor releases its transaction when positioning fails.** The
   transaction it opened stayed open on the context until the next save or the context's disposal.
+- **Orleans: a read model can be rebuilt after its reader or partition count changed.** The checkpoint guard
+  refused every write under another reader's name — including the two verbs that recover from it, a projection's
+  rebuild and the full replay's reset, which write the beginning under the host's new name. Returning a checkpoint
+  to the beginning is now a verb of its own (`IProjectionCheckpointStore.ResetAsync`, with a default implementation
+  for stores outside the framework) and takes the row over; reading and advancing are guarded as before.
+- **Orleans: a rebuild or replay whose pause fails leaves no reader paused.** The readers were all paused before
+  the work began, so a pause that failed left the ones that had paused with a pauser nobody released — and since
+  rebuilds count their pausers, no later rebuild cleared it: the partition read nothing until its silo restarted.
+  A failed pause now resumes what it paused and fails naming how many it could not pause.
+- **Orleans: `hybrid: true` on a second store-reading registration is no longer ignored.** A host that registered
+  the projection role and then the saga role with `hybrid: true` silently stopped publishing bundles to the bus.
+  Every registration that asks is now answered: the bus dispatcher is kept, or the registration fails naming what
+  is missing. A kept dispatcher registered by its type is also owned by the container again, so it is disposed
+  with its scope.
+- **Orleans: a wake-up that cannot be sent is logged (`117_121`, debug) and no longer costs the other consumers
+  of that commit theirs.**
 - **Orleans: the heavy-work pool runs its units beside each other again.** Since the pool became a placed grain
   its eight slots lived in one activation, which runs one turn at a time: heavy units ran one after another, and a
   handler that computed without awaiting anything blocked the pool's front door, so the next heavy command was not

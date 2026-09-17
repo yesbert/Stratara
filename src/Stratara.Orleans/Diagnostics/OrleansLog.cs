@@ -121,6 +121,12 @@ internal static partial class OrleansLog
     public static partial void LogRolesUnpublished(this ILogger logger, string registered);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.NudgeFailed,
+        Level = LogLevel.Debug,
+        Message = "The wake-up of {Consumers} for partition {Partition} was not delivered; the readers' poll reads the commit instead.")]
+    public static partial void LogNudgeFailed(this ILogger logger, Exception exception, string consumers, int partition);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.SingletonWorkFailed,
         Level = LogLevel.Error,
         Message = "A run of singleton work {WorkName} failed; it runs again at its next period.")]

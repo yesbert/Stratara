@@ -106,6 +106,24 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         await InsertAsync(context, projection, partition, reader, from, to, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The one write that is not held to the reader's name: the beginning is the beginning under every reader and
+    /// every partition count, so a rebuild or a replay on a host that reads under a new name takes the row over
+    /// instead of being refused by the guard its own message asks the operator to clear.
+    /// </remarks>
+    public async Task ResetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var rows = await context.Set<ProjectionCheckpoint>()
+            .Where(c => c.Projection == projection && c.Partition == partition)
+            .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, 0L).SetProperty(c => c.Reader, reader), cancellationToken);
+        if (rows == 0)
+        {
+            await InsertAsync(context, projection, partition, reader, expected: null, position: 0, cancellationToken);
+        }
+    }
+
     private async Task InsertAsync(TContext context, string projection, int partition, string reader, long? expected, long position, CancellationToken cancellationToken)
     {
         context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });

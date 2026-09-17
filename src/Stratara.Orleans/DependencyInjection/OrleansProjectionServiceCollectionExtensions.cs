@@ -155,10 +155,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, StoreReaderGrainStarter>());
         services.TryAddScoped<IStoreReaderSeeding, StoreReaderSeeding>();
         Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
-        if (!services.Any(d => d.ServiceType == typeof(OrleansEventBundleDispatcher)))
-        {
-            ReplaceBundleDispatcher(services, hybrid);
-        }
+        ReplaceBundleDispatcher(services, hybrid);
     }
 
     /// <summary>
@@ -166,14 +163,29 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// before is kept inside it — by type, factory or instance, with its lifetime — so bundles still reach the bus.
     /// </summary>
     /// <exception cref="InvalidOperationException"><paramref name="hybrid"/> is set and no bundle dispatcher is registered to keep.</exception>
+    /// <summary>
+    /// Replaces the bundle dispatcher with the wake-up hint. With <paramref name="hybrid"/> the dispatcher registered
+    /// before is kept inside it — by type, factory or instance, with its lifetime — so bundles still reach the bus.
+    /// Every registration that asks for it is answered, whether it is the first store-reading role of the host or a
+    /// later one: a later call finds the kept dispatcher already in place, or fails because there is none to keep.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><paramref name="hybrid"/> is set and no bundle dispatcher is registered to keep.</exception>
     private static void ReplaceBundleDispatcher(IServiceCollection services, bool hybrid)
     {
+        var replaced = services.Any(d => d.ServiceType == typeof(OrleansEventBundleDispatcher));
+        var kept = services.Any(d => d.ServiceType == typeof(InnerBundleDispatcher));
         var existing = services.LastOrDefault(d => d.ServiceType == typeof(IEventBundleOutboxDispatcher) && !d.IsKeyedService);
-        if (hybrid && existing is null)
+        if (hybrid && !kept && (existing is null || replaced))
         {
             throw new InvalidOperationException(
                 "hybrid: true keeps publishing bundles through the bus dispatcher registered before this call, and none is registered. " +
-                "Register one first — AddOutboxDispatcher(), which the worker composites call — or pass hybrid: false to read the store only.");
+                "Register one first — AddOutboxDispatcher(), which the worker composites call — or pass hybrid: false to read the store only. " +
+                "Where another store-reading role was registered before this call, register the bus dispatcher before that one.");
+        }
+
+        if (replaced)
+        {
+            return;
         }
 
         if (existing is not null)
@@ -183,13 +195,34 @@ public static class OrleansProjectionServiceCollectionExtensions
 
         if (hybrid && existing is not null)
         {
-            services.Add(new ServiceDescriptor(
-                typeof(InnerBundleDispatcher),
-                sp => new InnerBundleDispatcher((IEventBundleOutboxDispatcher)Instantiate(sp, existing)),
-                existing.Lifetime == ServiceLifetime.Singleton ? ServiceLifetime.Singleton : ServiceLifetime.Scoped));
+            Keep(services, existing);
         }
 
         services.AddScoped<OrleansEventBundleDispatcher>();
         services.AddScoped<IEventBundleOutboxDispatcher>(sp => sp.GetRequiredService<OrleansEventBundleDispatcher>());
+    }
+
+    /// <summary>
+    /// Keeps the dispatcher that was registered before, under its own descriptor's shape. A type-shaped registration
+    /// is registered by its type, so the container builds it and disposes it with the scope it belongs to; a factory
+    /// or an instance is used as it was given, because its owner is whoever supplied it.
+    /// </summary>
+    private static void Keep(IServiceCollection services, ServiceDescriptor existing)
+    {
+        var lifetime = existing.Lifetime == ServiceLifetime.Singleton ? ServiceLifetime.Singleton : ServiceLifetime.Scoped;
+        if (existing is { ImplementationInstance: null, ImplementationFactory: null, ImplementationType: { } implementationType })
+        {
+            services.TryAdd(new ServiceDescriptor(implementationType, implementationType, lifetime));
+            services.Add(new ServiceDescriptor(
+                typeof(InnerBundleDispatcher),
+                sp => new InnerBundleDispatcher((IEventBundleOutboxDispatcher)sp.GetRequiredService(implementationType)),
+                lifetime));
+            return;
+        }
+
+        services.Add(new ServiceDescriptor(
+            typeof(InnerBundleDispatcher),
+            sp => new InnerBundleDispatcher((IEventBundleOutboxDispatcher)Instantiate(sp, existing)),
+            lifetime));
     }
 }

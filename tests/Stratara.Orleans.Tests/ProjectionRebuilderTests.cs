@@ -72,7 +72,7 @@ public sealed class ProjectionRebuilderTests
         Assert.Equal(Partitions, paused);
         Assert.Equal(Partitions, resumed);
         projection.Verify(p => p.TruncateAsync(It.IsAny<CancellationToken>()), Times.Once);
-        checkpoints.Verify(c => c.SetAsync("View", It.IsAny<int>(), It.IsAny<string>(), 0, It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
+        checkpoints.Verify(c => c.ResetAsync("View", It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
     }
 
     /// <summary>D21: every checkpoint is back at the beginning before the projection is emptied.</summary>
@@ -87,7 +87,7 @@ public sealed class ProjectionRebuilderTests
 
         Assert.Equal(Partitions, journal.IndexOf("truncate"));
         Assert.All(journal.Take(Partitions), entry => Assert.StartsWith("reset", entry, StringComparison.Ordinal));
-        checkpoints.Verify(c => c.SetAsync("View", It.IsAny<int>(), "reader/16", 0, It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
+        checkpoints.Verify(c => c.ResetAsync("View", It.IsAny<int>(), "reader/16", It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
     }
 
     [Fact]
@@ -101,6 +101,61 @@ public sealed class ProjectionRebuilderTests
 
         Assert.Equal(Partitions, journal.Count(entry => entry.StartsWith("reset", StringComparison.Ordinal)));
         Assert.Equal(Partitions, journal.Count(entry => entry == "resume"));
+    }
+
+    [Fact]
+    public async Task A_pause_that_fails_resumes_what_it_paused_and_the_rebuild_reports_it()
+    {
+        var journal = new List<string>();
+        var refusing = 0;
+        var grains = Enumerable.Range(0, Partitions).ToDictionary(
+            partition => StoreReaderGrainKey.Of("View", partition),
+            partition => (IProjectionGrain)new FakeGrain(
+                () =>
+                {
+                    if (partition == 3)
+                    {
+                        Interlocked.Increment(ref refusing);
+                        throw new TimeoutException("the partition did not answer");
+                    }
+
+                    lock (journal)
+                    {
+                        journal.Add("pause");
+                    }
+                },
+                () =>
+                {
+                    lock (journal)
+                    {
+                        journal.Add("resume");
+                    }
+
+                    return Task.CompletedTask;
+                }));
+        var grainFactory = new Mock<IGrainFactory>();
+        grainFactory.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => grains[key]);
+        var projection = new Mock<IRebuildableProjection>();
+        var handler = new Mock<IProjectionHandler>();
+        handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
+        var checkpoints = new Mock<IProjectionCheckpointStore>();
+        var reader = new Mock<ICommittedPositionReader>();
+        reader.SetupGet(r => r.Name).Returns("reader/16");
+        var services = new ServiceCollection()
+            .AddScoped(_ => handler.Object)
+            .AddScoped<IProjection>(_ => projection.Object)
+            .AddScoped(_ => checkpoints.Object)
+            .AddScoped(_ => reader.Object)
+            .BuildServiceProvider();
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay());
+
+        var failed = await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
+
+        Assert.Equal(1, refusing);
+        Assert.Contains("could not be paused", failed.Message, StringComparison.Ordinal);
+        Assert.Equal(journal.Count(entry => entry == "pause"), journal.Count(entry => entry == "resume"));
+        projection.Verify(p => p.TruncateAsync(It.IsAny<CancellationToken>()), Times.Never);
+        checkpoints.Verify(c => c.ResetAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static (ProjectionRebuilder Rebuilder, Mock<IRebuildableProjection> Projection, Mock<IProjectionCheckpointStore> Checkpoints) Build(List<string> journal)
@@ -124,8 +179,8 @@ public sealed class ProjectionRebuilderTests
         handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
         var checkpoints = new Mock<IProjectionCheckpointStore>();
         checkpoints
-            .Setup(c => c.SetAsync("View", It.IsAny<int>(), It.IsAny<string>(), 0, It.IsAny<CancellationToken>()))
-            .Callback((string _, int partition, string _, long _, CancellationToken _) => { lock (journal) { journal.Add($"reset {partition}"); } })
+            .Setup(c => c.ResetAsync("View", It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, int partition, string _, CancellationToken _) => { lock (journal) { journal.Add($"reset {partition}"); } })
             .Returns(Task.CompletedTask);
         var reader = new Mock<ICommittedPositionReader>();
         reader.SetupGet(r => r.Name).Returns("reader/16");

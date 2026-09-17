@@ -295,14 +295,28 @@ internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler
 
     public IReadOnlyList<string> ConsumerNames => _names;
 
+    /// <summary>
+    /// Wakes every projection of the partition. A wake-up that cannot even be sent is collected rather than thrown
+    /// at once, so one projection the call fails for does not cost the others behind it their wake-up; the
+    /// dispatcher logs what failed.
+    /// </summary>
+    /// <exception cref="AggregateException">A wake-up could not be sent for one or more projections.</exception>
     public Task NudgeAsync(IGrainFactory grainFactory, int partition)
     {
+        List<Exception>? failures = null;
         foreach (var name in _names)
         {
-            grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)).NudgeAsync().Ignore();
+            try
+            {
+                grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)).NudgeAsync().Ignore();
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                (failures ??= []).Add(exception);
+            }
         }
 
-        return Task.CompletedTask;
+        return failures is null ? Task.CompletedTask : Task.FromException(new AggregateException(failures));
     }
 
     public async Task EnsureRunningAsync(IGrainFactory grainFactory, int partition)

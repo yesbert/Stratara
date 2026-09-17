@@ -9,8 +9,11 @@ namespace Stratara.Orleans.Tests;
 
 /// <summary>
 /// Two stores over one database stand for two activations of one reader: an activation that outlived its successor
-/// cannot rewind what the successor wrote, and no write changes the reader a checkpoint was written under (scenarios
-/// <em>A stale activation writes a checkpoint</em>, <em>A checkpoint is written under another reader's name</em>).
+/// cannot rewind what the successor wrote, and no write changes the reader a checkpoint was written under — except a
+/// reset, which returns the row to the beginning under the resetting host's own reader whatever wrote it, so a
+/// rebuild or a replay recovers from the refusal inside the running cluster (scenarios <em>A stale activation writes
+/// a checkpoint</em>, <em>A checkpoint is written under another reader's name</em>, <em>A read model is rebuilt after
+/// the partition count changed</em>).
 /// </summary>
 public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
 {
@@ -39,6 +42,28 @@ public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
         Assert.Contains("at 20", refused.Message, StringComparison.Ordinal);
         Assert.Contains("not at 10", refused.Message, StringComparison.Ordinal);
         Assert.Equal(20, await successor.GetAsync("View", 2, Reader));
+    }
+
+    [Fact]
+    public async Task A_reset_takes_over_a_checkpoint_written_under_another_reader_and_partition_count()
+    {
+        var store = Store();
+        await store.AdvanceAsync("View", 2, Reader, 0, 42);
+
+        await store.ResetAsync("View", 2, "postgres-transaction-id/8");
+
+        Assert.Equal(0, await store.GetAsync("View", 2, "postgres-transaction-id/8"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.GetAsync("View", 2, Reader));
+    }
+
+    [Fact]
+    public async Task A_reset_of_a_checkpoint_that_was_never_written_inserts_the_beginning()
+    {
+        var store = Store();
+
+        await store.ResetAsync("View", 3, Reader);
+
+        Assert.Equal(0, await store.GetAsync("View", 3, Reader));
     }
 
     [Fact]
