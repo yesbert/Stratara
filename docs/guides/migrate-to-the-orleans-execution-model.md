@@ -161,7 +161,7 @@ positions follow each stream's version order. A read stops at an entry appended 
 partition stops advancing, the failure names the entry, and positioning it with the backfill lets the
 partition continue. The partition count is fixed once the store holds positions — lowering it would merge
 partitions whose positions overlap, the framework offers no renumbering, and a host refuses to start with a
-count lower than the store's counters. The portable reader is verified on PostgreSQL only; on PostgreSQL the
+count lower than the store's counters. The portable reader is verified on PostgreSQL, and on SQLite through the test host of `Stratara.Testing.Orleans`; on PostgreSQL the
 native reader is the one to use. A store that already holds entries is positioned once, after migrating and before the first
 start, with `PartitionCounterBackfill.RunAsync`; the host refuses to start while an entry without a
 position remains. Running the backfill again changes nothing.
@@ -224,6 +224,10 @@ singleton work started once. A singleton work is best registered with the name i
 `AddStrataraSingletonWork<TWork>(name)`: the silo publishes that name without constructing the work, where the
 overload without a name constructs every work while the silo starts, before any hosted service registered after
 the silo has run. A work whose `Name` differs from the name it was registered with fails the start naming both.
+
+To test the roles on the execution model before a cluster exists, run them in the test's process with
+`ExecutionModelTestHost` from `Stratara.Testing.Orleans`, registered with the same calls — see
+[On the Orleans execution model](testing-patterns.md#on-the-orleans-execution-model).
 
 ### When the broker can go
 

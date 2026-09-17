@@ -85,6 +85,11 @@ _None._
   `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` (header), `docs/index.md`, `docs/overview/what-is-stratara.md`,
   `docs/overview/index.md`, `docs/overview/packages.md`, `docs/overview/architecture-at-a-glance.md`,
   `.github/copilot-instructions.md`, `openspec/config.yaml`, `llms.txt`.
+- As implemented: `AddStrataraTestingEventStore` gains an overload taking a connection string rather than an optional
+  parameter; `ExecutionModelTestHostOptions` gains `PartitionCount` and `BeforeStart`; `Stratara.Orleans` exposes its
+  internals to the package for the readers' consumer names; two framework defects found on the way were fixed — a silo
+  that could not place grains on itself before its own metadata reached its cache, and a nudge failure that failed a
+  dispatch after its commit.
 - Versioning: minor (4.2.0).
 - Out of scope, for the owner: an execution-model slice in the `yesbert/Stratara.Examples` repository,
   which consumes the published packages and can only follow the release that ships this one.

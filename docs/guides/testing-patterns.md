@@ -110,9 +110,52 @@ var otherTenant = Guid.NewGuid();
 host.Session.Set(TestSessionContext.ForTenant(otherTenant));   // what follows runs as otherTenant
 ```
 
+## On the Orleans execution model
+
+To test handlers, projections, sagas and timers on the execution model, add `Stratara.Testing.Orleans` and use
+`ExecutionModelTestHost`. It runs one silo in the test's process: reminders and the grain directory in memory, the
+real write stack, commit-order reader, checkpoint store and intent store on in-memory SQLite, and every period the
+model keeps as a reminder or a poll shortened to seconds. There is no cluster, broker or database server, and no
+Docker. Register the roles with the calls production uses, so the test proves the production registration:
+
+```csharp
+await using var silo = await ExecutionModelTestHost.CreateAsync(services => services
+    .AddAggregatesFromAssemblyContaining<IAppMarker>()
+    .AddCommandHandlersFromAssemblyContaining<IAppMarker>()
+    .AddProjectionsFromAssemblyContaining<IAppMarker>()
+    .AddStrataraAggregateGrains()
+    .AddStrataraProjectionGrains());
+
+await silo.DispatchAsync(new DepositCommand(Guid.NewGuid(), 100m));   // runs in the account's activation
+await silo.WaitForReadersAsync();                                       // every reader is at the store's head
+```
+
+What the host exposes:
+
+- **`DispatchAsync`** sends a command through the mediator under `Session`. Where the aggregate grains are
+  registered, the handler runs in its aggregate's activation.
+- **`WaitForReadersAsync`** returns once every registered projection and saga has applied the store up to its head
+  in every partition. On timeout it names the lagging reader and partition — a projection that throws stops its
+  partition.
+- **`Timers`** is the `IDurableTimers` of `AddStrataraDurableTimers`. A timer due in a second fires within a few
+  seconds, and a process timeout reaches its `SagaProcess<TState>` the same way.
+- **`SeedAtHeadAsync`** and **`ResetAsync`** are the execution model's own seeding and reset. Seeding belongs before
+  the silo starts, as in a deployment, so the host offers `ExecutionModelTestHostOptions.BeforeStart` for it.
+- **`Session`** is the context every scope starts under, `ExecutionModelTestHost.DefaultTenantId` by default.
+
+The periods are `ExecutionModelTestHostOptions`: `PollInterval` 250 ms, `ReminderPeriod` 1 s, `IntentGrace` 2 s,
+`DrainPollingInterval` 1 s and four partitions. A value the test sets through a registration's own settings wins.
+Creating a host takes a few seconds, so share one across a test class through a fixture and call `ResetAsync`
+between tests where one must not see another's state.
+
+The host is one silo. What happens across silos — a kill, a role split, a takeover — needs real infrastructure and
+belongs in an integration test. The sample
+[`Stratara.Sample.OrleansExecutionModel`](https://github.com/yesbert/Stratara/tree/main/samples/Stratara.Sample.OrleansExecutionModel)
+runs a command, a projection and a process timeout on the host in one console run.
+
 ## The test-support packages stay out of running systems
 
-Both test-support packages wire in-memory and development-grade implementations. A host that starts
+All three test-support packages wire in-memory and development-grade implementations. A host that starts
 with them starts successfully and loses every write, which is why the boundary is enforced rather
 than merely documented.
 
@@ -132,7 +175,8 @@ The check ships inside the package, so it fires on a `PackageReference`. It cann
 reference within a single solution.
 
 **At registration.** `AddStrataraTestingEventStore` throws when a registered `IHostEnvironment`, or
-`DOTNET_ENVIRONMENT` / `ASPNETCORE_ENVIRONMENT`, names anything other than `Development`. Where no
+`DOTNET_ENVIRONMENT` / `ASPNETCORE_ENVIRONMENT`, names anything other than `Development`, and
+`ExecutionModelTestHost.CreateAsync` throws when either variable does. Where no
 environment is stated at all — an ordinary unit test, which has no host — the call is allowed. This
 is deliberately not a whitelist: refusing the unstated case would refuse the only legitimate use.
 

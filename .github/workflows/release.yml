@@ -1,4 +1,4 @@
-# Publish the 27 packages to nuget.org. Version tags only.
+# Publish the 28 packages to nuget.org. Version tags only.
 #
 # The tag is the deliberate "release this" signal. A push to a branch never publishes: what is not
 # tagged is not published anywhere. The tag may name a prerelease — its identifier rides through to

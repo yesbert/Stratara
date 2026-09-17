@@ -1,6 +1,6 @@
 ---
 title: "Overview"
-description: "The conceptual map: what Stratara is, how its 27 packages are tiered, and the vocabulary the rest of the documentation assumes."
+description: "The conceptual map: what Stratara is, how its 28 packages are tiered, and the vocabulary the rest of the documentation assumes."
 ---
 
 # Overview

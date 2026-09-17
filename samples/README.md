@@ -3,9 +3,9 @@
 > **Derived.** The behaviour described here is specified under `openspec/specs/`. Those
 > specifications are the source; this page explains and illustrates them.
 
-Two **Hero Samples** show what makes Stratara different — tamper-evident event streams and tenant-aware encryption — in about 155 and 320 lines. Five **Learning Path** samples walk the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring in order. A **Pipeline Behaviors** sample shows request validation, and two **Identity & Access** samples show external sign-in, API keys, tenant membership and permissions. Every sample is self-contained (no shared common project) and runs in under a second.
+Two **Hero Samples** show what makes Stratara different — tamper-evident event streams and tenant-aware encryption — in about 155 and 320 lines. Six **Learning Path** samples walk the core CQRS / Event Sourcing / Outbox / Saga / ASP.NET wiring and the Orleans execution model in order. A **Pipeline Behaviors** sample shows request validation, and two **Identity & Access** samples show external sign-in, API keys, tenant membership and permissions. Every sample is self-contained (no shared common project) and runs in under a second, except the Orleans one, which starts a silo and takes a few.
 
-The seven hero + learning-path samples share the same **bank-account / money-transfer** domain so you don't have to re-learn the problem space for each one.
+The eight hero + learning-path samples share the same **bank-account / money-transfer** domain so you don't have to re-learn the problem space for each one.
 
 ## 🌟 Hero Samples
 
@@ -27,8 +27,9 @@ End-to-end runnable demos in a teaching order. Each builds on the prior.
 | 3 | [`Stratara.Sample.OutboxWorker`](Stratara.Sample.OutboxWorker) | Outbox + message bus + two background workers (async dispatch) | ~300 | 15–20 min |
 | 4 | [`Stratara.Sample.MoneyTransferSaga`](Stratara.Sample.MoneyTransferSaga) | Saga / process manager — one command fans out into two via the outbox | ~330 | 15–20 min |
 | 5 | [`Stratara.Sample.AspNetCoreApi`](Stratara.Sample.AspNetCoreApi) | HTTP minimal-API endpoints → mediator wiring | ~250 | 10–15 min |
+| 6 | [`Stratara.Sample.OrleansExecutionModel`](Stratara.Sample.OrleansExecutionModel) | The Orleans execution model in one process — a command in its aggregate's activation, a projection from the store, a process timeout | ~180 | 10 min |
 
-Samples 2–4 build conceptually on the one before; sample 5 is parallel to 1 and can be read at any point.
+Samples 2–4 build conceptually on the one before; sample 5 is parallel to 1 and can be read at any point; sample 6 runs the same concepts on the Orleans execution model and takes a few seconds rather than under one.
 
 ## 🧩 Pipeline Behaviors
 
@@ -58,7 +59,7 @@ dotnet run --project samples/Stratara.Sample.TamperProof
 
 Samples are excluded from `Stratara.Publish.slnf` but smoke-tested on every pull request by the required CI check, and by the local gauntlet, via [`tests/Stratara.Samples.SmokeTests/`](../tests/Stratara.Samples.SmokeTests): every console sample is run and its output asserted, the two web samples are started and probed over HTTP. A sample that stops working fails the build rather than rotting silently.
 
-**What that does and does not cover.** The samples are deliberately self-contained, which means they reference four framework packages between them — `Stratara.Mediator`, `Stratara.Validation`, `Stratara.Identity.AspNetCore` and `Stratara.Identity.EntityFrameworkCore`. A breaking change in one of those fails a sample. A breaking change in the other twenty-one does not, because no sample calls into them: the event store, the outbox, the sagas, the projections and the encryption stack are written out by hand here rather than consumed. Those surfaces are covered by their own test projects and by the documentation checks, not by these samples.
+**What that does and does not cover.** The samples are deliberately self-contained, which means they reference five framework packages directly between them — `Stratara.Mediator`, `Stratara.Validation`, `Stratara.Identity.AspNetCore`, `Stratara.Identity.EntityFrameworkCore` and `Stratara.Testing.Orleans`, which the Orleans sample runs on and which brings the execution model, its persistence, the write store, the projection and saga runtimes and the mediator with it. A breaking change in one of those fails a sample. A breaking change in the others does not, because no sample calls into them: the outbox over a broker and the encryption stack are written out by hand here rather than consumed. Those surfaces are covered by their own test projects and by the documentation checks, not by these samples.
 
 To build all samples locally:
 

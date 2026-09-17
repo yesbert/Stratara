@@ -173,21 +173,26 @@ internal sealed class TimersRolePlacementFilterAttribute() : PlacementFilterAttr
 /// <summary>
 /// The director behind every role filter. A silo that publishes no roles itself — one registered without
 /// <c>AddStrataraOrleans</c> — filters nothing, because it could not see its own registrations either; a silo whose
-/// metadata is not yet known is treated as publishing nothing, which delays a placement rather than misplacing it.
+/// metadata is not yet known is treated as publishing nothing, which delays a placement rather than misplacing it. The
+/// silo placing is judged by the entries it publishes itself, because its own metadata may not have reached its cache
+/// yet while it becomes active — when its starters place the first grains.
 /// </summary>
 internal sealed class RolePlacementFilterDirector(IServiceProvider services) : IPlacementFilterDirector
 {
     private readonly ISiloMetadataCache? _siloMetadata = services.GetService<ISiloMetadataCache>();
-    private readonly bool _publishesRoles = services.GetService<Singleton.SingletonWorkPlacement.SingletonWorkSiloMetadata>() is not null;
+    private readonly Singleton.SingletonWorkPlacement.SingletonWorkSiloMetadata? _ownMetadata = services.GetService<Singleton.SingletonWorkPlacement.SingletonWorkSiloMetadata>();
+    private readonly SiloAddress? _localSilo = services.GetService<ILocalSiloDetails>()?.SiloAddress;
 
     public IEnumerable<SiloAddress> Filter(PlacementFilterStrategy filterStrategy, PlacementTarget target, IEnumerable<SiloAddress> silos)
     {
-        if (_siloMetadata is null || !_publishesRoles || filterStrategy is not RolePlacementFilterStrategy strategy)
+        if (_siloMetadata is null || _ownMetadata is null || filterStrategy is not RolePlacementFilterStrategy strategy)
         {
             return silos;
         }
 
         var key = RolePlacement.MetadataKeyOf(strategy.Role);
-        return RolePlacement.Select(strategy.Role, silos, silo => _siloMetadata.GetSiloMetadata(silo).Metadata.ContainsKey(key));
+        return RolePlacement.Select(strategy.Role, silos, silo => silo.Equals(_localSilo)
+            ? _ownMetadata.Entries.ContainsKey(key)
+            : _siloMetadata.GetSiloMetadata(silo).Metadata.ContainsKey(key));
     }
 }

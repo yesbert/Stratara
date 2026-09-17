@@ -22,7 +22,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 ## Core facts (anchor before generating code)
 
 - **Target framework:** .NET 10. C# with nullable enabled, `TreatWarningsAsErrors=true`.
-- **Versioning:** one `<VersionPrefix>` in `Directory.Build.props` controls all 27 packages
+- **Versioning:** one `<VersionPrefix>` in `Directory.Build.props` controls all 28 packages
   (Microsoft.Extensions.* lockstep convention). Never assume per-package versions diverge.
 - **Tier order (dependency direction):** Tier-A → Tier-B → Tier-C. A Tier-N package may only
   reference Tier-(≤N). Tier-A (`Abstractions`, `Contracts`, `Diagnostics`, `Resilience`) has
@@ -193,6 +193,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [Stratara.Orleans.EntityFrameworkCore](https://www.nuget.org/packages/Stratara.Orleans.EntityFrameworkCore) (Tier-C): the execution model's persistence — commit-order readers (native PostgreSQL; a portable counter with a backfill that appends after the counter and keeps checkpoints true, verified on PostgreSQL only, which needs `PartitionCounterInterceptor` in every appending process and a fixed partition count; `CommitOrderOptions.MaintainPartitionCounter` is obsolete), checkpoint store, command-intent store, `IExecutionModelReset`, the backfill that adds the native reader's commit record to a populated table without a rewrite; `IStoreReaderSeeding` in `Stratara.Orleans` seeds a current host's checkpoints at the head.
 - [Stratara.Testing](https://www.nuget.org/packages/Stratara.Testing) (test-support): in-memory `IKeyStore` / `IMessageBus` / `ISessionContextProvider` doubles + given/when/then `AggregateTestHarness<T>`.
 - [Stratara.Testing.EntityFrameworkCore](https://www.nuget.org/packages/Stratara.Testing.EntityFrameworkCore) (test-support): `EventStoreTestHost` — the real event-sourcing write stack on in-memory SQLite, no Postgres/Docker.
+- [Stratara.Testing.Orleans](https://www.nuget.org/packages/Stratara.Testing.Orleans) (test-support): `ExecutionModelTestHost` — the Orleans execution model in the test's process (one silo, in-memory reminders and grain directory, SQLite store), roles registered with the production calls; no cluster, broker or Docker.
 
 ## Samples
 

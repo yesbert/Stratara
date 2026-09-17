@@ -60,6 +60,65 @@ public static class TestEventStoreServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(sharedConnection);
 
+        return AddCore<TWriteDbContext>(services, options => options.UseSqlite(sharedConnection), defaultTenantId);
+    }
+
+    /// <summary>
+    /// Register the same write stack as
+    /// <see cref="AddStrataraTestingEventStore{TWriteDbContext}(IServiceCollection, SqliteConnection, Guid)"/>, with every
+    /// context opening its own connection from <paramref name="connectionString"/> and <paramref name="configureContext"/>
+    /// applied to the options after the provider — for a test whose store is used from several threads at once, such as a
+    /// silo's, and for a write context that needs an interceptor.
+    /// </summary>
+    /// <typeparam name="TWriteDbContext">The concrete write <see cref="DbContext"/> (e.g. <see cref="StrataraTestWriteDbContext"/>).</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="connectionString">
+    /// A SQLite connection string. For an in-memory database shared by the contexts, name it and use a shared cache —
+    /// <c>Data Source=name;Mode=Memory;Cache=Shared</c> — and keep one connection to it open for the test's lifetime; the
+    /// database is gone when the last connection closes.
+    /// </param>
+    /// <param name="defaultTenantId">The tenant the preset session context is scoped to.</param>
+    /// <param name="configureContext">Applied to every write context's options after the SQLite provider, or <see langword="null"/>.</param>
+    /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <see langword="null"/>, empty or white space.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the service collection carries a host environment, or the environment variables state one, naming
+    /// anything other than <c>Development</c>.
+    /// </exception>
+    /// <example>
+    /// <code>
+    /// var connectionString = $"Data Source=store-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+    /// using var keeper = new SqliteConnection(connectionString);
+    /// keeper.Open();
+    /// services.AddStrataraTestingEventStore&lt;AppWriteDbContext&gt;(
+    ///     connectionString,
+    ///     Guid.NewGuid(),
+    ///     options =&gt; options.LogTo(Console.WriteLine));
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddStrataraTestingEventStore<TWriteDbContext>(
+        this IServiceCollection services,
+        string connectionString,
+        Guid defaultTenantId,
+        Action<DbContextOptionsBuilder>? configureContext = null)
+        where TWriteDbContext : DbContext, IWriteDbContext
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        return AddCore<TWriteDbContext>(
+            services,
+            options =>
+            {
+                options.UseSqlite(connectionString);
+                configureContext?.Invoke(options);
+            },
+            defaultTenantId);
+    }
+
+    private static IServiceCollection AddCore<TWriteDbContext>(IServiceCollection services, Action<DbContextOptionsBuilder> useStore, Guid defaultTenantId)
+        where TWriteDbContext : DbContext, IWriteDbContext
+    {
         TestSupportEnvironmentGuard.EnsureDevelopmentOrUnstated(services, nameof(AddStrataraTestingEventStore));
 
         // Register the doubles first so the production TryAdd fallbacks (DummyKeyStore, etc.) never win.
@@ -69,7 +128,7 @@ public static class TestEventStoreServiceCollectionExtensions
         services.TryAddSingleton<IEventBundleOutboxDispatcher, RecordingEventBundleOutboxDispatcher>();
 
         services.AddDbContextFactory<TWriteDbContext>(
-            (_, options) => options.UseSqlite(sharedConnection),
+            (_, options) => useStore(options),
             ServiceLifetime.Scoped);
         services.TryAddScoped<IWriteDbContext>(sp => sp.GetRequiredService<IDbContextFactory<TWriteDbContext>>().CreateDbContext());
         services.AddScoped<IWriteUnitOfWork>(sp => new WriteUnitOfWork<TWriteDbContext>(

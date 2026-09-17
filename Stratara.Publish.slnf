@@ -28,6 +28,7 @@
       "src/Stratara.Shared/Stratara.Shared.csproj",
       "src/Stratara.Testing/Stratara.Testing.csproj",
       "src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj",
+      "src/Stratara.Testing.Orleans/Stratara.Testing.Orleans.csproj",
       "src/Stratara.Validation/Stratara.Validation.csproj",
       "tests/Stratara.Documentation.Tests/Stratara.Documentation.Tests.csproj",
       "tests/Stratara.EntityFrameworkCore.Tests/Stratara.EntityFrameworkCore.Tests.csproj",
@@ -49,6 +50,7 @@
       "tests/Stratara.SmokeTests/Stratara.SmokeTests.csproj",
       "tests/Stratara.Testing.Tests/Stratara.Testing.Tests.csproj",
       "tests/Stratara.Testing.EntityFrameworkCore.Tests/Stratara.Testing.EntityFrameworkCore.Tests.csproj",
+      "tests/Stratara.Testing.Orleans.Tests/Stratara.Testing.Orleans.Tests.csproj",
       "tests/Stratara.Validation.Tests/Stratara.Validation.Tests.csproj",
       "tests/Stratara.WriteStore.Tests/Stratara.WriteStore.Tests.csproj"
     ]

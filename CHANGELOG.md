@@ -5,7 +5,7 @@ All notable changes to the Stratara framework are documented in this file.
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning 2.0.0](https://semver.org/).
 
-Stratara is versioned **lockstep** — all 27 packable packages share the same version
+Stratara is versioned **lockstep** — all 28 packable packages share the same version
 number, controlled by `<VersionPrefix>` in `Directory.Build.props`. A single entry here
 applies to the entire NuGet family.
 
@@ -17,6 +17,18 @@ applies to the entire NuGet family.
 ## [Unreleased]
 
 ### Added
+
+- **New package `Stratara.Testing.Orleans`** (test-support, the 28th package): `ExecutionModelTestHost` runs the Orleans
+  execution model in a test's own process — one silo, in-memory reminders and grain directory, the real write stack,
+  portable commit-order reader, checkpoint and intent stores on in-memory SQLite, and every period shortened to
+  seconds. A test registers its roles with the production calls, dispatches, waits for the readers
+  (`WaitForReadersAsync`) and asserts; `Timers`, `SeedAtHeadAsync`, `ResetAsync` and `ExecutionModelTestHostOptions`
+  (with `BeforeStart`) complete it. The package carries the `STRATARA1001` build check and refuses a stated non-development
+  environment.
+- **Sample `Stratara.Sample.OrleansExecutionModel`**: a command in its aggregate's activation, a projection from the
+  store and a process timeout on the test host, in one console run; smoke-tested.
+- **`AddStrataraTestingEventStore<TWriteDbContext>(connectionString, tenantId, configureContext)`**: a connection per
+  context to a shared database, and the caller's options — an interceptor — after the provider.
 
 - **`AddCommandServices()`** (`Stratara.EventSourcing.WorkerDefaults`): the command worker stack without the bus-fed
   mediator worker, beside `AddEventProjectionServices` and `AddSagaServices`. `AddCommandWorkerServices` is now
@@ -68,6 +80,13 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Orleans: a silo places grains on itself by the roles and work it publishes, before its own metadata reaches its
+  cache.** A silo that became active and started its store readers at once could fail its start with *No silo of the
+  cluster registered the projections role*, because its own metadata was not yet known to it.
+- **Orleans: a wake-up nudge that cannot be sent no longer fails the dispatch after a commit.** A commit made before the
+  silo started, or while it stopped, threw from the bundle dispatcher although the facts were stored; the nudge is now
+  lost like any other and the readers' poll applies the facts.
+- **The portable commit-order reader is verified on SQLite** as well as PostgreSQL, through the test host.
 - **Migration guide: the command silo and the bus queues.** The command role's row names `AddCommandServices`, the
   dispatcher and the intent store; *When the broker can go* states which hosts need the broker; *After the cut-over:
   the bus queues* names the queues the bus workers own and the order in which to retire them.
