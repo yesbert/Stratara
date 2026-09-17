@@ -35,9 +35,18 @@ applies to the entire NuGet family.
 - **Orleans: two log events.** `117_112` (`LogEvents.Orleans.IntentAttemptFailed`) for every attempt of a
   recorded command that fails, with the command's id, type and aggregate; `117_113` (`HandOverFailed`) for a
   hand-over that fails. A failing handler is seen before its command is kept.
+- **Orleans: log event `117_114`** (`LogEvents.Orleans.PermitReclaimRefused`) for a running heavy unit that was
+  refused its permit when it registered again after the permit keeper was lost, and runs outside the
+  cluster-wide bound until a permit is free.
 
 ### Changed
 
+- **Orleans: the heavy-work bound holds across the loss of the silo keeping the permits.** A permit keeper
+  that is activated admits no new heavy unit for one `PermitLease` and takes back every running unit that
+  registers again, so the units the lost keeper had admitted count against the bound before new ones start;
+  previously a new keeper handed out the whole bound at once beside them. A running unit whose permit was lost
+  now reads the answer when it registers again and keeps asking until it holds a permit. The first heavy
+  commands after a keeper's activation — including a cluster's first — start one lease later.
 - **The migration guide says how a populated store adopts the execution model.** The transaction-id column
   is added nullable, backfilled, then given its default and constraint — while nothing appends; the guide
   states the upgrade order (schema before the first 4.1 host, 4.0 hosts keep running, bus outbox worker

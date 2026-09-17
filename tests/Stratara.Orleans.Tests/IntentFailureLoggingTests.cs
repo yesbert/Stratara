@@ -75,36 +75,6 @@ public sealed class IntentFailureLoggingTests
         Assert.IsType<InvalidOperationException>(entry.Exception);
     }
 
-    private sealed record LogEntry(LogLevel Level, EventId EventId, string Message, Exception? Exception);
-
-    private sealed class RecordingLogger : ILogger
-    {
-        private readonly List<LogEntry> _entries = [];
-
-        public IReadOnlyList<LogEntry> Entries
-        {
-            get
-            {
-                lock (_entries)
-                {
-                    return [.. _entries];
-                }
-            }
-        }
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-        {
-            lock (_entries)
-            {
-                _entries.Add(new LogEntry(logLevel, eventId, formatter(state, exception), exception));
-            }
-        }
-    }
-
     private sealed class TypedLogger<T>(ILogger inner) : ILogger<T>
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => inner.BeginScope(state);

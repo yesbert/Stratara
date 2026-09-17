@@ -56,7 +56,7 @@ public sealed class HeavyOrderTests(PostgreSqlFixture postgres, RedisFixture red
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor("poc_heavy_store"),
+            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor("poc_heavy_order_store"),
             ["ConnectionStrings:rabbitmq"] = rabbit.ConnectionString,
         });
         builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));

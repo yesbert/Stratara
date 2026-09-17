@@ -29,7 +29,8 @@ public sealed class HeavyWorkOptions
     /// <summary>
     /// How long a permit is held without renewal before it is released. A running unit renews its permit
     /// at half this period; a permit whose holder died is released after it at the latest, or as soon as
-    /// the cluster declares the holder dead.
+    /// the cluster declares the holder dead. The grain keeping the permits admits no new unit for this period after it
+    /// is activated, so the units still running under a lost keeper are counted again before new ones start.
     /// </summary>
     public TimeSpan PermitLease { get; set; } = TimeSpan.FromSeconds(30);
 }
@@ -54,6 +55,13 @@ internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
     /// <summary>Takes a permit for a unit held by <paramref name="holder"/>, unless the bound is reached.</summary>
     [Alias("TryAcquireAsync")]
     Task<bool> TryAcquireAsync(Guid unitId, SiloAddress holder);
+
+    /// <summary>
+    /// Takes back a running unit whose permit was not held when renewed; <see langword="false"/> when it is refused, and
+    /// the unit runs outside the bound until a later call takes it.
+    /// </summary>
+    [Alias("ReclaimAsync")]
+    Task<bool> ReclaimAsync(Guid unitId, SiloAddress holder);
 
     /// <summary>Extends a unit's lease; <see langword="false"/> when the permit was already released.</summary>
     [Alias("RenewAsync")]
@@ -167,59 +175,79 @@ internal sealed class HeavyWorkGrain(
             }
         }
     }
+}
 
-    /// <summary>
-    /// Renews the unit's permit at half its lease, from the timer's thread. A permit that is no longer held — its
-    /// lease lapsed on a renewal that failed, or the permit grain was activated again without it — is taken again, so
-    /// the permit grain counts the running unit against the bound once more. One renewal at a time; a tick that
-    /// finds one running does nothing.
-    /// </summary>
-    private sealed class PermitRenewal(IHeavyWorkPermitGrain permits, Guid unitId, SiloAddress holder, ILogger logger)
+/// <summary>
+/// Renews a running unit's permit at half its lease, from the timer's thread. A permit that is no longer held — its lease
+/// lapsed on a renewal that failed, or the permit grain was activated again without it — is reclaimed, so the permit
+/// grain counts the running unit against the bound once more. A refused reclaim is logged once per loss and leaves the
+/// unit running outside the bound; every following tick reclaims again instead of renewing until one is taken. One
+/// renewal at a time; a tick that finds one running does nothing.
+/// </summary>
+internal sealed class PermitRenewal(IHeavyWorkPermitGrain permits, Guid unitId, SiloAddress holder, ILogger logger)
+{
+    private volatile Task _inFlight = Task.CompletedTask;
+    private volatile bool _held = true;
+    private int _renewing;
+
+    /// <summary>Whether the unit counted against the bound at the last answer of the permit grain.</summary>
+    public bool Held => _held;
+
+    public void Tick()
     {
-        private volatile Task _inFlight = Task.CompletedTask;
-        private int _renewing;
-
-        public void Tick()
+        if (Interlocked.CompareExchange(ref _renewing, 1, 0) != 0)
         {
-            if (Interlocked.CompareExchange(ref _renewing, 1, 0) != 0)
+            return;
+        }
+
+        _inFlight = RenewOnceAsync();
+    }
+
+    /// <summary>Waits for the renewal in flight, once the timer is disposed and no tick can start another.</summary>
+    public Task SettleAsync() => _inFlight;
+
+    private async Task RenewOnceAsync()
+    {
+        try
+        {
+            if (_held)
             {
+                if (await permits.RenewAsync(unitId))
+                {
+                    return;
+                }
+
+                logger.LogPermitRenewalLost(unitId);
+            }
+
+            if (await permits.ReclaimAsync(unitId, holder))
+            {
+                _held = true;
                 return;
             }
 
-            _inFlight = RenewOnceAsync();
+            if (_held)
+            {
+                _held = false;
+                logger.LogPermitReclaimRefused(unitId, holder.ToString());
+            }
         }
-
-        /// <summary>Waits for the renewal in flight, once the timer is disposed and no tick can start another.</summary>
-        public Task SettleAsync() => _inFlight;
-
-        private async Task RenewOnceAsync()
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            try
-            {
-                if (!await permits.RenewAsync(unitId))
-                {
-                    logger.LogPermitRenewalLost(unitId);
-                    await permits.TryAcquireAsync(unitId, holder);
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _ = ex;
-            }
-            finally
-            {
-                Volatile.Write(ref _renewing, 0);
-            }
+            _ = ex;
+        }
+        finally
+        {
+            Volatile.Write(ref _renewing, 0);
         }
     }
 }
 
 /// <summary>
-/// The cluster-wide bound behind the permits: single activation, one call at a time. Each permit
-/// records the silo holding it and when its lease runs out. A permit is released when its unit
-/// releases it, when its lease lapses without renewal, or when the cluster declares its holder dead —
-/// checked on every acquisition and on a timer of the grain's own — so a crashed worker does not shrink
-/// the bound for longer than a lease.
+/// The cluster-wide bound behind the permits: single activation, one call at a time, over a <see cref="PermitLedger"/>.
+/// Released permits are reconciled on every acquisition and on a timer of the grain's own, so a crashed worker does not
+/// shrink the bound for longer than a lease; a new activation admits no new unit for one lease, so the units a lost
+/// activation had admitted are counted again before the bound applies to new ones.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 internal sealed class HeavyWorkPermitGrain(
@@ -228,9 +256,7 @@ internal sealed class HeavyWorkPermitGrain(
     TimeProvider timeProvider,
     ILogger<HeavyWorkPermitGrain> logger) : Grain, IHeavyWorkPermitGrain
 {
-    private readonly int _limit = options.Value.ClusterWideLimit;
-    private readonly TimeSpan _lease = options.Value.PermitLease;
-    private readonly Dictionary<Guid, Permit> _permits = new();
+    private readonly PermitLedger _ledger = new(options.Value.ClusterWideLimit, options.Value.PermitLease, timeProvider);
     private IGrainTimer? _reconcile;
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
@@ -241,73 +267,41 @@ internal sealed class HeavyWorkPermitGrain(
                 Reconcile();
                 return Task.CompletedTask;
             },
-            new GrainTimerCreationOptions { DueTime = _lease, Period = _lease, Interleave = false, KeepAlive = true });
+            new GrainTimerCreationOptions { DueTime = options.Value.PermitLease, Period = options.Value.PermitLease, Interleave = false, KeepAlive = true });
         return base.OnActivateAsync(cancellationToken);
     }
 
     public Task<bool> TryAcquireAsync(Guid unitId, SiloAddress holder)
     {
         Reconcile();
-        if (_permits.ContainsKey(unitId))
-        {
-            return Task.FromResult(true);
-        }
-
-        if (_permits.Count >= _limit)
-        {
-            return Task.FromResult(false);
-        }
-
-        _permits[unitId] = new Permit(holder, timeProvider.GetUtcNow() + _lease);
-        ApplicationDiagnostics.Metrics.OrleansHeavyPermitsInUse.Add(1);
-        return Task.FromResult(true);
+        return Task.FromResult(_ledger.TryAcquire(unitId, holder));
     }
 
-    public Task<bool> RenewAsync(Guid unitId)
+    public Task<bool> ReclaimAsync(Guid unitId, SiloAddress holder)
     {
-        if (!_permits.TryGetValue(unitId, out var permit))
-        {
-            return Task.FromResult(false);
-        }
-
-        _permits[unitId] = permit with { ExpiresAt = timeProvider.GetUtcNow() + _lease };
-        return Task.FromResult(true);
+        Reconcile();
+        return Task.FromResult(_ledger.Reclaim(unitId, holder));
     }
+
+    public Task<bool> RenewAsync(Guid unitId) => Task.FromResult(_ledger.Renew(unitId));
 
     public Task ReleaseAsync(Guid unitId)
     {
-        if (_permits.Remove(unitId))
-        {
-            ApplicationDiagnostics.Metrics.OrleansHeavyPermitsInUse.Add(-1);
-        }
-
+        _ledger.Release(unitId);
         return Task.CompletedTask;
     }
 
     public Task<int> InUseAsync()
     {
         Reconcile();
-        return Task.FromResult(_permits.Count);
+        return Task.FromResult(_ledger.InUse);
     }
 
-    /// <summary>Releases every permit whose lease lapsed or whose holder the cluster has declared dead.</summary>
     private void Reconcile()
     {
-        var now = timeProvider.GetUtcNow();
-        var snapshot = membership.CurrentSnapshot;
-        foreach (var (unitId, permit) in _permits.ToList())
+        foreach (var released in _ledger.Reconcile(membership.CurrentSnapshot))
         {
-            var holderDead = snapshot.GetSiloStatus(permit.Holder) == SiloStatus.Dead;
-            if (!holderDead && permit.ExpiresAt > now)
-            {
-                continue;
-            }
-
-            _permits.Remove(unitId);
-            ApplicationDiagnostics.Metrics.OrleansHeavyPermitsInUse.Add(-1);
-            logger.LogPermitReleasedByExpiry(unitId, permit.Holder.ToString(), holderDead ? "holder declared dead" : "lease lapsed");
+            logger.LogPermitReleasedByExpiry(released.UnitId, released.Holder.ToString(), released.HolderDead ? "holder declared dead" : "lease lapsed");
         }
     }
-
-    private sealed record Permit(SiloAddress Holder, DateTimeOffset ExpiresAt);
 }

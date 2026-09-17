@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -14,7 +15,8 @@ namespace Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 
 /// <summary>
 /// A worker silo for heavy work, joined to the cluster the test names, whose units hold their permits
-/// for as long as the test asks. Commands: <c>enqueue-heavy count delayMs</c>, <c>in-use</c>.
+/// for as long as the test asks. Commands: <c>enqueue-heavy count delayMs</c>, <c>in-use</c>, and <c>runs</c>, which
+/// answers <c>running started completed most-starts-of-one-unit</c> as counted by the handler in this process.
 /// </summary>
 public sealed class HeavyScenario : IPocScenario
 {
@@ -35,7 +37,8 @@ public sealed class HeavyScenario : IPocScenario
         builder.AddBackendServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
-            .AddScoped<ICommandHandler<HeavyProbe>, HeavyProbeHandler>()
+            .AddSingleton<HeavyRuns>()
+            .AddScoped<ICommandHandler<HeavyProbe>, CountedHeavyRunHandler>()
             .AddAggregatesFromAssemblyContaining<HeavyScenario>()
             .AddTrustedType<HeavyProbe>()
             .AddStrataraAggregateGrains()
@@ -76,10 +79,55 @@ public sealed class HeavyScenario : IPocScenario
 
                 return "ok";
             }
+            case "runs":
+                return services.GetRequiredService<HeavyRuns>().Describe();
             case "in-use":
                 return (await services.GetRequiredService<IGrainFactory>().GetGrain<IHeavyWorkPermitGrain>(0).InUseAsync()).ToString(CultureInfo.InvariantCulture);
             default:
                 return "error unknown command " + parts[0];
+        }
+    }
+}
+
+/// <summary>What the heavy handler of one process has run: how many units run now, and how often each started.</summary>
+public sealed class HeavyRuns
+{
+    private readonly ConcurrentDictionary<Guid, int> _starts = new();
+    private int _running;
+    private int _completed;
+
+    public void Started(Guid unit)
+    {
+        _starts.AddOrUpdate(unit, 1, static (_, count) => count + 1);
+        Interlocked.Increment(ref _running);
+    }
+
+    public void Completed()
+    {
+        Interlocked.Decrement(ref _running);
+        Interlocked.Increment(ref _completed);
+    }
+
+    public string Describe() => string.Join(
+        ' ',
+        Volatile.Read(ref _running).ToString(CultureInfo.InvariantCulture),
+        _starts.Values.Sum().ToString(CultureInfo.InvariantCulture),
+        Volatile.Read(ref _completed).ToString(CultureInfo.InvariantCulture),
+        _starts.Values.DefaultIfEmpty(0).Max().ToString(CultureInfo.InvariantCulture));
+}
+
+public sealed class CountedHeavyRunHandler(HeavyRuns runs) : ICommandHandler<HeavyProbe>
+{
+    public async Task HandleAsync(HeavyProbe command, CancellationToken cancellationToken)
+    {
+        runs.Started(command.AggregateId);
+        try
+        {
+            await Task.Delay(command.DelayMs, cancellationToken);
+        }
+        finally
+        {
+            runs.Completed();
         }
     }
 }

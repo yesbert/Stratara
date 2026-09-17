@@ -308,5 +308,7 @@ public static class LogEvents
         public const int IntentAttemptFailed = 117_112;
         /// <summary>Handing a recorded command to its grain failed; the drain hands it over again after the grace (warning).</summary>
         public const int HandOverFailed = 117_113;
+        /// <summary>A running heavy unit whose permit was lost was refused when it registered again and runs outside the bound until a permit is free (warning).</summary>
+        public const int PermitReclaimRefused = 117_114;
     }
 }

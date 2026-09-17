@@ -1,6 +1,6 @@
 # Offer a bus-free command composite
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-17 — recorded at the owner's request)
 
 ## Why
 
