@@ -178,6 +178,15 @@ public sealed class OrderTimerOwners : Stratara.Abstractions.Timers.ITimerOwners
     public Task<bool> ExistsAsync(string ownerId, CancellationToken cancellationToken) => Task.FromResult(true);
 }
 
+public sealed class NightlyCleanupWork : Stratara.Abstractions.Singleton.ISingletonWork
+{
+    public string Name => "nightly-cleanup";
+
+    public TimeSpan Period => TimeSpan.FromHours(24);
+
+    public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
 public sealed class OrderTimerHandler : Stratara.Abstractions.Timers.ITimerHandler
 {
     public Task OnDueAsync(Stratara.Abstractions.Timers.TimerDue due, CancellationToken cancellationToken) => Task.CompletedTask;

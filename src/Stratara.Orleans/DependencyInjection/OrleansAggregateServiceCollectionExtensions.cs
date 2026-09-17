@@ -79,7 +79,7 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// builder.Services
     ///     .AddStrataraOrleansCommandDispatcher()
     ///     .AddStrataraIntentStore&lt;AppWriteDbContext&gt;()
-    ///     .AddStrataraSingletonWork&lt;OutboxDrainWork&gt;();
+    ///     .AddStrataraSingletonWork&lt;OutboxDrainWork&gt;(OutboxDrainWork.WorkName);
     /// </code>
     /// </example>
     public static IServiceCollection AddStrataraOrleansCommandDispatcher(this IServiceCollection services, Action<OrleansDispatchOptions>? configure = null)

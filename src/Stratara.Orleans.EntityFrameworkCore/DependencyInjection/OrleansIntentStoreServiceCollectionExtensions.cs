@@ -28,7 +28,7 @@ public static class OrleansIntentStoreServiceCollectionExtensions
     ///     .AddNpgsqlWriteDbContextFactory&lt;AppWriteDbContext&gt;()
     ///     .AddStrataraOrleansCommandDispatcher()
     ///     .AddStrataraIntentStore&lt;AppWriteDbContext&gt;()
-    ///     .AddStrataraSingletonWork&lt;OutboxDrainWork&gt;();
+    ///     .AddStrataraSingletonWork&lt;OutboxDrainWork&gt;(OutboxDrainWork.WorkName);
     /// </code>
     /// </example>
     public static IServiceCollection AddStrataraIntentStore<TWriteContext>(this IServiceCollection services)

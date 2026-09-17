@@ -126,7 +126,9 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   (`AddStrataraOrleansCommandDispatcher` + `AddStrataraIntentStore<TWriteContext>`), projections and
   sagas read the store in commit order from checkpoints instead of taking bundles from the bus
   (`AddEventProjectionServices()` / `AddSagaServices()` then `AddStrataraProjectionGrains` /
-  `AddStrataraSagaGrains`), and singleton work runs once per cluster (`AddStrataraSingletonWork<T>`).
+  `AddStrataraSagaGrains`), and singleton work runs once per cluster (`AddStrataraSingletonWork<T>(name)`; a failing run is logged as `117_119`
+  and the work runs again). Every registration is idempotent, and a silo that registers the directory without
+  `AddStrataraOrleans` while hosting a role or work fails at start.
   The silo needs a storage-backed grain directory registered with `silo.AddStrataraOrleans(...)` or it
   fails at start; every setting is validated at start. A failing entry stops its partition and is
   retried — it is not dead-lettered. Each entry is applied under the session it was recorded under, set

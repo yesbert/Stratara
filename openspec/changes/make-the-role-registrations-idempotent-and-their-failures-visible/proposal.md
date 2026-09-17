@@ -92,4 +92,8 @@ _None._
   directory registered directly and a role fails at start naming the call (`CoHostingTests` moves to
   `AddStrataraOrleans`); `tests/Stratara.Orleans.IntegrationTests/Singleton/` — a failing work logs the
   event and runs again.
+- As implemented: log event ids `117_119` (a failing run) and `117_120` (a silo that does not publish — a new id
+  rather than `117_107`); the registrations of the works in `src/Stratara.Orleans/Singleton/SingletonWorkRegistrations.cs`;
+  tests `tests/Stratara.Orleans.Tests/RegistrationIdempotencyTests.cs`, `DurableDirectoryCheckTests.cs`,
+  `SingletonWorkMetadataTests.cs`.
 - Versioning: patch.

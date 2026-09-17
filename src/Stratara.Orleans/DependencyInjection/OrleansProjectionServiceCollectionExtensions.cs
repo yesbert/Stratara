@@ -56,7 +56,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         OrleansOptionsValidator.Register<ProjectionGrainOptions>(services);
         AddStoreReaderCore(services, hybrid);
         RolePlacement.Publish(services, ExecutionRole.Projections);
-        services.AddScoped<INudgeTarget, ProjectionNudgeTarget>();
+        AddNudgeTarget<ProjectionNudgeTarget>(services);
         services.TryAddSingleton<IProjectionRebuilder, ProjectionRebuilder>();
         ReplayCheckpointResetTruncator.Decorate(services, Instantiate);
 
@@ -99,9 +99,19 @@ public static class OrleansProjectionServiceCollectionExtensions
         OrleansOptionsValidator.Register<SagaGrainOptions>(services);
         AddStoreReaderCore(services, hybrid);
         RolePlacement.Publish(services, ExecutionRole.Sagas);
-        services.AddScoped<INudgeTarget, SagaNudgeTarget>();
+        AddNudgeTarget<SagaNudgeTarget>(services);
         AddSagaProcessTimers(services);
         return services;
+    }
+
+    /// <summary>Adds the role's wake-up target once, so a second registration of the role wakes nothing twice.</summary>
+    private static void AddNudgeTarget<TTarget>(IServiceCollection services)
+        where TTarget : class, INudgeTarget
+    {
+        if (!services.Any(d => d.ServiceType == typeof(INudgeTarget) && d.ImplementationType == typeof(TTarget)))
+        {
+            services.AddScoped<INudgeTarget, TTarget>();
+        }
     }
 
     /// <summary>

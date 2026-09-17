@@ -113,7 +113,7 @@ public sealed class CoHostingTests(PostgreSqlFixture postgres, RedisFixture redi
         {
             silo.UseLocalhostClustering(siloPort, gatewayPort);
             silo.UseRedisGrainDirectoryAsDefault(options => options.ConfigurationOptions = redisOptions);
-            silo.AddRedisGrainDirectory(GrainDirectories.Durable, options => options.ConfigurationOptions = redisOptions);
+            silo.AddStrataraOrleans((s, name) => s.AddRedisGrainDirectory(name, options => options.ConfigurationOptions = redisOptions));
             silo.UseInMemoryReminderService();
             silo.Configure<ReminderOptions>(options => options.MinimumReminderPeriod = TimeSpan.FromSeconds(1));
         });

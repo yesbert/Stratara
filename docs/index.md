@@ -173,7 +173,7 @@ builder.Services
     .AddStrataraOrleansCommandDispatcher()
     .AddStrataraIntentStore<AppWriteDbContext>()
     // once per cluster, no lock
-    .AddStrataraSingletonWork<OutboxDrainWork>();
+    .AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName);
 ```
 
 <p class="st-not"><strong>You do not need:</strong> to rewrite a handler, or a distributed lock for work that must run once.</p>

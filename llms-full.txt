@@ -187,6 +187,7 @@ Public extension methods a host calls to wire Stratara, with what each one does 
 | `AddStrataraResilienceBehavior()` | Stratara.Resilience | Register the resilience pipeline behavior so any mediator request implementing IResilientRequest is dispatched inside the named Polly pipeline it selects |
 | `AddStrataraSagaGrains(Action<SagaGrainOptions> configure, Boolean hybrid)` | Stratara.Orleans | Runs every registered saga in a grain per partition that reads the store in commit order from a checkpoint |
 | `AddStrataraSingletonWork<TWork>(Action<SingletonWorkOptions> configure)` | Stratara.Orleans | Registers TWork to run once per cluster on its period |
+| `AddStrataraSingletonWork<TWork>(String name, Action<SingletonWorkOptions> configure)` | Stratara.Orleans | Registers TWork to run once per cluster on its period |
 | `AddStrataraTenantIsolation(Action<TenantIsolationOptions> configure)` | Stratara.Mediator | Register the tenant-isolation pipeline behaviors for both request shapes (IRequest and IRequest`1) |
 | `AddStrataraTestingEventStore<TWriteDbContext>(SqliteConnection sharedConnection, Guid defaultTenantId)` | Stratara.Testing.EntityFrameworkCore | Register the event-sourcing write stack (IEventSource, IAggregationService, snapshots, the EF Core write store) over sharedConnection, plus an InMemoryKeyStore, a TestSessionContextProvider, and a RecordingEventBundleOutboxDispatcher |
 | `AddStrataraValidation()` | Stratara.Validation | Register the validation pipeline behaviors for both request shapes (IRequest and IRequest`1) |

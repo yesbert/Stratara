@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
 using Stratara.Abstractions.Singleton;
+using Stratara.Orleans.Diagnostics;
 
 namespace Stratara.Orleans.Singleton;
 
@@ -20,13 +22,15 @@ internal interface ISingletonWorkGrain : IGrainWithStringKey
 /// <summary>
 /// Runs its work on a grain timer, which the runtime never lets overlap with itself or with a
 /// call, and keeps a reminder so that a silo's loss brings the grain back somewhere else. The
-/// grain directory's single-activation guarantee is what makes this "once per cluster".
+/// grain directory's single-activation guarantee is what makes this "once per cluster". A run that throws is logged
+/// and the timer's next tick runs the work again.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 [SingletonWorkPlacementFilter]
 internal sealed class SingletonWorkGrain(
     IServiceScopeFactory scopeFactory,
-    IOptions<SingletonWorkOptions> options) : Grain, ISingletonWorkGrain, IRemindable
+    IOptions<SingletonWorkOptions> options,
+    ILogger<SingletonWorkGrain> logger) : Grain, ISingletonWorkGrain, IRemindable
 {
     private const string KeepAliveReminder = "keep-alive";
 
@@ -80,7 +84,16 @@ internal sealed class SingletonWorkGrain(
     private async Task RunOnceAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
-        await ResolveWork(scope.ServiceProvider).RunAsync(cancellationToken);
+        try
+        {
+            await ResolveWork(scope.ServiceProvider).RunAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogSingletonWorkFailed(exception, this.GetPrimaryKeyString());
+            return;
+        }
+
         _runs++;
     }
 
@@ -96,17 +109,26 @@ internal sealed class SingletonWorkGrain(
 /// Asks every registered work's grain to run once the silo is active — a stage of the silo's own
 /// lifecycle, so it runs when the silo can take a call, whatever order the host registered the silo and
 /// the framework's composites in. Idempotent across silos: a grain that already runs elsewhere just
-/// re-arms its reminder.
+/// re-arms its reminder. This is where a work registered with its name is first constructed, and where its name is
+/// compared with the registered one.
 /// </summary>
 internal sealed class SingletonWorkStarter(IServiceScopeFactory scopeFactory, IGrainFactory grainFactory) : ILifecycleParticipant<ISiloLifecycle>
 {
     public void Participate(ISiloLifecycle lifecycle) =>
         lifecycle.Subscribe(nameof(SingletonWorkStarter), ServiceLifecycleStage.Active, StartAsync);
 
+    /// <exception cref="InvalidOperationException">A work's name is not the name it was registered under.</exception>
     private async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
-        foreach (var work in scope.ServiceProvider.GetServices<ISingletonWork>())
+        var works = scope.ServiceProvider.GetServices<ISingletonWork>().ToList();
+        var registrations = scope.ServiceProvider.GetService<SingletonWorkRegistrations>();
+        foreach (var work in works)
+        {
+            registrations?.EnsureNamed(work);
+        }
+
+        foreach (var work in works)
         {
             await grainFactory.GetGrain<ISingletonWorkGrain>(work.Name).EnsureRunningAsync();
         }

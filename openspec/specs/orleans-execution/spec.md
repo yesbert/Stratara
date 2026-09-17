@@ -81,6 +81,23 @@ without an intent store SHALL report it. A resumption the drain holds back becau
 active SHALL be logged when the holding back begins and when it ends, so that a recorded command
 that waits for the length of a replay is seen waiting rather than lost.
 
+Where the host has registered a bus-envelope signer, the record SHALL carry a signature over the same
+claims a command on the bus is signed over — its type, its session context, its heavy flag and a
+digest of its body — and a command resumed from its record SHALL be verified under the host's
+integrity mode before it is handed over, so that the session a resumed command runs under is the one
+it was dispatched under. Under strict mode a record that carries no signature or one that does not
+verify SHALL be kept for an operator at once, without an attempt, with the reason recorded with it;
+under permissive mode it SHALL be resumed and the failure recorded; the two failures SHALL be
+distinguishable by the identity of the record, as they are on the bus. A command handed over without
+passing through storage is not verified. A record written before the host signed carries no
+signature, and the documentation SHALL name the rollout through permissive mode, as it does for the
+bus.
+
+The resumption of a backlog SHALL NOT be bounded by the drain's period: while a pass finds as many
+due commands as it asked for, the next pass SHALL follow at once, until a pass finds fewer or the run
+has lasted its period, and the next run SHALL continue; and the store round trips of one pass SHALL
+NOT grow with the number of commands it claims.
+
 Every command on this path SHALL pass through the same mediator pipeline — validation, authorization,
 tenant isolation, audit — as a command on the bus path, and an enqueue-time authorization the host
 registered SHALL apply whatever order it and the execution model were registered in.
@@ -205,6 +222,27 @@ the token.
 - **WHEN** a silo is stopped while a handler that does not observe its token is running
 - **THEN** the handler runs to its end, and the silo waits for it up to the runtime's deactivation
   budget before it stops
+
+#### Scenario: A recorded command's session is altered in storage
+
+- **WHEN** a host with a signer in strict mode has recorded a command, its stored session context is
+  altered before the host dies, and the drain finds the record due
+- **THEN** the command is kept at once with the reason that its signature did not verify, its handler
+  does not run, and the record that says so is distinct from the one for an unsigned command —
+  verified on the PostgreSQL store
+
+#### Scenario: A record written before the host signed is resumed
+
+- **WHEN** a record without a signature is due on a host with a signer
+- **THEN** in permissive mode it is resumed and a record states that it was unsigned; in strict mode it
+  is kept at once with that reason; with the mode off it is resumed as it always was
+
+#### Scenario: A backlog larger than one batch is due
+
+- **WHEN** more recorded commands than the drain's batch size are due when the drain runs — as after
+  an outage of the hosts that dispatch
+- **THEN** every one of them is handed over within one period of the drain, not one batch per period
+  — verified on the PostgreSQL store with a backlog of several batches
 
 ### Requirement: Projections and sagas read the store in commit order and never miss a committed fact
 
