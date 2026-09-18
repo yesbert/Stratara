@@ -7,8 +7,11 @@ namespace Stratara.Abstractions.Session;
 /// <see cref="ISessionContextProvider"/> resolves identity from inbound requests.
 /// </summary>
 /// <remarks>
-/// Bind from configuration via section <see cref="SectionName"/> (<c>"SessionContext"</c>)
-/// or programmatically via <c>services.Configure&lt;SessionContextOptions&gt;(o =&gt; ...)</c>.
+/// <c>AddSessionContext()</c> reads these options from the configuration section
+/// <see cref="SectionName"/> (<c>"SessionContext"</c>) of the host's configuration; a service
+/// collection that holds no configuration gets the defaults. A value set with
+/// <c>services.Configure&lt;SessionContextOptions&gt;(o =&gt; ...)</c> after that call takes
+/// precedence over the section.
 /// </remarks>
 [ExcludeFromCodeCoverage]
 public sealed class SessionContextOptions

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Security;
 using Stratara.Security;
 
@@ -19,8 +20,12 @@ public static class SecurityServiceCollectionExtensions
     /// </summary>
     /// <remarks>
     /// Uses <c>TryAdd</c> so a consumer-registered implementation (or the file key store's
-    /// registration) takes precedence. Reads <see cref="StrataraBlobEncryptionOptions"/>; bind it
-    /// from configuration or leave the defaults.
+    /// registration) takes precedence. Reads <see cref="StrataraBlobEncryptionOptions"/> from the
+    /// <c>Stratara:BlobEncryption</c> section of the <c>IConfiguration</c> the container holds; a
+    /// service collection that holds no configuration gets the defaults. A value configured in code
+    /// with <c>services.Configure&lt;StrataraBlobEncryptionOptions&gt;(...)</c> after this call takes
+    /// precedence over the section. The section is applied once, at the position of the first call,
+    /// so calling this method again — directly or through <c>AddSecurity()</c> — does not re-apply it.
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
@@ -34,6 +39,7 @@ public static class SecurityServiceCollectionExtensions
     public static IServiceCollection AddStrataraBlobEncryption(this IServiceCollection services)
     {
         services.AddOptions<StrataraBlobEncryptionOptions>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<StrataraBlobEncryptionOptions>, StrataraBlobEncryptionOptionsBinding>());
         services.TryAddSingleton<IEncryptionFactory, AesGcmEncryptionFactory>();
         services.TryAddSingleton<ISecureBlobEncryptor, AesGcmSecureBlobEncryptor>();
         return services;
@@ -45,8 +51,10 @@ public static class SecurityServiceCollectionExtensions
     /// encryptor, and a startup probe that validates the KEK eagerly.
     /// </summary>
     /// <remarks>
-    /// Bind options from <see cref="StrataraFileKeyStoreOptions.SectionName"/> and
-    /// <see cref="StrataraBlobEncryptionOptions.SectionName"/>. Call this <b>before</b> any
+    /// Binds the options from the <see cref="StrataraFileKeyStoreOptions.SectionName"/> and
+    /// <see cref="StrataraBlobEncryptionOptions.SectionName"/> sections of
+    /// <paramref name="configuration"/>; for the blob encryption options it takes precedence over the
+    /// same section of the configuration the container holds. Call this <b>before</b> any
     /// composition that registers a development fallback so the envelope store wins the
     /// <c>TryAdd</c> race. A missing or too-short KEK fails the host at startup with an actionable
     /// message.
@@ -66,12 +74,12 @@ public static class SecurityServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
+        services.AddStrataraBlobEncryption();
         services.Configure<StrataraFileKeyStoreOptions>(configuration.GetSection(StrataraFileKeyStoreOptions.SectionName));
         services.Configure<StrataraBlobEncryptionOptions>(configuration.GetSection(StrataraBlobEncryptionOptions.SectionName));
 
         services.TryAddSingleton<IMasterKeyProvider, FileMasterKeyProvider>();
         services.TryAddSingleton<IKeyStore, EnvelopeFileKeyStore>();
-        services.AddStrataraBlobEncryption();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, FileKeyStoreStartupProbe>());
 
         return services;

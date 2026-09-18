@@ -2,9 +2,9 @@
 
 ## 1. Binding
 
-- [ ] 1.1 `AddSessionContext`: lazy bind from `SessionContext`; package reference in `Stratara.Sessions.csproj`.
-- [ ] 1.2 `AddProjectionReplayState`: lazy bind from `ProjectionReplay`; `Validate(LeaseSeconds > 0)` and `ValidateOnStart`.
-- [ ] 1.3 XML docs of both registrations and both options types state the section and the precedence.
+- [x] 1.1 `AddSessionContext`: lazy bind from `SessionContext`; package reference in `Stratara.Sessions.csproj`.
+- [x] 1.2 `AddProjectionReplayState`: lazy bind from `ProjectionReplay`; `Validate(LeaseSeconds > 0)` and `ValidateOnStart`.
+- [x] 1.3 XML docs of both registrations and both options types state the section and the precedence.
 
 ## 2. Tests
 
