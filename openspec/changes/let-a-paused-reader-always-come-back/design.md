@@ -119,6 +119,35 @@ Evidence for each: the tests named, run on the PostgreSQL store.
   than constants, so the test host can shorten them with its other periods. Nothing public.
 - **D10 — The second reset always runs**, with `CancellationToken.None`, also after a failed truncate;
   where both fail the caller receives both as an `AggregateException`.
+- **D11 — The rebuild quiesces the readers between the truncate and the second reset.** A reader
+  that lapsed or moved may read from the first reset, apply part of a batch, and still be applying it
+  when the model is emptied. The second reset writes the same beginning the reader started from, so the
+  guarded advance (stored = from) accepts its write after the reset and the entries it applied before
+  the truncate are missing. The hold therefore pauses every reader again under its own pauser
+  (`QuiesceAsync`) — idempotent for a reader that still holds it, and waiting for a batch in flight —
+  before the second reset; quiescing and the second reset run however the truncate ended. Evidence:
+  `PausedReaderLeaseTests.A_batch_in_flight_across_the_truncation_leaves_the_model_complete` (fails
+  with "2 of 3 rows" without the quiescing), `ProjectionRebuilderTests.The_readers_are_quiesced_between_the_truncation_and_the_second_reset`.
+- **D12 — The rebuild's protection rests on a guarded advance, and says so.** The default
+  `IProjectionCheckpointStore.AdvanceAsync` replaces the position unchecked; its XML documentation and
+  the operate guide say that a store used with a rebuild or a replay must override it with the guard.
+  The framework's store does. Documentation only.
+- **D13 — An invalidation during a checkpoint read wins over the read.** The reader counts its
+  invalidations and marks a position it read as known only where none happened during the read, so a
+  resume that clears the position (D5) while a catch-up is reading the checkpoint is not undone on a
+  quiet partition. Evidence: `StoreReaderLoopTests.An_invalidation_during_a_checkpoint_read_is_not_overwritten_by_the_read`.
+- **D14 — A released pauser is remembered for one lease.** A pause or renewal of it delivered after its
+  resume pauses nothing and logs no lapse. A lapsed pauser is not remembered and an activation that
+  moved has no memory, so D6 still holds. Evidence: `StoreReaderPauseTests.A_released_pauser_is_remembered_for_one_lease_so_a_late_pause_or_renewal_holds_nothing`,
+  `PausedReaderLeaseTests.A_resume_or_a_renewal_for_a_pauser_the_reader_does_not_hold` (grain level:
+  an unknown resume releases nothing, a late renewal pauses nothing, an unseen renewal pauses until
+  its resume).
+- **D15 — The hold renews from the moment the pauses are sent**, not once all have answered, so a
+  reader that answered at once does not lapse while another's pause waits for a long batch; a failed
+  pause stops the renewal before it resumes. Evidence: `StoreReaderPauseTests.A_hold_renews_the_readers_that_paused_while_another_pause_still_waits`,
+  `A_pause_that_fails_stops_renewing_before_it_resumes`.
+- **D16 — D7, amended: a pause holds again after its wait unconditionally** — also where its lease
+  lapsed during a long wait — unless its pauser was released meanwhile (D14).
 - **D4, amended — a rebuild during a rolling upgrade.** A rebuild started from a 4.2.0 silo cannot
   pause a reader still hosted on a 4.1.x silo, which has no held pause; it fails naming that reader,
   which is safe. The operate guide and the CHANGELOG say to rebuild once every silo runs 4.2.0.

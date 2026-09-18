@@ -322,7 +322,8 @@ applies to the entire NuGet family.
   next rebuild. A pause now belongs to its pauser and lasts while the pauser renews it (a lease of sixty seconds,
   renewed every twenty); a pause that is not renewed lapses, the reader resumes and logs `117_123` (warning). A
   resume releases only its own pauser's pause however often it is repeated. A rebuild and a replay return the
-  checkpoints to the beginning again after the read model is emptied, so what a reader applied before is read
+  checkpoints to the beginning again after the read model is emptied — waiting first for any batch a reader still
+  had in flight — so what a reader applied before is read
   again after it — a fact applied in between is applied twice, which a rebuildable projection must tolerate as a
   full replay already requires. *Upgrade note:* during a rolling upgrade, a rebuild or replay started from a
   4.1.x silo pauses an upgraded silo's readers for at most ten minutes, because it cannot renew, and resets the

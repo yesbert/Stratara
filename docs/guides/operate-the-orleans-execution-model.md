@@ -238,11 +238,13 @@ second rebuild's readers go early.
 A reader can still resume before its rebuild ends: its pause lapsed because the rebuilding process could not
 renew it in time — a long garbage-collection pause, a saturated silo — or its activation moved to another silo and
 forgot the pause. What such a reader applied before the read model was emptied would be lost with the truncation,
-so a rebuild and a replay return the checkpoints to the beginning a second time, after the truncation, and the
-reader reads those facts again. A fact it applied between the truncation and that second reset is applied
+so a rebuild and a replay wait for any batch such a reader still has in flight and then return the checkpoints to
+the beginning a second time, after the truncation, and the reader reads those facts again. A fact it applied between the truncation and that second reset is applied
 **twice**; a rebuildable projection must therefore apply idempotently — the property a full replay already
 requires of every projection that reads the store. A `117_123` logged during a rebuild is the sign that it
-happened.
+happened. This protection rests on the checkpoint store refusing an advance from a position it no longer holds:
+the framework's store does, and a checkpoint store of your own must override
+`IProjectionCheckpointStore.AdvanceAsync` with the same guard — its default replaces the position unchecked.
 
 During a rolling upgrade from 4.1.x, a rebuild or replay started from a silo still on 4.1.x pauses the readers of
 an upgraded silo for at most ten minutes — it cannot renew — and returns the checkpoints to the beginning only
