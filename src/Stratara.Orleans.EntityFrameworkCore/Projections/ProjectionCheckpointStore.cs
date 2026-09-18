@@ -10,6 +10,54 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
     where TContext : DbContext
 {
     /// <inheritdoc/>
+    public async Task<long?> FindAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await FindRowAsync(context, projection, partition, cancellationToken) is not { } found)
+        {
+            return null;
+        }
+
+        if (found.Reader != reader)
+        {
+            throw new InvalidOperationException(Refusal(projection, partition, found.Reader, reader));
+        }
+
+        return found.Position;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Inserts the row where none exists. A writer whose insert loses to another's finds the other's row and writes
+    /// nothing, so the first checkpoint is the first writer's, whatever the second one would have written.
+    /// </remarks>
+    public async Task<bool> CreateAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await FindRowAsync(context, projection, partition, cancellationToken) is not null)
+        {
+            return false;
+        }
+
+        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            context.ChangeTracker.Clear();
+            if (await FindRowAsync(context, projection, partition, cancellationToken) is not null)
+            {
+                return false;
+            }
+
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -69,7 +117,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
             return;
         }
 
-        if (await FindAsync(context, projection, partition, cancellationToken) is { } found)
+        if (await FindRowAsync(context, projection, partition, cancellationToken) is { } found)
         {
             // Another writer inserted the row between the update and the read; under this reader it is replaced all the same.
             if (found.Reader == reader && await UpdateAsync(context, projection, partition, reader, expected: null, position, cancellationToken))
@@ -98,7 +146,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
             return;
         }
 
-        if (await FindAsync(context, projection, partition, cancellationToken) is { } found)
+        if (await FindRowAsync(context, projection, partition, cancellationToken) is { } found)
         {
             throw new InvalidOperationException(Refusal(projection, partition, found, reader, from));
         }
@@ -166,7 +214,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
                 return;
             }
 
-            if (await FindAsync(context, projection, partition, cancellationToken) is { } found)
+            if (await FindRowAsync(context, projection, partition, cancellationToken) is { } found)
             {
                 throw new InvalidOperationException(expected is { } from
                     ? Refusal(projection, partition, found, reader, from)
@@ -177,7 +225,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         }
     }
 
-    private static Task<ProjectionCheckpoint?> FindAsync(TContext context, string projection, int partition, CancellationToken cancellationToken) =>
+    private static Task<ProjectionCheckpoint?> FindRowAsync(TContext context, string projection, int partition, CancellationToken cancellationToken) =>
         context.Set<ProjectionCheckpoint>().AsNoTracking()
             .SingleOrDefaultAsync(c => c.Projection == projection && c.Partition == partition, cancellationToken);
 

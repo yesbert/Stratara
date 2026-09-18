@@ -267,6 +267,12 @@ internal interface INudgeTarget
 {
     IReadOnlyList<string> ConsumerNames { get; }
 
+    /// <summary>
+    /// Consumers the target's readers checkpointed under in an earlier release and read under other names now; nothing
+    /// reads them any more, and the execution model's reset removes their checkpoints with the others.
+    /// </summary>
+    IReadOnlyList<string> SupersededConsumerNames => [];
+
     Task NudgeAsync(IGrainFactory grainFactory, int partition);
 
     Task EnsureRunningAsync(IGrainFactory grainFactory, int partition);

@@ -41,6 +41,20 @@ public sealed class ProjectionCheckpointStoreTests
         Assert.Equal(42, await store.GetAsync("View", 2, "partition-counter/16"));
     }
 
+    [Fact]
+    public async Task A_first_checkpoint_is_created_where_none_exists_and_one_that_exists_is_kept()
+    {
+        var store = await StoreWithCheckpointAsync("partition-counter/16");
+
+        Assert.Equal(42, await store.FindAsync("View", 2, "partition-counter/16", TestContext.Current.CancellationToken));
+        Assert.Null(await store.FindAsync("View", 3, "partition-counter/16", TestContext.Current.CancellationToken));
+        Assert.False(await store.CreateAsync("View", 2, "partition-counter/16", 7, TestContext.Current.CancellationToken));
+        Assert.True(await store.CreateAsync("View", 3, "partition-counter/16", 0, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await store.FindAsync("View", 3, "partition-counter/16", TestContext.Current.CancellationToken));
+        Assert.False(await store.CreateAsync("View", 3, "partition-counter/16", 9, TestContext.Current.CancellationToken));
+        Assert.Equal(42, await store.GetAsync("View", 2, "partition-counter/16"));
+    }
+
     private static async Task<ProjectionCheckpointStore<CheckpointContext>> StoreWithCheckpointAsync(string reader)
     {
         var factory = new ContextFactory($"checkpoints-{Guid.NewGuid():N}");

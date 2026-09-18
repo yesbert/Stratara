@@ -74,7 +74,9 @@ _None._
   `docs/concepts/orleans-execution-model.md` where it describes the saga reader, `CHANGELOG.md`
 - Superseded: `openspec/changes/archive/2026-09-16-close-the-orleans-readiness-gaps/proposal.md`,
   "Not in scope" — "saga retries repeating stateless sagas".
-- Public API: none. Metric and log names unchanged; the stall's consumer tag now carries the saga's
+- Public API: additive — `IProjectionCheckpointStore.FindAsync` and `CreateAsync` (added during
+  implementation, design.md D4), whose defaults refuse; a saga reader on a store that does not implement
+  them fails its start with a message naming them. Metric and log names unchanged; the stall's consumer tag now carries the saga's
   consumer name instead of `sagas`, which a dashboard filtering on `sagas` must widen — stated in the
   CHANGELOG.
 - Schema: none. The checkpoint table keeps one row per saga and partition.

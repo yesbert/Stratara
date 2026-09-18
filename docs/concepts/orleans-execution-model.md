@@ -42,13 +42,16 @@ dispatches after. Every command on this path passes the same mediator pipeline a
 the bus: validation, authorization, tenant isolation, audit.
 
 **No committed fact is missed.** Projections and sagas read the event store from a checkpoint, in commit
-order. A commit wakes the readers of the partitions it touched; a lost wake-up costs latency, never a
-fact, because the readers poll the store as well. A projection can be rebuilt on its own while every
-other projection keeps applying live events.
+order — each projection and each saga with a checkpoint of its own. A commit wakes the readers of the
+partitions it touched; a lost wake-up costs latency, never a fact, because the readers poll the store as
+well. A projection can be rebuilt on its own while every other projection keeps applying live events. A saga
+registered later starts where the deployment's sagas have read, so it does not run its side effects for the
+store's history.
 
-**A failure is visible, not skipped.** An entry that cannot be applied stops its partition: the
-checkpoint stays before it, the failure is logged with the entry's identity, the stall is counted, and
-the entry is tried again. A read that fails counts as a stall too. Two rebuilds of one projection never
+**A failure is visible, not skipped.** An entry that cannot be applied stops its partition for the
+projection or saga that failed on it: its checkpoint stays before the entry, the failure is logged with the
+entry's identity, the stall is counted under its name, and the entry is tried again. Every other projection
+and saga applies the entry once and goes on. A read that fails counts as a stall too. Two rebuilds of one projection never
 interleave, and a rebuild during a full replay is refused.
 
 **Once per cluster.** Singleton work runs in one place in the cluster while the cluster agrees on its
@@ -72,8 +75,9 @@ it registers — and the event stream is never touched.
 
 - **A cluster to run.** Silos need a storage-backed membership table, a reminder service and a
   storage-backed grain directory. See [Operate the Orleans Execution Model](../guides/operate-the-orleans-execution-model.md).
-- **A failing entry holds back its partition.** Nothing after it in that partition advances until it
-  passes. On the bus a failed bundle is dead-lettered and the stream moves on.
+- **A failing entry holds back its partition.** Nothing after it in that partition advances for the
+  projection or saga that fails on it until it passes, and it is retried without a bound. On the bus a failed
+  bundle is dead-lettered and the stream moves on.
 - **At least once, still.** A handler that completed but whose completion was not recorded before a
   crash runs again. Handlers stay idempotent, as they are under the bus.
 - **A timeout is not a failure.** A forwarded command whose handler outlasts the response timeout fails its

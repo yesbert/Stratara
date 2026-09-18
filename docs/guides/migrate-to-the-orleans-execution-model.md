@@ -70,7 +70,7 @@ execution model carries the columns and never fills them.
 | Write | `outbox_entry.aggregate_id`, `heavy` | Where a recorded command runs |
 | Write | `outbox_entry.attempt_count`, `last_handed_over_at`, `kept_at`, `last_failure` (up to 2048 characters) | The bounded resume of a recorded command |
 | Write, since 4.2 | `outbox_entry.conflict_count` (integer, not null, 0 for existing rows) | The conflict bound of a recorded command, counted apart from its attempts |
-| Read | table `projection_checkpoint` (`projection`, `partition`, `reader`, `position`) | Where each store reader resumes. Keyed by consumer — the projection class's simple name, `sagas` for every saga — not by deployment, so renaming a projection class starts it at the beginning; see [Sharing a read store](operate-the-orleans-execution-model.md#sharing-a-read-store) |
+| Read | table `projection_checkpoint` (`projection`, `partition`, `reader`, `position`) | Where each store reader resumes. Keyed by consumer — the projection class's simple name, `sagas:<SagaName>` for each saga (`sagas` for all of them before 4.2.0) — not by deployment, so renaming a projection class starts it at the beginning; see [Sharing a read store](operate-the-orleans-execution-model.md#sharing-a-read-store) |
 
 ### A populated event table on PostgreSQL
 
@@ -145,6 +145,31 @@ committed between the seeding and their stop is applied by them and by the grain
 projection and saga of the deployment applies idempotently. Stopping them before the seeding instead, while
 appends continue, leaves the facts committed in between to nobody: their bundles are consumed by no worker and
 they are below the head the grains start at.
+
+### Upgrade a deployment from 4.1.x
+
+On 4.1.x every store-reading saga of a deployment shared one reader per partition and one checkpoint, kept under
+the consumer `sagas`. From 4.2.0 each saga reads with a checkpoint of its own, under `sagas:<SagaName>`. Nothing has
+to be migrated: on its first start a 4.2.0 saga silo starts every saga at the shared checkpoint of its partition,
+so no fact at or below it is applied again, and the shared reader, brought back by the keep-alive the old
+deployment registered, retires on the new silo (`117_125`) and reads nothing. The shared checkpoint is left as it
+was; the [reset](operate-the-orleans-execution-model.md#reset-what-the-model-keeps) removes it. Seeding such a store
+starts each saga at the shared checkpoint too, not at the head, so what the shared reader had not yet applied is not
+skipped. Before upgrading, rename one of any two saga classes that share a type name — a host that registers both
+does not start — and, where the host keeps its checkpoints in a store of its own, implement
+`IProjectionCheckpointStore.FindAsync` and `CreateAsync`, which the saga readers need.
+
+Upgrade the saga-role silos **together** where you can. While a 4.1.x saga silo still runs beside a 4.2.0 one, its
+shared reader and the new per-saga readers both apply the facts above the shared checkpoint, so a fact may reach a
+saga twice in that window — the at-least-once delivery a saga already tolerates, but a side effect a saga does not
+guard against is repeated. A dashboard or alert that filters `orleans.reader.stalled` or the `117_101` log on the
+consumer `sagas` must be widened to the `sagas:` consumers.
+
+**Rolling back to 4.1.x** resumes the shared reader from the shared checkpoint, which 4.2.0 never advanced: every
+fact the per-saga readers applied since the upgrade is applied again by the shared reader, to every saga. Roll back
+only where the sagas tolerate that. The per-saga checkpoints stay in the read store, and an upgrade after the
+rollback starts each saga where its own checkpoint stood, so what the shared reader applied in between is applied
+once more; reset the execution model before upgrading again where that is not wanted.
 
 ## Start on a populated store
 
@@ -221,7 +246,7 @@ timer owner check and handler with `AddStrataraDurableTimers`.
 | Command worker (`AddCommandWorkerServices`) | `builder.AddCommandServices()` instead, then `AddStrataraOrleansCommandDispatcher()`, `AddStrataraIntentStore<AppWriteDbContext>()` and `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register the aggregate grains after every other pipeline behaviour. The silo's own sends — from a handler or a saga — are recorded and handed over instead of published. The bus-fed mediator worker is not registered, so the silo consumes no command queue; keep `AddCommandWorkerServices` only while API hosts that still publish to the command topic remain. A silo that also registers a store-reading role needs no broker — see [when the broker can go](#when-the-broker-can-go); one without keeps publishing its bundles to the bus. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
 | Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace`, `MessageRetryOptions.MaxDeliveryAttempts` and `MessageRetryOptions.MaxConflictRequeues` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. Registered with its name, the drain is not constructed until the silo is active. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
-| Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>`. Processes own durable timers, so the silo runs a reminder service |
+| Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per saga and partition hands each fact to that saga, reading with a checkpoint of its own; stateful processes derive from `SagaProcess<TState>`. Processes own durable timers, so the silo runs a reminder service |
 | Heavy command worker (`AddHeavyCommandWorkerServices`) | `ConfigureStrataraHeavyWork(o => o.ClusterWideLimit = …)` | Heavy commands run in a bounded pool per silo under cluster-wide permits; the heavy lane and its host go |
 | Timeouts the host built itself | `AddStrataraDurableTimers()` with one `ITimerOwners` and one `ITimerHandler` | Owner-checked, durable, once per cluster; the host's ports may be registered before or after the model. Timer owners are placed only on silos that registered the ports; a silo that calls `AddStrataraDurableTimers` only to register timers hosts none |
 
@@ -345,7 +370,7 @@ period.
 |---|---|---|
 | One writer per aggregate | Per worker process; two processes can conflict and requeue | One activation per aggregate across the cluster |
 | A committed fact reaches every projection and saga | Only if the publish after the commit succeeded, unless durable bundles are on | Always, from the store, in commit order |
-| A projection or saga fails on an entry | The bundle is dead-lettered and the stream moves on | The partition stops at the entry and retries it |
+| A projection or saga fails on an entry | The bundle is dead-lettered and the stream moves on | The partition stops at the entry and retries it — for a saga, only that saga's reading of the partition; the other sagas go on |
 | Rebuilding a read model | A full replay of every read model | One projection at a time, while the others keep applying |
 | Singleton work | A distributed lock or a one-instance deployment | Once per cluster, without a lock |
 | Timeouts | Left to the host | Durable, owner-checked, once per cluster |

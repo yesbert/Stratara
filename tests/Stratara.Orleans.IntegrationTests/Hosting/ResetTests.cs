@@ -11,13 +11,15 @@ using Stratara.Abstractions.Timers;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.EntityFrameworkCore.Projections;
 
+using Stratara.Orleans.Sagas;
+
 namespace Stratara.Orleans.IntegrationTests.Hosting;
 
 /// <summary>
 /// Task 5.5: the shipped reset, run from a stopped host, leaves no reminder or membership row of the host's
 /// deployment, no directory key and no checkpoint of a consumer the host registers, and a host started afterwards
 /// fires nothing for the timers that existed before. A checkpoint of a consumer the host does not register stays
-/// with its position.
+/// with its position; the checkpoint the host's sagas shared before 4.2.0 is removed with the host's own.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
@@ -51,6 +53,7 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
                 await checkpoints.SetAsync(HostConsumer, 0, "probe-reader", 42);
                 await checkpoints.SetAsync(HostConsumer, 1, "probe-reader", 42);
                 await checkpoints.SetAsync(foreignConsumer, 0, "probe-reader", 42);
+                await checkpoints.SetAsync(SagaGrain.ConsumerName, 0, "probe-reader", 42);
             }
 
             await app.StopAsync();
@@ -62,10 +65,11 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
 
         TestContext.Current.TestOutputHelper?.WriteLine(report.ToString());
         Assert.True(report.Reminders > 0, $"the reset reported no reminder removed: {report}");
-        Assert.Equal(2, report.Checkpoints);
+        Assert.Equal(3, report.Checkpoints);
         Assert.Equal(0, await PocReset.CountAsync(orleansConnectionString, "orleansreminderstable", "serviceid", Deployment));
         Assert.Equal(0, await PocReset.CountAsync(orleansConnectionString, "orleansmembershiptable", "deploymentid", Deployment));
         Assert.Equal(0, await PocReset.CountAsync(readConnectionString, "projection_checkpoint", "projection", HostConsumer));
+        Assert.Equal(0, await PocReset.CountAsync(readConnectionString, "projection_checkpoint", "projection", SagaGrain.ConsumerName));
         Assert.Equal(1, await PocReset.CountAsync(readConnectionString, "projection_checkpoint", "projection", foreignConsumer));
         await using (var read = new ServiceCollection().AddDbContextFactory<PocReadDbContext>(options => options.UseSnakeCaseNamingConvention().UseNpgsql(readConnectionString)).BuildServiceProvider())
         {
@@ -172,6 +176,8 @@ public sealed class ResetTests(PostgreSqlFixture postgres, RedisFixture redis)
     private sealed class ProbeConsumer : INudgeTarget
     {
         public IReadOnlyList<string> ConsumerNames { get; } = [HostConsumer];
+
+        public IReadOnlyList<string> SupersededConsumerNames { get; } = [SagaGrain.ConsumerName];
 
         public Task NudgeAsync(IGrainFactory grainFactory, int partition) => Task.CompletedTask;
 

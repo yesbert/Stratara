@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Stratara.Abstractions.Projections;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
@@ -133,14 +134,63 @@ public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
         Assert.Equal(10, ((ReplacingStore)store).Written);
     }
 
+    [Fact]
+    public async Task A_first_checkpoint_whose_insert_loses_to_another_writer_writes_nothing_and_the_winner_stands()
+    {
+        var winner = Store();
+        var loser = new ProjectionCheckpointStore<CheckpointContext>(
+            new ContextFactory(_connection, new BeforeTheFirstSave(() => winner.CreateAsync("View", 2, Reader, 30))));
+
+        var created = await loser.CreateAsync("View", 2, Reader, 50);
+
+        Assert.False(created);
+        Assert.Equal(30, await winner.FindAsync("View", 2, Reader));
+    }
+
+    [Fact]
+    public async Task A_checkpoint_is_found_where_it_exists_at_the_beginning_and_not_where_it_does_not()
+    {
+        var store = Store();
+        await store.ResetAsync("View", 2, Reader);
+
+        Assert.Equal(0, await store.FindAsync("View", 2, Reader));
+        Assert.Null(await store.FindAsync("View", 3, Reader));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.FindAsync("View", 2, "postgres-transaction-id/8"));
+    }
+
     private ProjectionCheckpointStore<CheckpointContext> Store() => new(new ContextFactory(_connection));
 
     public sealed class CheckpointContext(DbContextOptions<CheckpointContext> options) : ReadDbContext<CheckpointContext>(options);
 
-    private sealed class ContextFactory(SqliteConnection connection) : IDbContextFactory<CheckpointContext>
+    private sealed class ContextFactory(SqliteConnection connection, IInterceptor? interceptor = null) : IDbContextFactory<CheckpointContext>
     {
-        public CheckpointContext CreateDbContext() =>
-            new(new DbContextOptionsBuilder<CheckpointContext>().UseSqlite(connection).Options);
+        public CheckpointContext CreateDbContext()
+        {
+            var options = new DbContextOptionsBuilder<CheckpointContext>().UseSqlite(connection);
+            if (interceptor is not null)
+            {
+                options.AddInterceptors(interceptor);
+            }
+
+            return new CheckpointContext(options.Options);
+        }
+    }
+
+    /// <summary>Lets another writer commit first, once, just before the intercepted context saves.</summary>
+    private sealed class BeforeTheFirstSave(Func<Task> other) : SaveChangesInterceptor
+    {
+        private bool _done;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_done)
+            {
+                _done = true;
+                await other();
+            }
+
+            return result;
+        }
     }
 
     private sealed class ReplacingStore : IProjectionCheckpointStore

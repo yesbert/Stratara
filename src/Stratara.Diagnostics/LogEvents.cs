@@ -339,5 +339,9 @@ public static class LogEvents
 
         /// <summary>A hand-over found its command already taken by another runner, completed or kept, and was dropped without running the handler (debug).</summary>
         public const int IntentHandOverDropped = 117_124;
+        /// <summary>The saga reader a release before 4.2.0 shared between all sagas of a partition was brought back and retired: it unregistered its keep-alive and reads nothing, because every saga reads with a checkpoint of its own.</summary>
+        public const int SharedSagaReaderRetired = 117_125;
+        /// <summary>A saga's reader was brought back on a silo that registers no saga of its name and retired: it unregistered its keep-alive, reads nothing and deactivates.</summary>
+        public const int UnregisteredSagaReaderRetired = 117_126;
     }
 }

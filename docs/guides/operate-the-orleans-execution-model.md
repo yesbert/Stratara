@@ -229,6 +229,41 @@ unreachable, a checkpoint the reader refuses — counts as a stall of the same p
 listed in the [log events schema](../reference/log-events-schema.md). A missing prerequisite from another
 partition is retried under the preceding-fact policy in the same way.
 
+Every store-reading saga reads with a checkpoint of its own, under the consumer `sagas:<SagaName>` — the saga's
+type name, as the saga's logs name it — so a saga that throws on an entry stops **only its own** reading of the
+partition. Every other saga applies the entry once and goes on past it, and is not run again because of that
+failure; the stall is logged and counted under the failing saga's consumer, and that saga is retried, without a
+bound, until it passes. A stateful process reads the same way, under its own consumer, and hands its facts to the
+process's grains. A saga has no retry bound on the execution model and no dead-letter queue: fix the saga, or the
+cause of its failure, and it continues from the entry it stopped at.
+
+A reader per saga costs what a reader per projection does. With S sagas and P partitions a saga silo runs S×P
+reader activations and S×P keep-alive reminders where it ran P, a silo's start ensures S×P readers, and every wake-up
+costs a read of the store per saga. A reader's first catch-up after it is activated asks the checkpoint store once
+per saga of the host whether that saga has a checkpoint in the partition, so a cold start of the cluster costs S×S×P
+such queries. Size the read and write stores' connection pools for that many readers catching up at once, as for
+projections. A stateless saga's reader passes over an entry of a type the saga does not handle without
+deserialising it.
+
+A saga's checkpoint is keyed by its name. A saga that has no checkpoint in a partition — one registered after the
+deployment's sagas have read, or every saga on the first start after an upgrade from 4.1.x — starts where the
+host's sagas read there: at the furthest checkpoint a saga of the host holds, or the checkpoint the sagas shared
+before 4.2.0, and at the beginning of the store only where no saga has read. A saga added to a running deployment
+therefore never runs its side effects for the store's history. Renaming a saga class makes it a new consumer,
+which starts at the same point — not at its old checkpoint. The old name's reader is still brought back by its
+keep-alive; on a silo that registers no saga of that name it unregisters its keep-alive, logs `117_126`
+(Information) naming the saga and the partition, reads nothing and deactivates, so a silo that still registers the
+saga — a rolling deployment — can host it. The old name's checkpoints stay in the read store until the
+[reset](#reset-what-the-model-keeps) of a host that registers the name, or a delete the host owns. Two saga
+classes of the same type name in different namespaces would share one consumer, so a host that registers them does
+not start, naming both; give each saga a type name of its own.
+
+The saga readers need the checkpoint store to tell a missing checkpoint from one at the beginning and to write a
+saga's first checkpoint without replacing one: `IProjectionCheckpointStore.FindAsync` and `CreateAsync`. The
+framework's store (`AddStrataraProjectionCheckpoints`) implements both. A store of the host's own that does not
+fails every saga reader's first catch-up with a message naming the two members, logged as `117_103`; projections do
+not use them.
+
 Under the portable reader a partition also stops at an entry that has **no partition position**: a process
 appended it without `PartitionCounterInterceptor`. The logged failure names the entry, the interceptor and
 `PartitionCounterBackfill`. Add the interceptor to the write context of that process, then run
@@ -249,7 +284,7 @@ another reader's name is refused naming both readers. A host that switches reade
 For **projections** that can be done inside the running cluster, because returning a checkpoint to the beginning
 is the one write that is not held to the reader's name: rebuild the read model with
 `IProjectionRebuilder.RebuildAsync`, or run a full replay, and the checkpoints are taken over by the host's own
-reader. The **sagas'** checkpoint is not touched by either verb — a saga is not rebuilt, its effects having left
+reader. The **sagas'** checkpoints are not touched by either verb — a saga is not rebuilt, its effects having left
 the deployment — so a host that switches readers or changes its partition count while it registers sagas needs
 the [reset](#reset-what-the-model-keeps) with the deployment stopped.
 
@@ -257,6 +292,12 @@ Under the native reader, a host that lowers its partition count and resets its c
 still have keep-alive reminders of readers beyond the new count, if the reminders were not reset. Such a reader,
 when a reminder brings it back, retires: it unregisters its keep-alive, logs `117_005` naming the consumer, the
 partition and the count, reads nothing and counts no stall. The event appears once per retired reader.
+
+The saga reader a 4.1.x deployment shared between all its sagas — keyed `sagas/<partition>` — retires the same way
+on a 4.2.0 silo: brought back by the keep-alive reminder the old deployment registered, or by a call of a silo that
+still runs 4.1.x, it unregisters its keep-alive, logs `117_125` (Information) naming the partition, and reads
+nothing. The checkpoint it left under `sagas` stays where it was — it is where the sagas start — until the
+[reset](#reset-what-the-model-keeps) removes it.
 
 ## A rebuild or a replay that does not finish
 
@@ -316,7 +357,8 @@ lost. The whole band is listed in the [log events schema](../reference/log-event
 
 `IExecutionModelReset` clears everything the model keeps beside the event stream for the host's
 deployment: the reminders of its service, and with them every durable timer; the membership rows of its
-cluster; the checkpoints of the projections and sagas it registers; and the grain directory's entries,
+cluster; the checkpoints of the projections and sagas it registers, with the one its sagas shared before 4.2.0;
+and the grain directory's entries,
 through a callback the host supplies because the directory is its choice. The event stream is never
 touched, and a host started afterwards rebuilds those checkpoints from it. The report counts what was
 removed of each.
@@ -367,9 +409,11 @@ those afterwards with `IProjectionRebuilder`.
 ### Sharing a read store
 
 A checkpoint belongs to a consumer and a partition, not to a deployment. Two deployments can keep their
-checkpoints in one read store only when no projection name is registered by both. Every deployment's
-store-reading sagas read under one consumer, so at most one deployment sharing a read store runs
-`AddStrataraSagaGrains`; two would overwrite each other's positions.
+checkpoints in one read store only when no projection name is registered by both. Each store-reading saga is a
+consumer of its own, but the sagas of all deployments sharing a read store still count as one set: a saga without a
+checkpoint starts from the checkpoints the other sagas hold there, so a second deployment's sagas would start from
+the first's positions, and two deployments registering a saga of the same name would overwrite each other's. At
+most one deployment sharing a read store runs `AddStrataraSagaGrains`.
 
 ## Reminder profile and clocks
 

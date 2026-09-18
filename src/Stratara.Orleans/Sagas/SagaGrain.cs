@@ -4,11 +4,10 @@ using Orleans.Concurrency;
 using Orleans.GrainDirectory;
 using Polly.Registry;
 using Stratara.Abstractions.CommitOrder;
-using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Projections;
-using Stratara.Sagas.Abstractions;
 using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Sagas;
@@ -26,14 +25,18 @@ public sealed class SagaGrainOptions
     public TimeSpan KeepAlivePeriod { get; set; } = TimeSpan.FromMinutes(1);
 }
 
-/// <summary>One grain per partition for all registered sagas, keyed <c>sagas/partition</c>.</summary>
+/// <summary>
+/// The saga reader of a release before 4.2.0: one grain per partition for all registered sagas, keyed
+/// <c>sagas/partition</c>. Kept so that the keep-alive such a release registered, and the calls a silo of it still
+/// makes in a rolling cluster, reach a grain that retires instead of one that reads.
+/// </summary>
 [Alias("Stratara.Orleans.ISagaGrain")]
 internal interface ISagaGrain : IGrainWithStringKey
 {
     [Alias("EnsureRunningAsync")]
     Task EnsureRunningAsync();
 
-    /// <summary>A commit happened in this partition; interleaves with a running catch-up, which then reads once more.</summary>
+    /// <summary>A commit happened in this partition; the retired grain ignores it.</summary>
     [OneWay]
     [AlwaysInterleave]
     [Alias("NudgeAsync")]
@@ -45,53 +48,43 @@ internal interface ISagaGrain : IGrainWithStringKey
     [Alias("PositionAsync")]
     Task<long> PositionAsync();
 
-    /// <summary>
-    /// Stops reading for <paramref name="pauser"/> until it resumes or <paramref name="lease"/> passes without a
-    /// renewal; returns once no batch is in flight. Interleaves with a running catch-up, which stops at its next batch
-    /// boundary, so a pause does not wait for a partition far behind.
-    /// </summary>
+    /// <summary>A held pause; the retired grain holds none.</summary>
     [AlwaysInterleave]
     [Alias("PauseHeldAsync")]
     Task PauseAsync(Guid pauser, TimeSpan lease);
 
-    /// <summary>Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now, and pauses again where the pause was lost.</summary>
+    /// <summary>A renewed pause; the retired grain holds none.</summary>
     [AlwaysInterleave]
     [Alias("RenewPauseAsync")]
     Task RenewPauseAsync(Guid pauser, TimeSpan lease);
 
-    /// <summary>
-    /// Releases <paramref name="pauser"/>'s pause and reads again, from whatever the checkpoint now says, once no pauser is
-    /// left; a pauser not held changes nothing. Returns once the read is requested, not once it is done.
-    /// </summary>
+    /// <summary>A released pause; the retired grain holds none.</summary>
     [AlwaysInterleave]
     [Alias("ResumeHeldAsync")]
     Task ResumeAsync(Guid pauser);
 
-    /// <summary>
-    /// The pause of a silo of an older version: stops reading for an anonymous pauser for ten minutes, or until
-    /// <see cref="ResumeAsync()"/>; returns once no batch is in flight.
-    /// </summary>
+    /// <summary>The pause of a silo of an older version; the retired grain holds none.</summary>
     [AlwaysInterleave]
     [Alias("PauseAsync")]
     Task PauseAsync();
 
-    /// <summary>The resume of a silo of an older version: releases the oldest anonymous pause; returns once the read is requested, not once it is done.</summary>
+    /// <summary>The resume of a silo of an older version; the retired grain holds none.</summary>
     [Alias("ResumeAsync")]
     Task ResumeAsync();
 }
 
 /// <summary>
-/// The saga worker's job without the bus: reads its partition in commit order from a checkpoint and
-/// hands each entry to the framework's saga manager, which dispatches it to every registered saga in
-/// parallel and in order within each — the <c>sagas</c> guarantees, unchanged. Existing stateless
-/// sagas run here without modification, and a fact a stateful process handles is handed to that
-/// process's grain.
+/// The shared saga reader of a release before 4.2.0, retired: every saga reads with a checkpoint of its own in a
+/// <see cref="SagaReaderGrain"/>. Brought back by the keep-alive such a release registered, or by a call of a silo that
+/// still runs it, the grain unregisters its keep-alive, logs that it retired and reads nothing, as a reader beyond a
+/// lowered partition count does. Its grain type stays what it was, so that the reminder resolves; the per-saga readers
+/// have a grain type of their own, so that no silo of the earlier release activates one. The checkpoint the shared
+/// reader left under <see cref="ConsumerName"/> stays where it was: it is where the sagas start.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 [SagasRolePlacementFilter]
 internal sealed class SagaGrain(
     IServiceScopeFactory scopeFactory,
-    IEventMapperFactory eventMapperFactory,
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
     IOptions<SagaGrainOptions> options,
@@ -100,57 +93,13 @@ internal sealed class SagaGrain(
     : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod, commitOrder.Value.PartitionCount), logger),
         ISagaGrain
 {
+    /// <summary>The consumer the shared reader kept its checkpoints under.</summary>
     public const string ConsumerName = "sagas";
 
-    /// <summary>
-    /// One scope, one saga manager and one process list per session run, resolved after the run's session is set, so
-    /// a saga's dependency that takes its tenant when it is constructed takes the entry's; per entry, the recorded
-    /// session. A fact a process handles travels to its grain with the session it was recorded under.
-    /// </summary>
-    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
-    {
-        await using var runs = new SessionRuns<(ISagaManager Sagas, List<ISagaProcess> Processes)>(ScopeFactory, services =>
-            (services.GetRequiredService<ISagaManager>(), services.GetServices<ISaga>().OfType<ISagaProcess>().ToList()));
+    protected override StoreReaderRetirement RetiresAs => StoreReaderRetirement.Superseded;
 
-        return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
-        {
-            var (sagas, processes) = await runs.EnterAsync(entry);
-            var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
-            await sagas.HandleAsync(events, entryToken);
+    protected override void LogRetirement() => logger.LogSharedSagaReaderRetired(Partition);
 
-            foreach (var process in processes)
-            {
-                foreach (var @event in events.Where(process.Handles))
-                {
-                    var key = SagaProcessKey.Of(process.GetType().Name, process.CorrelationOf(@event));
-                    await GrainFactory.GetGrain<ISagaProcessGrain>(key).HandleAsync(entry.StreamId, entry.Version, RecordedSession.KeyOf(entry), entryToken);
-                }
-            }
-        }, cancellationToken);
-    }
-}
-
-/// <summary>The saga grain for the partition.</summary>
-internal sealed class SagaNudgeTarget(StoreReaderLease lease) : INudgeTarget
-{
-    public IReadOnlyList<string> ConsumerNames { get; } = [SagaGrain.ConsumerName];
-
-    public Task NudgeAsync(IGrainFactory grainFactory, int partition)
-    {
-        grainFactory.GetGrain<ISagaGrain>(StoreReaderGrainKey.Of(SagaGrain.ConsumerName, partition)).NudgeAsync().Ignore();
-        return Task.CompletedTask;
-    }
-
-    public Task EnsureRunningAsync(IGrainFactory grainFactory, int partition) =>
-        grainFactory.GetGrain<ISagaGrain>(StoreReaderGrainKey.Of(SagaGrain.ConsumerName, partition)).EnsureRunningAsync();
-
-    public ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) =>
-        StoreReaderPause.PauseAllAsync([Reader(grainFactory, partition)], lease);
-
-    private static PausedReader Reader(IGrainFactory grainFactory, int partition)
-    {
-        var key = StoreReaderGrainKey.Of(SagaGrain.ConsumerName, partition);
-        var grain = grainFactory.GetGrain<ISagaGrain>(key);
-        return new PausedReader(key, grain.PauseAsync, grain.RenewPauseAsync, grain.ResumeAsync);
-    }
+    /// <summary>Never reached: the grain retires when it is activated.</summary>
+    protected override Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken) => Task.FromResult(0);
 }

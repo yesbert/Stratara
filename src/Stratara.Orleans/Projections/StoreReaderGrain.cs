@@ -16,14 +16,28 @@ namespace Stratara.Orleans.Projections;
 /// <param name="PartitionCount">How many partitions the host reads; a grain of a partition at or beyond it retires.</param>
 internal sealed record StoreReaderSettings(int BatchSize, TimeSpan PollInterval, TimeSpan KeepAlivePeriod, int PartitionCount);
 
+/// <summary>Why a store-reading grain retires when it is activated, if it does.</summary>
+internal enum StoreReaderRetirement
+{
+    /// <summary>The grain reads.</summary>
+    None,
+
+    /// <summary>The host reads what the grain read under other names now; the grain answers calls until it is collected.</summary>
+    Superseded,
+
+    /// <summary>The grain's consumer is not registered on this silo; the grain deactivates at once.</summary>
+    Unregistered,
+}
+
 /// <summary>
 /// What every store-reading grain does, whatever it applies: parse its key into consumer and
 /// partition, run one catch-up loop at a time over its partition, read when nudged, when its poll
 /// fires and when its keep-alive reminder arrives, and wait for a running loop before it deactivates
 /// so a successor never applies beside it. A grain of a partition the host no longer has — its count was lowered —
 /// retires when it is activated: it unregisters its keep-alive, logs that it did, reads nothing and deactivates, and
-/// every call it still receives does nothing. A derived grain says what applying a batch means and when reading is
-/// suspended beyond the pauses and the replay this one already counts.
+/// every call it still receives does nothing; so does a grain a derived grain says is superseded or unregistered. A
+/// derived grain says what applying a batch means, when reading is suspended beyond the pauses and the replay this one
+/// already counts, and where a consumer without a checkpoint starts.
 /// </summary>
 internal abstract class StoreReaderGrain(
     IServiceScopeFactory scopeFactory,
@@ -55,7 +69,7 @@ internal abstract class StoreReaderGrain(
     /// <exception cref="InvalidOperationException">The grain has not been activated.</exception>
     protected StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
-    /// <summary>Whether the grain's partition is beyond the host's partition count, so the grain reads nothing.</summary>
+    /// <summary>Whether the grain's partition is beyond the host's partition count, or its reader was superseded, so the grain reads nothing.</summary>
     protected bool Retired { get; private set; }
 
     /// <summary>Whether reading stops at the next batch boundary; a replay suspends every reader, and so does a pauser.</summary>
@@ -171,11 +185,26 @@ internal abstract class StoreReaderGrain(
         if (partition >= settings.PartitionCount)
         {
             await RetireAsync();
+            this.DeactivateOnIdle();
+            logger.LogStoreReaderRetired(Consumer, Partition, settings.PartitionCount);
             await base.OnActivateAsync(cancellationToken);
             return;
         }
 
-        _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger);
+        if (RetiresAs is var retirement and not StoreReaderRetirement.None)
+        {
+            await RetireAsync();
+            if (retirement == StoreReaderRetirement.Unregistered)
+            {
+                this.DeactivateOnIdle();
+            }
+
+            LogRetirement();
+            await base.OnActivateAsync(cancellationToken);
+            return;
+        }
+
+        _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger, StartAsync);
         _poll ??= this.RegisterGrainTimer(
             _ => PollAsync(),
             new GrainTimerCreationOptions
@@ -253,10 +282,35 @@ internal abstract class StoreReaderGrain(
         {
             await this.UnregisterReminder(keepAlive);
         }
-
-        logger.LogStoreReaderRetired(Consumer, Partition, settings.PartitionCount);
-        this.DeactivateOnIdle();
     }
+
+    /// <summary>
+    /// Whether the grain's key names a reader the host does not run, so the grain retires when it is activated, as one
+    /// beyond the partition count does; the default is <see cref="StoreReaderRetirement.None"/>. A superseded reader is
+    /// left to the runtime's idle collection rather than deactivated at once: a silo of an earlier release still calls
+    /// it in a rolling cluster, and the call that activated it is answered, doing nothing, instead of being forwarded to
+    /// an activation that retires again until the runtime rejects it. An unregistered reader deactivates at once, so
+    /// that a silo that registers its consumer can host it.
+    /// </summary>
+    protected virtual StoreReaderRetirement RetiresAs => StoreReaderRetirement.None;
+
+    /// <summary>Says why the grain retired; called once it has unregistered its keep-alive.</summary>
+    protected virtual void LogRetirement()
+    {
+    }
+
+    /// <summary>
+    /// Gives the consumer its starting position in the partition where it has no checkpoint there: runs once per
+    /// activation, before the grain first reads its checkpoint, and again on the next catch-up where it failed. The
+    /// default gives none, so a consumer without a checkpoint reads from position <c>0</c>, the beginning of the store.
+    /// A grain that starts elsewhere writes the position as the consumer's checkpoint here, under
+    /// <paramref name="reader"/>, so a later activation finds it and does not ask again.
+    /// </summary>
+    /// <param name="checkpoints">The checkpoint store of the catch-up.</param>
+    /// <param name="reader">The name of the reader the host reads under.</param>
+    /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <returns>A task that completes once the consumer has its starting position.</returns>
+    protected virtual Task StartAsync(IProjectionCheckpointStore checkpoints, string reader, CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>Applies a batch in order and returns the index of the first entry that did not apply.</summary>
     protected abstract Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken);

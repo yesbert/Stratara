@@ -20,7 +20,9 @@ namespace Stratara.Orleans.Projections;
 /// The loop keeps the position it last wrote and reads the checkpoint store only while it has none —
 /// on activation, after <see cref="Invalidate"/>, which a grain calls when something may have
 /// changed the checkpoint behind its back (a pause before a rebuild resets it), and after a catch-up that
-/// failed — a checkpoint the store refused to advance among the reasons. The grain is the only writer of its
+/// failed — a checkpoint the store refused to advance among the reasons. Before it first reads the checkpoint it
+/// runs the grain's start once, which may give a consumer without a checkpoint one; a start that fails is run again
+/// by the next catch-up. The grain is the only writer of its
 /// checkpoint otherwise, so the cached position is the stored one. A partition that
 /// stops at an entry is logged with the entry and counted as stalled until it advances again, and the
 /// time recorded with the oldest entry it has not applied is reported for the lag gauge. The token a
@@ -33,7 +35,8 @@ internal sealed class StoreReaderLoop(
     string consumer,
     int partition,
     int batchSize,
-    ILogger logger)
+    ILogger logger,
+    Func<IProjectionCheckpointStore, string, CancellationToken, Task>? start = null)
 {
     private readonly KeyValuePair<string, object?>[] _tags =
     [
@@ -44,6 +47,7 @@ internal sealed class StoreReaderLoop(
     private long _position;
     private bool _positionKnown;
     private long _invalidations;
+    private bool _started = start is null;
     private bool _dirty;
     private bool _stalledOnEntry;
     private bool _stalledOnRead;
@@ -197,6 +201,12 @@ internal sealed class StoreReaderLoop(
 
         if (!_positionKnown)
         {
+            if (!_started && start is not null)
+            {
+                await start(checkpoints, readerName, cancellationToken);
+                _started = true;
+            }
+
             var invalidations = _invalidations;
             _position = await checkpoints.GetAsync(consumer, partition, readerName, cancellationToken);
             _positionKnown = invalidations == _invalidations;

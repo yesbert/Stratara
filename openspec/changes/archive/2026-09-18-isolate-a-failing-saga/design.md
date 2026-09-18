@@ -80,3 +80,47 @@ the upgrade note recommends upgrading the saga silos together.
 No schema. Upgrade the saga-role silos together where possible. Rollback to 4.1.x: the 4.1.x shared
 reader resumes from the legacy checkpoint, which the new version never advanced — facts the per-saga
 readers applied since the upgrade are applied again by the shared reader. The rollback note says so.
+
+## Decisions taken during implementation (2026-09-18)
+
+- **D4 — A missing checkpoint is told apart from one at the beginning, through the public port.** `GetAsync`
+  answers 0 for both; treating 0 as missing would let a saga stalled on its first entry jump to a sibling's
+  position on reactivation and skip that fact, and would let a later-activated sibling on a fresh deployment start
+  past facts. `IProjectionCheckpointStore` gains `FindAsync` (the position or `null`) and `CreateAsync`
+  (insert-only), additive members whose defaults throw `NotSupportedException` naming both; the framework's EF store
+  implements them, and a loser of the insert race reads the winner's row and writes nothing. A saga reader on a store
+  without them fails its start with that message; projections do not use them. The first draft's internal
+  `IFirstCheckpointStore`, with a fallback that treated 0 as missing, was retired after review. Evidence:
+  `SagaReaderTests`, `ProjectionCheckpointGuardTests`, `ProjectionCheckpointStoreTests`.
+- **D5 — A reader creates every missing saga checkpoint of the host, not only its own.** Otherwise, on a
+  fresh deployment, one saga's reader could start and advance before a sibling's activated, and the
+  sibling would then start past facts it never saw. Creation never overwrites, so readers starting
+  together agree on the start. Cost: one `FindAsync` per saga on each reader activation.
+- **D2, amended — the start is the maximum of the legacy checkpoint and the host's other saga
+  checkpoints.** "Legacy if present" would start a saga added after the upgrade at the old shared
+  checkpoint and replay everything applied since.
+- **D3, amended — the legacy grain retires without deactivating at once.** Deactivating on activation
+  let a 4.1.x silo's call bounce between activations until the runtime refused it; the grain removes its
+  reminder, logs `117_125` `SharedSagaReaderRetired` and answers each call as a no-op until it is
+  collected idle. An unregistered saga's reader (D8) deactivates at once instead, which is why the retirement
+  names its kind.
+- **D6 — Saga names come from the registrations, once.** `SagaNudgeTarget` listed the consumers by resolving every
+  `ISaga` and the saga handler in each scope, which built every saga — and its dependencies — on every commit, so a
+  saga with a broken dependency broke commit dispatch. A singleton reads the registrations' implementation types (a
+  factory registration is built once, to learn its type); the saga's name is its type name, which is what
+  `ISagaHandler.GetSagaName` answers.
+- **D7 — Two saga types of one name stop the host at start.** They would share one checkpoint. The check runs from
+  the registrations in a hosted service ahead of the silo, naming both types — not at the reader's first entry, as
+  the first draft did.
+- **D8 — A reader whose saga the silo does not register retires.** A removed or renamed saga's reader was brought
+  back by its keep-alive and stalled on every entry for ever. It now unregisters its keep-alive, logs `117_126`
+  `UnregisteredSagaReaderRetired` and deactivates at once, so a silo that still registers the saga — a rolling
+  deployment — can host it.
+- **D9 — Seeding a store whose sagas shared a checkpoint follows D2.** Seeding put every `sagas:<Name>` at the head,
+  skipping a lagging shared reader's backlog; a saga consumer without its own checkpoint in a partition with the
+  shared checkpoint is seeded where its reader would start it.
+- **D10 — A stateless saga's reader passes over entries its saga does not handle before deserialising them.** The
+  entry's stored type name is run through the upcasters and the trusted-type resolution once per name and compared
+  with the event types the saga declares; the reader learns those from its first resolved saga.
+- **Added** — the operate guide states the per-saga cost (S×P activations and keep-alive reminders, S×P readers
+  ensured at start, S×S×P existence queries on a cold start) and to size the connection pools for it.
