@@ -200,7 +200,7 @@ internal sealed class SessionRuns<TRun>(IServiceScopeFactory scopeFactory, Func<
     public async ValueTask<TRun> EnterAsync(EventStreamEntry entry)
     {
         var key = RecordedSession.KeyOf(entry);
-        if (_scope is { } scope && _sessions is { } sessions && _run is { } run && key == _key)
+        if (_scope is not null && _sessions is { } sessions && _run is { } run && key == _key)
         {
             sessions.Set(RecordedSession.Of(entry));
             return run;

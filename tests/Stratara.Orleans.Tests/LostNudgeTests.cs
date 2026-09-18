@@ -17,6 +17,8 @@ namespace Stratara.Orleans.Tests;
 /// </summary>
 public sealed class LostNudgeTests
 {
+    private static readonly string[] Names = ["first", "second", "third"];
+
     [Fact]
     public async Task A_nudge_that_throws_does_not_fail_the_dispatch_and_the_other_targets_are_nudged()
     {
@@ -62,7 +64,7 @@ public sealed class LostNudgeTests
         var handler = new Mock<IProjectionHandler>();
         var projections = new[] { Named(handler, "first"), Named(handler, "second"), Named(handler, "third") };
         var target = new ProjectionNudgeTarget(handler.Object, projections);
-        var grains = new[] { "first", "second", "third" }.ToDictionary(
+        var grains = Names.ToDictionary(
             name => StoreReaderGrainKey.Of(name, 0),
             name => name == "second" ? Refusing() : Woken(woken, name));
         var grainFactory = new Mock<IGrainFactory>();

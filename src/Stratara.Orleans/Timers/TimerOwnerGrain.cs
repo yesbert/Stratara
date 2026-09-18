@@ -140,8 +140,12 @@ internal sealed class TimerOwnerGrain(
         }
         catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
         {
-            var (purpose, _) = ReminderName.Decode(reminderName);
-            logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {purpose}");
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                var (purpose, _) = ReminderName.Decode(reminderName);
+                logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {purpose}");
+            }
+
             throw;
         }
         finally

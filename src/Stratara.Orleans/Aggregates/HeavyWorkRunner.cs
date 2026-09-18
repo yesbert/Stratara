@@ -188,7 +188,7 @@ internal sealed class HeavyUnit(Func<Task> run)
         }
         finally
         {
-            _abandon.Dispose();
+            await _abandon.DisposeAsync();
         }
     }
 }

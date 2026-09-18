@@ -118,7 +118,8 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
 
         // Hosts created at the same moment can be handed the same free port, because the port is free until the silo
         // binds it. Such a start is tried again from the beginning — a database of its own, ports of its own.
-        for (var attempt = 1; ; attempt++)
+        var attempt = 1;
+        while (true)
         {
             try
             {
@@ -126,7 +127,7 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
             }
             catch (Exception failure) when (attempt < 3 && TakenPort(failure))
             {
-                _ = failure;
+                attempt++;
             }
         }
     }

@@ -39,7 +39,9 @@ public sealed class IntentLeaseRenewalTests
             {
                 await using var lease = await IntentLease.StartAsync(services, Guid.NewGuid());
                 var before = Volatile.Read(ref renewals);
+#pragma warning disable S2925 // Blocking the scheduler's only thread is what the test measures; an await would free it.
                 Thread.Sleep(Blocked);
+#pragma warning restore S2925
                 return Volatile.Read(ref renewals) - before;
             },
             CancellationToken.None,

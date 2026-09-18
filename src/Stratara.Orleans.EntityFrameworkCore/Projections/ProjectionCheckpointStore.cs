@@ -41,6 +41,11 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
             : $"The checkpoint of {projection}/{partition} was written by reader '{written}', not '{expected}'. Positions are not comparable across readers; reset the checkpoint before switching.";
     }
 
+    private static string Refusal(string projection, int partition, ProjectionCheckpoint found, string reader, long expected) =>
+        found.Reader != reader
+            ? Refusal(projection, partition, found.Reader, reader)
+            : $"The checkpoint of {projection}/{partition} is at {found.Position}, not at {expected} where this reader last saw it. Another activation of the reader advanced it; the reader reads the checkpoint again.";
+
     private static (string Kind, string Count) Split(string readerName)
     {
         var separator = readerName.LastIndexOf('/');
@@ -146,7 +151,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         return rows > 0;
     }
 
-    private async Task InsertAsync(TContext context, string projection, int partition, string reader, long? expected, long position, CancellationToken cancellationToken)
+    private static async Task InsertAsync(TContext context, string projection, int partition, string reader, long? expected, long position, CancellationToken cancellationToken)
     {
         context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });
         try
@@ -171,11 +176,6 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
             throw;
         }
     }
-
-    private static string Refusal(string projection, int partition, ProjectionCheckpoint found, string reader, long expected) =>
-        found.Reader != reader
-            ? Refusal(projection, partition, found.Reader, reader)
-            : $"The checkpoint of {projection}/{partition} is at {found.Position}, not at {expected} where this reader last saw it. Another activation of the reader advanced it; the reader reads the checkpoint again.";
 
     private static Task<ProjectionCheckpoint?> FindAsync(TContext context, string projection, int partition, CancellationToken cancellationToken) =>
         context.Set<ProjectionCheckpoint>().AsNoTracking()
