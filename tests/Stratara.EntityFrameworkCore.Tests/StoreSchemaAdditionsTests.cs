@@ -65,6 +65,7 @@ public sealed class StoreSchemaAdditionsTests
 
     [Theory]
     [InlineData(nameof(OutboxEntry.AttemptCount))]
+    [InlineData(nameof(OutboxEntry.ConflictCount))]
     [InlineData(nameof(OutboxEntry.LastHandedOverAt))]
     [InlineData(nameof(OutboxEntry.KeptAt))]
     [InlineData(nameof(OutboxEntry.LastFailure))]
