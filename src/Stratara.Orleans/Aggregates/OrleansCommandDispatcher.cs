@@ -149,6 +149,7 @@ internal sealed class IntentResumer(
 {
     private const string UnsignedReason = "The recorded command carries no signature and the integrity mode is Strict.";
     private const string InvalidReason = "The recorded command's signature does not verify and the integrity mode is Strict.";
+    private const string RoutingReason = "The recorded command's row disagrees with the signed envelope about where it runs, and the integrity mode is Strict.";
 
     private readonly TimeSpan _grace = options.Value.IntentGrace;
     private readonly int _maxAttempts = retry.Value.MaxDeliveryAttempts;
@@ -201,11 +202,15 @@ internal sealed class IntentResumer(
             ApplicationDiagnostics.Metrics.OrleansIntentResumed.Add(1);
             logger.LogCommandResumed(intent.Id, intent.AttemptCount + 1);
             var payload = new AggregateCommandEnvelope(intent.Envelope.CommandTypeName, intent.Envelope.CommandJson, intent.Envelope.SessionContextJson);
+
+            // Where it runs is taken from the signed envelope, not from the row beside it: the heavy claim is one of
+            // the things the signature covers, and a row that disagrees with it was already refused above.
+            var heavy = intent.Envelope.Heavy;
             try
             {
-                var issued = await lane.SendAsync(AggregateSendLane.KeyOf(intent.Id, intent.AggregateId, intent.Heavy), Task.FromResult(payload), issue =>
-                    handOver.HandOverAsync(intent.Id, issue, intent.Heavy, intent.AggregateId));
-                IntentHandOver.Observe(issued, logger, intent.Id, intent.AggregateId, intent.Heavy);
+                var issued = await lane.SendAsync(AggregateSendLane.KeyOf(intent.Id, intent.AggregateId, heavy), Task.FromResult(payload), issue =>
+                    handOver.HandOverAsync(intent.Id, issue, heavy, intent.AggregateId));
+                IntentHandOver.Observe(issued, logger, intent.Id, intent.AggregateId, heavy);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -221,11 +226,31 @@ internal sealed class IntentResumer(
     /// <summary>
     /// Verifies the record under the host's integrity mode. A record that does not verify is kept at once under strict
     /// mode, with the reason recorded and no attempt counted, because resuming it again cannot change the answer; under
-    /// permissive mode the failure is logged and the record is resumed.
+    /// permissive mode the failure is logged and the record is resumed. The row's own identity and heavy flag are held
+    /// to the signed envelope before that, because they decide where the command runs; the aggregate the row names is
+    /// not covered by the signature and decides only which activation the command is accepted into, not what it
+    /// writes — the store's version check answers for that.
     /// </summary>
     /// <returns><see langword="true"/> when the record was kept.</returns>
     private async Task<bool> KeptForIntegrityAsync(RecordedIntent intent, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        // Only the model's own records carry a routing beside the envelope; a command the bus outbox stored during a
+        // rolling adoption carries a row id of its own and no routing, and is resumed by its envelope like any other.
+        if (intent.RecordedByTheExecutionModel && (intent.Envelope.Id != intent.Id || intent.Envelope.Heavy != intent.Heavy))
+        {
+            if (_mode != BusEnvelopeIntegrityMode.Strict)
+            {
+                logger.LogIntentRoutingRefused(intent.Id, "resumed as the envelope says");
+                return false;
+            }
+
+            await intents.RecordFailureAsync(intent.Id, RoutingReason, cancellationToken);
+            await intents.KeepAsync(intent.Id, now, cancellationToken);
+            ApplicationDiagnostics.Metrics.OrleansIntentKept.Add(1);
+            logger.LogIntentRoutingRefused(intent.Id, "kept for an operator under strict integrity mode");
+            return true;
+        }
+
         var result = BusEnvelopeIntegrityVerifier.Verify(signer, _mode, BusEnvelopeCanonical.Of(intent.Envelope), intent.Envelope.Signature, out var failure);
         var unsigned = failure == BusEnvelopeIntegrityFailure.Absent;
         switch (result)

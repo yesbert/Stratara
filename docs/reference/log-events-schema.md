@@ -77,6 +77,7 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_119` | SingletonWorkFailed | Error | A run of a singleton work threw; the work runs again at its next period |
 | `117_120` | RolesUnpublished | Error | A silo registers roles or singleton work without publishing them — its directory was not registered with `AddStrataraOrleans` — and does not start |
 | `117_121` | NudgeFailed | Debug | A commit's wake-up could not be delivered to a store reader; the reader's poll reads the commit instead |
+| `117_122` | IntentRoutingRefused | Warning | A recorded command's stored routing disagrees with its signed envelope; it is kept under strict integrity mode and resumed by the signed claim otherwise |
 
 ## Authoring a new log event
 

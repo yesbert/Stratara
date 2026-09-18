@@ -332,5 +332,7 @@ public static class LogEvents
         public const int RolesUnpublished = 117_120;
         /// <summary>A commit's wake-up could not be delivered to a store reader; the reader's poll reads the commit instead (debug).</summary>
         public const int NudgeFailed = 117_121;
+        /// <summary>A recorded command's stored routing disagrees with its signed envelope; it is kept or resumed by the signed claim (warning).</summary>
+        public const int IntentRoutingRefused = 117_122;
     }
 }

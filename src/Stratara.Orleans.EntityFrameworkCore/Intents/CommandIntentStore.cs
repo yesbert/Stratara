@@ -58,7 +58,8 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
                 e.Heavy,
                 e.AttemptCount,
                 e.LastHandedOverAt,
-                e.LastFailure))
+                e.LastFailure,
+                e.DataTypeName == CommandTypeName))
         ];
     }
 
@@ -84,6 +85,13 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     /// that stamped a row since stamped a later time, so the row drops out — and one read of the rows that now carry
     /// this call's stamp.
     /// </summary>
+    /// <remarks>
+    /// The stamp is truncated to the millisecond, because that is what every provider stores and the read-back
+    /// compares it. Two claimers that stamp in the same millisecond — the drain of a rolling adoption beside the bus
+    /// outbox worker — therefore read each other's rows back as their own and both hand those commands over. The
+    /// command still runs once: the grain that receives it holds one activation per aggregate, per intent or per
+    /// pool and refuses a hand-over it already holds. Only the attempt is counted twice.
+    /// </remarks>
     public async Task<IReadOnlyList<Guid>> ClaimAsync(IReadOnlyList<RecordedIntent> due, DateTimeOffset now, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(due);
