@@ -91,6 +91,20 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Orleans: each store-reading saga reads with a checkpoint of its own.** A saga's reader is keyed and checkpointed
+  under `sagas:<SagaName>` — the saga's type name — instead of the consumer `sagas` all sagas of a deployment shared,
+  so `orleans.reader.stalled`, the stall log `117_101` and the attempt log `117_102` carry the failing saga's consumer
+  name; a dashboard or alert that filters on `sagas` must be widened to the `sagas:` consumers. Seeding, the
+  execution-model reset and the wake-up after a commit name every saga's consumer, and the reset also removes the
+  shared `sagas` checkpoint of 4.1.x. A saga without a checkpoint starts where the deployment's sagas read in that
+  partition — the shared checkpoint of 4.1.x, or else the furthest checkpoint another saga holds — so a saga added
+  to a running deployment runs no side effect for the store's history. *Upgrade note:* nothing is migrated; on the
+  first start every saga starts at the shared checkpoint, and the shared reader, brought back by its 4.1.x keep-alive,
+  retires and logs `117_125` (information). While a 4.1.x saga silo runs beside a 4.2.0 one both apply the facts
+  above the shared checkpoint, so upgrade the saga silos together. A rollback to 4.1.x resumes the shared reader
+  from the shared checkpoint, which 4.2.0 never advanced, and applies what the per-saga readers applied since
+  again.
+
 - **Security: `"SessionContext": { "AllowTenantHeader": true }` in the host's configuration now turns the tenant-header
   fallback on.** `AddSessionContext()` did not read the `SessionContext` section, so such an entry did nothing unless
   the host bound the section itself; it is read now (see *Fixed*). Before upgrading, search every environment's
@@ -220,6 +234,11 @@ applies to the entire NuGet family.
 - **Orleans: a recorded command's time comes from the registered `TimeProvider`.** It was the wall clock while the
   drain compared it with the registered clock, so a host or test with its own clock saw commands never become due, or
   become due at once.
+- **Orleans: a failing saga no longer repeats its siblings or stops them.** All store-reading sagas of a partition
+  shared one reader and one checkpoint, so an entry one saga failed on was retried for every saga on each poll and
+  wake-up, without a bound — a saga that had succeeded on it, sending an email or issuing a command, did so again
+  every few seconds until the failing one was fixed — and every later fact of the partition waited for it. A saga
+  that fails now stops only its own reading of the partition; every other saga applies the entry once and goes on.
 
 - **An anonymous caller reaching an unguarded save or dispatch is no longer a server error.** The event source, the
   command audit, the bus dispatcher and the execution model's dispatcher threw a plain `InvalidOperationException`
