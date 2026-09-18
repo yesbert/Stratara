@@ -486,7 +486,10 @@ checkpoint SHALL stop below the whole group, and the group's applied entries SHA
 when the entry is retried, which a projection tolerates as it tolerates any second delivery. A read that fails
 before any entry is applied — the store unreachable, a checkpoint the reader refuses — SHALL count as
 a stall and be logged whichever wake-up or poll started it. A batch whose application is cut short by
-the reader's own shutdown SHALL still record the checkpoint for the entries it applied.
+the reader's own shutdown SHALL still record the checkpoint for the entries it applied. Each
+store-reading saga SHALL read with a checkpoint of its own, so that an entry one saga cannot apply
+stops that saga's reading of the partition only: every other saga SHALL apply the entry once and go on
+past it, and SHALL NOT apply it again because another saga failed on it.
 
 #### Scenario: A projection throws on one entry
 
@@ -512,6 +515,12 @@ the reader's own shutdown SHALL still record the checkpoint for the entries it a
 - **WHEN** a reader's read of the store fails on a poll
 - **THEN** the failure is logged with the consumer and partition, the stall is counted, and the next
   wake-up or poll reads again
+
+#### Scenario: One saga throws on an entry another saga also handles
+
+- **WHEN** two store-reading sagas react to the same fact and one of them throws on it on every attempt
+- **THEN** the other applies the fact once and goes on to later facts of the partition, while the
+  failing saga stays before the fact, logs it and counts the stall under its own consumer name
 
 ### Requirement: Work that must happen once happens once per cluster
 
@@ -784,8 +793,10 @@ is on.
 
 A checkpoint SHALL be identified by the consumer that reads the store and the partition it reads, not
 by the deployment that runs the consumer. Two deployments SHALL be able to keep their checkpoints in
-one read store only when no consumer name is registered by both; store-reading sagas count as one
-consumer across all deployments, so at most one deployment sharing a read store SHALL run them. The
+one read store only when no consumer name is registered by both. Each store-reading saga SHALL be a
+consumer of its own; the store-reading sagas of all deployments sharing a read store nonetheless count
+as one set, because a saga registered later starts from the checkpoints the others hold, so at most one
+deployment sharing a read store SHALL run them. The
 documentation SHALL state this where a read store is configured for the execution model. A reader
 that advances a checkpoint SHALL advance it only from the position it last saw: a write that finds
 another position SHALL be refused with a message naming the position found and the one expected,
@@ -826,8 +837,11 @@ and while no silo of its cluster runs, a checkpoint at the store's current head 
 store-reading projection and saga it registers and every partition where none exists, so that its
 first start applies only what commits afterwards. Seeding SHALL NOT change a checkpoint that exists,
 SHALL write under the name of the reader the host registers, and SHALL report how many checkpoints it
-wrote and how many it left. A consumer registered later without a checkpoint SHALL still start at the
-beginning of the store. The documentation SHALL name seeding as the step between migrating the schema
+wrote and how many it left. A projection registered later without a checkpoint SHALL still start at the
+beginning of the store. A saga registered later without a checkpoint SHALL start where the host's
+sagas already read in that partition — the furthest checkpoint a saga of the host holds there, or the
+one the host's sagas shared before each read with its own — and at the beginning of the store only
+where no saga has read, so that adding a saga never runs its side effects for the store's history. The documentation SHALL name seeding as the step between migrating the schema
 and the first start on a populated store, and SHALL state that a checkpoint is keyed by the consumer's
 name, so that renaming a projection starts it at the beginning.
 
@@ -849,6 +863,19 @@ name, so that renaming a projection starts it at the beginning.
 - **WHEN** a host registers a new projection after its checkpoints were seeded and starts
 - **THEN** the new projection reads from the beginning of the store, and the seeded ones from their
   checkpoints
+
+#### Scenario: A saga is added to a running deployment
+
+- **WHEN** a host whose sagas have read part of the store registers a new saga and starts
+- **THEN** the new saga reacts only to facts after the position the host's sagas had reached, and to
+  none before it
+
+#### Scenario: A deployment upgrades from sagas that shared a checkpoint
+
+- **WHEN** a host whose sagas shared one checkpoint per partition starts with a version in which each
+  saga has its own
+- **THEN** every saga starts from the shared checkpoint of its partition, and no fact at or below it is
+  applied again by a silo on the new version
 
 ### Requirement: A restart and a hard death behave as stated, and the documentation says so
 
