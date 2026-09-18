@@ -146,8 +146,8 @@ applies to the entire NuGet family.
 - **Orleans: a read that fails counts as a stall.** A store that cannot be read, or a checkpoint the reader
   refuses, is logged as `117_103` and counted in `orleans.reader.stalled` whichever wake-up or poll started
   the read, not only on a nudge.
-- **Orleans: the portable commit-order reader states its preconditions.** It is verified on PostgreSQL
-  only; every process that appends to a store it reads needs `PartitionCounterInterceptor` — the framework
+- **Orleans: the portable commit-order reader states its preconditions.** It is verified on PostgreSQL,
+  and through the test host on SQLite; every process that appends to a store it reads needs `PartitionCounterInterceptor` — the framework
   does not add it, and `CommitOrderOptions.MaintainPartitionCounter` is only the value a write context reads
   when it does; and the partition count cannot change once the store holds positions. On PostgreSQL the
   native reader remains the one to use.

@@ -7,7 +7,7 @@
 
         <IsPackable>true</IsPackable>
         <PackageId>Stratara.EventSourcing.EntityFrameworkCore</PackageId>
-        <Description>EF Core persistence for the Stratara event-sourced stack on PostgreSQL — write-store, read-store, ASP.NET Identity store, shared conventions, value generators, and UnitOfWork primitives. Targets Npgsql with pgvector.</Description>
+        <Description>EF Core persistence for the Stratara event-sourced stack on PostgreSQL — write-store, read-store, ASP.NET Identity store, shared conventions, value generators, and UnitOfWork primitives. Targets Npgsql; maps pgvector types for a model that uses them, and needs no database extension otherwise.</Description>
         <PackageTags>event-sourcing;cqrs;efcore;ef-core;entity-framework;postgresql;postgres;npgsql;pgvector;write-store;read-store;dotnet;stratara</PackageTags>
     </PropertyGroup>
 
