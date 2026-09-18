@@ -5,7 +5,7 @@
 
 > **License:** [MIT](../../LICENSE).
 
-EF Core persistence for the Stratara event-sourced stack — PostgreSQL flavoured via Npgsql + pgvector. Bundles four previously-separate Stratara projects into one NuGet because they always ship together:
+EF Core persistence for the Stratara event-sourced stack — PostgreSQL flavoured via Npgsql. pgvector types are mapped for a model that has vector columns; a model without them runs on a plain PostgreSQL server, no `vector` extension needed. Bundles four previously-separate Stratara projects into one NuGet because they always ship together:
 
 | Folder | Contents | Old csproj |
 |---|---|---|
