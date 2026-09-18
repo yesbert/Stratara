@@ -334,5 +334,7 @@ public static class LogEvents
         public const int NudgeFailed = 117_121;
         /// <summary>A recorded command's stored routing disagrees with its signed envelope; it is kept or resumed by the signed claim (warning).</summary>
         public const int IntentRoutingRefused = 117_122;
+        /// <summary>A store reader's pause lapsed because its pauser stopped renewing it within the lease; the reader resumes once no pause is left (warning).</summary>
+        public const int StoreReaderPauseLapsed = 117_123;
     }
 }

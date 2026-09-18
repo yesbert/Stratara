@@ -19,7 +19,8 @@ public sealed class ExecutionModelTestHostOptions
 
     /// <summary>
     /// The keep-alive period of the store readers and the singleton work, and the retry period of the durable timers.
-    /// Defaults to one second.
+    /// A rebuild's or a reset's pause of a store reader renews at this period and lapses after three of them without a
+    /// renewal. Defaults to one second.
     /// </summary>
     public TimeSpan ReminderPeriod { get; set; } = TimeSpan.FromSeconds(1);
 

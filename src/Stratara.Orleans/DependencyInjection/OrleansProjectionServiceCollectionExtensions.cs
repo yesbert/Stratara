@@ -154,6 +154,8 @@ public static class OrleansProjectionServiceCollectionExtensions
         OrleansOptionsValidator.Register<CommitOrderOptions>(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, StoreReaderGrainStarter>());
         services.TryAddScoped<IStoreReaderSeeding, StoreReaderSeeding>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(sp => new StoreReaderLease(StoreReaderLease.DefaultDuration, sp.GetRequiredService<TimeProvider>()));
         Stratara.Orleans.Hosting.DurableDirectoryCheck.Register(services);
         ReplaceBundleDispatcher(services, hybrid);
     }

@@ -59,14 +59,36 @@ internal interface IProjectionGrain : IGrainWithStringKey
     Task<long> PositionAsync();
 
     /// <summary>
-    /// Stops reading until <see cref="ResumeAsync"/>; returns once no batch is in flight. Interleaves with a running
-    /// catch-up, which stops at its next batch boundary, so a pause does not wait for a partition far behind.
+    /// Stops reading for <paramref name="pauser"/> until it resumes or <paramref name="lease"/> passes without a
+    /// renewal; returns once no batch is in flight. Interleaves with a running catch-up, which stops at its next batch
+    /// boundary, so a pause does not wait for a partition far behind.
+    /// </summary>
+    [AlwaysInterleave]
+    [Alias("PauseHeldAsync")]
+    Task PauseAsync(Guid pauser, TimeSpan lease);
+
+    /// <summary>Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now, and pauses again where the pause was lost.</summary>
+    [AlwaysInterleave]
+    [Alias("RenewPauseAsync")]
+    Task RenewPauseAsync(Guid pauser, TimeSpan lease);
+
+    /// <summary>
+    /// Releases <paramref name="pauser"/>'s pause and reads again, from whatever the checkpoint now says, once no pauser is
+    /// left; a pauser not held changes nothing. Returns once the read is requested, not once it is done.
+    /// </summary>
+    [AlwaysInterleave]
+    [Alias("ResumeHeldAsync")]
+    Task ResumeAsync(Guid pauser);
+
+    /// <summary>
+    /// The pause of a silo of an older version: stops reading for an anonymous pauser for ten minutes, or until
+    /// <see cref="ResumeAsync()"/>; returns once no batch is in flight.
     /// </summary>
     [AlwaysInterleave]
     [Alias("PauseAsync")]
     Task PauseAsync();
 
-    /// <summary>Reads again, from whatever the checkpoint now says; returns once the read is requested, not once it is done.</summary>
+    /// <summary>The resume of a silo of an older version: releases the oldest anonymous pause; returns once the read is requested, not once it is done.</summary>
     [Alias("ResumeAsync")]
     Task ResumeAsync();
 }
@@ -250,17 +272,17 @@ internal interface INudgeTarget
     Task EnsureRunningAsync(IGrainFactory grainFactory, int partition);
 
     /// <summary>
-    /// Stops the target's readers of the partition, so their checkpoints can be changed behind them. A target whose
-    /// readers cannot be stopped — one that stands for a consumer of its own in a test — does nothing.
+    /// Stops the target's readers of the partition, so their checkpoints can be changed behind them, and returns the hold
+    /// that keeps them stopped — renewing their pause — until it is resumed or disposed, which starts them again from
+    /// whatever the checkpoints then say. A target whose readers cannot be stopped — one that stands for a consumer of
+    /// its own in a test — holds nothing.
     /// </summary>
-    Task PauseAsync(IGrainFactory grainFactory, int partition) => Task.CompletedTask;
-
-    /// <summary>Starts them again, from whatever the checkpoints now say.</summary>
-    Task ResumeAsync(IGrainFactory grainFactory, int partition) => Task.CompletedTask;
+    /// <exception cref="InvalidOperationException">A reader could not be paused; none the call reached stays paused.</exception>
+    ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) => ValueTask.FromResult(StoreReaderHold.Nothing());
 }
 
 /// <summary>Every registered projection's grain for the partition.</summary>
-internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler, IEnumerable<IProjection> projections) : INudgeTarget
+internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler, IEnumerable<IProjection> projections, StoreReaderLease lease) : INudgeTarget
 {
     private readonly List<string> _names = [.. projections.Select(projectionHandler.GetProjectionName).Distinct()];
 
@@ -298,17 +320,14 @@ internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler
         }
     }
 
-    public Task PauseAsync(IGrainFactory grainFactory, int partition) =>
-        StoreReaderPause.PauseAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))]).AsTask();
-
-    public Task ResumeAsync(IGrainFactory grainFactory, int partition) =>
-        StoreReaderPause.ResumeAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))]);
+    public ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) =>
+        StoreReaderPause.PauseAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))], lease);
 
     private static PausedReader Reader(IGrainFactory grainFactory, string name, int partition)
     {
         var key = StoreReaderGrainKey.Of(name, partition);
         var grain = grainFactory.GetGrain<IProjectionGrain>(key);
-        return new PausedReader(key, grain.PauseAsync, grain.ResumeAsync);
+        return new PausedReader(key, grain.PauseAsync, grain.RenewPauseAsync, grain.ResumeAsync);
     }
 }
 

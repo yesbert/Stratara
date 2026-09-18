@@ -127,6 +127,12 @@ internal static partial class OrleansLog
     public static partial void LogIntentRoutingRefused(this ILogger logger, Guid intentId, string outcome);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.StoreReaderPauseLapsed,
+        Level = LogLevel.Warning,
+        Message = "Store reader for {Consumer} on partition {Partition} let the pause of {Pauser} lapse: it was not renewed within its lease; {Remaining} pauses remain.")]
+    public static partial void LogStoreReaderPauseLapsed(this ILogger logger, string consumer, int partition, Guid pauser, int remaining);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.NudgeFailed,
         Level = LogLevel.Debug,
         Message = "The wake-up of {Consumers} for partition {Partition} was not delivered; the readers' poll reads the commit instead.")]

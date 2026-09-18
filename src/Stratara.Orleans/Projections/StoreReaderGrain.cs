@@ -34,10 +34,13 @@ internal abstract class StoreReaderGrain(
 {
     private const string KeepAliveReminder = "keep-alive";
 
+    /// <summary>How long a pause taken through the parameterless methods lasts: its caller, a silo of an older version, cannot renew it.</summary>
+    internal static readonly TimeSpan AnonymousLease = TimeSpan.FromMinutes(10);
+
     private readonly CancellationTokenSource _stopping = new();
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
-    private int _pausers;
+    private StoreReaderPausers? _pausers;
 
     /// <summary>The consumer this grain reads for, from its key.</summary>
     protected string Consumer { get; private set; } = string.Empty;
@@ -56,13 +59,79 @@ internal abstract class StoreReaderGrain(
     protected bool Retired { get; private set; }
 
     /// <summary>Whether reading stops at the next batch boundary; a replay suspends every reader, and so does a pauser.</summary>
-    protected virtual bool Suspended => _pausers > 0 || replayState.IsReplayActive;
+    protected virtual bool Suspended => Pausers.Any || replayState.IsReplayActive;
+
+    /// <summary>Who holds the grain paused.</summary>
+    /// <exception cref="InvalidOperationException">The grain has not been activated.</exception>
+    private StoreReaderPausers Pausers => _pausers ?? throw new InvalidOperationException("The grain has not been activated.");
 
     /// <summary>
-    /// Pauses, waits for a running loop to end, and forgets the cached position: whoever pauses is about to change
-    /// the checkpoint behind the grain's back. Pauses are counted, so two callers that overlap hold the reader until
-    /// the last of them resumes.
+    /// Pauses for <paramref name="pauser"/> until <paramref name="lease"/> has passed without a renewal, waits for a
+    /// running loop to end, and forgets the cached position: whoever pauses is about to change the checkpoint behind
+    /// the grain's back. Pausers are held apart, so two callers that overlap hold the reader until the last of them
+    /// resumes or lapses. The lease starts again once the running loop has ended, so a long batch does not eat it.
     /// </summary>
+    public async Task PauseAsync(Guid pauser, TimeSpan lease)
+    {
+        if (Retired)
+        {
+            return;
+        }
+
+        Pausers.Hold(pauser, lease);
+        await Loop.WaitForRunningAsync(CancellationToken.None);
+        if (Pausers.Holds(pauser))
+        {
+            Pausers.Hold(pauser, lease);
+        }
+
+        Loop.Invalidate();
+    }
+
+    /// <summary>
+    /// Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now. A pauser the grain no longer holds —
+    /// its pause lapsed, or the grain was activated again elsewhere and forgot it — pauses the grain again, without
+    /// waiting for a running loop, which stops at its next batch boundary.
+    /// </summary>
+    public Task RenewPauseAsync(Guid pauser, TimeSpan lease)
+    {
+        if (Retired)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!Pausers.Holds(pauser))
+        {
+            Loop.Invalidate();
+        }
+
+        Pausers.Hold(pauser, lease);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Releases <paramref name="pauser"/>'s pause and starts the reader again where it was the last. A pauser the grain
+    /// does not hold — a resume delivered twice, a pause that lapsed, an activation that forgot it — releases nothing,
+    /// but the grain still forgets its cached position: the pauser changed the checkpoint, and a grain that read while
+    /// it should have been paused holds a position the checkpoint no longer has.
+    /// </summary>
+    public Task ResumeAsync(Guid pauser)
+    {
+        if (Retired)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (Pausers.Release(pauser))
+        {
+            return RestartAsync();
+        }
+
+        Loop.Invalidate();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A pause of an older silo, which cannot renew it: held for an anonymous pauser for <see cref="AnonymousLease"/>.</summary>
     public async Task PauseAsync()
     {
         if (Retired)
@@ -70,27 +139,29 @@ internal abstract class StoreReaderGrain(
             return;
         }
 
-        _pausers++;
+        Pausers.HoldAnonymously(AnonymousLease);
         await Loop.WaitForRunningAsync(CancellationToken.None);
         Loop.Invalidate();
     }
 
-    /// <summary>Lets the last pauser's resume start the reader again; an earlier one changes nothing.</summary>
+    /// <summary>
+    /// A resume of an older silo: releases the oldest anonymous pause, and starts the reader again where it was the last;
+    /// where it releases nothing, the grain forgets its cached position as a held resume does.
+    /// </summary>
     public Task ResumeAsync()
     {
-        if (Retired || _pausers == 0)
+        if (Retired)
         {
             return Task.CompletedTask;
         }
 
-        _pausers--;
-        if (_pausers > 0)
+        if (Pausers.ReleaseOldestAnonymous())
         {
-            return Task.CompletedTask;
+            return RestartAsync();
         }
 
         Loop.Invalidate();
-        return NudgeAsync();
+        return Task.CompletedTask;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -98,6 +169,7 @@ internal abstract class StoreReaderGrain(
         var (consumer, partition) = StoreReaderGrainKey.Parse(this.GetPrimaryKeyString());
         Consumer = consumer;
         Partition = partition;
+        _pausers = new StoreReaderPausers(ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System);
         if (partition >= settings.PartitionCount)
         {
             await RetireAsync();
@@ -107,7 +179,7 @@ internal abstract class StoreReaderGrain(
 
         _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger);
         _poll ??= this.RegisterGrainTimer(
-            _ => RequestCatchUp(),
+            _ => PollAsync(),
             new GrainTimerCreationOptions
             {
                 DueTime = settings.PollInterval,
@@ -140,7 +212,7 @@ internal abstract class StoreReaderGrain(
 
     public Task<long> PositionAsync() => Retired ? Task.FromResult(0L) : Loop.PositionAsync();
 
-    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => Retired ? Task.CompletedTask : RequestCatchUp();
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => Retired ? Task.CompletedTask : PollAsync();
 
     /// <summary>
     /// A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.
@@ -190,6 +262,26 @@ internal abstract class StoreReaderGrain(
 
     /// <summary>Applies a batch in order and returns the index of the first entry that did not apply.</summary>
     protected abstract Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lets every pause whose lease has passed lapse before reading, so a pauser that died leaves the reader paused for
+    /// no longer than its lease and a poll; the last pause to lapse forgets the cached position, as a resume does.
+    /// </summary>
+    private Task<int> PollAsync()
+    {
+        if (Pausers.Lapse(logger, Consumer, Partition))
+        {
+            Loop.Invalidate();
+        }
+
+        return RequestCatchUp();
+    }
+
+    private Task RestartAsync()
+    {
+        Loop.Invalidate();
+        return NudgeAsync();
+    }
 
     /// <summary>Every loop, whoever requested it, runs under the activation's lifetime, so a deactivation can stop it.</summary>
     private Task<int> RequestCatchUp() => Loop.RequestCatchUp(ApplyBatchAsync, () => Suspended, _stopping.Token);

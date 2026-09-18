@@ -1,24 +1,27 @@
 namespace Stratara.Orleans.Projections;
 
 /// <summary>
-/// Pausing a set of store readers, and resuming every one that may hold a pauser. A reader counts its pauser
-/// before it waits for the running loop, so a pause whose answer is lost — a partition whose batch outlives the
-/// response timeout — has paused the reader all the same: what is resumed is therefore every reader the pause was
-/// asked of, not only those that answered. A resume finds nothing to release where no pause was counted, so
-/// resuming one reader too many costs nothing, while resuming one too few leaves it reading nothing until its silo
-/// restarts.
+/// Pausing a set of store readers under one pauser, and holding them paused until that pauser resumes them. A reader
+/// takes the pause before it waits for the running loop, so a pause whose answer is lost — a partition whose batch
+/// outlives the response timeout — has paused the reader all the same: what is resumed is therefore every reader the
+/// pause was asked of, not only those that answered. A reader releases only the pauser it holds, so resuming one
+/// reader too many, or one reader twice, costs nothing; a reader whose resume never arrives resumes by itself once the
+/// pause's lease has passed without a renewal.
 /// </summary>
 internal static class StoreReaderPause
 {
     /// <summary>
-    /// Pauses every reader and returns the readers to resume — every one the pause was asked of. Where a pause
-    /// fails, they are resumed before this throws, so a caller that sees the exception holds nothing.
+    /// Pauses every reader under a new pauser and returns the hold that renews the pause and resumes every reader the
+    /// pause was asked of. Where a pause fails, they are resumed before this throws, so a caller that sees the exception
+    /// holds nothing.
     /// </summary>
     /// <param name="readers">The readers to pause, by the name of the partition they read.</param>
-    /// <returns>The readers to resume.</returns>
+    /// <param name="lease">How long a pause lasts without a renewal, and the clock the renewals run on.</param>
+    /// <returns>The hold over the readers.</returns>
     /// <exception cref="InvalidOperationException">A reader could not be paused; the message names which.</exception>
-    public static async ValueTask<IReadOnlyList<PausedReader>> PauseAllAsync(IReadOnlyList<PausedReader> readers)
+    public static async ValueTask<StoreReaderHold> PauseAllAsync(IReadOnlyList<PausedReader> readers, StoreReaderLease lease)
     {
+        var pauser = Guid.NewGuid();
         var pausing = new List<(PausedReader Reader, Task Pause)>(readers.Count);
         var refused = new List<string>();
         var failures = new List<Exception>();
@@ -26,7 +29,7 @@ internal static class StoreReaderPause
         {
             try
             {
-                pausing.Add((reader, reader.Pause()));
+                pausing.Add((reader, reader.Pause(pauser, lease.Duration)));
             }
             catch (Exception ex)
             {
@@ -48,45 +51,21 @@ internal static class StoreReaderPause
             }
         }
 
-        // Every reader the call reached may hold a pauser, including one whose answer was lost.
+        // Every reader the call reached may hold the pauser, including one whose answer was lost.
         var toResume = pausing.Select(p => p.Reader).ToList();
         if (failures.Count == 0)
         {
-            return toResume;
+            return StoreReaderHold.Start(pauser, toResume, lease);
         }
 
-        await ResumeQuietlyAsync(toResume);
+        await ResumeQuietlyAsync(toResume, pauser);
         throw new InvalidOperationException(
             $"The store readers of {string.Join(", ", refused)} could not be paused, so nothing was changed and the readers that had paused were resumed.",
             failures[0]);
     }
 
-    /// <summary>Resumes every reader, retrying one that fails once, and reports what stayed paused.</summary>
-    /// <param name="readers">The readers to resume.</param>
-    /// <returns>A task that completes when every reader has been resumed.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// A reader stayed paused and reads nothing until its silo is restarted; the message names which.
-    /// </exception>
-    public static async Task ResumeAllAsync(IReadOnlyList<PausedReader> readers)
-    {
-        var failures = await ResumeQuietlyAsync(readers);
-        if (failures.Count == 0)
-        {
-            return;
-        }
-
-        var retry = await ResumeQuietlyAsync([.. failures.Select(failure => failure.Reader)]);
-        if (retry.Count > 0)
-        {
-            throw new InvalidOperationException(
-                $"The work finished, but the store readers of {string.Join(", ", retry.Select(failure => failure.Reader.Name))} stayed paused: " +
-                "each reads nothing until its silo is restarted.",
-                retry[0].Failure);
-        }
-    }
-
-    /// <summary>Resumes every reader and returns what failed, for a caller that is already carrying an exception.</summary>
-    public static async Task<IReadOnlyList<(PausedReader Reader, Exception Failure)>> ResumeQuietlyAsync(IReadOnlyList<PausedReader> readers)
+    /// <summary>Resumes every reader for <paramref name="pauser"/> and returns what failed, for a caller that is already carrying an exception.</summary>
+    public static async Task<IReadOnlyList<(PausedReader Reader, Exception Failure)>> ResumeQuietlyAsync(IReadOnlyList<PausedReader> readers, Guid pauser)
     {
         var resuming = new List<(PausedReader Reader, Task Resume)>(readers.Count);
         var failures = new List<(PausedReader Reader, Exception Failure)>();
@@ -94,7 +73,7 @@ internal static class StoreReaderPause
         {
             try
             {
-                resuming.Add((reader, reader.Resume()));
+                resuming.Add((reader, reader.Resume(pauser)));
             }
             catch (Exception ex)
             {
@@ -118,5 +97,140 @@ internal static class StoreReaderPause
     }
 }
 
+/// <summary>
+/// One pauser's hold over the store readers it paused. The hold renews every reader's pause at a third of the lease
+/// until it is resumed or disposed; the renewal is one loop whose task the hold keeps and waits for before it resumes,
+/// so no renewal is sent after the resume. A renewal that fails is tried again at the next one; one that keeps failing
+/// lets the reader's pause lapse, which the reader logs. Disposing a hold that was not resumed resumes every reader and
+/// reports nothing, for a caller that is already carrying an exception.
+/// </summary>
+internal sealed class StoreReaderHold : IAsyncDisposable
+{
+    private readonly Guid _pauser;
+    private readonly IReadOnlyList<PausedReader> _readers;
+    private readonly StoreReaderLease _lease;
+    private readonly CancellationTokenSource _stopping = new();
+    private Task _renewing = Task.CompletedTask;
+    private bool _released;
+
+    private StoreReaderHold(Guid pauser, IReadOnlyList<PausedReader> readers, StoreReaderLease lease)
+    {
+        _pauser = pauser;
+        _readers = readers;
+        _lease = lease;
+    }
+
+    /// <summary>The pauser the readers hold.</summary>
+    public Guid Pauser => _pauser;
+
+    /// <summary>A hold over no reader, for a port whose readers cannot be paused.</summary>
+    public static StoreReaderHold Nothing() => new(Guid.Empty, [], new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
+
+    /// <summary>Holds the readers <paramref name="pauser"/> paused and starts renewing their pause.</summary>
+    public static StoreReaderHold Start(Guid pauser, IReadOnlyList<PausedReader> readers, StoreReaderLease lease)
+    {
+        var hold = new StoreReaderHold(pauser, readers, lease);
+        if (readers.Count > 0)
+        {
+            hold._renewing = hold.RenewAsync(hold._stopping.Token);
+        }
+
+        return hold;
+    }
+
+    /// <summary>Stops renewing and resumes every reader, retrying one that fails once, and reports what stayed paused.</summary>
+    /// <returns>A task that completes when every reader has been resumed.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// A reader stayed paused and reads nothing until its pause lapses, within the lease; the message names which.
+    /// </exception>
+    public async Task ResumeAsync()
+    {
+        if (_released)
+        {
+            return;
+        }
+
+        await StopRenewingAsync();
+        _released = true;
+        var failures = await StoreReaderPause.ResumeQuietlyAsync(_readers, _pauser);
+        if (failures.Count == 0)
+        {
+            return;
+        }
+
+        var retry = await StoreReaderPause.ResumeQuietlyAsync([.. failures.Select(failure => failure.Reader)], _pauser);
+        if (retry.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"The work finished, but the store readers of {string.Join(", ", retry.Select(failure => failure.Reader.Name))} stayed paused: " +
+                $"each reads nothing until its pause lapses, within {_lease.Duration}.",
+                retry[0].Failure);
+        }
+    }
+
+    /// <summary>Stops renewing and, where the hold was not resumed, resumes every reader without reporting what failed.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (!_released)
+        {
+            await StopRenewingAsync();
+            _released = true;
+            await StoreReaderPause.ResumeQuietlyAsync(_readers, _pauser);
+        }
+
+        _stopping.Dispose();
+    }
+
+    private async Task StopRenewingAsync()
+    {
+        await _stopping.CancelAsync();
+        await _renewing;
+    }
+
+    private async Task RenewAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(_lease.Renewal, _lease.Clock);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await Task.WhenAll(_readers.Select(RenewQuietlyAsync));
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _ = cancellationToken;
+        }
+    }
+
+    private async Task RenewQuietlyAsync(PausedReader reader)
+    {
+        try
+        {
+            await reader.Renew(_pauser, _lease.Duration);
+        }
+        catch (Exception ex)
+        {
+            _ = ex;
+        }
+    }
+}
+
+/// <summary>How long a pause lasts without a renewal, and the clock the pauser renews it on — at a third of the lease.</summary>
+/// <param name="Duration">How long a reader stays paused after the last pause or renewal it received.</param>
+/// <param name="Clock">The clock the renewals are timed on.</param>
+internal sealed record StoreReaderLease(TimeSpan Duration, TimeProvider Clock)
+{
+    /// <summary>The lease a deployment runs with.</summary>
+    public static readonly TimeSpan DefaultDuration = TimeSpan.FromSeconds(60);
+
+    /// <summary>How often a hold renews its pause: a third of the lease, so two renewals may be lost before it lapses.</summary>
+    public TimeSpan Renewal => Duration / 3;
+}
+
 /// <summary>One store reader a rebuild, a replay or a reset pauses, and the name its failure is reported under.</summary>
-internal readonly record struct PausedReader(string Name, Func<Task> Pause, Func<Task> Resume);
+/// <param name="Name">The name a failure is reported under — the reader's key.</param>
+/// <param name="Pause">Pauses the reader for a pauser and a lease.</param>
+/// <param name="Renew">Extends the pauser's pause by a lease from now.</param>
+/// <param name="Resume">Releases the pauser's pause.</param>
+internal readonly record struct PausedReader(string Name, Func<Guid, TimeSpan, Task> Pause, Func<Guid, TimeSpan, Task> Renew, Func<Guid, Task> Resume);

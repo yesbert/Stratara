@@ -63,7 +63,7 @@ public sealed class LostNudgeTests
         var woken = new List<string>();
         var handler = new Mock<IProjectionHandler>();
         var projections = new[] { Named(handler, "first"), Named(handler, "second"), Named(handler, "third") };
-        var target = new ProjectionNudgeTarget(handler.Object, projections);
+        var target = new ProjectionNudgeTarget(handler.Object, projections, new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
         var grains = Names.ToDictionary(
             name => StoreReaderGrainKey.Of(name, 0),
             name => name == "second" ? Refusing() : Woken(woken, name));
@@ -114,6 +114,12 @@ public sealed class LostNudgeTests
         public Task<int> CatchUpAsync() => Task.FromResult(0);
 
         public Task<long> PositionAsync() => Task.FromResult(0L);
+
+        public Task PauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
+
+        public Task RenewPauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
+
+        public Task ResumeAsync(Guid pauser) => Task.CompletedTask;
 
         public Task PauseAsync() => Task.CompletedTask;
 

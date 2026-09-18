@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
@@ -352,7 +353,9 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
 
     /// <summary>
     /// Applies the host's periods where a setting still holds the framework's default, so a value the test set through a
-    /// registration wins. The partition count is the host's in every case, because the counter interceptor is built with it.
+    /// registration wins. The partition count is the host's in every case, because the counter interceptor is built with it,
+    /// and so is the lease of a store reader's pause — three keep-alive periods, renewed every period — which no
+    /// registration sets.
     /// </summary>
     private static void Shorten(IServiceCollection services, ExecutionModelTestHostOptions settings)
     {
@@ -377,6 +380,7 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         var drain = new OutboxDrainOptions();
         services.PostConfigure<OutboxDrainOptions>(o => o.PollingInterval = Keep(o.PollingInterval, drain.PollingInterval, settings.DrainPollingInterval));
         services.PostConfigure<CommitOrderOptions>(o => o.PartitionCount = settings.PartitionCount);
+        services.Replace(ServiceDescriptor.Singleton(sp => new StoreReaderLease(settings.ReminderPeriod * 3, sp.GetService<TimeProvider>() ?? TimeProvider.System)));
     }
 
     private static TimeSpan Keep(TimeSpan current, TimeSpan frameworkDefault, TimeSpan hostValue) =>
