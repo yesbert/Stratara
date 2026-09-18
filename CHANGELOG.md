@@ -16,6 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.2.0`._
+
+## [4.2.0] — 2026-09-18
+
+A hardening release for the Orleans execution model, and a new test-support package for it.
+`Stratara.Testing.Orleans` runs the execution model inside the test's process. Beyond that, 4.2.0 closes
+every gap known before release. A recorded command runs once and in its scope's order, and it is counted
+against the bus's two bounds. A store reader paused by a rebuild comes back if its pauser dies, and the
+rebuilt read model keeps every fact. A failing saga stops only itself. Every options section the framework
+documents is read from configuration, and an anonymous caller is answered 401.
+
+**Upgrading:**
+- **Generate an EF Core migration.** The intent record gains a `conflict_count` column.
+- **Check `appsettings.json` for `SessionContext:AllowTenantHeader` and
+  `Stratara:BlobEncryption:LegacyBlobsCarryPurpose`.** Both were ignored until now and take effect with
+  this release.
+- **Upgrade the saga silos together.**
+- **Start a rebuild only once every silo runs 4.2.0.**
+
 ### Added
 
 - **`IProjectionCheckpointStore.FindAsync` and `CreateAsync`**: a checkpoint's position, or `null` where none exists, where
@@ -3720,7 +3739,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.1.1...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.2.0...main
+[4.2.0]: https://github.com/yesbert/Stratara/releases/tag/v4.2.0
 [4.1.1]: https://github.com/yesbert/Stratara/releases/tag/v4.1.1
 [4.1.0]: https://github.com/yesbert/Stratara/releases/tag/v4.1.0
 [4.0.4]: https://github.com/yesbert/Stratara/releases/tag/v4.0.4
