@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 using Stratara.Orleans.IntegrationTests.Fixtures;
@@ -99,6 +100,47 @@ public sealed class PartitionCounterBackfillTests(PostgreSqlFixture postgres)
             var expected = history.Where(e => PartitionMap.PartitionOf(e.BucketId, PartitionCount) == partition).OrderBy(e => e.SequenceNumber).Select(e => e.Id);
             Assert.Equal(expected, read.Select(e => e.Entry.Id));
             Assert.Equal(Enumerable.Range(1, read.Count).Select(i => (long)i), read.Select(e => e.Position));
+        }
+    }
+
+    [Fact]
+    public async Task Interleaved_partitions_are_positioned_across_batches_in_append_order_after_their_counters()
+    {
+        const int perPartition = 1_100;
+        var connectionString = postgres.ConnectionStringFor(Database + "_batches");
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, Configure, maintainCounter: false);
+        await using (var context = await store.CreateContextAsync())
+        {
+            await context.Set<EventStreamEntry>().ExecuteDeleteAsync();
+            for (var partition = 0; partition < PartitionCount; partition++)
+            {
+                var start = 100L * (partition + 1);
+                await context.Set<PartitionPosition>().Where(c => c.Partition == partition)
+                    .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, start));
+            }
+
+            var tenantId = Guid.NewGuid();
+            context.Set<EventStreamEntry>().AddRange(Enumerable.Range(0, PartitionCount * perPartition)
+                .Select(i => PocStore<PocCommitOrderWriteDbContext>.NewEntry(Guid.NewGuid(), 1, i, tenantId)));
+            await context.SaveChangesAsync();
+        }
+
+        await using (var context = await store.CreateContextAsync())
+        {
+            Assert.Equal(PartitionCount * perPartition, await PartitionCounterBackfill.RunAsync(context, store.Options));
+
+            var entries = await context.Set<EventStreamEntry>()
+                .OrderBy(e => e.SequenceNumber)
+                .Select(e => new { e.BucketId, Position = EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) })
+                .ToListAsync();
+            var counters = await context.Set<PartitionPosition>().AsNoTracking().ToDictionaryAsync(c => c.Partition, c => c.Position);
+            for (var partition = 0; partition < PartitionCount; partition++)
+            {
+                var start = 100L * (partition + 1);
+                var positions = entries.Where(e => PartitionMap.PartitionOf(e.BucketId, PartitionCount) == partition).Select(e => e.Position);
+                Assert.Equal(Enumerable.Range(1, perPartition).Select(i => (long?)(start + i)), positions);
+                Assert.Equal(start + perPartition, counters[partition]);
+            }
         }
     }
 

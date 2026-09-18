@@ -151,6 +151,8 @@ applies to the entire NuGet family.
   does not add it, and `CommitOrderOptions.MaintainPartitionCounter` is only the value a write context reads
   when it does; and the partition count cannot change once the store holds positions. On PostgreSQL the
   native reader remains the one to use.
+- **`PartitionCounterBackfill` positions a batch with one statement on PostgreSQL** instead of one per entry;
+  other providers keep the per-entry update, and the positions it hands out are the same.
 
 ### Deprecated
 
