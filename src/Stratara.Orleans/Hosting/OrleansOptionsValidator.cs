@@ -16,9 +16,10 @@ namespace Stratara.Orleans.Hosting;
 /// the start and names itself instead of stalling a reader, polling forever or re-running a command:
 /// batch sizes, limits and partition counts are positive, polls and windows are longer than zero, a period
 /// the runtime keeps as a reminder is at or above the runtime's minimum reminder period, and a command's grace
-/// is longer than the window in which its completion is collected.
+/// is longer than the window in which its completion is collected. A singleton work's own settings are validated with
+/// the settings for every singleton work, as the work runs with them.
 /// </summary>
-internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminders) :
+internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminders, SingletonWorkRegistrations? singletonWorks = null) :
     IValidateOptions<OrleansDispatchOptions>,
     IValidateOptions<HeavyWorkOptions>,
     IValidateOptions<DurableTimerOptions>,
@@ -72,11 +73,30 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
         Positive(options.PartitionCount, nameof(options.PartitionCount)));
 
     public ValidateOptionsResult Validate(string? name, SingletonWorkOptions options) => Result<SingletonWorkOptions>(
-        AtLeastReminderMinimum(options.KeepAlivePeriod, nameof(options.KeepAlivePeriod)));
+        [AtLeastReminderMinimum(options.KeepAlivePeriod, nameof(options.KeepAlivePeriod)), .. OwnSettingsFailures(options)]);
+
+    /// <summary>Validates the settings <paramref name="workType"/> runs with — the host's for every work with its own on top.</summary>
+    public ValidateOptionsResult ValidateWork(Type workType, SingletonWorkOptions settings) => Result<SingletonWorkOptions>(
+        OfWork(workType, AtLeastReminderMinimum(settings.KeepAlivePeriod, nameof(settings.KeepAlivePeriod))));
 
     public ValidateOptionsResult Validate(string? name, OutboxDrainOptions options) => Result<OutboxDrainOptions>(
         Positive(options.PollingInterval, nameof(options.PollingInterval)),
         Positive(options.BatchSize, nameof(options.BatchSize)));
+
+    private IEnumerable<string?> OwnSettingsFailures(SingletonWorkOptions siloWide)
+    {
+        if (singletonWorks is null)
+        {
+            return [];
+        }
+
+        return singletonWorks.Works
+            .Where(work => singletonWorks.ConfigureOf(work.WorkType) is not null)
+            .Select(work => OfWork(work.WorkType, AtLeastReminderMinimum(singletonWorks.SettingsOf(work.WorkType, siloWide).KeepAlivePeriod, nameof(siloWide.KeepAlivePeriod))));
+    }
+
+    private static string? OfWork(Type workType, string? failure) =>
+        failure is null ? null : $"{failure} It is the setting the singleton work {workType.Name} runs with.";
 
     private static string? Positive(int value, string setting) =>
         value > 0 ? null : $"{setting} ({value}) must be at least 1.";
