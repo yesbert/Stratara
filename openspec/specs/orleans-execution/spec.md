@@ -324,7 +324,15 @@ returns every keep-alive period to be refused.
 
 Pausing the readers for a rebuild or a replay SHALL leave none of them paused where it does not
 finish: a pause that fails SHALL resume the readers that did pause and SHALL fail naming what it
-could not pause, so that no partition is left waiting for a resume that never comes. Returning a
+could not pause, so that no partition is left waiting for a resume that never comes. A pause SHALL
+belong to the one who paused and SHALL last only while that pauser keeps it: a pauser that stops —
+its process dies part-way through a rebuild — SHALL leave its readers paused for no longer than a
+bounded lease, after which they resume and the lapse is logged naming the reader. Resuming SHALL
+release only the resuming pauser's own pause, however often the resume is repeated, so that a retried
+resume never releases a pause another rebuild still holds. A rebuild or a replay SHALL leave its read
+models holding every fact of the store however early a reader resumes during it — through a lapse, or
+an activation that moved and no longer knows it was paused — so that a fact a reader applied before
+the read model was emptied is applied again after it. Returning a
 checkpoint to the beginning SHALL be accepted whatever reader last wrote it — the beginning means
 the same under every reader and every partition count — so that a deployment whose reader or
 partition count changed can rebuild or replay from inside the running cluster, and the documentation
@@ -410,6 +418,25 @@ from being woken.
   back
 - **THEN** that reader stops returning, reads nothing, logs that it retired, and no stall is counted
   for it — verified on the PostgreSQL store
+
+#### Scenario: The process rebuilding a projection dies
+
+- **WHEN** the process that paused a projection's readers for a rebuild dies before it resumes them
+- **THEN** the readers resume by themselves once the pause's lease has passed, each lapse is logged
+  naming the reader, and the projection's read model follows the store again without a silo restart
+
+#### Scenario: A resume is repeated while a second rebuild holds the readers
+
+- **WHEN** two rebuilds of one projection hold its readers paused, and the first rebuild's resume is
+  delivered twice
+- **THEN** the readers stay paused until the second rebuild resumes them
+
+#### Scenario: A reader resumes while its read model is being emptied
+
+- **WHEN** a reader of a projection being rebuilt resumes and applies facts before the read model is
+  emptied
+- **THEN** once the rebuild has finished and the readers have caught up, the read model holds every
+  fact of the store, those facts included
 
 ### Requirement: A failing entry stops its partition, is retried, and is visible
 
