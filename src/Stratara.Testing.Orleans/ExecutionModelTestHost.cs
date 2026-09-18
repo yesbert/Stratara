@@ -116,6 +116,45 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         var settings = new ExecutionModelTestHostOptions();
         options?.Invoke(settings);
 
+        // Hosts created at the same moment can be handed the same free port, because the port is free until the silo
+        // binds it. Such a start is tried again from the beginning — a database of its own, ports of its own.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await CreateOnceAsync(settings, configure, cancellationToken);
+            }
+            catch (Exception failure) when (attempt < 3 && TakenPort(failure))
+            {
+                _ = failure;
+            }
+        }
+    }
+
+    /// <summary>Whether the failure is a port another host bound first.</summary>
+    private static bool TakenPort(Exception failure)
+    {
+        for (var inner = failure; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is SocketException { SocketErrorCode: SocketError.AddressAlreadyInUse })
+            {
+                return true;
+            }
+
+            if (inner is AggregateException aggregate && aggregate.InnerExceptions.Any(TakenPort))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<ExecutionModelTestHost> CreateOnceAsync(
+        ExecutionModelTestHostOptions settings,
+        Action<IServiceCollection>? configure,
+        CancellationToken cancellationToken)
+    {
         var connectionString = $"Data Source=stratara-execution-model-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
         var keeper = new SqliteConnection(connectionString);
         await keeper.OpenAsync(cancellationToken);
@@ -123,17 +162,27 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         {
             var session = new TestSessionContextProvider(TestSessionContext.ForTenant(DefaultTenantId));
             var host = Build(connectionString, settings, session, configure);
-            var testHost = new ExecutionModelTestHost(host, keeper, session);
-            await CreateSchemaAsync(host.Services, settings.PartitionCount, cancellationToken);
-            if (settings.BeforeStart is { } beforeStart)
+            try
             {
-                await beforeStart(testHost);
-            }
+                var testHost = new ExecutionModelTestHost(host, keeper, session);
+                await CreateSchemaAsync(host.Services, settings.PartitionCount, cancellationToken);
+                if (settings.BeforeStart is { } beforeStart)
+                {
+                    await beforeStart(testHost);
+                }
 
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(settings.StartTimeout);
-            await host.StartAsync(timeout.Token);
-            return testHost;
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(settings.StartTimeout);
+                await host.StartAsync(timeout.Token);
+                return testHost;
+            }
+            catch
+            {
+                // What the host built holds ports, threads, timers and database connections until it is stopped, and
+                // the noise it goes on making would bury the failure the test is about to see.
+                await StopQuietlyAsync(host);
+                throw;
+            }
         }
         catch
         {
@@ -165,11 +214,17 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
     }
 
     /// <summary>
-    /// Forgets what the execution model keeps, through its reset port: the timers, the grain directory's entries and the
-    /// registered store readers' checkpoints.
+    /// Forgets what the execution model keeps on this host: its timers and the grain directory's entries go, and every
+    /// registered store reader is put at the store's head — the host keeps running, and a reader returned to the
+    /// beginning would read the store again into read models this does not empty.
     /// </summary>
+    /// <remarks>
+    /// This is the host's reset, not a rehearsal of the deployment's: a deployment resets while nothing runs and its
+    /// readers start again from nothing. Between two tests of one host, "nothing from before" means the head.
+    /// </remarks>
     /// <param name="cancellationToken">Cancels the reset.</param>
-    /// <returns>What was removed.</returns>
+    /// <returns>What was removed, and how many checkpoints were moved.</returns>
+    /// <exception cref="InvalidOperationException">A store reader could not be started again and reads nothing.</exception>
     public async Task<ExecutionModelResetReport> ResetAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -340,6 +395,29 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         await read.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(cancellationToken);
     }
 
+    private static async Task StopQuietlyAsync(IHost host)
+    {
+        try
+        {
+            await host.StopAsync();
+        }
+        catch (Exception stopping)
+        {
+            // Whatever the stop ends with, including its own timeout: the failure the caller is about to see is the
+            // one that made the start fail, not this.
+            _ = stopping;
+        }
+        finally
+        {
+            host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A port the operating system is not using. Two hosts created at the same moment can be handed the same one —
+    /// the listener is closed before the silo binds — so a start that fails on the address is tried again with
+    /// another port.
+    /// </summary>
     private static int FreePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

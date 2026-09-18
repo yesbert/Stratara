@@ -54,6 +54,13 @@ public sealed class Runs
     public ConcurrentQueue<(string OwnerId, string Purpose)> Timers { get; } = new();
 
     public ConcurrentDictionary<Guid, decimal> Timeouts { get; } = new();
+
+    /// <summary>How often the projection applied an entry, so a test can see an entry applied a second time.</summary>
+    public int Applied => Volatile.Read(ref _applied);
+
+    private int _applied;
+
+    public void MarkApplied() => Interlocked.Increment(ref _applied);
 }
 
 public sealed class BalanceProjection(Runs runs) : IProjection
@@ -61,12 +68,14 @@ public sealed class BalanceProjection(Runs runs) : IProjection
     public Task HandleAsync(IEvent<AccountOpened> @event, CancellationToken cancellationToken)
     {
         runs.Balances[@event.StreamId] = @event.Data.InitialBalance;
+        runs.MarkApplied();
         return Task.CompletedTask;
     }
 
     public Task HandleAsync(IEvent<AmountDeposited> @event, CancellationToken cancellationToken)
     {
         runs.Balances.AddOrUpdate(@event.StreamId, @event.Data.Amount, (_, balance) => balance + @event.Data.Amount);
+        runs.MarkApplied();
         return Task.CompletedTask;
     }
 }

@@ -214,6 +214,16 @@ applies to the entire NuGet family.
   were reset.
 - **Orleans: the partition counter interceptor releases its transaction when positioning fails.** The
   transaction it opened stayed open on the context until the next save or the context's disposal.
+- **Testing: `ExecutionModelTestHost.ResetAsync` works on a running host.** It deleted the checkpoints while the
+  readers kept their cached positions, so a shared host reset between two tests either never finished
+  `WaitForReadersAsync` — the checkpoint said nothing was applied, the store's head said otherwise — or applied the
+  previous test's facts a second time. It now stops every registered reader, puts it at the store's head and starts
+  it again, and says how many it moved. The pause that made this possible moved into the store reader every
+  consumer shares, so a saga's reader stops for a reset as a projection's does.
+- **Testing: a host whose start fails stops what it started**, instead of leaving a half-started silo holding its
+  ports and timers for the rest of the test run; a start refused because another host took the port is tried again.
+- **Orleans: a placement filter writes the silo's own metadata entries before it reads them**, so a first placement
+  can no longer judge the silo by a table the runtime has not filled yet.
 - **Orleans: a resumed command runs where its signed envelope says.** The resume routed by the record's own
   columns, which the signature never covered: a stored heavy flag flipped in the store sent a signed command past
   the heavy pool's bound or outside its aggregate's order, and the signature still verified. The row's identity and

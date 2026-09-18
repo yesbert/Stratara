@@ -103,7 +103,8 @@ public sealed class ExecutionModelTestHostTests
         await host.Timers.RegisterAsync(new TimerRegistration(owner, "expire", DateTimeOffset.UtcNow.AddHours(1)), TestContext.Current.CancellationToken);
         var report = await host.ResetAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(report.Checkpoints > 0, "the reset removed no checkpoint");
+        // The readers had caught up, so their checkpoints were already where the reset puts them: nothing moved.
+        Assert.Equal(0, report.Checkpoints);
         Assert.True(report.Reminders > 0, "the reset removed no timer");
         Assert.Empty(await host.Timers.ListAsync(owner, TestContext.Current.CancellationToken));
         await using var scope = host.Services.CreateAsyncScope();
@@ -112,7 +113,103 @@ public sealed class ExecutionModelTestHostTests
         var name = scope.ServiceProvider.GetRequiredService<IProjectionHandler>().GetProjectionName(new BalanceProjection(runs));
         for (var partition = 0; partition < 4; partition++)
         {
-            Assert.Equal(0, await checkpoints.GetAsync(name, partition, reader.Name, TestContext.Current.CancellationToken));
+            Assert.Equal(
+                await reader.HeadAsync(partition, TestContext.Current.CancellationToken),
+                await checkpoints.GetAsync(name, partition, reader.Name, TestContext.Current.CancellationToken));
+        }
+    }
+
+    /// <summary>
+    /// A start that fails hands the test the failure that caused it — not one from the stop that follows — and leaves
+    /// nothing of the host running, which the next host proves by starting at all.
+    /// </summary>
+    [Fact]
+    public async Task A_host_whose_start_fails_reports_that_failure_and_leaves_nothing_behind()
+    {
+        var runs = new Runs();
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => ExecutionModelTestHost.CreateAsync(
+            services => Commands(services, runs).AddStrataraProjectionGrains(),
+            options => options.BeforeStart = _ => throw new InvalidOperationException("the test's own seeding failed")));
+
+        Assert.Equal("the test's own seeding failed", failure.Message);
+
+        await using var next = await ExecutionModelTestHost.CreateAsync(services => Commands(services, runs).AddStrataraProjectionGrains());
+        var account = Guid.NewGuid();
+        await next.DispatchAsync(new OpenAccount(account, 3m), TestContext.Current.CancellationToken);
+        await next.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(3m, runs.Balances[account]);
+    }
+
+    /// <summary>
+    /// The reset between two tests of one host: the readers keep running, so a reset that only removed the
+    /// checkpoints would leave them at the position they had cached — waiting for readers would then never end, and a
+    /// reader that did read again would apply the first test's entries a second time.
+    /// </summary>
+    [Fact]
+    public async Task A_host_reset_between_two_tests_reads_on_without_applying_anything_twice()
+    {
+        var runs = new Runs();
+        await using var host = await ExecutionModelTestHost.CreateAsync(services => Commands(services, runs).AddStrataraProjectionGrains());
+        var first = Guid.NewGuid();
+        await host.DispatchAsync(new OpenAccount(first, 1m), TestContext.Current.CancellationToken);
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(1m, runs.Balances[first]);
+        var appliedBefore = runs.Applied;
+
+        await host.ResetAsync(TestContext.Current.CancellationToken);
+
+        // Nothing new has been committed: the readers are at the head, so the wait ends at once.
+        await host.WaitForReadersAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(appliedBefore, runs.Applied);
+
+        var second = Guid.NewGuid();
+        await host.DispatchAsync(new OpenAccount(second, 2m), TestContext.Current.CancellationToken);
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2m, runs.Balances[second]);
+        Assert.Equal(appliedBefore + 1, runs.Applied);
+    }
+
+    /// <summary>A reader left behind the head is moved up to it, and the report counts it.</summary>
+    [Fact]
+    public async Task A_reset_moves_a_reader_that_is_behind_the_head_and_counts_it()
+    {
+        var runs = new Runs();
+        await using var host = await ExecutionModelTestHost.CreateAsync(services => Commands(services, runs).AddStrataraProjectionGrains());
+        await host.DispatchAsync(new OpenAccount(Guid.NewGuid(), 1m), TestContext.Current.CancellationToken);
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        string name;
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var checkpoints = scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+            var reader = scope.ServiceProvider.GetRequiredService<Stratara.Abstractions.CommitOrder.ICommittedPositionReader>();
+            name = scope.ServiceProvider.GetRequiredService<IProjectionHandler>().GetProjectionName(new BalanceProjection(runs));
+
+            // Put one partition's reader back at the beginning behind the grain's back, as a test that plants a
+            // position does; the reset is what brings it up to the head again.
+            for (var partition = 0; partition < 4; partition++)
+            {
+                if (await checkpoints.GetAsync(name, partition, reader.Name, TestContext.Current.CancellationToken) > 0)
+                {
+                    await checkpoints.SetAsync(name, partition, reader.Name, 0, TestContext.Current.CancellationToken);
+                    break;
+                }
+            }
+        }
+
+        var report = await host.ResetAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, report.Checkpoints);
+        await using var after = host.Services.CreateAsyncScope();
+        var store = after.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+        var positions = after.ServiceProvider.GetRequiredService<Stratara.Abstractions.CommitOrder.ICommittedPositionReader>();
+        for (var partition = 0; partition < 4; partition++)
+        {
+            Assert.Equal(
+                await positions.HeadAsync(partition, TestContext.Current.CancellationToken),
+                await store.GetAsync(name, partition, positions.Name, TestContext.Current.CancellationToken));
         }
     }
 

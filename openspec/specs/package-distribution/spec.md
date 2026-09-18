@@ -1,8 +1,8 @@
 # package-distribution Specification
 
 ## Purpose
-Let a consumer adopt as much or as little of the framework as it needs — one package or all
-twenty-five — without version arithmetic, without unwanted transitive dependencies, and without
+Let a consumer adopt as much or as little of the framework as it needs — one package or every one of
+them — without version arithmetic, without unwanted transitive dependencies, and without
 losing documentation, licence clarity or the ability to step into the source.
 
 ## Requirements
