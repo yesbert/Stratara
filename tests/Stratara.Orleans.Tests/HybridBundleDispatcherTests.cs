@@ -90,7 +90,8 @@ public sealed class HybridBundleDispatcherTests
         .AddLogging()
         .AddSingleton(new Mock<IGrainFactory>().Object)
         .AddSingleton(new Mock<IProjectionReplayState>().Object)
-        .AddSingleton(new Mock<IProjectionHandler>().Object);
+        .AddSingleton(new Mock<IProjectionHandler>().Object)
+        .AddSingleton(new Mock<Stratara.Sagas.Abstractions.ISagaHandler>().Object);
 
     private static EventBundle Bundle() =>
         new([new EventMessage(Guid.NewGuid(), 1, "{}", Guid.NewGuid(), "Created", "Aggregate", Guid.Empty, Guid.Empty, Guid.Empty, null)], "{}");

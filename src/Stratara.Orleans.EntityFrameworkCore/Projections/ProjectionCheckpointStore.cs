@@ -1,14 +1,51 @@
 using Stratara.Abstractions.Projections;
 using Microsoft.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
+using Stratara.Orleans.Projections;
 
 namespace Stratara.Orleans.EntityFrameworkCore.Projections;
 
 /// <summary>Checkpoints in the read store, one row per projection and partition.</summary>
 /// <typeparam name="TContext">A read context derived from the framework's read context, which declares the checkpoint table.</typeparam>
-public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TContext> contextFactory) : IProjectionCheckpointStore
+public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TContext> contextFactory) : IProjectionCheckpointStore, IFirstCheckpointStore
     where TContext : DbContext
 {
+    async Task<bool> IFirstCheckpointStore.ExistsAsync(string consumer, int partition, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await FindAsync(context, consumer, partition, cancellationToken) is not null;
+    }
+
+    /// <summary>
+    /// Inserts the row where none exists. A writer whose insert loses to another's finds the other's row and writes
+    /// nothing, so the first checkpoint is the first writer's, whatever the second one would have written.
+    /// </summary>
+    async Task<bool> IFirstCheckpointStore.CreateAsync(string consumer, int partition, string reader, long position, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await FindAsync(context, consumer, partition, cancellationToken) is not null)
+        {
+            return false;
+        }
+
+        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = consumer, Partition = partition, Position = position, Reader = reader });
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            context.ChangeTracker.Clear();
+            if (await FindAsync(context, consumer, partition, cancellationToken) is not null)
+            {
+                return false;
+            }
+
+            throw;
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
     {

@@ -11,7 +11,8 @@ namespace Stratara.Orleans.EntityFrameworkCore.Hosting;
 /// <summary>
 /// The reset against PostgreSQL: the runtime's reminder and membership tables, scoped to the host's service and
 /// cluster so another deployment in the same database keeps its state; the checkpoints of the store readers the host
-/// registers, so another consumer's checkpoints in the same read store stay;
+/// registers — each saga's among them, and the one its sagas shared before 4.2.0 — so another consumer's checkpoints
+/// in the same read store stay;
 /// and the grain directory through the cleanup the host supplies, because the directory's backend is its choice.
 /// </summary>
 /// <typeparam name="TReadContext">The read context that holds the checkpoint table.</typeparam>
@@ -50,7 +51,7 @@ internal sealed class ExecutionModelReset<TReadContext>(
         int checkpoints;
         await using (var context = await readContextFactory.CreateDbContextAsync(cancellationToken))
         {
-            var consumers = storeReaders.SelectMany(reader => reader.ConsumerNames).Distinct(StringComparer.Ordinal).ToList();
+            var consumers = storeReaders.SelectMany(reader => reader.ConsumerNames.Concat(reader.SupersededConsumerNames)).Distinct(StringComparer.Ordinal).ToList();
             checkpoints = consumers.Count == 0
                 ? 0
                 : await context.Set<ProjectionCheckpoint>().Where(c => consumers.Contains(c.Projection)).ExecuteDeleteAsync(cancellationToken);

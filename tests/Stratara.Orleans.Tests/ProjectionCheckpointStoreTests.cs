@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
+using Stratara.Abstractions.Projections;
 using Stratara.Orleans.EntityFrameworkCore.Projections;
+using Stratara.Orleans.Projections;
 
 namespace Stratara.Orleans.Tests;
 
@@ -39,6 +41,23 @@ public sealed class ProjectionCheckpointStoreTests
         var store = await StoreWithCheckpointAsync("partition-counter/16");
 
         Assert.Equal(42, await store.GetAsync("View", 2, "partition-counter/16"));
+    }
+
+    [Fact]
+    public async Task A_first_checkpoint_is_created_where_none_exists_and_one_that_exists_is_kept()
+    {
+        IFirstCheckpointStore store = await StoreWithCheckpointAsync("partition-counter/16");
+
+        Assert.True(await store.ExistsAsync("View", 2, TestContext.Current.CancellationToken));
+        Assert.False(await store.ExistsAsync("View", 3, TestContext.Current.CancellationToken));
+        Assert.False(await store.CreateAsync("View", 2, "partition-counter/16", 7, TestContext.Current.CancellationToken));
+        Assert.True(await store.CreateAsync("View", 3, "partition-counter/16", 0, TestContext.Current.CancellationToken));
+        Assert.True(await store.ExistsAsync("View", 3, TestContext.Current.CancellationToken));
+        Assert.False(await store.CreateAsync("View", 3, "partition-counter/16", 9, TestContext.Current.CancellationToken));
+
+        var checkpoints = (IProjectionCheckpointStore)store;
+        Assert.Equal(42, await checkpoints.GetAsync("View", 2, "partition-counter/16"));
+        Assert.Equal(0, await checkpoints.GetAsync("View", 3, "partition-counter/16"));
     }
 
     private static async Task<ProjectionCheckpointStore<CheckpointContext>> StoreWithCheckpointAsync(string reader)
