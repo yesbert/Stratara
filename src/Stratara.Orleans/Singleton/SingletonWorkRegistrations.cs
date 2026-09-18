@@ -28,9 +28,17 @@ internal sealed class SingletonWorkRegistrations
     }
 
     /// <summary>Records a work; a second registration without a name keeps the name of the first.</summary>
-    /// <exception cref="InvalidOperationException">The work is already registered under another name.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The work is already registered under another name, or another work is registered under this one.
+    /// </exception>
     public void Add(Type workType, string? name)
     {
+        if (name is not null && _works.FirstOrDefault(other => other.Key != workType && string.Equals(other.Value, name, StringComparison.Ordinal)).Key is { } taken)
+        {
+            throw new InvalidOperationException(
+                $"The singleton work {taken} is already registered under the name '{name}', and {workType} asks for it too. One name is one work — it names the grain that runs it — so only the first would ever run.");
+        }
+
         if (!_works.TryGetValue(workType, out var registered) || registered is null)
         {
             _works[workType] = name;

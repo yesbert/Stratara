@@ -47,40 +47,68 @@ public static class PartitionCounterBackfill
         return positioned;
     }
 
+    /// <summary>
+    /// Positions a partition's entries in batches, each under the partition's counter lock and a transaction of its
+    /// own, starting where the batch before it ended: a store with a long history is walked once rather than once per
+    /// batch, and the counter — with the appends waiting behind it — is held for a batch rather than for the run. An
+    /// entry appended between two batches is positioned before the entries the next batch positions, so a stream
+    /// written to while it is repaired is read out of order and its read model rebuilt, which is what repairing an
+    /// unpositioned entry already costs.
+    /// </summary>
     private static async Task<int> RunPartitionAsync(DbContext context, int partition, int partitionCount, CancellationToken cancellationToken)
+    {
+        var positioned = 0;
+        var from = 0L;
+        while (true)
+        {
+            var batch = await PositionBatchAsync(context, partition, partitionCount, from, cancellationToken);
+            if (batch.Count == 0)
+            {
+                return positioned;
+            }
+
+            positioned += batch.Count;
+            from = batch.Last;
+        }
+    }
+
+    /// <summary>
+    /// Positions the oldest entries after <paramref name="from"/> that have none, and says where it ended — so the
+    /// batch after it starts there instead of walking everything this one positioned.
+    /// </summary>
+    private static async Task<(int Count, long Last)> PositionBatchAsync(DbContext context, int partition, int partitionCount, long from, CancellationToken cancellationToken)
     {
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         var counter = await LockCounterAsync(context, partition, cancellationToken);
 
         var unpositioned = await context.Set<EventStreamEntry>()
-            .Where(e => e.BucketId % partitionCount == partition && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
+            .Where(e => e.SequenceNumber > from
+                        && e.BucketId % partitionCount == partition
+                        && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null)
             .OrderBy(e => e.SequenceNumber)
             .Select(e => e.SequenceNumber)
+            .Take(UpdateBatchSize)
             .ToListAsync(cancellationToken);
         if (unpositioned.Count == 0)
         {
             await transaction.CommitAsync(cancellationToken);
-            return 0;
+            return (0, from);
         }
 
-        for (var offset = 0; offset < unpositioned.Count; offset += UpdateBatchSize)
+        for (var i = 0; i < unpositioned.Count; i++)
         {
-            var batch = unpositioned.Skip(offset).Take(UpdateBatchSize).ToList();
-            for (var i = 0; i < batch.Count; i++)
-            {
-                var sequenceNumber = batch[i];
-                var position = counter + offset + i + 1;
-                await context.Set<EventStreamEntry>()
-                    .Where(e => e.SequenceNumber == sequenceNumber)
-                    .ExecuteUpdateAsync(set => set.SetProperty(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), position), cancellationToken);
-            }
+            var sequenceNumber = unpositioned[i];
+            var position = counter + i + 1;
+            await context.Set<EventStreamEntry>()
+                .Where(e => e.SequenceNumber == sequenceNumber)
+                .ExecuteUpdateAsync(set => set.SetProperty(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), position), cancellationToken);
         }
 
         await context.Set<PartitionPosition>()
             .Where(c => c.Partition == partition)
             .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, counter + unpositioned.Count), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return unpositioned.Count;
+        return (unpositioned.Count, unpositioned[^1]);
     }
 
     /// <summary>

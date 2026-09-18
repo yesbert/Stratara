@@ -41,6 +41,13 @@ public interface ICommittedPositionReader
     /// partition without entries. The default walks the partition batch by batch from the beginning and returns
     /// the last position; a reader overrides it with one query where its store can answer directly.
     /// </summary>
+    /// <remarks>
+    /// A reader whose positions come from the store's own transactions — the native reader on PostgreSQL — cannot
+    /// count what a write transaction still open might yet commit before the entries it already sees, so its head is
+    /// held back to what no open transaction can precede. Take a head while nothing appends, which is what seeding a
+    /// deployment does; taken while writers run, it may fall behind what is committed, and a consumer seeded at it
+    /// applies the entries in between once more.
+    /// </remarks>
     /// <param name="partition">The partition, from <c>0</c> to the configured partition count − 1.</param>
     /// <param name="cancellationToken">Propagated to the store.</param>
     /// <returns>The position to store for a consumer that starts at the head.</returns>

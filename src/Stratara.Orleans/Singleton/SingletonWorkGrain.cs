@@ -88,8 +88,10 @@ internal sealed class SingletonWorkGrain(
         {
             await ResolveWork(scope.ServiceProvider).RunAsync(cancellationToken);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
+            // A cancellation the work was not asked for — an HTTP client's timeout — is a failure like any other; only
+            // the stop this grain asked for passes through unlogged.
             logger.LogSingletonWorkFailed(exception, this.GetPrimaryKeyString());
             return;
         }
@@ -117,7 +119,9 @@ internal sealed class SingletonWorkStarter(IServiceScopeFactory scopeFactory, IG
     public void Participate(ISiloLifecycle lifecycle) =>
         lifecycle.Subscribe(nameof(SingletonWorkStarter), ServiceLifecycleStage.Active, StartAsync);
 
-    /// <exception cref="InvalidOperationException">A work's name is not the name it was registered under.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A work's name is not the name it was registered under, or two works carry one name.
+    /// </exception>
     private async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
@@ -128,9 +132,27 @@ internal sealed class SingletonWorkStarter(IServiceScopeFactory scopeFactory, IG
             registrations?.EnsureNamed(work);
         }
 
+        EnsureOneWorkPerName(works);
+
         foreach (var work in works)
         {
             await grainFactory.GetGrain<ISingletonWorkGrain>(work.Name).EnsureRunningAsync();
+        }
+    }
+
+    /// <summary>
+    /// A name is one work's: it names the grain that runs it, so a second work of the same name would never run and
+    /// nothing would say so.
+    /// </summary>
+    /// <param name="works">The works the silo registered.</param>
+    /// <exception cref="InvalidOperationException">Two works carry one name; the message names them and it.</exception>
+    internal static void EnsureOneWorkPerName(IReadOnlyList<ISingletonWork> works)
+    {
+        var shared = works.GroupBy(work => work.Name, StringComparer.Ordinal).FirstOrDefault(group => group.Count() > 1);
+        if (shared is not null)
+        {
+            throw new InvalidOperationException(
+                $"The singleton works {string.Join(" and ", shared.Select(work => work.GetType().Name))} are all named '{shared.Key}'. One name is one work — it names the grain that runs it — so only the first would ever run; give each its own Name.");
         }
     }
 }

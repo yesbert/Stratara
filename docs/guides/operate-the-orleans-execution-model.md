@@ -182,7 +182,10 @@ appended it without `PartitionCounterInterceptor`. The logged failure names the 
 `PartitionCounterBackfill.RunAsync` once; the partition continues from where it stopped. The backfill gives the
 entry a position after everything the partition had positioned, so a stream whose later versions were appended
 with the counter meanwhile is read with the late entry after them; a read model that then stops on a missing
-preceding fact is rebuilt. A host that refuses
+preceding fact is rebuilt. The backfill works in batches, each under the partition's counter for its own
+transaction, so it does not hold the counter — or the appends behind it — for a long history; an append that
+lands between two batches is positioned before the entries the next batch positions, which is the same
+inversion, on a stream that is being repaired while it is written to. A host that refuses
 to start naming a partition counter beyond its partition count was configured with a lower count than the
 store was counted with; restore the count.
 
