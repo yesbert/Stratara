@@ -73,9 +73,10 @@ public sealed class ProjectionGrainTests(PostgreSqlFixture postgres, RedisFixtur
             // A checkpoint changes behind a running grain only between a pause and a resume — the
             // way the rebuilder does it; the grain keeps its position otherwise.
             var grain = Grain(app.Services, partition);
-            await grain.PauseAsync();
+            var pauser = Guid.NewGuid();
+            await grain.PauseAsync(pauser, TimeSpan.FromMinutes(1));
             await checkpoints.SetAsync(ProjectionName, partition, ReaderName, 0);
-            await grain.ResumeAsync();
+            await grain.ResumeAsync(pauser);
             await grain.CatchUpAsync();
         }
 

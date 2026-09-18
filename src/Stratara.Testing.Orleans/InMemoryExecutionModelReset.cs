@@ -35,43 +35,53 @@ internal sealed class InMemoryExecutionModelReset(
 
         var targets = storeReaders.ToList();
         var partitions = commitOrder.Value.PartitionCount;
-        var paused = new List<(INudgeTarget Target, int Partition)>(targets.Count * partitions);
-        var moved = 0;
-        var resuming = new List<Exception>();
+        var holds = new List<StoreReaderHold>(targets.Count * partitions);
+        int moved;
         try
         {
             foreach (var target in targets)
             {
                 for (var partition = 0; partition < partitions; partition++)
                 {
-                    await target.PauseAsync(grainFactory, partition);
-                    paused.Add((target, partition));
+                    holds.Add(await target.PauseAsync(grainFactory, partition));
                 }
             }
 
             moved = await AtTheHeadAsync(targets, partitions, cancellationToken);
         }
-        finally
+        catch
         {
             // Every reader that was paused is resumed, whatever one of them answers: a reader left paused reads
-            // nothing for the rest of the host's life.
-            foreach (var (target, partition) in paused)
+            // nothing until its pause lapses.
+            foreach (var hold in holds)
             {
-                try
-                {
-                    await target.ResumeAsync(grainFactory, partition);
-                }
-                catch (Exception failure)
-                {
-                    resuming.Add(failure);
-                }
+                await hold.DisposeAsync();
+            }
+
+            throw;
+        }
+
+        var resuming = new List<Exception>();
+        foreach (var hold in holds)
+        {
+            try
+            {
+                await hold.ResumeAsync();
+            }
+            catch (Exception failure)
+            {
+                resuming.Add(failure);
+            }
+            finally
+            {
+                await hold.DisposeAsync();
             }
         }
 
         if (resuming.Count > 0)
         {
             throw new InvalidOperationException(
-                $"{resuming.Count} of the host's store readers stayed paused after the reset and read nothing until the host is created again.",
+                $"{resuming.Count} of the host's store reader groups stayed paused after the reset and read nothing until their pause lapses.",
                 resuming[0]);
         }
 

@@ -29,7 +29,7 @@ public sealed class ReplayCheckpointResetTests
         var decorated = Build(journal, truncator.Object);
         await decorated.TruncateAllAsync();
 
-        Assert.Equal(["pause", "pause", "reset View/0", "reset View/1", "truncate", "resume", "resume"], Normalised(journal));
+        Assert.Equal(["pause", "pause", "reset View/0", "reset View/1", "truncate", "pause", "pause", "reset View/0", "reset View/1", "resume", "resume"], Normalised(journal));
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class ReplayCheckpointResetTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => decorated.TruncateAllAsync());
 
         Assert.Equal(2, journal.Count(entry => entry == "resume"));
-        Assert.Equal(2, journal.Count(entry => entry.StartsWith("reset", StringComparison.Ordinal)));
+        Assert.Equal(4, journal.Count(entry => entry.StartsWith("reset", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -102,17 +102,26 @@ public sealed class ReplayCheckpointResetTests
             .AddScoped(_ => reader.Object)
             .BuildServiceProvider();
 
-        return new ReplayCheckpointResetTruncator(inner, grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }));
+        return new ReplayCheckpointResetTruncator(inner, grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
     }
 
-    /// <summary>Parallel pauses, resets and resumes land in any order within their step; the steps' order is what counts.</summary>
-    private static List<string> Normalised(List<string> journal) =>
-    [
-        .. journal.Where(e => e == "pause"),
-        .. journal.Where(e => e.StartsWith("reset", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
-        .. journal.Where(e => e == "truncate"),
-        .. journal.Where(e => e == "resume"),
-    ];
+    /// <summary>
+    /// Parallel pauses, resets and resumes land in any order within their step; the steps' order is what counts. The
+    /// resets are sorted on either side of the truncation.
+    /// </summary>
+    private static List<string> Normalised(List<string> journal)
+    {
+        var truncation = journal.IndexOf("truncate");
+        return
+        [
+            .. journal.Take(truncation).Where(e => e == "pause"),
+            .. journal.Take(truncation).Where(e => e.StartsWith("reset", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
+            .. journal.Where(e => e == "truncate"),
+            .. journal.Skip(truncation + 1).Where(e => e == "pause"),
+            .. journal.Skip(truncation + 1).Where(e => e.StartsWith("reset", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
+            .. journal.Where(e => e == "resume"),
+        ];
+    }
 
     private sealed class JournalGrain(List<string> journal) : IProjectionGrain
     {
@@ -124,7 +133,7 @@ public sealed class ReplayCheckpointResetTests
 
         public Task<long> PositionAsync() => Task.FromResult(0L);
 
-        public Task PauseAsync()
+        public Task PauseAsync(Guid pauser, TimeSpan lease)
         {
             lock (journal)
             {
@@ -134,7 +143,9 @@ public sealed class ReplayCheckpointResetTests
             return Task.CompletedTask;
         }
 
-        public Task ResumeAsync()
+        public Task RenewPauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
+
+        public Task ResumeAsync(Guid pauser)
         {
             lock (journal)
             {
@@ -143,5 +154,9 @@ public sealed class ReplayCheckpointResetTests
 
             return Task.CompletedTask;
         }
+
+        public Task PauseAsync() => throw new InvalidOperationException("the parameterless pause is an older silo's");
+
+        public Task ResumeAsync() => throw new InvalidOperationException("the parameterless resume is an older silo's");
     }
 }

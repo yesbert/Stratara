@@ -127,6 +127,30 @@ public sealed class StoreReaderLoopTests
         Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
     }
 
+    /// <summary>
+    /// Change let-a-paused-reader-always-come-back: a resume that forgets the cached position while the loop is reading
+    /// the checkpoint must not be undone when that read returns — the read may be of the position the resume forgot, and
+    /// on a quiet partition nothing else would ever read the checkpoint again.
+    /// </summary>
+    [Fact]
+    public async Task An_invalidation_during_a_checkpoint_read_is_not_overwritten_by_the_read()
+    {
+        var checkpoints = new GatedCheckpoints { Position = 5 };
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 5)), checkpoints, batchSize: 10);
+
+        var first = loop.CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count));
+        await checkpoints.Reading.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        loop.Invalidate();
+        checkpoints.Position = 0;
+        checkpoints.Release.SetResult(5);
+        Assert.Equal(0, await first);
+
+        var second = await loop.CatchUpAsync((batch, _) => Task.FromResult(batch.Entries.Count));
+
+        Assert.Equal(5, second);
+        Assert.Equal(2, checkpoints.Reads);
+    }
+
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)
     {
         var services = new ServiceCollection()
@@ -196,6 +220,36 @@ public sealed class StoreReaderLoopTests
         public Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
         {
             _stored[(projection, partition)] = (reader, position);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>A store whose first read waits for <see cref="Release"/> and returns what it is given; later reads return <see cref="Position"/>.</summary>
+    private sealed class GatedCheckpoints : IProjectionCheckpointStore
+    {
+        public long Position { get; set; }
+
+        public int Reads { get; private set; }
+
+        public TaskCompletionSource Reading { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<long> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
+        {
+            Reads++;
+            if (Reads > 1)
+            {
+                return Task.FromResult(Position);
+            }
+
+            Reading.SetResult();
+            return Release.Task;
+        }
+
+        public Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
+        {
+            Position = position;
             return Task.CompletedTask;
         }
     }

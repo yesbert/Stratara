@@ -43,6 +43,7 @@ internal sealed class StoreReaderLoop(
 
     private long _position;
     private bool _positionKnown;
+    private long _invalidations;
     private bool _dirty;
     private bool _stalledOnEntry;
     private bool _stalledOnRead;
@@ -51,8 +52,15 @@ internal sealed class StoreReaderLoop(
     /// <summary>The catch-up in flight, or <see langword="null"/> when none is.</summary>
     public Task<int>? Running => _running is { IsCompleted: false } running ? running : null;
 
-    /// <summary>Forgets the cached position, so the next catch-up reads the checkpoint store first.</summary>
-    public void Invalidate() => _positionKnown = false;
+    /// <summary>
+    /// Forgets the cached position, so the next catch-up reads the checkpoint store first — also where a read of the
+    /// checkpoint store was in flight when this was called, since it may have read the position this forgets.
+    /// </summary>
+    public void Invalidate()
+    {
+        _positionKnown = false;
+        _invalidations++;
+    }
 
     /// <summary>
     /// Withdraws what the loop reported: its stall and its lag. Called when the grain deactivates, so a
@@ -189,8 +197,9 @@ internal sealed class StoreReaderLoop(
 
         if (!_positionKnown)
         {
+            var invalidations = _invalidations;
             _position = await checkpoints.GetAsync(consumer, partition, readerName, cancellationToken);
-            _positionKnown = true;
+            _positionKnown = invalidations == _invalidations;
         }
 
         var total = 0;

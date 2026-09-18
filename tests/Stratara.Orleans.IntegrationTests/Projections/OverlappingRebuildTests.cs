@@ -12,6 +12,7 @@ using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Store;
+using Stratara.Orleans.Projections;
 using Stratara.Projections.Abstractions;
 
 namespace Stratara.Orleans.IntegrationTests.Projections;
@@ -72,7 +73,73 @@ public sealed class OverlappingRebuildTests(PostgreSqlFixture postgres, RedisFix
         await app.StopAsync();
     }
 
-    private async Task<IHost> StartAsync(RebuildProbeControl control, string read, int siloPort, int gatewayPort)
+    /// <summary>
+    /// Scenario <em>A resume is repeated while a second rebuild holds the readers</em>: the first pauser's resume is
+    /// delivered twice while a rebuild holds its truncation. The readers hold each pauser apart, so the repeated resume
+    /// releases nothing of the rebuild's and they stay paused — their checkpoints stay at the beginning — until the
+    /// rebuild ends; the model then holds every fact.
+    /// </summary>
+    [Fact]
+    public async Task A_resume_delivered_twice_does_not_release_the_other_rebuilds_pause()
+    {
+        var control = new RebuildProbeControl();
+        var read = postgres.ConnectionStringFor("poc_overlap_twice_read");
+        using var app = await StartAsync(control, read, siloPort: 11463, gatewayPort: 30463, store: "poc_overlap_twice_store");
+        var tenantId = Guid.NewGuid();
+
+        foreach (var streamId in Enumerable.Range(0, Streams).Select(_ => Guid.NewGuid()))
+        {
+            await AppendAsync(app.Services, tenantId, streamId, new CounterCreated(streamId), create: true);
+            for (var i = 1; i < FactsPerStream; i++)
+            {
+                await AppendAsync(app.Services, tenantId, streamId, new CounterIncremented(streamId, i), create: false);
+            }
+        }
+
+        var expected = Streams * FactsPerStream;
+        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == expected), "the model was not built before the rebuilds");
+
+        var partitions = new CommitOrderOptions().PartitionCount;
+        var grains = Enumerable.Range(0, partitions)
+            .Select(partition => app.Services.GetRequiredService<IGrainFactory>().GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(nameof(RebuildProbeProjection), partition)))
+            .ToList();
+        var first = Guid.NewGuid();
+        await Task.WhenAll(grains.Select(grain => grain.PauseAsync(first, TimeSpan.FromMinutes(1))));
+
+        control.HoldTruncationNumber = 1;
+        var second = app.Services.GetRequiredService<IProjectionRebuilder>().RebuildAsync(nameof(RebuildProbeProjection));
+        Assert.True(await WaitUntilAsync(() => Task.FromResult(control.Truncations == 1)), "the rebuild never reached the truncation");
+
+        await Task.WhenAll(grains.Select(grain => grain.ResumeAsync(first)));
+        await Task.WhenAll(grains.Select(grain => grain.ResumeAsync(first)));
+        await Task.Delay(Settle);
+        Assert.Equal(0, await CheckpointsAsync(app.Services));
+
+        control.HoldTruncation.TrySetResult();
+        await second;
+
+        Assert.True(
+            await WaitUntilAsync(async () => await CountAsync(app.Services) == expected),
+            $"after the rebuild the model holds {await CountAsync(app.Services)} of {expected} rows");
+        await app.StopAsync();
+    }
+
+    /// <summary>The sum of the probe's checkpoints over every partition: zero while no reader has read since the reset.</summary>
+    private static async Task<long> CheckpointsAsync(IServiceProvider services)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var checkpoints = scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+        var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>().Name;
+        var sum = 0L;
+        for (var partition = 0; partition < new CommitOrderOptions().PartitionCount; partition++)
+        {
+            sum += await checkpoints.GetAsync(nameof(RebuildProbeProjection), partition, reader);
+        }
+
+        return sum;
+    }
+
+    private async Task<IHost> StartAsync(RebuildProbeControl control, string read, int siloPort, int gatewayPort, string store = "poc_overlap_store")
     {
         var orleansConnectionString = postgres.ConnectionStringFor("poc_orleans");
         await PocSilo.EnsureSchemaAsync(orleansConnectionString);
@@ -80,7 +147,7 @@ public sealed class OverlappingRebuildTests(PostgreSqlFixture postgres, RedisFix
         var builder = PocHosting.CreateBuilder();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor("poc_overlap_store"),
+            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor(store),
             ["ConnectionStrings:rabbitmq"] = rabbit.ConnectionString,
         });
         builder.UseOrleans(silo => PocSilo.Configure(silo, orleansConnectionString, redis.ConnectionString, siloPort, gatewayPort));

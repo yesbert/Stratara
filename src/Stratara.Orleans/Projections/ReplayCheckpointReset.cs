@@ -11,8 +11,9 @@ namespace Stratara.Orleans.Projections;
 /// <summary>
 /// The full replay's truncation, extended for store-reading projections: before the host's truncator
 /// empties the read models, every projection grain is paused and its checkpoints are returned to the
-/// beginning — whatever reader name they were written under; the grains are resumed afterwards, however the
-/// truncation ended, and a pause that fails leaves none of them paused. A replay keeps them
+/// beginning — whatever reader name they were written under — and returned there once more after the truncation, so
+/// what a reader applied before it although it should have been paused is applied again; the grains are resumed
+/// afterwards, however the truncation ended, and a pause that fails leaves none of them paused. A replay keeps them
 /// suspended until it ends, and they then read the store from the beginning — so no checkpoint is left
 /// past an entry whose effect the replay removed, and a truncation that fails part-way is repaired by
 /// re-reading.
@@ -21,7 +22,8 @@ internal sealed class ReplayCheckpointResetTruncator(
     IProjectionViewTruncator inner,
     IGrainFactory grainFactory,
     IServiceScopeFactory scopeFactory,
-    IOptions<CommitOrderOptions> commitOrder) : IProjectionViewTruncator
+    IOptions<CommitOrderOptions> commitOrder,
+    StoreReaderLease lease) : IProjectionViewTruncator
 {
     private readonly int _partitionCount = commitOrder.Value.PartitionCount;
 
@@ -35,29 +37,23 @@ internal sealed class ReplayCheckpointResetTruncator(
             .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => Reader(StoreReaderGrainKey.Of(name, partition))))
             .ToList();
 
-        var paused = await StoreReaderPause.PauseAllAsync(grains);
-        try
-        {
-            var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
-            var reader = services.GetRequiredService<ICommittedPositionReader>().Name;
-            await Task.WhenAll(names.SelectMany(name => Enumerable.Range(0, _partitionCount)
-                .Select(partition => checkpoints.ResetAsync(name, partition, reader, cancellationToken))));
+        await using var hold = await StoreReaderPause.PauseAllAsync(grains, lease);
+        var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
+        var reader = services.GetRequiredService<ICommittedPositionReader>().Name;
+        await TruncationBetweenResets.RunAsync(
+            token => Task.WhenAll(names.SelectMany(name => Enumerable.Range(0, _partitionCount)
+                .Select(partition => checkpoints.ResetAsync(name, partition, reader, token)))),
+            inner.TruncateAllAsync,
+            hold.QuiesceAsync,
+            cancellationToken);
 
-            await inner.TruncateAllAsync(cancellationToken);
-        }
-        catch
-        {
-            await StoreReaderPause.ResumeQuietlyAsync(paused);
-            throw;
-        }
-
-        await StoreReaderPause.ResumeAllAsync(paused);
+        await hold.ResumeAsync();
     }
 
     private PausedReader Reader(string key)
     {
         var grain = grainFactory.GetGrain<IProjectionGrain>(key);
-        return new PausedReader(key, grain.PauseAsync, grain.ResumeAsync);
+        return new PausedReader(key, grain.PauseAsync, grain.RenewPauseAsync, grain.ResumeAsync);
     }
 
     /// <summary>
