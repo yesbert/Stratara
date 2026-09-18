@@ -11,7 +11,7 @@ using Stratara.Orleans.IntegrationTests.Store;
 namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 
 /// <summary>
-/// The native reader takes the table and column names from the context's model, so a consumer whose
+/// The native reader and the partition-counter backfill take the table and column names from the context's model, so a consumer whose
 /// model does not follow the snake-case convention reads the store as a conventional one does.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
@@ -45,6 +45,37 @@ public sealed class NativeReaderModelNamesTests(PostgreSqlFixture postgres)
         await DrainAsync(reader, partition, before, seen);
 
         Assert.Subset(seen, written.Select(entry => entry.Id).ToHashSet());
+    }
+
+    [Fact]
+    public async Task The_partition_counter_backfill_positions_a_store_whose_names_are_not_snake_case()
+    {
+        await using var store = await PocStore<PascalCaseWriteDbContext>.CreateAsync(
+            postgres.ConnectionStringFor(Database + "_backfill"),
+            maintainCounter: false);
+        var bucketId = Random.Shared.Next(0, 4096);
+        var partition = PartitionMap.PartitionOf(bucketId, store.Options.PartitionCount);
+        await using var context = await store.CreateContextAsync();
+        await context.Set<EventStreamEntry>().ExecuteDeleteAsync();
+        var start = await context.Set<PartitionPosition>().Where(c => c.Partition == partition).Select(c => c.Position).SingleAsync();
+        var written = new[]
+        {
+            PocStore<PascalCaseWriteDbContext>.NewEntry(Guid.NewGuid(), 1, bucketId, Guid.NewGuid()),
+            PocStore<PascalCaseWriteDbContext>.NewEntry(Guid.NewGuid(), 1, bucketId, Guid.NewGuid()),
+        };
+        context.Set<EventStreamEntry>().AddRange(written);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        Assert.Equal(written.Length, await PartitionCounterBackfill.RunAsync(context, store.Options));
+
+        var ids = written.Select(entry => entry.Id).ToList();
+        var positions = await context.Set<EventStreamEntry>()
+            .Where(e => ids.Contains(e.Id))
+            .OrderBy(e => e.SequenceNumber)
+            .Select(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn))
+            .ToListAsync();
+        Assert.Equal(new long?[] { start + 1, start + 2 }, positions);
     }
 
     private static async Task<long> DrainAsync(PostgresTransactionIdReader<PascalCaseWriteDbContext> reader, int partition, long position, HashSet<Guid> seen)
