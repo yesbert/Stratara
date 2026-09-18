@@ -84,7 +84,8 @@ internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
 /// scheduler, so a handler that computes without awaiting anything neither stops the silo's other units nor keeps
 /// the next hand-over from being accepted and leased. A unit renews its permit while it runs, so a permit outlives
 /// its unit only by a lease; both renewals run from timers of their own. A hand-over the activation already holds is
-/// not accepted twice.
+/// not accepted twice, and a resumed hand-over another runner already took, or of an intent that completed, is dropped
+/// without running.
 /// </summary>
 [CommandsRolePlacementFilter]
 internal sealed class HeavyWorkGrain(
@@ -119,7 +120,13 @@ internal sealed class HeavyWorkGrain(
         Task run;
         try
         {
-            var lease = await IntentLease.StartAsync(scope.ServiceProvider, intentId);
+            if (await IntentLease.StartAsync(scope.ServiceProvider, intentId, envelope.ClaimedAt) is not { } lease)
+            {
+                _held.Remove(intentId);
+                scope.Dispose();
+                return;
+            }
+
             run = runner.RunAsync(
                 () => CommandExecution.RunIntentAsync(
                     scope.ServiceProvider,

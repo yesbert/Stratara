@@ -24,7 +24,7 @@ public sealed class RecordedCommandKindTests(PostgreSqlFixture postgres)
     {
         await using var store = await PocStore<PocWriteDbContext>.CreateAsync(postgres.ConnectionStringFor(Database));
         await ClearOutboxAsync(store);
-        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory);
+        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory, TimeProvider.System);
         var recorded = Guid.CreateVersion7();
 
         await intents.RecordAsync(recorded, Envelope, Guid.NewGuid(), heavy: false, TestContext.Current.CancellationToken);
@@ -39,7 +39,7 @@ public sealed class RecordedCommandKindTests(PostgreSqlFixture postgres)
     {
         await using var store = await PocStore<PocWriteDbContext>.CreateAsync(postgres.ConnectionStringFor(Database));
         await ClearOutboxAsync(store);
-        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory);
+        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory, TimeProvider.System);
         var previous = Guid.CreateVersion7();
         var kept = Guid.CreateVersion7();
         await using (var context = await store.CreateContextAsync())

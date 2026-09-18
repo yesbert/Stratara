@@ -17,7 +17,7 @@ public sealed class OutboxEntry : IEntity, IBucket, IHasRowVersion
     /// <summary>Fully-qualified, version-independent type name of the payload — used by the worker to deserialise.</summary>
     public required string DataTypeName { get; set; }
 
-    /// <summary>When the entry was queued.</summary>
+    /// <summary>When the entry was queued; recorded commands due together are resumed in the order of this time.</summary>
     public DateTimeOffset Timestamp { get; set; }
 
     /// <inheritdoc/>
@@ -29,8 +29,15 @@ public sealed class OutboxEntry : IEntity, IBucket, IHasRowVersion
     /// <inheritdoc/>
     public uint RowVersion { get; set; }
 
-    /// <summary>How many times the entry has been handed over for execution since it was stored or returned.</summary>
+    /// <summary>
+    /// How many times the entry has been handed over for execution since it was stored or returned — for a recorded
+    /// command the hand-over of its dispatch is counted when it is stored — less the attempts given back for a
+    /// concurrency conflict or a stop.
+    /// </summary>
     public int AttemptCount { get; set; }
+
+    /// <summary>How many of the entry's attempts since it was stored or returned ended in a concurrency conflict.</summary>
+    public int ConflictCount { get; set; }
 
     /// <summary>When the entry was last handed over for execution; <see langword="null"/> until it first is.</summary>
     public DateTimeOffset? LastHandedOverAt { get; set; }

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Session;
 using Stratara.Orleans.Aggregates;
 using Stratara.Orleans.IntegrationTests.Hosting;
@@ -46,14 +47,21 @@ internal static class RecordedIntentHost
             ["ConnectionStrings:rabbitmq"] = settings.Rabbit,
         });
         builder.Logging.AddProvider(settings.Probes.Logs);
+        builder.Logging.AddFilter(typeof(IntentLease).FullName, LogLevel.Debug);
         builder.UseOrleans(silo => PocSilo.Configure(silo, settings.Orleans, settings.Redis, settings.SiloPort, settings.GatewayPort));
         builder.AddBackendServices();
         builder.Services
             .AddSingleton(settings.Probes)
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<TenantProbe>, TenantProbeHandler>()
+            .AddScoped<ICommandHandler<FailingProbe>, FailingProbeHandler>()
+            .AddScoped<ICommandHandler<ConflictingProbe>, ConflictingProbeHandler>()
+            .AddScoped<ICommandHandler<OrderedProbe>, OrderedProbeHandler>()
             .AddAggregatesFromAssemblyContaining<IntentScenario>()
             .AddTrustedType<TenantProbe>()
+            .AddTrustedType<FailingProbe>()
+            .AddTrustedType<ConflictingProbe>()
+            .AddTrustedType<OrderedProbe>()
             .AddStrataraAggregateGrains()
             .AddStrataraOrleansCommandDispatcher(options => options.IntentGrace = TimeSpan.FromSeconds(2))
             .AddStrataraIntentStore<PocWriteDbContext>()
@@ -72,6 +80,7 @@ internal static class RecordedIntentHost
             });
         }
 
+        settings.Services?.Invoke(builder.Services);
         var host = builder.Build();
         await using (var scope = host.Services.CreateAsyncScope())
         {
@@ -90,15 +99,20 @@ internal static class RecordedIntentHost
         await host.StartAsync(startTimeout.Token);
     }
 
-    /// <summary>Records a probe command for <paramref name="tenantId"/> without handing it over, as a host that died right after the record leaves it.</summary>
-    public static async Task<Guid> RecordAsync(IHost host, Guid tenantId, Guid probeId)
+    /// <summary>
+    /// Records a probe command for <paramref name="tenantId"/> without handing it over, as a host that died right after
+    /// the record leaves it, at the time the host's clock gives and under the aggregate and heavy flag given.
+    /// </summary>
+    public static async Task<Guid> RecordAsync(IHost host, Guid tenantId, Guid probeId, Guid? aggregateId = null, bool heavy = false, Guid? intentId = null)
     {
         await using var scope = host.Services.CreateAsyncScope();
         var session = PocSessions.For(tenantId);
         scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(session);
-        var intentId = Guid.CreateVersion7();
-        await scope.ServiceProvider.GetRequiredService<IntentRecorder>().RecordAsync(intentId, new TenantProbe(Guid.NewGuid(), probeId), session, aggregateId: null, heavy: false, CancellationToken.None);
-        return intentId;
+        var id = intentId ?? Guid.CreateVersion7();
+        var recordedAt = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
+        await scope.ServiceProvider.GetRequiredService<IntentRecorder>().RecordAsync(
+            new IntentDispatch(id, session, aggregateId, heavy, recordedAt), new TenantProbe(Guid.NewGuid(), probeId), CancellationToken.None);
+        return id;
     }
 
     public static async Task<T?> ScalarAsync<T>(string store, string sql, params (string Name, object Value)[] parameters)
@@ -142,7 +156,8 @@ internal sealed record RecordedIntentSettings(
     RecordedIntentProbes Probes,
     TimeSpan PollingInterval,
     int BatchSize,
-    BusEnvelopeIntegrityMode? IntegrityMode = null);
+    BusEnvelopeIntegrityMode? IntegrityMode = null,
+    Action<IServiceCollection>? Services = null);
 
 /// <summary>A command whose handler records the tenant it ran under.</summary>
 public sealed record TenantProbe(Guid AggregateId, Guid ProbeId) : ICommand;
@@ -160,6 +175,16 @@ public sealed class RecordedIntentProbes
 
     public CapturedLogs Logs { get; } = new();
 
+    /// <summary>How often each probe's handler ran, whether it completed or threw.</summary>
+    public ConcurrentDictionary<Guid, int> Runs { get; } = new();
+
+    /// <summary>The sequence numbers of the ordered probes, per aggregate, in the order their handlers ran.</summary>
+    public ConcurrentDictionary<Guid, ConcurrentQueue<int>> Order { get; } = new();
+
+    public void Counted(Guid probeId) => Runs.AddOrUpdate(probeId, 1, static (_, count) => count + 1);
+
+    public int RunsOf(Guid probeId) => Runs.GetValueOrDefault(probeId);
+
     /// <summary>Holds the probe's handler until the returned source is completed.</summary>
     public TaskCompletionSource Hold(Guid probeId) =>
         Gates.GetOrAdd(probeId, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
@@ -170,11 +195,48 @@ public sealed class TenantProbeHandler(RecordedIntentProbes probes, ISessionCont
     public async Task HandleAsync(TenantProbe command, CancellationToken cancellationToken)
     {
         probes.Started[command.ProbeId] = DateTimeOffset.UtcNow;
+        probes.Counted(command.ProbeId);
         if (probes.Gates.TryGetValue(command.ProbeId, out var gate))
         {
             await gate.Task.WaitAsync(cancellationToken);
         }
 
         probes.Ran[command.ProbeId] = (sessions.Current?.TenantId ?? Guid.Empty, DateTimeOffset.UtcNow);
+    }
+}
+
+/// <summary>A command whose handler fails on every attempt.</summary>
+public sealed record FailingProbe(Guid AggregateId, Guid ProbeId) : ICommand, IAggregateScopedCommand;
+
+/// <summary>A command whose handler meets a concurrency conflict on every attempt.</summary>
+public sealed record ConflictingProbe(Guid AggregateId, Guid ProbeId) : ICommand, IAggregateScopedCommand;
+
+/// <summary>A command whose handler records its sequence number in its aggregate's order; a test may slow its record.</summary>
+public sealed record OrderedProbe(Guid AggregateId, int Sequence, bool Slow = false) : ICommand, IAggregateScopedCommand;
+
+public sealed class FailingProbeHandler(RecordedIntentProbes probes) : ICommandHandler<FailingProbe>
+{
+    public Task HandleAsync(FailingProbe command, CancellationToken cancellationToken)
+    {
+        probes.Counted(command.ProbeId);
+        throw new InvalidOperationException($"probe {command.ProbeId} fails on every attempt");
+    }
+}
+
+public sealed class ConflictingProbeHandler(RecordedIntentProbes probes) : ICommandHandler<ConflictingProbe>
+{
+    public Task HandleAsync(ConflictingProbe command, CancellationToken cancellationToken)
+    {
+        probes.Counted(command.ProbeId);
+        throw new ConcurrencyException(command.AggregateId, nameof(ConflictingProbe));
+    }
+}
+
+public sealed class OrderedProbeHandler(RecordedIntentProbes probes) : ICommandHandler<OrderedProbe>
+{
+    public Task HandleAsync(OrderedProbe command, CancellationToken cancellationToken)
+    {
+        probes.Order.GetOrAdd(command.AggregateId, _ => new ConcurrentQueue<int>()).Enqueue(command.Sequence);
+        return Task.CompletedTask;
     }
 }

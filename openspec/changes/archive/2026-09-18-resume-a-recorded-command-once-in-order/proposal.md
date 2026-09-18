@@ -69,7 +69,8 @@ _None._
 - Affected code:
   - `src/Stratara.Abstractions/Abstractions/Outbox/ICommandIntentStore.cs` — additive members with
     default implementations: `RecordAsync(…, DateTimeOffset recordedAt, …)`,
-    `TryRenewFromAsync(intentId, claimedAt, now, …)`, `RecordConflictAsync(intentId, failure, …)`,
+    `TryRenewFromAsync(intentId, claimedAt, now, …)`, `TryRenewAsync(intentId, now, …)` (added during
+    implementation for a late unstamped hand-over), `RecordConflictAsync(intentId, failure, …)`,
     `ReturnAttemptAsync(intentId, …)`
   - `src/Stratara.Abstractions/Outbox/OutboxEntry.cs` — `ConflictCount`; `RecordedIntent` gains
     `ConflictCount` (additive, defaulted)

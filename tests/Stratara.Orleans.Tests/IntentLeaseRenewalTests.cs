@@ -26,6 +26,7 @@ public sealed class IntentLeaseRenewalTests
         intents.Setup(store => store.RenewAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .Callback(() => Interlocked.Increment(ref renewals))
             .Returns(Task.CompletedTask);
+        intents.Setup(store => store.TryRenewAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var services = new ServiceCollection()
             .AddSingleton(intents.Object)
             .AddSingleton(TimeProvider.System)
@@ -37,7 +38,7 @@ public sealed class IntentLeaseRenewalTests
         var renewalsWhileBlocked = await Task.Factory.StartNew(
             async () =>
             {
-                await using var lease = await IntentLease.StartAsync(services, Guid.NewGuid());
+                await using var lease = await IntentLease.StartAsync(services, Guid.NewGuid(), claimedAt: null);
                 var before = Volatile.Read(ref renewals);
 #pragma warning disable S2925 // Blocking the scheduler's only thread is what the test measures; an await would free it.
                 Thread.Sleep(Blocked);

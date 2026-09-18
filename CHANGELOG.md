@@ -83,6 +83,12 @@ applies to the entire NuGet family.
   always used, so an existing `catch (InvalidOperationException)` and a log search on the text keep working; a host
   catches it without referencing any store or broker package.
 
+- **`ICommandIntentStore`: `RecordAsync(…, recordedAt, …)`, `TryRenewAsync`, `TryRenewFromAsync`,
+  `RecordConflictAsync` and `ReturnAttemptAsync`**, each with a default that does what a store written against 4.1
+  did — the record's time is the store's own and its count starts at zero, every hand-over runs, a conflict is
+  recorded as a failure, a stop gives nothing back.
+  `OutboxEntry.ConflictCount` and `RecordedIntent.ConflictCount` (defaulted) carry the conflict count.
+
 ### Changed
 
 - **Security: `"SessionContext": { "AllowTenantHeader": true }` in the host's configuration now turns the tenant-header
@@ -173,12 +179,47 @@ applies to the entire NuGet family.
 - **`PartitionCounterBackfill` positions a batch with one statement on PostgreSQL** instead of one per entry;
   other providers keep the per-entry update, and the positions it hands out are the same.
 
+- **Orleans: a recorded command is counted the bus's way — schema change.** The record counts the hand-over of the
+  dispatch as the first of `MessageRetryOptions.MaxDeliveryAttempts` when it is written, so a handler that keeps
+  failing runs as often as the bound says (before, once more), and a host that dies before that hand-over has used
+  the attempt, as a crashed delivery does on the bus — under a bound of 1 such a command is kept for an operator
+  without running. A concurrency conflict — `ConcurrencyException`, what the bus transports count as one — gives its
+  attempt back and counts against `MessageRetryOptions.MaxConflictRequeues` instead (before, against the delivery
+  bound of 3). A stop gives its attempt back, for the running handler and for the commands queued behind it. The
+  count lives in the new column `outbox_entry.conflict_count`: generate and apply an EF Core migration before the
+  first 4.2 host starts, as for 4.1 (see the migration guide). A command recorded under 4.1 carries no counted first
+  attempt and runs as 4.1 ran it. An operator returning a kept command also resets `conflict_count` and
+  `last_failure`.
+
 ### Deprecated
 
 - **`CommitOrderOptions.MaintainPartitionCounter`** is obsolete: the framework never read it. A write context that
   maintains the partition counter adds `PartitionCounterInterceptor`. The member is removed with the next major.
 
 ### Fixed
+
+- **Orleans: a resumed command runs once however its resumptions meet.** Two claimers stamping the same millisecond
+  — the singleton drain during a failover, a bus outbox worker beside the drain during adoption — both handed the
+  command over, and a command naming no aggregate, or one whose first run had ended, ran twice; so did a hand-over
+  arriving after the command completed. The hand-over now carries the claim's stamp and runs only if its receiver
+  takes the record over from that stamp; one that finds it moved or the record gone is dropped and logged as
+  `117_124` (`IntentHandOverDropped`, Debug).
+- **Orleans: commands one scope dispatches to one aggregate are resumed in dispatch order.** The record's time was
+  taken after the payload was serialized, so a slower first record resumed after the second — `SetPrice 10` after
+  `SetPrice 20`. It is now taken when the dispatch starts, strictly increasing per aggregate within the scope, and due
+  commands are resumed by that time, then by id.
+- **Orleans: a silo that stops no longer takes an attempt from the commands it was running or had queued.** The
+  stopped handler, and every recorded command queued behind it that the stop gives up, gives back its attempt, so
+  rolling deploys during a long handler no longer keep commands for an operator.
+- **Orleans: a hand-over the fence dropped no longer holds its command.** An aggregate's activation refused a later,
+  valid hand-over of the same command while the dropped one waited in its queue.
+- **Orleans: a dispatch's hand-over that arrives after a resumption completed the command is dropped.** A hand-over
+  arriving later than a sixth of the grace checks that its command is still recorded and not kept.
+- **`Stratara.Testing.Orleans`: a recorded command is resumed on the test host.** Its SQLite write store kept points
+  in time as text, which the intent store's due query cannot compare; they are kept as numbers now.
+- **Orleans: a recorded command's time comes from the registered `TimeProvider`.** It was the wall clock while the
+  drain compared it with the registered clock, so a host or test with its own clock saw commands never become due, or
+  become due at once.
 
 - **An anonymous caller reaching an unguarded save or dispatch is no longer a server error.** The event source, the
   command audit, the bus dispatcher and the execution model's dispatcher threw a plain `InvalidOperationException`

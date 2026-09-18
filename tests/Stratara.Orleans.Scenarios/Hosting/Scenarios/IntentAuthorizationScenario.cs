@@ -100,7 +100,7 @@ public sealed class IntentAuthorizationScenario(bool sessionDriven) : IPocScenar
                 scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(session);
                 var intentId = Guid.CreateVersion7();
                 var record = typeof(IntentRecorder).GetMethod(nameof(IntentRecorder.RecordAsync))!.MakeGenericMethod(_command);
-                await (Task)record.Invoke(scope.ServiceProvider.GetRequiredService<IntentRecorder>(), [intentId, probe, session, null, false, CancellationToken.None])!;
+                await (Task)record.Invoke(scope.ServiceProvider.GetRequiredService<IntentRecorder>(), [new IntentDispatch(intentId, session, AggregateId: null, Heavy: false, scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow()), probe, CancellationToken.None])!;
                 return intentId.ToString();
             }
             case "ran":

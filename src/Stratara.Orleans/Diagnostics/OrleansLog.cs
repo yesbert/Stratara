@@ -75,8 +75,14 @@ internal static partial class OrleansLog
     [LoggerMessage(
         EventId = LogEvents.Orleans.CommandKept,
         Level = LogLevel.Warning,
-        Message = "Command {IntentId} was kept for an operator after {Attempts} attempts; last failure: {LastFailure}.")]
-    public static partial void LogCommandKept(this ILogger logger, Guid intentId, int attempts, string lastFailure);
+        Message = "Command {IntentId} was kept for an operator after {Attempts} attempts and {Conflicts} conflicts; last failure: {LastFailure}.")]
+    public static partial void LogCommandKept(this ILogger logger, Guid intentId, int attempts, int conflicts, string lastFailure);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentHandOverDropped,
+        Level = LogLevel.Debug,
+        Message = "A hand-over of command {IntentId} was dropped without running its handler: another runner already took the command, or it completed or was kept.")]
+    public static partial void LogIntentHandOverDropped(this ILogger logger, Guid intentId);
 
     [LoggerMessage(
         EventId = LogEvents.Orleans.IntentUnsignedResumed,

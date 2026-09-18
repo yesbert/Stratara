@@ -198,14 +198,14 @@ public sealed class IntentRecordIntegrityTests
     {
         CommandEnvelope? stored = null;
         var intents = new Mock<ICommandIntentStore>();
-        intents.Setup(s => s.RecordAsync(It.IsAny<Guid>(), It.IsAny<CommandEnvelope>(), It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .Callback((Guid _, CommandEnvelope envelope, Guid? _, bool _, CancellationToken _) => stored = envelope)
+        intents.Setup(s => s.RecordAsync(It.IsAny<Guid>(), It.IsAny<CommandEnvelope>(), It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid _, CommandEnvelope envelope, Guid? _, bool _, DateTimeOffset _, CancellationToken _) => stored = envelope)
             .Returns(Task.CompletedTask);
         var serializer = new Mock<ISecureJsonSerializer>();
         serializer.Setup(s => s.SerializeAsync(It.IsAny<It.IsAnyType>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync("{\"body\":1}");
         var recorder = new IntentRecorder(intents.Object, serializer.Object, new TypedLogger<IntentRecorder>(new RecordingLogger()), signer);
 
-        await recorder.RecordAsync(Guid.NewGuid(), new SignedProbe(), Session, Guid.NewGuid(), heavy: true, CancellationToken.None);
+        await recorder.RecordAsync(new IntentDispatch(Guid.NewGuid(), Session, Guid.NewGuid(), Heavy: true, DateTimeOffset.UtcNow), new SignedProbe(), CancellationToken.None);
 
         return stored ?? throw new InvalidOperationException("nothing was recorded");
     }

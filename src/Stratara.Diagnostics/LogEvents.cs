@@ -336,5 +336,8 @@ public static class LogEvents
         public const int IntentRoutingRefused = 117_122;
         /// <summary>A store reader's pause lapsed because its pauser stopped renewing it within the lease; the reader resumes once no pause is left (warning).</summary>
         public const int StoreReaderPauseLapsed = 117_123;
+
+        /// <summary>A hand-over found its command already taken by another runner, completed or kept, and was dropped without running the handler (debug).</summary>
+        public const int IntentHandOverDropped = 117_124;
     }
 }

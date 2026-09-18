@@ -22,13 +22,14 @@ public sealed class IntentFailureLoggingTests
         var logger = new RecordingLogger();
         var intents = new Mock<ICommandIntentStore>();
         intents.Setup(store => store.RecordFailureAsync(intentId, It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        intents.Setup(store => store.TryRenewAsync(intentId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var services = new ServiceCollection()
             .AddSingleton(intents.Object)
             .AddSingleton(TimeProvider.System)
             .AddSingleton(Options.Create(new OrleansDispatchOptions { IntentGrace = TimeSpan.FromMinutes(1) }))
             .AddSingleton<ILogger<IntentLease>>(new TypedLogger<IntentLease>(logger))
             .BuildServiceProvider();
-        await using var lease = await IntentLease.StartAsync(services, intentId);
+        await using var lease = await IntentLease.StartAsync(services, intentId, claimedAt: null) ?? throw new InvalidOperationException("the lease was not started");
 
         await lease.RecordFailureAsync(new InvalidOperationException("the handler failed"), "App.Commands.Approve", aggregateId);
 

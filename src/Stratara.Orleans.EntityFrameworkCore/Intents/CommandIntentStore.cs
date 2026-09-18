@@ -10,17 +10,24 @@ namespace Stratara.Orleans.EntityFrameworkCore.Intents;
 
 /// <summary>
 /// The command-intent bookkeeping in the write store's outbox table: a recorded command is an outbox
-/// entry of the execution model's own record type, and its resume bookkeeping is the entry's attempt count, hand-over
-/// time, last failure and kept state. Every operation is one statement on a context of its own.
+/// entry of the execution model's own record type, and its resume bookkeeping is the entry's attempt and conflict counts,
+/// hand-over time, last failure and kept state. Every operation is one statement on a context of its own.
 /// </summary>
 /// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
-internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> contextFactory) : ICommandIntentStore
+internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> contextFactory, TimeProvider timeProvider) : ICommandIntentStore
     where TContext : DbContext, IWriteDbContext
 {
     private const int FailureLength = 2048;
     private static string CommandTypeName => CommandIntentRecord.CommandTypeName;
 
-    public async Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, CancellationToken cancellationToken)
+    public Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, CancellationToken cancellationToken) =>
+        RecordAsync(intentId, envelope, aggregateId, heavy, timeProvider.GetUtcNow(), cancellationToken);
+
+    /// <summary>
+    /// One insert. The record's time is the dispatch's, taken before the envelope was built, and the hand-over of the
+    /// dispatch that follows the record is counted as the command's first attempt.
+    /// </summary>
+    public async Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, DateTimeOffset recordedAt, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -30,7 +37,8 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             BucketId = BucketCalculator.GetBucketId(intentId),
             DataJson = JsonSerializer.Serialize(envelope),
             DataTypeName = CommandTypeName,
-            Timestamp = DateTimeOffset.UtcNow,
+            Timestamp = recordedAt,
+            AttemptCount = 1,
             AggregateId = aggregateId,
             Heavy = heavy,
         });
@@ -46,6 +54,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
                         && e.Timestamp <= handedOverBefore
                         && (e.LastHandedOverAt == null || e.LastHandedOverAt <= handedOverBefore))
             .OrderBy(e => e.Timestamp)
+            .ThenBy(e => e.Id)
             .Take(batchSize)
             .ToListAsync(cancellationToken);
 
@@ -59,7 +68,8 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
                 e.AttemptCount,
                 e.LastHandedOverAt,
                 e.LastFailure,
-                e.DataTypeName == CommandTypeName))
+                e.DataTypeName == CommandTypeName,
+                e.ConflictCount))
         ];
     }
 
@@ -87,10 +97,10 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     /// </summary>
     /// <remarks>
     /// The stamp is truncated to the millisecond, because that is what every provider stores and the read-back
-    /// compares it. Two claimers that stamp in the same millisecond — the drain of a rolling adoption beside the bus
-    /// outbox worker — therefore read each other's rows back as their own and both hand those commands over. The
-    /// command still runs once: the grain that receives it holds one activation per aggregate, per intent or per
-    /// pool and refuses a hand-over it already holds. Only the attempt is counted twice.
+    /// compares it. Two claimers that stamp in the same millisecond — two drains during a failover, or the drain of a
+    /// rolling adoption beside the bus outbox worker — therefore read each other's rows back as their own and both hand
+    /// those commands over, with the same stamp. The receiver's first renewal, <see cref="TryRenewFromAsync"/>, moves
+    /// the stamp only where it is still the claim's, so the second hand-over finds it moved and is dropped.
     /// </remarks>
     public async Task<IReadOnlyList<Guid>> ClaimAsync(IReadOnlyList<RecordedIntent> due, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -128,14 +138,65 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
     }
 
+    /// <summary>
+    /// One guarded update: it touches the row only where the last hand-over is still the claim's, so of two hand-overs
+    /// of one claim exactly one moves it, and a row that is gone touches nothing.
+    /// </summary>
+    public async Task<bool> TryRenewFromAsync(Guid intentId, DateTimeOffset claimedAt, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var moved = claimedAt.AddMilliseconds(1);
+        var renewal = now > moved ? now : moved;
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var renewed = await context.Set<OutboxEntry>()
+            .Where(e => e.Id == intentId && e.KeptAt == null && e.LastHandedOverAt == claimedAt)
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)renewal), cancellationToken);
+        return renewed == 1;
+    }
+
+    public async Task<bool> TryRenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var renewed = await context.Set<OutboxEntry>()
+            .Where(e => e.Id == intentId && e.KeptAt == null)
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
+        return renewed == 1;
+    }
+
     public async Task RecordFailureAsync(Guid intentId, string failure, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(failure);
-        var recorded = failure.Length > FailureLength ? failure[..FailureLength] : failure;
+        var recorded = Truncate(failure);
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId)
             .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastFailure, recorded), cancellationToken);
+    }
+
+    public async Task RecordConflictAsync(Guid intentId, string failure, CancellationToken cancellationToken)
+    {
+        var recorded = Truncate(failure);
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.Set<OutboxEntry>()
+            .Where(e => e.Id == intentId)
+            .ExecuteUpdateAsync(
+                set => set
+                    .SetProperty(e => e.LastFailure, recorded)
+                    .SetProperty(e => e.ConflictCount, e => e.ConflictCount + 1)
+                    .SetProperty(e => e.AttemptCount, e => e.AttemptCount > 0 ? e.AttemptCount - 1 : 0),
+                cancellationToken);
+    }
+
+    public async Task ReturnAttemptAsync(Guid intentId, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.Set<OutboxEntry>()
+            .Where(e => e.Id == intentId && e.AttemptCount > 0)
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.AttemptCount, e => e.AttemptCount - 1), cancellationToken);
+    }
+
+    private static string Truncate(string failure)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        return failure.Length > FailureLength ? failure[..FailureLength] : failure;
     }
 
     public async Task KeepAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken)

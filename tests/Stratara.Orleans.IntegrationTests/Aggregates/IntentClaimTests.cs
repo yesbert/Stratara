@@ -28,7 +28,7 @@ public sealed class IntentClaimTests(PostgreSqlFixture postgres)
             await context.Database.ExecuteSqlRawAsync("DELETE FROM outbox_entry", TestContext.Current.CancellationToken);
         }
 
-        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory);
+        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory, TimeProvider.System);
         for (var i = 0; i < Rows; i++)
         {
             var id = Guid.CreateVersion7();
@@ -54,7 +54,8 @@ public sealed class IntentClaimTests(PostgreSqlFixture postgres)
         await using (var context = await store.CreateContextAsync())
         {
             var attempts = await context.Set<OutboxEntry>().AsNoTracking().Select(e => e.AttemptCount).ToListAsync(TestContext.Current.CancellationToken);
-            Assert.All(attempts, attempt => Assert.Equal(1, attempt));
+            // Recorded with the dispatch's hand-over as the first attempt, claimed as the second.
+            Assert.All(attempts, attempt => Assert.Equal(2, attempt));
         }
     }
 

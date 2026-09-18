@@ -65,16 +65,24 @@ record SHALL be committed on its own, not with anything the caller writes in its
 so that a caller whose own save fails after the dispatch still has a recorded command that runs, and
 the documentation SHALL say so where it introduces the record. A
 host that dies between acceptance and completion SHALL resume the command after a configurable
-grace. A command whose completion the host had not recorded before it died SHALL run again. A command
-whose handler keeps failing SHALL be resumed a bounded number of times and then kept for an operator,
-as a bus message a handler cannot take is kept, and SHALL NOT hold back the resumption of other
-commands; an operator SHALL be able to return a kept command, which is then resumed with its attempts
+grace. A command whose completion the host had not recorded before it died SHALL run again. A command whose handler keeps failing SHALL run no more often than a bus message a handler cannot
+take is delivered — the configured delivery bound counts the first hand-over as its first attempt —
+and then be kept for an operator, as that message is kept, and SHALL NOT hold back the resumption of
+other commands. A handler that fails on a concurrency conflict SHALL be bounded by the conflict bound
+the host configures for the bus, not by the delivery bound, so that a command on a contended aggregate
+is kept no sooner than the same command on the bus; an operator SHALL be able to return a kept command, which is then resumed with its attempts
 starting over. Every attempt that fails SHALL be logged with the command's identity, the aggregate it
 names and its type, and so SHALL a hand-over that fails, so that a failing handler is seen before the
 command is kept; the resumption that follows SHALL log the attempt number. A command whose handler is still running SHALL NOT be handed over
 again, however long it runs and whether or not the handler yields, and a heavy command waiting for a
-worker or a permit SHALL count as running. A resumed command SHALL keep the order of the aggregate
-it names whatever protection its payload carries. Heavy commands SHALL be exempt from both order
+worker or a permit SHALL count as running. A resumed command SHALL be run by one runner only: where two
+resumptions hand the same command over — two drains during a failover, or a drain beside a host's own
+resumption — or a hand-over arrives after the command completed, the hand-over that finds the command
+already taken or gone SHALL be dropped without running the handler. A resumed command SHALL keep the order of the aggregate
+it names whatever protection its payload carries, and that order SHALL be the order in which one scope
+dispatched its commands, however long each took to be recorded. Whether a recorded command is due
+SHALL be judged on the clock the host registers, so that a host or a test that registers its own clock
+sees the grace it configured. Heavy commands SHALL be exempt from both order
 promises, and a heavy command SHALL NOT hold back a command or a resumption that follows it. The
 commands waiting in an aggregate's order SHALL run to the end however long the order takes; the
 runtime's response timeout bounds a caller's wait for one forwarded command, and the documentation
@@ -144,8 +152,9 @@ the token.
 
 - **WHEN** a resumed command's handler throws on every attempt
 - **THEN** each attempt is logged with the command's identity and each resumption with its attempt
-  number, it is resumed up to the configured bound, then kept with the attempt count and the last
-  failure, and the commands after it are still resumed
+  number, the handler runs as many times as the configured delivery bound — the first hand-over
+  included — the command is then kept with the attempt count and the last failure, and the commands
+  after it are still resumed
 
 #### Scenario: An operator returns a kept command
 
@@ -296,6 +305,34 @@ the token.
   an outage of the hosts that dispatch
 - **THEN** every one of them is handed over within one period of the drain, not one batch per period
   — verified on the PostgreSQL store with a backlog of several batches
+
+#### Scenario: A resumed command meets a concurrency conflict on every attempt
+
+- **WHEN** a recorded command's handler fails on a concurrency conflict on every attempt
+- **THEN** it is resumed until the conflict bound is reached, not the delivery bound, and then kept
+  with the conflict as its last failure
+
+#### Scenario: Two drains resume the same command
+
+- **WHEN** two resumptions claim and hand over the same due command at the same moment
+- **THEN** its handler runs once, and the hand-over that arrived second is dropped — verified on the
+  PostgreSQL store, for a command that names an aggregate and for one that names none
+
+#### Scenario: A hand-over arrives after the command completed
+
+- **WHEN** a resumed command completes and a second hand-over of it arrives afterwards
+- **THEN** the second hand-over is dropped and the handler does not run again
+
+#### Scenario: Two commands to one aggregate are recorded out of order
+
+- **WHEN** one scope dispatches two commands naming the same aggregate, the first takes longer to be
+  recorded than the second, and the host dies before either ran
+- **THEN** the resumption runs them in the order they were dispatched
+
+#### Scenario: A host registers its own clock
+
+- **WHEN** a host registers its own clock and records a command, and that clock passes the grace
+- **THEN** the command is due, whatever the wall clock says
 
 ### Requirement: Projections and sagas read the store in commit order and never miss a committed fact
 

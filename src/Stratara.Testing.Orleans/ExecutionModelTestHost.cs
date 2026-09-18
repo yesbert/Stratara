@@ -331,7 +331,7 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         services.AddStrataraTestingEventStore<StrataraTestWriteDbContext>(
             connectionString,
             DefaultTenantId,
-            context => context.AddInterceptors(new PartitionCounterInterceptor(commitOrder)));
+            context => context.AddInterceptors(new PartitionCounterInterceptor(commitOrder)).ReplaceService<IModelCustomizer, SqliteTimeModelCustomizer>());
         services.AddDbContextFactory<StrataraTestReadDbContext>((_, context) => context.UseSqlite(connectionString), ServiceLifetime.Scoped);
 
         services.AddMediator();

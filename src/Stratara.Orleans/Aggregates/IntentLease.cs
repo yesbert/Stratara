@@ -17,7 +17,8 @@ namespace Stratara.Orleans.Aggregates;
 /// A command handed over moments after it was recorded is not renewed when execution starts: its record time holds
 /// it past the first two renewals. The renewal at the start is one statement per command inside the aggregate's
 /// turn, which cost the durable-intent shape 13 % of its throughput on one aggregate. A command that waited in the
-/// turn longer, or one the drain resumed, is renewed at the start.
+/// turn longer is renewed at the start; one the drain resumed is taken over at the start by a renewal from the claim's
+/// stamp, which also decides whether it runs at all.
 /// </remarks>
 internal sealed class IntentLease : IAsyncDisposable
 {
@@ -40,24 +41,61 @@ internal sealed class IntentLease : IAsyncDisposable
         _intentId = intentId;
     }
 
-    /// <summary>Renews the hand-over now unless its record time still holds it, and keeps renewing it until the lease is disposed.</summary>
-    public static async Task<IntentLease> StartAsync(IServiceProvider services, Guid intentId)
+    /// <summary>
+    /// Takes the hand-over and keeps renewing it until the lease is disposed. A resumed hand-over — one that carries
+    /// <paramref name="claimedAt"/> — is taken only if its record still carries that stamp; one that finds the stamp
+    /// moved or the record gone is dropped, logged, and answered with <see langword="null"/>, and its handler does not
+    /// run. Any other hand-over is renewed now unless its record time still holds it, and is dropped the same way when
+    /// that renewal finds the record gone or kept.
+    /// </summary>
+    /// <returns>The lease, or <see langword="null"/> when the hand-over was dropped.</returns>
+    /// <remarks>
+    /// Only a renewal that touches nothing drops a hand-over. A store that fails the fencing renewal fails the
+    /// hand-over instead, and the drain hands the command over again after the grace.
+    /// </remarks>
+    public static async Task<IntentLease?> StartAsync(IServiceProvider services, Guid intentId, DateTimeOffset? claimedAt)
     {
         var intents = services.GetRequiredService<ICommandIntentStore>();
         var timeProvider = services.GetRequiredService<TimeProvider>();
         var logger = services.GetRequiredService<ILogger<IntentLease>>();
         var grace = services.GetRequiredService<IOptions<OrleansDispatchOptions>>().Value.IntentGrace;
 
-        var lease = new IntentLease(intents, timeProvider, logger, intentId);
         var now = timeProvider.GetUtcNow();
-        if (RenewsAtStart(intentId, now, grace))
+        if (claimedAt is { } claim && !await intents.TryRenewFromAsync(intentId, claim, now, CancellationToken.None))
         {
-            await lease.RenewAsync(now, CancellationToken.None);
+            logger.LogIntentHandOverDropped(intentId);
+            return null;
         }
+
+        if (claimedAt is null && RenewsAtStart(intentId, now, grace) && !await TryRenewLateAsync(intents, logger, intentId, now))
+        {
+            logger.LogIntentHandOverDropped(intentId);
+            return null;
+        }
+
+        var lease = new IntentLease(intents, timeProvider, logger, intentId);
 
         var period = grace / 3;
         lease._timer = timeProvider.CreateTimer(static state => ((IntentLease)state!).OnTick(), lease, period, period);
         return lease;
+    }
+
+    /// <summary>
+    /// Renews an unstamped hand-over that arrives late and reports whether its command is still recorded and not kept: one
+    /// that completed through another run while this hand-over was on its way is not run again. A renewal that fails is
+    /// logged and the hand-over runs, as it always did.
+    /// </summary>
+    private static async Task<bool> TryRenewLateAsync(ICommandIntentStore intents, ILogger logger, Guid intentId, DateTimeOffset now)
+    {
+        try
+        {
+            return await intents.TryRenewAsync(intentId, now, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogIntentRenewalFailed(ex, intentId);
+            return true;
+        }
     }
 
     /// <summary>
@@ -81,7 +119,8 @@ internal sealed class IntentLease : IAsyncDisposable
     }
 
     /// <summary>
-    /// Logs the failure of this attempt and records it with the command; a failure to record it does not hide the
+    /// Logs the failure of this attempt and records it with the command — a concurrency conflict as a conflict, which
+    /// gives the attempt back and counts against the conflict bound instead; a failure to record it does not hide the
     /// original one.
     /// </summary>
     public async Task RecordFailureAsync(Exception failure, string commandType, Guid? aggregateId)
@@ -89,7 +128,26 @@ internal sealed class IntentLease : IAsyncDisposable
         _logger.LogIntentAttemptFailed(failure, _intentId, commandType, aggregateId);
         try
         {
-            await _intents.RecordFailureAsync(_intentId, IntentFailure.Describe(failure), CancellationToken.None);
+            var description = IntentFailure.Describe(failure);
+            await (IntentFailure.IsConflict(failure)
+                ? _intents.RecordConflictAsync(_intentId, description, CancellationToken.None)
+                : _intents.RecordFailureAsync(_intentId, description, CancellationToken.None));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+        }
+    }
+
+    /// <summary>
+    /// Gives back the attempt this hand-over counted, because the handler stopped with its silo rather than failing;
+    /// a failure to give it back leaves the attempt counted.
+    /// </summary>
+    public async Task ReturnAttemptAsync()
+    {
+        try
+        {
+            await _intents.ReturnAttemptAsync(_intentId, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

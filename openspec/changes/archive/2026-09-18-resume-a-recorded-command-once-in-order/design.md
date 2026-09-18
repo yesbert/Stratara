@@ -96,3 +96,47 @@ one attempt off, not below 0. Default implementation: nothing. The existing test
 Consumers add a migration for the new column (`dotnet ef migrations add`), as the upgrade note in the
 migration guide says; the column defaults to 0, so rows in flight need nothing. Rollback: a 4.1.x silo
 ignores the column.
+
+## Decisions taken during implementation (2026-09-18)
+
+- **D3, amended — the conflict bound is the bus's, to the run.** A command is kept when
+  `ConflictCount > MaxConflictRequeues`, not `>=`: the bus's `MessageRetryPolicy` dead-letters a conflict
+  when the delivery attempt exceeds the bound, which is `MaxConflictRequeues + 1` runs, and the spec says
+  a contended command is kept no sooner than on the bus. Evidence: `ResumedOnceInOrderTests` (bound 3,
+  kept after 4 runs).
+- **D3, amended — the record counts the dispatch's hand-over.** The store writes a record with
+  `AttemptCount = 1` (the overload with `recordedAt`), and the resumer keeps it when
+  `AttemptCount >= MaxDeliveryAttempts`, instead of presuming the first hand-over with `AttemptCount + 1`. A
+  presumption cannot be given back: a stop or a conflict on the dispatch's run had nothing to return, and the
+  presumed attempt was charged anyway once a resumption followed (a stop, then two failures, kept at a bound of 3),
+  while a record whose failure an operator's return left in place gained a phantom attempt. Counted in the record,
+  the stop and the conflict give back the dispatch's attempt like any other. A host that dies before the hand-over
+  has used the attempt, as a bus delivery to a consumer that crashes has; under a bound of 1 such a command is kept
+  for an operator without running — kept, not lost. A 4.1.x record, written with 0, runs as 4.1 ran it. The
+  operator's return clears `last_failure` and `conflict_count` too. The interface default of the `recordedAt`
+  overload records through the old overload, so a store outside the framework counts from zero as before.
+  Evidence: `ResumedOnceInOrderTests` (the outcome sequences and the operator's return at bounds 1 and 3).
+- **D3, amended — a conflict is what the bus counts as one.** The bus transports treat only the event store's
+  `ConcurrencyException` as a conflict (`ConcurrencyConflictException` and EF Core's
+  `DbUpdateConcurrencyException` are failures there, and neither derives from it); the resumed path now does the same
+  instead of the three types D3 listed.
+- **A stop gives back the attempts of the commands it gives up.** An aggregate's activation that abandons its queue
+  on a stop returns the attempt of every recorded command still queued, not only the running one's (D4).
+- **A dropped hand-over stops holding its command at once.** The aggregate's activation releases a hand-over whose
+  lease was dropped or failed as soon as its lease answers, and a queued entry releases the command only while it
+  still holds it, so a later valid hand-over is judged by its own lease.
+- **A late dispatch hand-over checks that its command is still there.** The unstamped hand-over's renewal at the start
+  — only where the record time no longer holds it — uses a new `TryRenewAsync` (default: renew and run) that reports
+  whether a recorded, not kept command was touched, and drops the hand-over otherwise. A failing renewal still runs
+  it, as before.
+- **The dispatch-order memory is pruned.** A scope forgets a lane whose last time is a step behind now.
+- **The test host stores points in time as numbers.** `Stratara.Testing.Orleans` replaces the model customizer of its
+  SQLite write context so that every `DateTimeOffset` is kept with `DateTimeOffsetToBinaryConverter`; EF Core cannot
+  compare or order the text SQLite keeps otherwise, and the due query failed there. The framework store is
+  unchanged. Evidence: `RecordedCommandResumeTests`.
+- **No migration file.** The repository ships no EF migrations; consumers generate their own, which the
+  migration guide's 4.2 section says. `StoreSchemaAdditionsTests` asserts the column.
+- **The own-clock and out-of-order scenarios are verified without a kill.** Orleans cannot run on a
+  shifted `TimeProvider` (its activation collector throws), so the own-clock test runs the dispatcher
+  and the resumer on PostgreSQL with a recording grain factory; the out-of-order test holds the records
+  with an active replay instead of a kill, which leaves them in the same state.

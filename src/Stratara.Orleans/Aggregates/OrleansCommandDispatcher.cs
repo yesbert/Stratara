@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
@@ -30,7 +31,7 @@ namespace Stratara.Orleans.Aggregates;
 /// </remarks>
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
     Justification = "DI-resolved sealed internal dispatcher; primary-constructor parameters reflect intrinsic " +
-                    "framework dependencies (recorder, hand-over, resumer, session, replay state, send lane, replay suspension, logger) and are not a hand-called API surface.")]
+                    "framework dependencies (recorder, hand-over, resumer, session, replay state, send lane, replay suspension, time provider, logger) and are not a hand-called API surface.")]
 internal sealed class OrleansCommandDispatcher(
     IntentRecorder recorder,
     IntentHandOver handOver,
@@ -39,18 +40,31 @@ internal sealed class OrleansCommandDispatcher(
     IProjectionReplayState replayState,
     AggregateSendLane lane,
     ReplaySuspensionTracker replaySuspension,
+    TimeProvider timeProvider,
     ILogger<OrleansCommandDispatcher> logger) : ICommandOutboxDispatcher
 {
+    private static readonly TimeSpan OrderStep = TimeSpan.FromMilliseconds(1);
+
+    private readonly object _gate = new();
+    private readonly Dictionary<Guid, DateTimeOffset> _lastRecordedAt = new();
+
     /// <inheritdoc/>
+    /// <remarks>
+    /// The record's time is taken here, before anything is awaited, so a command recorded more slowly than the one the
+    /// scope dispatched after it still carries the earlier time and is resumed first.
+    /// </remarks>
     public async Task<Guid> EnqueueCommandAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
     {
         var session = sessionContextProvider.Current ?? throw new SessionRequiredException("Session context is not set");
-        var intentId = Guid.CreateVersion7();
+        var now = timeProvider.GetUtcNow();
+        var intentId = Guid.CreateVersion7(now);
         var heavy = command is IHeavyCommand;
         var aggregateId = (command as IAggregateScopedCommand)?.AggregateId;
+        var key = AggregateSendLane.KeyOf(intentId, aggregateId, heavy);
+        var dispatch = new IntentDispatch(intentId, session, aggregateId, heavy, RecordedAt(key, now, ordered: key != intentId));
 
-        var recorded = recorder.RecordAsync(intentId, command, session, aggregateId, heavy, cancellationToken);
-        var issued = lane.SendAsync(AggregateSendLane.KeyOf(intentId, aggregateId, heavy), recorded, payload =>
+        var recorded = recorder.RecordAsync(dispatch, command, cancellationToken);
+        var issued = lane.SendAsync(key, recorded, payload =>
             replayState.IsReplayActive ? Task.CompletedTask : handOver.HandOverAsync(intentId, payload, heavy, aggregateId));
 
         IntentHandOver.Observe(await issued, logger, intentId, aggregateId, heavy);
@@ -73,6 +87,44 @@ internal sealed class OrleansCommandDispatcher(
 
         replaySuspension.Released(logger);
         return resumer.ResumeDueAsync(batchSize, cancellationToken);
+    }
+
+    /// <summary>How many lanes the scope still remembers a time for.</summary>
+    internal int RememberedLanes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _lastRecordedAt.Count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The record's time: <paramref name="now"/>, or one step past the last time this scope took for the same ordered
+    /// lane where that is not earlier — a step every provider keeps apart after its rounding. Only a lane that keeps an
+    /// order, an aggregate's, is remembered, and only while its last time is within a step of now: past that, now is
+    /// later anyway, so a long-lived scope remembers only the lanes it dispatched to in the last step.
+    /// </summary>
+    private DateTimeOffset RecordedAt(Guid key, DateTimeOffset now, bool ordered)
+    {
+        if (!ordered)
+        {
+            return now;
+        }
+
+        lock (_gate)
+        {
+            foreach (var stale in _lastRecordedAt.Where(lane => lane.Value + OrderStep <= now).Select(lane => lane.Key).ToList())
+            {
+                _lastRecordedAt.Remove(stale);
+            }
+
+            var recordedAt = _lastRecordedAt.TryGetValue(key, out var last) && now < last + OrderStep ? last + OrderStep : now;
+            _lastRecordedAt[key] = recordedAt;
+            return recordedAt;
+        }
     }
 }
 
@@ -133,11 +185,11 @@ internal readonly record struct ResumePass(int Resumed, bool Full)
 }
 
 /// <summary>
-/// The bounded resume. A due command whose attempts have reached the bound the host configures for bus
-/// messages is kept for an operator; a due command whose record does not verify under the host's integrity mode is
+/// The bounded resume. A due command that has reached either bound the host configures for bus messages — the delivery
+/// bound, which counts the hand-over of its dispatch as the first attempt, or the conflict bound — is kept for an operator; a due command whose record does not verify under the host's integrity mode is
 /// kept at once under strict mode, with the reason, and resumed with the failure logged under permissive mode; every
-/// other due command is claimed in one call — its hand-over stamped and its attempt counted — and handed over in the
-/// order it was read, in the order of the aggregate the record names. A hand-over that cannot be issued is recorded as
+/// other due command is claimed in one call — its hand-over stamped and its attempt counted — and handed over with the
+/// claim's stamp, in the order it was read, in the order of the aggregate the record names. A hand-over that cannot be issued is recorded as
 /// the command's failure and does not end the pass.
 /// </summary>
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
@@ -160,6 +212,7 @@ internal sealed class IntentResumer(
 
     private readonly TimeSpan _grace = options.Value.IntentGrace;
     private readonly int _maxAttempts = retry.Value.MaxDeliveryAttempts;
+    private readonly int _maxConflicts = retry.Value.MaxConflictRequeues;
     private readonly BusEnvelopeIntegrityMode _mode = integrity?.Value.Mode ?? BusEnvelopeIntegrityMode.Off;
 
     /// <summary>
@@ -178,18 +231,23 @@ internal sealed class IntentResumer(
             services.GetService<IBusEnvelopeSigner>(),
             services.GetService<IOptions<BusEnvelopeIntegrityOptions>>());
 
+    /// <summary>
+    /// One pass. The claim's time is truncated to the millisecond before it is stamped, so the stamp every hand-over
+    /// carries is the one the store keeps, and the receiver's fencing renewal compares equal values.
+    /// </summary>
     public async Task<ResumePass> ResumeDueAsync(int batchSize, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
+        var claimedAt = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
         var due = await intents.GetDueAsync(now - _grace, batchSize, cancellationToken);
         var claimable = new List<RecordedIntent>(due.Count);
         foreach (var intent in due)
         {
-            if (intent.AttemptCount >= _maxAttempts)
+            if (IsExhausted(intent))
             {
                 await intents.KeepAsync(intent.Id, now, cancellationToken);
                 ApplicationDiagnostics.Metrics.OrleansIntentKept.Add(1);
-                logger.LogCommandKept(intent.Id, intent.AttemptCount, intent.LastFailure ?? "none recorded");
+                logger.LogCommandKept(intent.Id, intent.AttemptCount, intent.ConflictCount, intent.LastFailure ?? "none recorded");
                 continue;
             }
 
@@ -201,14 +259,13 @@ internal sealed class IntentResumer(
             claimable.Add(intent);
         }
 
-        var claimed = claimable.Count == 0 ? [] : new HashSet<Guid>(await intents.ClaimAsync(claimable, now, cancellationToken));
+        var claimed = claimable.Count == 0 ? [] : new HashSet<Guid>(await intents.ClaimAsync(claimable, claimedAt, cancellationToken));
         var resumed = 0;
         foreach (var intent in claimable.Where(intent => claimed.Contains(intent.Id)))
         {
-
             ApplicationDiagnostics.Metrics.OrleansIntentResumed.Add(1);
             logger.LogCommandResumed(intent.Id, intent.AttemptCount + 1);
-            var payload = new AggregateCommandEnvelope(intent.Envelope.CommandTypeName, intent.Envelope.CommandJson, intent.Envelope.SessionContextJson);
+            var payload = new AggregateCommandEnvelope(intent.Envelope.CommandTypeName, intent.Envelope.CommandJson, intent.Envelope.SessionContextJson, claimedAt);
 
             // Where it runs is taken from the signed envelope, not from the row beside it: the heavy claim is one of
             // the things the signature covers, and a row that disagrees with it was already refused above.
@@ -229,6 +286,15 @@ internal sealed class IntentResumer(
 
         return new ResumePass(resumed, due.Count >= batchSize);
     }
+
+    /// <summary>
+    /// Whether the command has reached a bound: its delivery bound — the record counts the hand-over of its dispatch as
+    /// its first attempt — or its conflict bound, which it reaches once it has been resumed after a conflict as often as
+    /// the bound allows, the count at which the bus moves a message that keeps conflicting to its dead-letter
+    /// destination.
+    /// </summary>
+    internal bool IsExhausted(RecordedIntent intent) =>
+        intent.AttemptCount >= _maxAttempts || intent.ConflictCount > _maxConflicts;
 
     /// <summary>
     /// Verifies the record under the host's integrity mode. A record that does not verify is kept at once under strict
@@ -288,10 +354,17 @@ internal sealed class IntentResumer(
     }
 }
 
-/// <summary>How a failure is recorded with a command.</summary>
+/// <summary>How a failure is recorded with a command, and whether it is a concurrency conflict.</summary>
 internal static class IntentFailure
 {
     public static string Describe(Exception exception) => $"{exception.GetType().FullName}: {exception.Message}";
+
+    /// <summary>
+    /// Whether the failure is a concurrency conflict as the bus transports classify one: the event store's
+    /// <see cref="ConcurrencyException"/>. Anything else — a provider's own conflict included — is a failure there, and
+    /// here.
+    /// </summary>
+    public static bool IsConflict(Exception exception) => exception is ConcurrencyException;
 }
 
 /// <summary>Settings for the Orleans-backed command dispatcher.</summary>

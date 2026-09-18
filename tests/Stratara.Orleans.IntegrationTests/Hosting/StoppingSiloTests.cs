@@ -22,8 +22,8 @@ namespace Stratara.Orleans.IntegrationTests.Hosting;
 /// <summary>
 /// A silo is stopped while a handler on a grain path runs. A handler that waits on its token observes the
 /// cancellation within the deactivation budget, and what it did not finish runs again elsewhere: the timer fires on
-/// the remaining silo, the recorded command is resumed there, and the caller of a forwarded command is told the silo
-/// stopped. A handler that ignores the token runs to its end before the silo stops (scenarios <em>A silo stops while a
+/// the remaining silo, the recorded command is resumed there with the attempt the stop took given back, and the caller
+/// of a forwarded command is told the silo stopped. A handler that ignores the token runs to its end before the silo stops (scenarios <em>A silo stops while a
 /// timer's handler runs</em>, <em>… while a recorded command's handler runs</em>, <em>… while a forwarded command's
 /// handler runs</em>, <em>A handler ignores the cancellation</em>).
 /// </summary>
@@ -78,15 +78,62 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
 
         Assert.Equal(1, control.Cancelled(probe.ToString()));
         Assert.Contains(control.Logs.Entries, e => e.EventId == LogEvents.Orleans.HandlerStoppedWithSilo && e.Message.Contains(nameof(BlockingProbe), StringComparison.Ordinal) && e.Message.Contains("intent ", StringComparison.Ordinal));
-        // The handler that stopped with its silo counts the stop as no attempt of its own: the record carries no
-        // failure. Its attempt count is not asserted, because the drain that resumes it counts its own claim.
+        var store = postgres.ConnectionStringFor("poc_stopping_store");
+
+        // The resumption on the second silo claims one attempt; stopping that silo in turn gives it back, so the
+        // resumption on the third claims it again rather than a second one, and no stop leaves a failure behind.
+        Assert.True(await WaitUntilAsync(() => control.Started(probe.ToString()) == 2, TakeoverTimeout), "the recorded command was not resumed on the second silo");
+        Assert.Equal(1, await AttemptsAsync(store, intentId));
+        using var third = await StartSiloAsync(control, cluster, 11368, 30258, ShortBudget);
+        await StopAsync(second);
+        Assert.Equal(2, control.Cancelled(probe.ToString()));
+        Assert.True(await WaitUntilAsync(() => control.Started(probe.ToString()) == 3, TakeoverTimeout), "the recorded command was not resumed on the third silo");
+        Assert.Equal(1, await AttemptsAsync(store, intentId));
         Assert.Equal(1, await RecordedIntentHost.ScalarAsync<int>(
-            postgres.ConnectionStringFor("poc_stopping_store"),
-            "SELECT count(*) FILTER (WHERE last_failure IS NULL)::int FROM outbox_entry WHERE id = @id", ("id", intentId)));
+            store, "SELECT count(*) FILTER (WHERE last_failure IS NULL)::int FROM outbox_entry WHERE id = @id", ("id", intentId)));
 
         control.Block = false;
-        Assert.True(await WaitUntilAsync(() => control.Completed(probe.ToString()) == 1, TakeoverTimeout), "the recorded command was not resumed on the remaining silo");
-        Assert.Equal(2, control.Started(probe.ToString()));
+        Assert.True(await WaitUntilAsync(() => control.Completed(probe.ToString()) == 1, TakeoverTimeout), "the recorded command did not complete on the third silo");
+        Assert.Equal(3, control.Started(probe.ToString()));
+        await third.StopAsync();
+    }
+
+    private static Task<int> AttemptsAsync(string store, Guid intentId) =>
+        RecordedIntentHost.ScalarAsync<int>(store, "SELECT attempt_count FROM outbox_entry WHERE id = @id", ("id", intentId));
+
+    [Fact]
+    public async Task A_recorded_command_queued_behind_a_stopped_handler_gives_back_its_attempt()
+    {
+        var control = new StopProbeControl();
+        var cluster = $"stratara-poc-stop-queued-intent-{Guid.NewGuid():N}";
+        using var first = await StartSiloAsync(control, cluster, 11371, 30261, ShortBudget);
+        var aggregate = Guid.NewGuid();
+        var running = Guid.NewGuid();
+        var queued = Guid.NewGuid();
+
+        Guid queuedIntent;
+        await using (var scope = first.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(PocSessions.New());
+            var dispatcher = scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>();
+            await dispatcher.EnqueueCommandAsync(new BlockingProbe(aggregate, running));
+            queuedIntent = await dispatcher.EnqueueCommandAsync(new BlockingProbe(aggregate, queued));
+        }
+
+        Assert.True(await WaitUntilAsync(() => control.Started(running.ToString()) == 1, StartedTimeout), "the first command's handler never started");
+        using var second = await StartSiloAsync(control, cluster, 11372, 30262, ShortBudget);
+        await StopAsync(first);
+        Assert.Equal(0, control.Started(queued.ToString()));
+
+        // The queued command never ran: the stop gave back the attempt its record counted for the dispatch's hand-over,
+        // so its resumption on the second silo is its first counted attempt again.
+        Assert.True(
+            await WaitUntilAsync(() => control.Logs.Entries.Any(e => e.EventId == LogEvents.Orleans.CommandResumed && e.Message.Contains(queuedIntent.ToString(), StringComparison.Ordinal)), TakeoverTimeout),
+            "the queued command was not resumed on the second silo");
+        Assert.Equal(1, await AttemptsAsync(postgres.ConnectionStringFor("poc_stopping_store"), queuedIntent));
+
+        control.Block = false;
+        Assert.True(await WaitUntilAsync(() => control.Completed(queued.ToString()) == 1, TakeoverTimeout), "the queued command did not complete on the second silo");
         await second.StopAsync();
     }
 
@@ -275,15 +322,27 @@ public sealed class StopProbeControl : ITimerOwners, ITimerHandler
     private readonly ConcurrentDictionary<string, int> _started = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, int> _cancelled = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, int> _completed = new(StringComparer.Ordinal);
-    private volatile bool _block = true;
+    private volatile TaskCompletionSource? _released;
 
     public CapturedLogs Logs { get; } = new();
 
+    /// <summary>Whether a handler that starts blocks; clearing it also releases the handlers blocked already.</summary>
     public bool Block
     {
-        get => _block;
-        set => _block = value;
+        get => _released is not null;
+        set
+        {
+            if (value)
+            {
+                _released ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                return;
+            }
+
+            Interlocked.Exchange(ref _released, null)?.TrySetResult();
+        }
     }
+
+    public StopProbeControl() => Block = true;
 
     public int Started(string id) => _started.GetValueOrDefault(id);
 
@@ -294,11 +353,11 @@ public sealed class StopProbeControl : ITimerOwners, ITimerHandler
     public async Task RunAsync(string id, CancellationToken cancellationToken)
     {
         _started.AddOrUpdate(id, 1, static (_, count) => count + 1);
-        if (Block)
+        if (_released is { } released)
         {
             try
             {
-                await Task.Delay(Timeout.Infinite, cancellationToken);
+                await released.Task.WaitAsync(cancellationToken);
             }
             catch (OperationCanceledException)
             {

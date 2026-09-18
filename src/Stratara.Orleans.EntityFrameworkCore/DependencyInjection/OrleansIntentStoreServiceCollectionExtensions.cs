@@ -34,6 +34,7 @@ public static class OrleansIntentStoreServiceCollectionExtensions
     public static IServiceCollection AddStrataraIntentStore<TWriteContext>(this IServiceCollection services)
         where TWriteContext : DbContext, IWriteDbContext
     {
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddScoped<ICommandIntentStore, CommandIntentStore<TWriteContext>>();
         return services;
     }
