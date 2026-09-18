@@ -31,7 +31,7 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 `docs/guides/operate-the-orleans-execution-model.md`: what a dead rebuilder leaves (readers back within
+- [x] 4.1 `docs/guides/operate-the-orleans-execution-model.md`: what a dead rebuilder leaves (readers back within
       the lease, a logged lapse) and that a rebuild may apply a fact twice after an early resume.
-- [ ] 4.2 `docs/reference/log-events-schema.md`: `117_123`.
-- [ ] 4.3 `CHANGELOG.md` `[Unreleased]` → *Fixed*: the three failures, and the upgrade note of D4.
+- [x] 4.2 `docs/reference/log-events-schema.md`: `117_123`.
+- [x] 4.3 `CHANGELOG.md` `[Unreleased]` → *Fixed*: the three failures, and the upgrade note of D4.

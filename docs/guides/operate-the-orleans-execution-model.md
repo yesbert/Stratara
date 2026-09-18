@@ -224,6 +224,30 @@ still have keep-alive reminders of readers beyond the new count, if the reminder
 when a reminder brings it back, retires: it unregisters its keep-alive, logs `117_005` naming the consumer, the
 partition and the count, reads nothing and counts no stall. The event appears once per retired reader.
 
+## A rebuild or a replay that does not finish
+
+A projection's rebuild and a full replay pause the projection's store readers while they return the checkpoints
+to the beginning and empty the read model. The pause belongs to the process that took it and lasts only while
+that process renews it — every twenty seconds, for a lease of sixty. A process that dies part-way through, or
+whose silo is lost, leaves the readers paused for no longer than the lease and one poll interval: each reader then
+resumes by itself, logs `117_123` (Warning) naming the consumer and the partition, and reads from whatever its
+checkpoint says. Nothing needs a silo restart. A rebuild that was cut short is still not finished: run it again.
+A resume that is repeated — a retry whose first answer was lost — releases only its own pause, so it never lets a
+second rebuild's readers go early.
+
+A reader can still resume before its rebuild ends: its pause lapsed because the rebuilding process could not
+renew it in time — a long garbage-collection pause, a saturated silo — or its activation moved to another silo and
+forgot the pause. What such a reader applied before the read model was emptied would be lost with the truncation,
+so a rebuild and a replay return the checkpoints to the beginning a second time, after the truncation, and the
+reader reads those facts again. A fact it applied between the truncation and that second reset is applied
+**twice**; a rebuildable projection must therefore apply idempotently — the property a full replay already
+requires of every projection that reads the store. A `117_123` logged during a rebuild is the sign that it
+happened.
+
+During a rolling upgrade from 4.1.x, a rebuild or replay started from a silo still on 4.1.x pauses the readers of
+an upgraded silo for at most ten minutes — it cannot renew — and returns the checkpoints to the beginning only
+once. Start rebuilds from an upgraded silo, or wait until the upgrade is done.
+
 ## What to watch
 
 Every instrument is published under the meter `Stratara` with the names in
@@ -241,7 +265,8 @@ Every instrument is published under the meter `Stratara` with the names in
 
 The log events to route to an alert: `117_101` and `117_103` (a partition stopped), `117_104` (a command
 kept), `117_111` (recorded commands on a silo without an intent store), `117_112` and `117_113` (a failing
-attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound), `117_119` (a run of a
+attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide bound), `117_123` (a store
+reader's pause that lapsed — a rebuild or replay whose process died or stalled; run it again), `117_119` (a run of a
 singleton work that threw — the work runs again at its next period, so a work that fails every run logs it every
 period). `117_008` (a handler
 stopped with its silo) explains a second run of a command or a timer after a deploy. `117_116` and `117_118` (a

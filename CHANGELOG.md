@@ -313,6 +313,20 @@ applies to the entire NuGet family.
   Every registration that asks is now answered: the bus dispatcher is kept, or the registration fails naming what
   is missing. A kept dispatcher registered by its type is also owned by the container again, so it is disposed
   with its scope.
+- **Orleans: a paused store reader always comes back, and a rebuilt read model holds every fact.** A projection's
+  rebuild, the full replay's reset and the test host's reset paused the readers with a count that knew none of its
+  pausers and lived only in the activation. A pauser that died between pause and resume left the readers paused
+  until their silo restarted, with no stall counted; a resume that was retried released another rebuild's pause;
+  and a reader resumed before the truncation — early, or in an activation that had moved and forgotten the pause —
+  applied facts, advanced past them and watched the truncation delete them, leaving the read model short until the
+  next rebuild. A pause now belongs to its pauser and lasts while the pauser renews it (a lease of sixty seconds,
+  renewed every twenty); a pause that is not renewed lapses, the reader resumes and logs `117_123` (warning). A
+  resume releases only its own pauser's pause however often it is repeated. A rebuild and a replay return the
+  checkpoints to the beginning again after the read model is emptied, so what a reader applied before is read
+  again after it — a fact applied in between is applied twice, which a rebuildable projection must tolerate as a
+  full replay already requires. *Upgrade note:* during a rolling upgrade, a rebuild or replay started from a
+  4.1.x silo pauses an upgraded silo's readers for at most ten minutes, because it cannot renew, and resets the
+  checkpoints only once; start rebuilds from an upgraded silo.
 - **Orleans: a wake-up that cannot be sent is logged (`117_121`, debug) and no longer costs the other consumers
   of that commit theirs.**
 - **Orleans: the heavy-work pool runs its units beside each other again.** Since the pool became a placed grain
