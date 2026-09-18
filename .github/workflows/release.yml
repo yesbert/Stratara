@@ -118,6 +118,11 @@ jobs:
       - name: List what was produced
         run: ls -la artifacts/nupkgs
 
+      # nuget.org refuses a package whose release notes pass 35000 characters, and it refuses it only at the push —
+      # after the approval. Checked here, the release stops before anyone is asked to approve it.
+      - name: Check the release notes fit nuget.org
+        run: ./scripts/check-release-notes.sh artifacts/nupkgs
+
       - name: Upload the packages
         uses: actions/upload-artifact@v4
         with:

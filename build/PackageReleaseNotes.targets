@@ -26,6 +26,8 @@
         <ParameterGroup>
             <ChangelogPath ParameterType="System.String" Required="true" />
             <Version ParameterType="System.String" Required="true" />
+            <MaxLength ParameterType="System.Int32" Required="true" />
+            <FullNotesUrl ParameterType="System.String" Required="true" />
             <ReleaseNotes ParameterType="System.String" Output="true" />
         </ParameterGroup>
         <Task>
@@ -71,6 +73,20 @@
                 }
 
                 string body = match.Groups["body"].Value.Trim();
+                if (body.Length > MaxLength)
+                {
+                    // nuget.org refuses a package whose release notes pass its limit, so a long section is cut
+                    // at the last bullet or heading that fits and points at the complete notes instead.
+                    string more = "\n\n…the complete notes for this release are in the changelog: " + FullNotesUrl;
+                    int budget = MaxLength - more.Length;
+                    int cut = Math.Max(body.LastIndexOf("\n- ", budget, StringComparison.Ordinal),
+                                       body.LastIndexOf("\n### ", budget, StringComparison.Ordinal));
+                    body = body.Substring(0, cut > 0 ? cut : budget).TrimEnd() + more;
+                    Log.LogMessage(MessageImportance.High,
+                        "ExtractReleaseNotesFromChangelog: the '## [{0}]' section is longer than {1} characters; the package carries its first part and a link to the rest.",
+                        Version, MaxLength);
+                }
+
                 ReleaseNotes = body;
                 Log.LogMessage(MessageImportance.Normal,
                     "ExtractReleaseNotesFromChangelog: extracted {0} characters from '## [{1}]' section.",
@@ -84,6 +100,8 @@
          repo layout ever changes. -->
     <PropertyGroup>
         <StrataraChangelogPath Condition="'$(StrataraChangelogPath)' == ''">$(MSBuildThisFileDirectory)../CHANGELOG.md</StrataraChangelogPath>
+        <!-- nuget.org refuses release notes longer than 35000 characters; the margin covers the XML escaping of the nuspec. -->
+        <StrataraReleaseNotesMaxLength Condition="'$(StrataraReleaseNotesMaxLength)' == ''">30000</StrataraReleaseNotesMaxLength>
     </PropertyGroup>
 
     <Target Name="StrataraPopulatePackageReleaseNotes"
@@ -91,7 +109,9 @@
             Condition="'$(IsPackable)' == 'true' and '$(PackageReleaseNotes)' == ''">
         <ExtractReleaseNotesFromChangelog
             ChangelogPath="$(StrataraChangelogPath)"
-            Version="$(VersionPrefix)">
+            Version="$(VersionPrefix)"
+            MaxLength="$(StrataraReleaseNotesMaxLength)"
+            FullNotesUrl="https://github.com/yesbert/Stratara/blob/v$(VersionPrefix)/CHANGELOG.md">
             <Output TaskParameter="ReleaseNotes" PropertyName="PackageReleaseNotes" />
         </ExtractReleaseNotesFromChangelog>
     </Target>
