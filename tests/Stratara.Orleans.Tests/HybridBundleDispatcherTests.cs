@@ -8,9 +8,10 @@ using Stratara.Projections.Abstractions;
 namespace Stratara.Orleans.Tests;
 
 /// <summary>
-/// Scenarios <em>A host keeps the bus beside the grains with a dispatcher registered by a factory</em> and <em>A host
-/// asks to keep the bus without a bus dispatcher</em>: <c>hybrid: true</c> keeps the bus dispatcher whatever the shape
-/// of its registration, and refuses a host that registered none.
+/// Scenarios <em>A host keeps the bus beside the grains with a dispatcher registered by a factory</em>, <em>A host
+/// asks to keep the bus without a bus dispatcher</em> and <em>A second store-reading role asks to keep the bus</em>:
+/// <c>hybrid: true</c> keeps the bus dispatcher whatever the shape of its registration, refuses a host that
+/// registered none, and is answered on a later registration as on the first — never ignored.
 /// </summary>
 public sealed class HybridBundleDispatcherTests
 {
@@ -50,6 +51,34 @@ public sealed class HybridBundleDispatcherTests
     public void Asking_for_the_bus_without_a_bus_dispatcher_fails_at_registration_naming_both()
     {
         var failure = Assert.Throws<InvalidOperationException>(() => Base().AddStrataraProjectionGrains(hybrid: true));
+
+        Assert.Contains("hybrid", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("AddOutboxDispatcher", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_second_store_reading_role_that_asks_to_keep_the_bus_keeps_it()
+    {
+        var services = Base().AddSingleton<RecordingDispatcher>();
+        services.AddScoped<IEventBundleOutboxDispatcher>(sp => sp.GetRequiredService<RecordingDispatcher>());
+
+        services.AddStrataraProjectionGrains(hybrid: true);
+        services.AddStrataraSagaGrains(hybrid: true);
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+
+        await scope.ServiceProvider.GetRequiredService<IEventBundleOutboxDispatcher>().EnqueueEventBundleAsync(Bundle(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, provider.GetRequiredService<RecordingDispatcher>().Enqueued);
+    }
+
+    [Fact]
+    public void A_second_store_reading_role_that_asks_to_keep_a_bus_nobody_registered_fails()
+    {
+        var services = Base();
+        services.AddStrataraProjectionGrains();
+
+        var failure = Assert.Throws<InvalidOperationException>(() => services.AddStrataraSagaGrains(hybrid: true));
 
         Assert.Contains("hybrid", failure.Message, StringComparison.Ordinal);
         Assert.Contains("AddOutboxDispatcher", failure.Message, StringComparison.Ordinal);

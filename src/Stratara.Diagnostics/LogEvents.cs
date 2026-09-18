@@ -330,5 +330,7 @@ public static class LogEvents
         public const int SingletonWorkFailed = 117_119;
         /// <summary>A silo registered roles or singleton work without publishing them to the cluster and does not start (error).</summary>
         public const int RolesUnpublished = 117_120;
+        /// <summary>A commit's wake-up could not be delivered to a store reader; the reader's poll reads the commit instead (debug).</summary>
+        public const int NudgeFailed = 117_121;
     }
 }

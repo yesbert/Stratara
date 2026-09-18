@@ -89,8 +89,8 @@ public sealed class ReplayCheckpointResetTests
         handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
         var checkpoints = new Mock<IProjectionCheckpointStore>();
         checkpoints
-            .Setup(c => c.SetAsync("View", It.IsAny<int>(), "reader/2", 0, It.IsAny<CancellationToken>()))
-            .Callback((string name, int partition, string _, long _, CancellationToken _) => { lock (journal) { journal.Add($"reset {name}/{partition}"); } })
+            .Setup(c => c.ResetAsync("View", It.IsAny<int>(), "reader/2", It.IsAny<CancellationToken>()))
+            .Callback((string name, int partition, string _, CancellationToken _) => { lock (journal) { journal.Add($"reset {name}/{partition}"); } })
             .Returns(Task.CompletedTask);
         var reader = new Mock<ICommittedPositionReader>();
         reader.SetupGet(r => r.Name).Returns("reader/2");

@@ -8,8 +8,10 @@ using Stratara.Projections.Abstractions;
 namespace Stratara.Orleans.Projections;
 
 /// <summary>
-/// Rebuilds one projection: pauses its readers, returns their checkpoints to the beginning, empties the
-/// projection, and resumes the readers however the truncation ended. The reset comes first, so no checkpoint
+/// Rebuilds one projection: pauses its readers, returns their checkpoints to the beginning — whatever reader
+/// name they were written under, so a host whose reader or partition count changed rebuilds from inside the
+/// running cluster — empties the projection, and resumes the readers however the truncation ended. A pause that
+/// fails leaves none of them paused: what had paused is resumed and the rebuild fails. The reset comes first, so no checkpoint
 /// is ever left past an effect the truncation removed; a truncation that fails part-way leaves readers that
 /// re-read from the beginning over a partly emptied model, which re-applying repairs. Two rebuilds of one
 /// projection may overlap: the readers count their pausers and resume only when the last has finished. A rebuild
@@ -30,10 +32,12 @@ internal sealed class ProjectionRebuilder(
         }
 
         var partitions = Enumerable.Range(0, commitOrder.Value.PartitionCount)
-            .Select(partition => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(projectionName, partition)))
+            .Select(partition => new PausedReader(
+                StoreReaderGrainKey.Of(projectionName, partition),
+                grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(projectionName, partition))))
             .ToList();
 
-        await Task.WhenAll(partitions.Select(grain => grain.PauseAsync()));
+        var paused = await StoreReaderPause.PauseAllAsync(partitions);
 
         try
         {
@@ -50,13 +54,16 @@ internal sealed class ProjectionRebuilder(
             var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
             var reader = services.GetRequiredService<ICommittedPositionReader>().Name;
             await Task.WhenAll(Enumerable.Range(0, commitOrder.Value.PartitionCount)
-                .Select(partition => checkpoints.SetAsync(projectionName, partition, reader, 0, cancellationToken)));
+                .Select(partition => checkpoints.ResetAsync(projectionName, partition, reader, cancellationToken)));
 
             await rebuildable.TruncateAsync(cancellationToken);
         }
-        finally
+        catch
         {
-            await Task.WhenAll(partitions.Select(grain => grain.ResumeAsync()));
+            await StoreReaderPause.ResumeQuietlyAsync(paused);
+            throw;
         }
+
+        await StoreReaderPause.ResumeAllAsync(paused);
     }
 }

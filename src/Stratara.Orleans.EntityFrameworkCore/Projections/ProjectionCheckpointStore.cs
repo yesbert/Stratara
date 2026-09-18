@@ -106,6 +106,46 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         await InsertAsync(context, projection, partition, reader, from, to, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The one write that is not held to the reader's name: the beginning is the beginning under every reader and
+    /// every partition count, so a rebuild or a replay on a host that reads under a new name takes the row over
+    /// instead of being refused by the guard its own message asks the operator to clear.
+    /// </remarks>
+    public async Task ResetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await ResetRowAsync(context, projection, partition, reader, cancellationToken))
+        {
+            return;
+        }
+
+        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = 0, Reader = reader });
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Another writer inserted the row between the update and the insert — under any reader's name, which the
+            // reset takes over like any other.
+            context.ChangeTracker.Clear();
+            if (!await ResetRowAsync(context, projection, partition, reader, cancellationToken))
+            {
+                throw;
+            }
+        }
+    }
+
+    /// <summary>Returns the row to the beginning under <paramref name="reader"/>, whatever reader holds it.</summary>
+    private static async Task<bool> ResetRowAsync(TContext context, string projection, int partition, string reader, CancellationToken cancellationToken)
+    {
+        var rows = await context.Set<ProjectionCheckpoint>()
+            .Where(c => c.Projection == projection && c.Partition == partition)
+            .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, 0L).SetProperty(c => c.Reader, reader), cancellationToken);
+        return rows > 0;
+    }
+
     private async Task InsertAsync(TContext context, string projection, int partition, string reader, long? expected, long position, CancellationToken cancellationToken)
     {
         context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });

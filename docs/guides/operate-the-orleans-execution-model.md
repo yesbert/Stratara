@@ -190,6 +190,12 @@ A checkpoint is advanced only from the position its reader last saw and never un
 activation that outlived its successor — a silo suspected dead that is still writing — is refused with a message
 naming both positions, logged as `117_103`, and reads the checkpoint again instead of rewinding it; a write under
 another reader's name is refused naming both readers. A host that switches readers resets its checkpoints first.
+For **projections** that can be done inside the running cluster, because returning a checkpoint to the beginning
+is the one write that is not held to the reader's name: rebuild the read model with
+`IProjectionRebuilder.RebuildAsync`, or run a full replay, and the checkpoints are taken over by the host's own
+reader. The **sagas'** checkpoint is not touched by either verb — a saga is not rebuilt, its effects having left
+the deployment — so a host that switches readers or changes its partition count while it registers sagas needs
+the [reset](#reset-what-the-model-keeps) with the deployment stopped.
 
 Under the native reader, a host that lowers its partition count and resets its checkpoints as documented may
 still have keep-alive reminders of readers beyond the new count, if the reminders were not reset. Such a reader,

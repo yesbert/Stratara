@@ -45,4 +45,21 @@ public interface IProjectionCheckpointStore
     /// </remarks>
     Task AdvanceAsync(string projection, int partition, string reader, long from, long to, CancellationToken cancellationToken = default) =>
         SetAsync(projection, partition, reader, to, cancellationToken);
+
+    /// <summary>
+    /// Returns a position to the beginning — the verb a rebuild and a full replay write with.
+    /// </summary>
+    /// <param name="projection">The consumer, by the name the framework gives it.</param>
+    /// <param name="partition">The partition.</param>
+    /// <param name="reader">The name of the reader the consumer will read under from now on.</param>
+    /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <returns>A task that completes when the checkpoint is at the beginning.</returns>
+    /// <remarks>
+    /// The beginning means the same under every reader and every partition count, so a store that refuses a write
+    /// under another reader's name accepts this one and takes the row over: it is how a deployment whose reader or
+    /// partition count changed rebuilds without being stopped. The default writes through <see cref="SetAsync"/> and
+    /// therefore takes nothing over — a store that guards the reader's name overrides this, as the framework's does.
+    /// </remarks>
+    Task ResetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) =>
+        SetAsync(projection, partition, reader, 0, cancellationToken);
 }

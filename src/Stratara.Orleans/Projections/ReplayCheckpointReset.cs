@@ -11,7 +11,8 @@ namespace Stratara.Orleans.Projections;
 /// <summary>
 /// The full replay's truncation, extended for store-reading projections: before the host's truncator
 /// empties the read models, every projection grain is paused and its checkpoints are returned to the
-/// beginning; the grains are resumed afterwards, however the truncation ended. A replay keeps them
+/// beginning — whatever reader name they were written under; the grains are resumed afterwards, however the
+/// truncation ended, and a pause that fails leaves none of them paused. A replay keeps them
 /// suspended until it ends, and they then read the store from the beginning — so no checkpoint is left
 /// past an entry whose effect the replay removed, and a truncation that fails part-way is repaired by
 /// re-reading.
@@ -31,23 +32,28 @@ internal sealed class ReplayCheckpointResetTruncator(
         var handler = services.GetRequiredService<IProjectionHandler>();
         var names = services.GetServices<IProjection>().Select(handler.GetProjectionName).Distinct(StringComparer.Ordinal).ToList();
         var grains = names
-            .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition))))
+            .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => new PausedReader(
+                StoreReaderGrainKey.Of(name, partition),
+                grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)))))
             .ToList();
 
-        await Task.WhenAll(grains.Select(grain => grain.PauseAsync()));
+        var paused = await StoreReaderPause.PauseAllAsync(grains);
         try
         {
             var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
             var reader = services.GetRequiredService<ICommittedPositionReader>().Name;
             await Task.WhenAll(names.SelectMany(name => Enumerable.Range(0, _partitionCount)
-                .Select(partition => checkpoints.SetAsync(name, partition, reader, 0, cancellationToken))));
+                .Select(partition => checkpoints.ResetAsync(name, partition, reader, cancellationToken))));
 
             await inner.TruncateAllAsync(cancellationToken);
         }
-        finally
+        catch
         {
-            await Task.WhenAll(grains.Select(grain => grain.ResumeAsync()));
+            await StoreReaderPause.ResumeQuietlyAsync(paused);
+            throw;
         }
+
+        await StoreReaderPause.ResumeAllAsync(paused);
     }
 
     /// <summary>

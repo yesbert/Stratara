@@ -72,7 +72,7 @@ public sealed class ProjectionRebuilderTests
         Assert.Equal(Partitions, paused);
         Assert.Equal(Partitions, resumed);
         projection.Verify(p => p.TruncateAsync(It.IsAny<CancellationToken>()), Times.Once);
-        checkpoints.Verify(c => c.SetAsync("View", It.IsAny<int>(), It.IsAny<string>(), 0, It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
+        checkpoints.Verify(c => c.ResetAsync("View", It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
     }
 
     /// <summary>D21: every checkpoint is back at the beginning before the projection is emptied.</summary>
@@ -87,7 +87,7 @@ public sealed class ProjectionRebuilderTests
 
         Assert.Equal(Partitions, journal.IndexOf("truncate"));
         Assert.All(journal.Take(Partitions), entry => Assert.StartsWith("reset", entry, StringComparison.Ordinal));
-        checkpoints.Verify(c => c.SetAsync("View", It.IsAny<int>(), "reader/16", 0, It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
+        checkpoints.Verify(c => c.ResetAsync("View", It.IsAny<int>(), "reader/16", It.IsAny<CancellationToken>()), Times.Exactly(Partitions));
     }
 
     [Fact]
@@ -100,6 +100,94 @@ public sealed class ProjectionRebuilderTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
 
         Assert.Equal(Partitions, journal.Count(entry => entry.StartsWith("reset", StringComparison.Ordinal)));
+        Assert.Equal(Partitions, journal.Count(entry => entry == "resume"));
+    }
+
+    [Fact]
+    public async Task A_pause_that_fails_resumes_what_it_paused_and_the_rebuild_reports_it()
+    {
+        var journal = new List<string>();
+        var refusing = 0;
+        var grains = Enumerable.Range(0, Partitions).ToDictionary(
+            partition => StoreReaderGrainKey.Of("View", partition),
+            partition => (IProjectionGrain)new FakeGrain(
+                () =>
+                {
+                    if (partition == 3)
+                    {
+                        Interlocked.Increment(ref refusing);
+                        throw new TimeoutException("the partition did not answer");
+                    }
+
+                    lock (journal)
+                    {
+                        journal.Add("pause");
+                    }
+                },
+                () =>
+                {
+                    lock (journal)
+                    {
+                        journal.Add("resume");
+                    }
+
+                    return Task.CompletedTask;
+                }));
+        var grainFactory = new Mock<IGrainFactory>();
+        grainFactory.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => grains[key]);
+        var projection = new Mock<IRebuildableProjection>();
+        var handler = new Mock<IProjectionHandler>();
+        handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
+        var checkpoints = new Mock<IProjectionCheckpointStore>();
+        var reader = new Mock<ICommittedPositionReader>();
+        reader.SetupGet(r => r.Name).Returns("reader/16");
+        var services = new ServiceCollection()
+            .AddScoped(_ => handler.Object)
+            .AddScoped<IProjection>(_ => projection.Object)
+            .AddScoped(_ => checkpoints.Object)
+            .AddScoped(_ => reader.Object)
+            .BuildServiceProvider();
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay());
+
+        var failed = await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
+
+        Assert.Equal(1, refusing);
+        Assert.Contains("could not be paused", failed.Message, StringComparison.Ordinal);
+        Assert.Contains(StoreReaderGrainKey.Of("View", 3), failed.Message, StringComparison.Ordinal);
+        Assert.Equal(journal.Count(entry => entry == "pause"), journal.Count(entry => entry == "resume"));
+        projection.Verify(p => p.TruncateAsync(It.IsAny<CancellationToken>()), Times.Never);
+        checkpoints.Verify(c => c.ResetAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>
+    /// The pause a reader counted before its answer was lost: the grain is paused, the caller's call fails, and the
+    /// reader would stay paused for good unless the rebuild resumes every reader it reached.
+    /// </summary>
+    [Fact]
+    public async Task A_pause_whose_answer_is_lost_is_resumed_all_the_same()
+    {
+        var journal = new List<string>();
+        var grains = Enumerable.Range(0, Partitions).ToDictionary(
+            partition => StoreReaderGrainKey.Of("View", partition),
+            partition => (IProjectionGrain)new LosingGrain(partition == 3, journal));
+        var grainFactory = new Mock<IGrainFactory>();
+        grainFactory.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => grains[key]);
+        var projection = new Mock<IRebuildableProjection>();
+        var handler = new Mock<IProjectionHandler>();
+        handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
+        var reader = new Mock<ICommittedPositionReader>();
+        reader.SetupGet(r => r.Name).Returns("reader/16");
+        var services = new ServiceCollection()
+            .AddScoped(_ => handler.Object)
+            .AddScoped<IProjection>(_ => projection.Object)
+            .AddScoped(_ => new Mock<IProjectionCheckpointStore>().Object)
+            .AddScoped(_ => reader.Object)
+            .BuildServiceProvider();
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
+
+        Assert.Equal(Partitions, journal.Count(entry => entry == "pause"));
         Assert.Equal(Partitions, journal.Count(entry => entry == "resume"));
     }
 
@@ -124,8 +212,8 @@ public sealed class ProjectionRebuilderTests
         handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
         var checkpoints = new Mock<IProjectionCheckpointStore>();
         checkpoints
-            .Setup(c => c.SetAsync("View", It.IsAny<int>(), It.IsAny<string>(), 0, It.IsAny<CancellationToken>()))
-            .Callback((string _, int partition, string _, long _, CancellationToken _) => { lock (journal) { journal.Add($"reset {partition}"); } })
+            .Setup(c => c.ResetAsync("View", It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, int partition, string _, CancellationToken _) => { lock (journal) { journal.Add($"reset {partition}"); } })
             .Returns(Task.CompletedTask);
         var reader = new Mock<ICommittedPositionReader>();
         reader.SetupGet(r => r.Name).Returns("reader/16");
@@ -169,6 +257,38 @@ public sealed class ProjectionRebuilderTests
         var replay = new Mock<IProjectionReplayState>();
         replay.SetupGet(r => r.IsReplayActive).Returns(false);
         return replay.Object;
+    }
+
+    /// <summary>A reader that counts its pauser before it answers, and whose answer is lost where it is told to lose it.</summary>
+    private sealed class LosingGrain(bool losesTheAnswer, List<string> journal) : IProjectionGrain
+    {
+        public Task EnsureRunningAsync() => Task.CompletedTask;
+
+        public Task NudgeAsync() => Task.CompletedTask;
+
+        public Task<int> CatchUpAsync() => Task.FromResult(0);
+
+        public Task<long> PositionAsync() => Task.FromResult(0L);
+
+        public Task PauseAsync()
+        {
+            lock (journal)
+            {
+                journal.Add("pause");
+            }
+
+            return losesTheAnswer ? Task.FromException(new TimeoutException("the answer was lost")) : Task.CompletedTask;
+        }
+
+        public Task ResumeAsync()
+        {
+            lock (journal)
+            {
+                journal.Add("resume");
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>The grain interface is internal, which a proxy generator cannot reach; a fake can.</summary>
