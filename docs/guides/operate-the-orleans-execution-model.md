@@ -242,7 +242,9 @@ deployment's sagas have read, or every saga on the first start after an upgrade 
 host's sagas read there: at the furthest checkpoint a saga of the host holds, or the checkpoint the sagas shared
 before 4.2.0, and at the beginning of the store only where no saga has read. A saga added to a running deployment
 therefore never runs its side effects for the store's history. Renaming a saga class makes it a new consumer,
-which starts at the same point — not at its old checkpoint, which nothing reads any more.
+which starts at the same point — not at its old checkpoint, which nothing reads any more. Two saga classes of the
+same type name in different namespaces would share one consumer; their reader stops at its first entry naming both,
+so give each saga a type name of its own.
 
 Under the portable reader a partition also stops at an entry that has **no partition position**: a process
 appended it without `PartitionCounterInterceptor`. The logged failure names the entry, the interceptor and

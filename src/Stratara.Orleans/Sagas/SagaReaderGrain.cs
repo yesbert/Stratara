@@ -137,7 +137,9 @@ internal sealed class SagaReaderGrain(
     /// resolves that type where it is registered as itself, and finds it among the registered sagas again where it is
     /// not. The container always builds it, so a factory registration or a lifetime the host chose holds for every batch.
     /// </summary>
-    /// <exception cref="InvalidOperationException">No saga of the grain's name is registered on this silo.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// No saga of the grain's name is registered on this silo, or sagas of more than one type carry the name.
+    /// </exception>
     private ISaga ResolveSaga(IServiceProvider services, ISagaHandler handler)
     {
         if (_sagaType is { } type)
@@ -147,8 +149,15 @@ internal sealed class SagaReaderGrain(
                    ?? throw new InvalidOperationException($"The saga {type.FullName} named '{SagaName}' is no longer registered on this silo.");
         }
 
-        var saga = services.GetServices<ISaga>().FirstOrDefault(s => handler.GetSagaName(s) == SagaName)
-                   ?? throw new InvalidOperationException($"No saga named '{SagaName}' is registered on this silo.");
+        var named = services.GetServices<ISaga>().Where(s => handler.GetSagaName(s) == SagaName).ToList();
+        var types = named.Select(s => s.GetType()).Distinct().ToList();
+        if (types.Count > 1)
+        {
+            throw new InvalidOperationException(
+                $"The sagas {string.Join(", ", types.Select(t => t.FullName))} share the name '{SagaName}' and would share one checkpoint; give each saga a type name of its own.");
+        }
+
+        var saga = named.FirstOrDefault() ?? throw new InvalidOperationException($"No saga named '{SagaName}' is registered on this silo.");
         _sagaType = saga.GetType();
         return saga;
     }
