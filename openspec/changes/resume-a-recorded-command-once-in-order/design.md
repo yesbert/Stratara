@@ -96,3 +96,24 @@ one attempt off, not below 0. Default implementation: nothing. The existing test
 Consumers add a migration for the new column (`dotnet ef migrations add`), as the upgrade note in the
 migration guide says; the column defaults to 0, so rows in flight need nothing. Rollback: a 4.1.x silo
 ignores the column.
+
+## Decisions taken during implementation (2026-09-18)
+
+- **D3, amended — the conflict bound is the bus's, to the run.** A command is kept when
+  `ConflictCount > MaxConflictRequeues`, not `>=`: the bus's `MessageRetryPolicy` dead-letters a conflict
+  when the delivery attempt exceeds the bound, which is `MaxConflictRequeues + 1` runs, and the spec says
+  a contended command is kept no sooner than on the bus. Evidence: `ResumedOnceInOrderTests` (bound 3,
+  kept after 4 runs).
+- **D3, amended — the first hand-over counts where the record shows it ran.** The attempts are
+  `AttemptCount + 1` where the record carries a claim (`AttemptCount > 0`) or a genuine failure
+  (`LastFailure` set and no conflict), and `AttemptCount` otherwise. For every `MaxDeliveryAttempts >= 2`
+  this is the design's `AttemptCount + 1 >= Max`; it differs only at a bound of 1, where the design's rule
+  would keep every due record without running it once — breaking *The host dies after acceptance* — and
+  would also keep a command whose only run was stopped or met a conflict. Evidence:
+  `ResumeOnceInOrderTests`.
+- **No migration file.** The repository ships no EF migrations; consumers generate their own, which the
+  migration guide's 4.2 section says. `StoreSchemaAdditionsTests` asserts the column.
+- **The own-clock and out-of-order scenarios are verified without a kill.** Orleans cannot run on a
+  shifted `TimeProvider` (its activation collector throws), so the own-clock test runs the dispatcher
+  and the resumer on PostgreSQL with a recording grain factory; the out-of-order test holds the records
+  with an active replay instead of a kill, which leaves them in the same state.
