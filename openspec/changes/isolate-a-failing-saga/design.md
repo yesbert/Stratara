@@ -80,3 +80,25 @@ the upgrade note recommends upgrading the saga silos together.
 No schema. Upgrade the saga-role silos together where possible. Rollback to 4.1.x: the 4.1.x shared
 reader resumes from the legacy checkpoint, which the new version never advanced — facts the per-saga
 readers applied since the upgrade are applied again by the shared reader. The rollback note says so.
+
+## Decisions taken during implementation (2026-09-18)
+
+- **D4 — A missing checkpoint is told apart from one at the beginning.** `GetAsync` answers 0 for both;
+  treating 0 as missing would let a saga stalled on its first entry jump to a sibling's position on
+  reactivation and skip that fact. An internal `IFirstCheckpointStore`, implemented by the framework's
+  EF store, answers existence and creates insert-only; any other store falls back to 0 meaning missing.
+  Evidence: `SagaReaderTests`, `ProjectionCheckpointStoreTests`.
+- **D5 — A reader creates every missing saga checkpoint of the host, not only its own.** Otherwise, on a
+  fresh deployment, one saga's reader could start and advance before a sibling's activated, and the
+  sibling would then start past facts it never saw. Creation never overwrites, so readers starting
+  together agree on the start. Cost: one existence query per saga on each reader activation.
+- **D2, amended — the start is the maximum of the legacy checkpoint and the host's other saga
+  checkpoints.** "Legacy if present" would start a saga added after the upgrade at the old shared
+  checkpoint and replay everything applied since.
+- **D3, amended — the legacy grain retires without deactivating at once.** Deactivating on activation
+  let a 4.1.x silo's call bounce between activations until the runtime refused it; the grain removes its
+  reminder, logs `117_125` `SharedSagaReaderRetired` and answers each call as a no-op until it is
+  collected idle.
+- **Added — two sagas with one type name are refused** at the reader, because they would share one
+  checkpoint; and the operate guide says to size the connection pool for one reader per saga and
+  partition.
