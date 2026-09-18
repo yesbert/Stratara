@@ -80,6 +80,12 @@ applies to the entire NuGet family.
 
 ### Changed
 
+- **Security: `"SessionContext": { "AllowTenantHeader": true }` in the host's configuration now turns the tenant-header
+  fallback on.** `AddSessionContext()` did not read the `SessionContext` section, so such an entry did nothing unless
+  the host bound the section itself; it is read now (see *Fixed*). Before upgrading, search every environment's
+  configuration for `AllowTenantHeader` and remove the entry or set it to `false` unless the host means to accept the
+  `X-Tenant-Id` header. Likewise, a `Stratara:BlobEncryption:LegacyBlobsCarryPurpose` entry now takes effect for a host
+  that registers the blob encryptor through `AddSecurity()` or `AddStrataraBlobEncryption()` alone.
 - **Orleans: `hybrid: true` without a bus dispatcher fails at registration** naming `AddOutboxDispatcher`; it ran
   grain-only without a word.
 - **The execution model's operating limits are documented**: a forwarded command whose handler outlasts the response
@@ -170,6 +176,20 @@ applies to the entire NuGet family.
   when the host starts. **A host that relied on one work's callback to configure the others** sets the value for all
   of them with `services.Configure<SingletonWorkOptions>(...)` instead; a host that already configures
   `SingletonWorkOptions` directly is unaffected.
+- **Every options type that names a configuration section is read from it.** `SessionContextOptions` (`SessionContext`),
+  `ProjectionReplayOptions` (`ProjectionReplay`) and — for a host without `AddStrataraFileKeyStore` —
+  `StrataraBlobEncryptionOptions` (`Stratara:BlobEncryption`) were registered and bound by nothing, so a value in the
+  documented section did nothing. `AddSessionContext()`, `AddProjectionReplayState()` and `AddStrataraBlobEncryption()`
+  now read the section from the host's configuration, directly or through `AddOutboxDispatcher()`, `AddSecurity()` and
+  the worker composites. A service collection without an `IConfiguration` keeps the defaults; a value configured in
+  code after the registration takes precedence, and calling a registration again does not re-apply the section over
+  it. `AddStrataraOrleansCommandDispatcher()` likewise reads `MessageRetryOptions` (`MessageRetry`) and validates it at
+  start when no bus transport is registered before it — a host whose commands run only through the execution model
+  set the resume bound in that section to no effect; where a transport registered first already reads the section, it
+  stays the only reading. A test now holds every public options type with a section name to being read from it.
+- **A projection replay lease of zero or less is refused at start.** `ProjectionReplayOptions.LeaseSeconds <= 0` fails
+  the host with an `OptionsValidationException` naming `ProjectionReplay:LeaseSeconds`; it was accepted, and on the
+  in-process replay state the marking lapsed at once and publication resumed in the middle of a rebuild.
 - **Orleans: `hybrid: true` keeps a bus dispatcher registered by factory or as an instance.** `AddStrataraProjectionGrains`
   and `AddStrataraSagaGrains` kept publishing bundles to the bus only when the dispatcher had been registered by type; a
   factory- or instance-registered one was removed and bundles stopped reaching the bus.

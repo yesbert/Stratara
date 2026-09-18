@@ -139,8 +139,6 @@ works with a principal that has already been authenticated:
 
 ```csharp
 builder.Services.AddSessionContext();
-builder.Services.AddOptions<SessionContextOptions>()
-    .Bind(builder.Configuration.GetSection(SessionContextOptions.SectionName));
 
 var app = builder.Build();
 
@@ -181,8 +179,9 @@ host has opted in.
 | missing or unparsable | off (the default) | `DefaultTenantIdentifier.Value`; any `X-Tenant-Id` header is ignored |
 | missing or unparsable | on | the `X-Tenant-Id` header if it is parsable, otherwise `DefaultTenantIdentifier.Value` |
 
-The fallback is controlled by `SessionContextOptions`, which binds from the `SessionContext`
-configuration section:
+The fallback is controlled by `SessionContextOptions`, which `AddSessionContext()` — directly or
+through `AddCommonFrameworkServices()` — reads from the `SessionContext` section of the host's
+configuration:
 
 ```json
 {
@@ -192,10 +191,16 @@ configuration section:
 }
 ```
 
-`AllowTenantHeader` defaults to `false`. `AddSessionContext()` registers the options but does not
-bind them to configuration. To set the value from `appsettings.json`, bind the section yourself, as
-the pipeline example above does, or set it in code with
-`services.Configure<SessionContextOptions>(o => o.AllowTenantHeader = true)`.
+`AllowTenantHeader` defaults to `false`. A value set in code with
+`services.Configure<SessionContextOptions>(o => o.AllowTenantHeader = false)` after
+`AddSessionContext()` takes precedence over the section. A service collection that carries no
+configuration — a unit test's bare `ServiceCollection` — gets the default.
+
+**Since 4.2.0 the section is read — check it before you upgrade.** Before, `AddSessionContext()`
+did not read the `SessionContext` section, so `"SessionContext": { "AllowTenantHeader": true }` in
+`appsettings.json` did nothing unless the host bound the section itself. Now such an entry turns the
+tenant-header fallback **on**. Search every environment's configuration for `AllowTenantHeader`
+before upgrading, and remove the entry or set it to `false` unless you mean to accept the header.
 
 Turn the fallback on only in two cases: an upstream check (such as a platform-admin role gate)
 controls who can send the header, or the header is part of a trusted service-to-service contract.

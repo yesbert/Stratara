@@ -9,7 +9,8 @@ validates on start.
 
 ## Goals / Non-Goals
 
-**Goals:** the two sections read; an impossible lease refused; a test that keeps the next options type
+**Goals:** the unbound sections read (session context, replay, blob encryption, the Orleans-only
+message retry); an impossible lease refused; a test that keeps the next options type
 from joining them.
 
 **Non-Goals:** validating every other option (each already has what its capability states); binding
@@ -17,12 +18,21 @@ options that document no section (the Orleans options are configured in code by 
 
 ## Decisions
 
-### D1 — Bind lazily from the container's configuration
+### D1 — Bind lazily from the container's configuration, once
 
-**Decision.** Both registrations add
-`Configure<IServiceProvider>((o, p) => p.GetService<IConfiguration>()?.GetSection(T.SectionName).Bind(o))`,
-the pattern `AddOutboxDispatcher` uses. No signature changes; a service collection without an
-`IConfiguration` binds nothing.
+**Decision.** Each registration adds an `IConfigureOptions<T>` class that reads the section from
+whatever `IConfiguration` the container holds when the options are first resolved, registered with
+`TryAddEnumerable` so it exists once, at the position of the first registration. No signature changes;
+a service collection without an `IConfiguration` binds nothing. Validation is an `IValidateOptions<T>`
+registered the same way, with `ValidateOnStart()`.
+
+**Why not `Configure<IServiceProvider>(…)` as `AddOutboxDispatcher` does** (the plan until
+implementation, 2026-09-18). Every call would add another configure action. The session context is
+registered by `AddCommonFrameworkServices`, which every composite calls; a host that combines
+composites, or calls a registration twice, would have the section applied again *after* a value it set
+in code in between — for `AllowTenantHeader`, a security setting silently overridden. Evidence: the
+repeat-registration tests in `SessionServiceCollectionExtensionsTests` and
+`ProjectionReplayOptionsBindingTests`.
 
 **Why not `BindConfiguration`.** It resolves `IConfiguration` unconditionally and throws where none is
 registered — a unit test's bare `ServiceCollection`, which the framework's own tests and consumers use.
@@ -49,5 +59,8 @@ type that is not bound fails it.
 
 ## Risks / Trade-offs
 
-- [An inert `AllowTenantHeader: true` in a consumer's settings becomes live] → the first line under
-  *Changed* in the CHANGELOG, and the upgrade section of the session-context page.
+- [An inert `AllowTenantHeader: true` or `LegacyBlobsCarryPurpose` in a consumer's settings becomes
+  live] → the first line under *Changed* in the CHANGELOG, and the upgrade notes of the session-context
+  and encryption pages.
+- [`IOptionsMonitor` does not reload these options when configuration changes] → as for every lazily
+  bound option in the framework today; not in scope.

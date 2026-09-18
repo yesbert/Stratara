@@ -59,23 +59,35 @@ public static class OutboxServiceCollectionExtensions
     /// registers its own <see cref="IProjectionReplayState"/> keeps it.
     /// </para>
     /// <para>
-    /// Also registers <see cref="ProjectionReplayOptions"/> with its defaults, so the replay marking is
-    /// leased even when the consumer configures nothing. Bind the section with
-    /// <c>services.Configure&lt;ProjectionReplayOptions&gt;(...)</c> to override the lease.
+    /// Also registers <see cref="ProjectionReplayOptions"/>, read from the <c>ProjectionReplay</c>
+    /// section of the <c>IConfiguration</c> the container holds, so the replay marking is leased even
+    /// when the consumer configures nothing. A service collection that holds no configuration gets the
+    /// defaults. A value configured in code with <c>services.Configure&lt;ProjectionReplayOptions&gt;(...)</c>
+    /// after this call takes precedence over the section; one configured before it is overwritten for
+    /// every key the section carries. The section is applied once, at the position of the first call,
+    /// so calling this method again — directly, through <see cref="AddOutboxDispatcher"/> or through a
+    /// composite — does not re-apply it.
+    /// </para>
+    /// <para>
+    /// A <see cref="ProjectionReplayOptions.LeaseSeconds"/> of zero or less is refused when the host
+    /// starts, with an <see cref="OptionsValidationException"/> naming
+    /// <c>ProjectionReplay:LeaseSeconds</c>.
     /// </para>
     /// </remarks>
     /// <example>
     /// One host needs no Redis; a deployment whose replay must reach several hosts registers the
     /// shared connection, in either order:
     /// <code>
+    /// // appsettings.json: { "ProjectionReplay": { "LeaseSeconds": 600 } }
     /// services.AddProjectionReplayState();
     /// builder.AddCaching();                       // optional: makes the replay state span hosts
-    /// services.Configure&lt;ProjectionReplayOptions&gt;(o =&gt; o.LeaseSeconds = 600);
     /// </code>
     /// </example>
     public static IServiceCollection AddProjectionReplayState(this IServiceCollection services)
     {
-        services.AddOptions<ProjectionReplayOptions>();
+        services.AddOptions<ProjectionReplayOptions>().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<ProjectionReplayOptions>, ProjectionReplayOptionsBinding>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ProjectionReplayOptions>, ProjectionReplayOptionsBinding>());
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IProjectionReplayState>(CreateProjectionReplayState);
         return services;
