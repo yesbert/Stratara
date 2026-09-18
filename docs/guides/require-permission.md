@@ -70,7 +70,8 @@ public sealed record IssueCreditCommand(Guid InvoiceId, decimal Amount) : IComma
 `AuthorizingMediator` and `AuthorizingCommandOutboxDispatcher` enforce the attribute before the
 handler is resolved. A denial throws `PermissionAuthorizationException`, whose `RequiredPermission`
 names the missing permission. It derives from `AuthorizationException`, so an existing role-era 403
-mapping catches permission denials unchanged. Permissions are resolved from the session's actor and tenant,
+mapping catches permission denials unchanged; `AddStrataraProblemDetails()` answers it `403`, or `401`
+when the caller is not authenticated. Permissions are resolved from the session's actor and tenant,
 so the check works where a command is resumed on an Orleans silo without a web request; a role provider must
 do the same — see [Authorization Decorators](auth-decorators.md#custom-iauthorizationprovider).
 

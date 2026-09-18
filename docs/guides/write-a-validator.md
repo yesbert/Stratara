@@ -118,6 +118,13 @@ A validation rejection becomes `400` with the failures grouped by the field each
 authorization refusal and a tenant-access denial each become `403`, in the same RFC 7807 shape.
 Anything the framework did not raise is left alone and reaches your own diagnostics unchanged.
 
+A caller that is not authenticated is answered `401` instead — for a refusal, a tenant-access denial
+and a `SessionRequiredException` (an operation that needed a session, such as a save or a dispatch)
+alike. Where the host has a default authentication scheme the mapping challenges through it, so a
+bearer client receives `WWW-Authenticate` and a cookie client is redirected, as `[Authorize]` would
+do; without one it writes a `401` problem response. See
+[An anonymous caller is answered 401](../concepts/session-context.md#an-anonymous-caller-is-answered-401).
+
 **Both lines are needed.** `AddStrataraProblemDetails()` registers the handler and
 `app.UseExceptionHandler()` is what reaches it — register the first without the second and nothing is
 converted, exactly as if the mapping were absent.

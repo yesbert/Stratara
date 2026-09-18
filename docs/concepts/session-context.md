@@ -57,7 +57,7 @@ public sealed class ForeignTenantScope(ISessionContextProvider sessions)
     public void ActOn(Guid targetTenantId)
     {
         var current = sessions.Current
-            ?? throw new InvalidOperationException("No session context is set.");
+            ?? throw new SessionRequiredException("No session context is set.");
 
         sessions.Set(current with { TenantId = targetTenantId });
     }
@@ -159,12 +159,45 @@ What happens depends on the request:
     request to a per-user scope, and data already written under the tenant scope could no longer be
     read the same way.
 - **Principal not authenticated.** No context is set, and the request continues. `Current` stays
-  `null`.
+  `null`. What the caller receives then is described in
+  [An anonymous caller is answered 401](#an-anonymous-caller-is-answered-401).
 - **No name-identifier claim, or one that isn't a parsable identifier.** The user identity is the
   empty identifier (`Guid.Empty`). The request is not rejected.
 
 To act on another tenant's data, promote the data-owner tenant after authorization, as shown in
 [Actor and data owner](#actor-and-data-owner).
+
+## An anonymous caller is answered 401
+
+An operation that must be attributed to somebody fails when no context is set: saving events,
+recording a command audit, and dispatching a command, on the bus path and on the Orleans execution
+model's path alike. The failure is `SessionRequiredException` from `Stratara.Abstractions.Session`.
+It derives from `InvalidOperationException`, so an existing `catch (InvalidOperationException)`
+still catches it, and its message is the one these operations have always used.
+
+On a host that registered the problem-details mapping, a caller that is not authenticated is
+answered `401`, not `500`:
+
+```csharp
+builder.Services.AddStrataraProblemDetails();   // Stratara.ServiceDefaults.AspNetCore
+app.UseExceptionHandler();
+```
+
+- **An unguarded endpoint.** The `SessionRequiredException` the save or the dispatch throws becomes
+  `401`.
+- **A guarded endpoint.** A role, permission or tenant-access guard that refuses a caller without a
+  session refuses it as a denial. For a caller that is not authenticated the mapping answers that
+  denial `401` as well, because what the caller lacks is an identity, not a permission. An
+  authenticated caller's denial stays `403`.
+- **With an authentication scheme.** If the host registered a default challenge scheme, the mapping
+  challenges through it, exactly as `[Authorize]` on the same endpoint would: a bearer client
+  receives `401` with `WWW-Authenticate` and the problem body, and a cookie client is redirected to
+  the login page. Without a scheme the mapping writes a `401` problem response itself.
+- **An authenticated caller without a context.** The failure is not converted. It means the host
+  did not run `SessionContextMiddleware` after authentication, and that stays a loud server error.
+
+You don't need `RequireAuthorization()` on every endpoint just to keep an anonymous caller from
+receiving a `500`. Keep it where you want the request refused before your handler runs.
 
 ## Tenant resolution fails closed
 

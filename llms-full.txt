@@ -218,6 +218,7 @@ What the framework throws. Catching one of these is a contract; catching `Except
 | `Stratara.Abstractions.EventSourcing.PrecedingFactMissingException` | Stratara.Abstractions | Reports that the entity a fact refers to does not exist in the handler's read model yet, so the fact cannot be applied until the fact that created the entity has been |
 | `Stratara.Abstractions.Multitenancy.TenantAccessDeniedException` | Stratara.Abstractions | Thrown by the tenant-isolation pipeline behavior when an ITenantScopedRequest is rejected: either its TenantId does not match the current session's data-owner tenant, or strict mode observed an unauthorized cross-tenant operation |
 | `Stratara.Abstractions.Persistence.ConcurrencyConflictException` | Stratara.Abstractions | Thrown by an ITransaction implementation when an optimistic-concurrency conflict is detected during commit (i.e |
+| `Stratara.Abstractions.Session.SessionRequiredException` | Stratara.Abstractions | Thrown when an operation that must be attributed to a caller — saving events, recording a command audit, dispatching a command — runs with no session context set |
 | `Stratara.Abstractions.Validation.StrataraValidationException` | Stratara.Abstractions | Thrown by the validation pipeline behavior when a request fails validation with one or more Error-severity failures |
 
 ## Names on the wire
