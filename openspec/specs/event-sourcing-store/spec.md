@@ -308,11 +308,18 @@ whose entries would straddle the end of a batch SHALL be held back whole for the
 transaction that alone holds more entries than a batch SHALL be returned whole, so that a batch MAY be
 larger than the size asked for. A reader SHALL
 report a partition's head: the position after which no entry committed at the time of the call exists,
-so that a consumer can start there. Two readers
+so that a consumer can start there. A head SHALL be taken while nothing appends — the deployment's own
+seeding is where a head is taken — because a reader whose positions come from the store's transactions
+cannot count what a transaction still open might yet commit before what it already sees: taken while
+writers run, its head is held back, and a consumer seeded at it applies what those writers commit a
+second time rather than skipping it. The documentation SHALL say so where it tells a deployment to
+seed. Two readers
 SHALL be offered: one native to PostgreSQL that adds no work to an append, and one for any relational
 provider the framework ships a store registration for, under which concurrent appends to one partition
 wait for each other. A store that holds entries from before the native reader's commit record was
-added SHALL be adoptable without rewriting its event table: the documented migration adds the record
+added SHALL be adoptable without rewriting its event table, and the backfill that does it SHALL walk the
+history once rather than once per batch, so that a store whose history is long is adoptable at all: the
+documented migration adds the record
 without a rewrite, and the framework's backfill stamps the existing entries in the order they were
 appended, in bounded batches each committed on its own, so that the reader returns history in bounded
 batches and in append order; the backfill SHALL run while nothing appends, and the documentation SHALL
@@ -356,9 +363,16 @@ a store with entries it has not positioned.
 
 #### Scenario: A reader reports its head
 
-- **WHEN** a consumer asks a reader for a partition's head and then reads after that position
+- **WHEN** a consumer asks a reader for a partition's head while nothing appends, and then reads
+  after that position
 - **THEN** no entry committed before the head was asked for is returned, and an entry committed
   afterwards is — verified for both readers on the PostgreSQL store
+
+#### Scenario: A head is taken while a writer's transaction is open
+
+- **WHEN** a head is asked for while a write transaction of the store is still open
+- **THEN** it names no position an entry of that transaction could yet precede, so a consumer seeded
+  at it applies what that transaction commits rather than skipping it
 
 #### Scenario: A populated PostgreSQL store adopts the native reader
 
@@ -425,3 +439,4 @@ a store with entries it has not positioned.
 - **WHEN** a host sets the setting that once claimed to maintain the counter
 - **THEN** the build warns that it is obsolete, names the interceptor as what maintains the counter, and
   the value changes nothing
+

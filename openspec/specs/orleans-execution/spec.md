@@ -96,7 +96,10 @@ it was dispatched under. Under strict mode a record that carries no signature or
 verify SHALL be kept for an operator at once, without an attempt, with the reason recorded with it;
 under permissive mode it SHALL be resumed and the failure recorded; the two failures SHALL be
 distinguishable by the identity of the record, as they are on the bus. A command handed over without
-passing through storage is not verified. A record written before the host signed carries no
+passing through storage is not verified. Where a resumed command runs SHALL be taken from the claims
+that are signed, not from anything beside them that is not: a record whose stored routing disagrees
+with its signed envelope SHALL be treated as a record that does not verify, and the documentation
+SHALL name what the signature covers and what it does not. A record written before the host signed carries no
 signature, and the documentation SHALL name the rollout through permissive mode, as it does for the
 bus.
 
@@ -268,6 +271,19 @@ the token.
   does not run, and the record that says so is distinct from the one for an unsigned command —
   verified on the PostgreSQL store
 
+#### Scenario: A record's row disagrees with its signed envelope
+
+- **WHEN** a recorded command's stored routing says something other than the signed envelope does
+- **THEN** it is kept for an operator under strict mode with the reason recorded, and under permissive
+  mode it is resumed as the signed envelope says and the failure logged
+
+#### Scenario: Commands are queued behind a handler when the silo stops
+
+- **WHEN** a silo stops while a forwarded command's handler runs and further commands for the same
+  aggregate wait behind it
+- **THEN** the callers of the waiting commands are told the activation ended before their command ran,
+  without waiting for the running handler's activation to be collected, and none of those commands runs
+
 #### Scenario: A record written before the host signed is resumed
 
 - **WHEN** a record without a signature is due on a host with a signer
@@ -306,6 +322,17 @@ reader brought back for a partition the host's partition count no longer has SHA
 stop returning, log that it did, and read nothing — so that lowering the count leaves no reader that
 returns every keep-alive period to be refused.
 
+Pausing the readers for a rebuild or a replay SHALL leave none of them paused where it does not
+finish: a pause that fails SHALL resume the readers that did pause and SHALL fail naming what it
+could not pause, so that no partition is left waiting for a resume that never comes. Returning a
+checkpoint to the beginning SHALL be accepted whatever reader last wrote it — the beginning means
+the same under every reader and every partition count — so that a deployment whose reader or
+partition count changed can rebuild or replay from inside the running cluster, and the documentation
+SHALL name that as the way to recover from a refused checkpoint. A wake-up that cannot be sent SHALL
+be logged with the consumers it was meant for, so that a wake-up path that is always lost is visible
+as more than latency, and one wake-up that fails SHALL NOT keep the other consumers of that commit
+from being woken.
+
 #### Scenario: The host dies between the commit and the wake-up
 
 - **WHEN** a host is killed after committing events and before any wake-up or publication
@@ -337,6 +364,23 @@ returns every keep-alive period to be refused.
   model
 - **THEN** the projection's readers do not resume until both have finished, and the read model holds
   every fact of the store once the readers have caught up
+
+#### Scenario: A reader cannot be paused for a rebuild
+
+- **WHEN** one partition's reader cannot be paused for a rebuild
+- **THEN** the rebuild fails naming that partition, and no reader the rebuild reached stays paused
+
+#### Scenario: A read model is rebuilt after the partition count changed
+
+- **WHEN** a read model is rebuilt on a host whose checkpoints were written by another reader or under
+  another partition count
+- **THEN** the rebuild returns them to the beginning under the host's own reader and the read model is
+  re-read, without stopping the deployment
+
+#### Scenario: A wake-up cannot be sent
+
+- **WHEN** a commit's wake-up cannot be delivered
+- **THEN** it is logged naming the consumers it was meant for, and the consumers it could still reach are woken
 
 #### Scenario: A rebuild is requested during a full replay
 
@@ -412,8 +456,13 @@ that registered it, and SHALL resume elsewhere when the silo running it is lost.
 declares a silo dead that is still running, the work MAY run on a second silo from that declaration
 until the declared silo learns of it and stops, so a consumer's singleton work SHALL tolerate a run
 overlapping with one on another host, as the framework's own outbox drain does; the documentation
-SHALL state that window and SHALL name how long a failover takes in terms of the cluster's membership
-settings and the work's keep-alive period. Owner-checked durable
+SHALL state that window, SHALL name how long a failover takes in terms of the cluster's membership
+settings and the work's keep-alive period, and SHALL say that the window is bounded by those settings
+only while the declared silo can still read the cluster's membership — one that cannot never learns of
+its declaration. A run that fails SHALL be logged whatever it failed with,
+including a cancellation the work was not asked for, except where the silo it runs on is stopping. Two
+works SHALL NOT carry one name: the name is what a work's single run is keyed by, so the second would
+never run, and a host that registers two SHALL fail rather than run one of them. Owner-checked durable
 timers SHALL fire once per cluster on or after their due time, SHALL fire for an owner that exists and
 never for one that was removed, and SHALL survive a restart of the silo that registered them. A timer
 SHALL NOT fire a further period late because the clocks of the silos differ slightly. A process
@@ -436,6 +485,11 @@ singleton work registered with the name it publishes under SHALL NOT be construc
 is active, so that a work whose construction needs the running host is not constructed while the
 silo starts; a work whose name differs from the one it was registered with SHALL fail the silo's
 start with a message naming both.
+
+#### Scenario: Two singleton works carry one name
+
+- **WHEN** a host registers two works under the same name, or two registered works return the same name
+- **THEN** the host fails naming both works and the name, rather than running one of them
 
 #### Scenario: Two silos run the same singleton work
 
@@ -548,7 +602,13 @@ permits. A permit SHALL expire when the silo holding it is no longer a member of
 lease has lapsed, so that crashed workers do not shrink the bound. Interactive commands SHALL NOT
 queue behind heavy work.
 
-The bound SHALL hold across the loss of the silo that keeps the permits. A keeper that takes over
+The units a silo runs SHALL run beside each other up to the pool's bound, whether or not their
+handlers yield: a unit whose handler computes without awaiting anything SHALL NOT keep another unit
+of the silo from running, and SHALL NOT keep a further heavy command from being accepted and counted
+as running while it waits for a worker.
+
+The bound SHALL hold across the loss of the silo that keeps the permits, for every unit that
+registers again within its lease. A keeper that takes over
 after such a loss SHALL admit no new unit until every unit admitted by the lost keeper has had a
 lease's time to register with it again, and a running unit whose permit was lost with its keeper
 SHALL count against the bound again as soon as it has registered; a heavy command dispatched in that
@@ -556,7 +616,9 @@ window SHALL wait, as it waits when the bound is full, rather than start beside 
 A running unit that is refused when it registers again — one whose lease had already lapsed with the
 lost keeper — SHALL keep running, because a running handler is not paused, SHALL keep asking on every
 renewal until it holds a permit or ends, and SHALL be logged with an event of its own, so that an
-operator can see a unit running outside the bound while it does.
+operator can see a unit running outside the bound while it does. A permit that falls free while such
+a unit is asking SHALL go to that unit and not to a command waiting to start, so that the bound is
+exceeded only until a running unit ends.
 
 #### Scenario: A worker silo dies holding permits
 
@@ -569,6 +631,13 @@ operator can see a unit running outside the bound while it does.
 - **WHEN** interactive commands are dispatched while the heavy pool is saturated
 - **THEN** their latency stays within its no-burst range — verified with a saturated heavy pool on
   the PostgreSQL store
+
+#### Scenario: Two heavy handlers compute without yielding
+
+- **WHEN** two heavy commands are dispatched to one silo and both handlers compute for longer than
+  the grace without awaiting anything
+- **THEN** both run at the same time, each runs once, and neither is handed over a second time while
+  it runs — verified on the PostgreSQL store
 
 #### Scenario: The silo keeping the permits dies while the bound is full
 
@@ -586,6 +655,12 @@ operator can see a unit running outside the bound while it does.
 - **THEN** it runs to its end, an event names the unit, and it holds a permit again as soon as one is
   free
 
+#### Scenario: A permit falls free while a refused unit and a new command both want it
+
+- **WHEN** a permit is released while a running unit that was refused is asking for one and a heavy
+  command is waiting to start
+- **THEN** the running unit holds the permit and the waiting command keeps waiting
+
 ### Requirement: A host can reset what the execution model keeps outside the event stream
 
 A host SHALL be able to clear, deterministically, everything the execution model keeps beside the
@@ -593,8 +668,11 @@ event stream for its own deployment — the reminders of its service, the member
 grain directory's entries and the checkpoints of the store-reading projections and sagas the host
 registers — so that the deployment can be brought back to "nothing scheduled, nothing remembered". A
 reset SHALL NOT remove a reminder, membership row or checkpoint that belongs to another deployment or
-to a consumer the host does not register, and SHALL report how many of each it removed. The event
-stream SHALL NOT be touched by a reset. A host SHALL be able to name the schema its runtime tables
+to a consumer the host does not register, and SHALL report how many of each it removed. A reset offered
+by a host that goes on running — the test-support host is the one the framework ships — SHALL instead
+leave every registered reader where the store's head is and report how many it moved, because a reader
+returned to the beginning would apply the store again into read models the reset does not empty. The
+event stream SHALL NOT be touched by a reset. A host SHALL be able to name the schema its runtime tables
 live in, and a reset that finds a runtime table absent SHALL fail naming it rather than report that it
 removed nothing. The documentation SHALL say that a reset that fails part-way leaves what it had not
 yet removed in place, and SHALL show the reset resolved in a way that works wherever scope validation
@@ -725,7 +803,9 @@ at once during a rollout, because both apply idempotently. A host that asks the 
 registration to keep publishing bundles to the bus SHALL keep the bus dispatcher it registered
 whatever the shape of that registration, and a host that asks for it without having registered a
 bus dispatcher SHALL fail at registration with a message naming what is missing rather than run
-without publishing. Each of the model's registrations SHALL
+without publishing. This SHALL hold for every registration that asks for it, whether it is the first
+store-reading role the host registers or a later one, so that asking and being silently ignored is
+impossible. Each of the model's registrations SHALL
 be idempotent in itself: called twice, whether by the host or by a composite of the host's that
 wraps it, it SHALL leave the composition as one call leaves it, so that no projection is woken twice,
 no consumer is listed twice, and no work is started twice. A role's work SHALL run only on a silo
@@ -772,6 +852,13 @@ sample that does so.
 - **WHEN** a host registers its bus bundle dispatcher through a factory or an instance and then asks
   the projection registration to keep publishing to the bus
 - **THEN** a committed bundle still reaches the bus dispatcher, and the store-reading grains are woken
+
+#### Scenario: A second store-reading role asks to keep the bus
+
+- **WHEN** a host registers one store-reading role without keeping the bus and then a second one that
+  asks to keep it
+- **THEN** either the bundles still reach the bus dispatcher, or the registration fails naming what is
+  missing — the request is not ignored
 
 #### Scenario: A host asks to keep the bus without a bus dispatcher
 
@@ -828,7 +915,7 @@ sample that does so.
 - **WHEN** a silo registers a grain directory under the model's name directly, not through the call
   that publishes, and registers a role or a singleton work
 - **THEN** the silo fails at start with a message naming the roles and works it registered and the
-  call that publishes them, and a silo that registers neither a role nor a work starts
+  call that publishes them
 
 #### Scenario: A silo registers the directory itself and hosts nothing
 
@@ -858,3 +945,4 @@ sample that does so.
 - **THEN** its handlers, projections, sagas and timers run through the registrations it uses in
   production, in the test's process, without a cluster, a broker or a database server — and the
   shipped sample runs the same in one console run
+
