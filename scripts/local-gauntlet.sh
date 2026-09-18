@@ -137,6 +137,9 @@ if [[ ${SKIP_PACK} -eq 0 ]]; then
     pkg_count=$(ls "${PACK_DIR}"/*.nupkg 2>/dev/null | wc -l | tr -d ' ')
     echo "Produced ${pkg_count} .nupkg files in ${PACK_DIR}"
 
+    step "Release notes fit nuget.org"
+    "${SCRIPT_DIR}/check-release-notes.sh" "${PACK_DIR}"
+
     step "Test-support guard check (pack-and-consume)"
     "${SCRIPT_DIR}/check-test-support-guard.sh" "${PACK_DIR}"
 
