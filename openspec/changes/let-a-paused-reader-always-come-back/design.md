@@ -95,3 +95,30 @@ the upgrade window only, and it is written into the upgrade note.
 
 No schema. Upgrade silos in any order; the old grain methods remain until the next major version.
 Rollback to 4.1.x is safe: a 4.1.x silo ignores nothing it relies on.
+
+## Decisions taken during implementation (2026-09-18)
+
+Evidence for each: the tests named, run on the PostgreSQL store.
+
+- **D5 — A resume for a pauser the grain does not hold makes it read its checkpoint again.** It
+  releases nothing (D2), but clears the reader's cached position. Without it D3 has a hole: a reader
+  that lapsed or moved and advanced before the truncate keeps its old position after the second reset,
+  and where no new fact commits the guarded advance never refuses it — the read model stays empty until
+  the next commit. Evidence: `PausedReaderLeaseTests` (the early-resume case fails with "model holds 0
+  of 12 rows" without it).
+- **D6 — A renewal for a pauser the grain does not hold pauses it again**, without waiting for a
+  running batch, so a reader that lapsed or moved comes back under the live rebuild's pause. A renewal
+  delayed past the resume can cause one spurious pause, which lapses after one lease and is logged. The
+  hold stops its renewal loop and waits for it before it resumes, so only a message delayed in transit
+  can do this.
+- **D7 — A pause starts its lease once the running batch has ended**, so a long batch does not use up
+  the lease before the pauser can renew it.
+- **D8 — The pause port returns the hold.** `INudgeTarget.PauseAsync` returns the hold, which resumes;
+  the port's separate resume is gone. Internal.
+- **D9 — Lease and renewal period are an internal singleton** (`StoreReaderLease`, 60 s / 20 s) rather
+  than constants, so the test host can shorten them with its other periods. Nothing public.
+- **D10 — The second reset always runs**, with `CancellationToken.None`, also after a failed truncate;
+  where both fail the caller receives both as an `AggregateException`.
+- **D4, amended — a rebuild during a rolling upgrade.** A rebuild started from a 4.2.0 silo cannot
+  pause a reader still hosted on a 4.1.x silo, which has no held pause; it fails naming that reader,
+  which is safe. The operate guide and the CHANGELOG say to rebuild once every silo runs 4.2.0.
