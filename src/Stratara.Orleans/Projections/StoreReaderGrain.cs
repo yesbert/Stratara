@@ -172,6 +172,7 @@ internal abstract class StoreReaderGrain(
         if (partition >= settings.PartitionCount)
         {
             await RetireAsync();
+            this.DeactivateOnIdle();
             logger.LogStoreReaderRetired(Consumer, Partition, settings.PartitionCount);
             await base.OnActivateAsync(cancellationToken);
             return;
@@ -263,13 +264,14 @@ internal abstract class StoreReaderGrain(
         {
             await this.UnregisterReminder(keepAlive);
         }
-
-        this.DeactivateOnIdle();
     }
 
     /// <summary>
     /// Whether the reader the grain's key names was superseded — the host reads what it read under other names now — so
-    /// the grain retires when it is activated, as one beyond the partition count does. The default is not.
+    /// the grain retires when it is activated, as one beyond the partition count does. The default is not. A superseded
+    /// grain is not deactivated at once but left to the runtime's idle collection: a silo of an earlier release still
+    /// calls it in a rolling cluster, and the call that activated it is answered, doing nothing, instead of being
+    /// forwarded to an activation that retires again until the runtime rejects it.
     /// </summary>
     protected virtual bool Superseded => false;
 

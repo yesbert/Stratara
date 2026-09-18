@@ -192,18 +192,18 @@ internal sealed class SagaReaderRun(ISagaHandler handler, ISaga saga, IGrainFact
 internal static class SagaStart
 {
     /// <summary>
-    /// Gives <paramref name="consumer"/> a checkpoint where it has none: the furthest of the shared checkpoint a release
-    /// before 4.2.0 left and the checkpoints the host's other sagas hold in the partition, or the beginning where there
-    /// is none. Every other saga of the host without a checkpoint there is given the same one in the same step, before
-    /// any of them reads: a saga whose reader starts a moment later, once another has read on, starts where that one
+    /// Gives every saga of the host that has no checkpoint in the partition one: the furthest of the shared checkpoint
+    /// a release before 4.2.0 left and the checkpoints the host's sagas hold there, or the beginning where there is
+    /// none. Each reader runs this before it first reads, for all of the host's sagas and not for its own alone, so a
+    /// saga whose reader starts a moment later than another's, once that one has read on, starts where the other
     /// started and not where it has got to. A checkpoint is only ever created, never replaced, so two readers starting
-    /// together agree on it, and one at the beginning is kept as one — a saga still at the beginning is a saga that has
-    /// not applied its first entry, not one without a checkpoint.
+    /// together agree on it, and one at the beginning is kept as one — a saga still at the beginning is a saga that
+    /// has not applied its first entry, not one without a checkpoint.
     /// </summary>
     /// <param name="checkpoints">The checkpoint store.</param>
     /// <param name="reader">The name of the reader the host reads under.</param>
     /// <param name="partition">The partition.</param>
-    /// <param name="consumer">The saga's consumer.</param>
+    /// <param name="consumer">The consumer of the saga whose reader starts.</param>
     /// <param name="hostConsumers">The consumer of every saga the host registers.</param>
     /// <param name="cancellationToken">Propagated to the store.</param>
     public static async Task EnsureAsync(
@@ -215,22 +215,30 @@ internal static class SagaStart
         CancellationToken cancellationToken)
     {
         var first = FirstCheckpoint.Of(checkpoints, reader);
-        if (await first.ExistsAsync(consumer, partition, cancellationToken))
+        List<string> consumers = [consumer, .. hostConsumers.Where(other => !string.Equals(other, consumer, StringComparison.Ordinal))];
+        var missing = new List<string>();
+        foreach (var candidate in consumers)
+        {
+            if (!await first.ExistsAsync(candidate, partition, cancellationToken))
+            {
+                missing.Add(candidate);
+            }
+        }
+
+        if (missing.Count == 0)
         {
             return;
         }
 
         var position = await checkpoints.GetAsync(SagaGrain.ConsumerName, partition, reader, cancellationToken);
-        var others = hostConsumers.Where(other => !string.Equals(other, consumer, StringComparison.Ordinal)).ToList();
-        foreach (var other in others)
+        foreach (var held in consumers.Except(missing, StringComparer.Ordinal))
         {
-            position = Math.Max(position, await checkpoints.GetAsync(other, partition, reader, cancellationToken));
+            position = Math.Max(position, await checkpoints.GetAsync(held, partition, reader, cancellationToken));
         }
 
-        await first.CreateAsync(consumer, partition, reader, position, cancellationToken);
-        foreach (var other in others)
+        foreach (var starting in missing)
         {
-            await first.CreateAsync(other, partition, reader, position, cancellationToken);
+            await first.CreateAsync(starting, partition, reader, position, cancellationToken);
         }
     }
 }

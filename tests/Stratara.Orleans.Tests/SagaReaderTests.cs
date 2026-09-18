@@ -91,6 +91,18 @@ public sealed class SagaReaderTests
     }
 
     [Fact]
+    public async Task A_saga_with_a_checkpoint_gives_a_saga_added_beside_it_one_where_the_host_s_sagas_read()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        await checkpoints.SetAsync(Billing, Partition, Reader, 45);
+
+        await SagaStart.EnsureAsync(checkpoints, Reader, Partition, Billing, [Billing, Audit], TestContext.Current.CancellationToken);
+
+        Assert.Equal(45, await checkpoints.GetAsync(Audit, Partition, Reader));
+        Assert.Equal(45, await checkpoints.GetAsync(Billing, Partition, Reader));
+    }
+
+    [Fact]
     public async Task A_stateless_saga_is_handed_only_the_events_it_declares_and_nothing_for_an_entry_without_one()
     {
         var saga = new Mock<ISaga>().Object;
