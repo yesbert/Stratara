@@ -130,8 +130,9 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   and the work runs again). Every registration is idempotent, and a silo that registers the directory without
   `AddStrataraOrleans` while hosting a role or work fails at start.
   The silo needs a storage-backed grain directory registered with `silo.AddStrataraOrleans(...)` or it
-  fails at start; every setting is validated at start. A failing entry stops its partition and is
-  retried — it is not dead-lettered. Each entry is applied under the session it was recorded under, set
+  fails at start; every setting is validated at start. A failing entry stops its partition for the
+  projection or saga that fails on it and is retried — it is not dead-lettered; each saga reads with a
+  checkpoint of its own (`sagas:<SagaName>`), so the other sagas go on. Each entry is applied under the session it was recorded under, set
   before the projection, saga or process and their dependencies are resolved, so a service that takes its
   tenant at construction sees the entry's; a checkpoint advances only from the position its reader last saw
   (`IProjectionCheckpointStore.AdvanceAsync`). A handler on a grain path receives a token a stopping silo cancels
