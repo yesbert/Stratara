@@ -28,7 +28,7 @@ public sealed class IntentClaimTests(PostgreSqlFixture postgres)
             await context.Database.ExecuteSqlRawAsync("DELETE FROM outbox_entry", TestContext.Current.CancellationToken);
         }
 
-        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory);
+        var intents = new CommandIntentStore<PocWriteDbContext>(store.ContextFactory, TimeProvider.System);
         for (var i = 0; i < Rows; i++)
         {
             var id = Guid.CreateVersion7();
