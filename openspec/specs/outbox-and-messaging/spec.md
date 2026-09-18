@@ -278,7 +278,8 @@ is configured, it SHALL additionally carry a signature over the message's canoni
 #### Scenario: No session is set
 
 - **WHEN** a command is dispatched with no session context
-- **THEN** dispatch fails rather than producing an unattributable message
+- **THEN** dispatch fails rather than producing an unattributable message, with a failure that
+  identifies itself as a missing identity — on the bus path and on the execution model's path alike
 
 ### Requirement: The transport is replaceable
 

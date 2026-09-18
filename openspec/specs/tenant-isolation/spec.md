@@ -109,7 +109,8 @@ A security mode whose default is permissive is a mode nobody has actually enable
 
 A tenant-isolation rejection SHALL be signalled as a distinct failure type that a consumer's
 boundary can map to an HTTP 403, separately from an authentication failure and from a validation
-failure.
+failure. The framework's own boundary mapping SHALL answer the rejection of a caller that is not
+authenticated as an authentication failure instead.
 
 #### Scenario: A consumer maps the rejection at its boundary
 
