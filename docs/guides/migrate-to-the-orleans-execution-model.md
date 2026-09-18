@@ -69,6 +69,7 @@ execution model carries the columns and never fills them.
 | Write, PostgreSQL only | `event_stream_entry.commit_transaction_id` (`xid8`, filled by the database, indexed) | The transaction that inserted the entry, for the native reader |
 | Write | `outbox_entry.aggregate_id`, `heavy` | Where a recorded command runs |
 | Write | `outbox_entry.attempt_count`, `last_handed_over_at`, `kept_at`, `last_failure` (up to 2048 characters) | The bounded resume of a recorded command |
+| Write, since 4.2 | `outbox_entry.conflict_count` (integer, not null, 0 for existing rows) | The conflict bound of a recorded command, counted apart from its attempts |
 | Read | table `projection_checkpoint` (`projection`, `partition`, `reader`, `position`) | Where each store reader resumes. Keyed by consumer — the projection class's simple name, `sagas` for every saga — not by deployment, so renaming a projection class starts it at the beginning; see [Sharing a read store](operate-the-orleans-execution-model.md#sharing-a-read-store) |
 
 ### A populated event table on PostgreSQL
@@ -102,6 +103,18 @@ touches no row. An entry appended during the backfill receives no id before the 
 later id than newer entries after it, which inverts the order inside its stream — stop the appending
 hosts for the window. Running the backfill again on a stamped table changes nothing. An empty table takes
 the generated migration as it is.
+
+### Upgrading from 4.1
+
+4.2 adds `outbox_entry.conflict_count`. Generate a migration after upgrading, as for 4.1 —
+`dotnet ef migrations add AddOutboxConflictCount` — and apply it before the first 4.2 host starts. EF Core adds the
+column non-null with a default of 0, so the rows in flight need nothing, and a 4.1 host keeps running against the
+migrated table, which it ignores. A 4.2 host against the old table fails its first record.
+
+A command recorded under 4.1 is counted the 4.2 way once a 4.2 drain resumes it: the hand-over of its dispatch is
+its first attempt, so it may run one attempt fewer than 4.1 would have run it. While 4.1 silos remain, their
+hand-overs carry no claim stamp and are not fenced; a command two resumptions claim together can run twice until
+every silo runs 4.2.
 
 ## Upgrade in this order
 
@@ -205,7 +218,7 @@ timer owner check and handler with `AddStrataraDurableTimers`.
 |---|---|---|
 | API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. The record is committed on its own before the call returns, not with anything the caller writes: a caller whose own writes and the command must stand or fall together saves its own writes first and dispatches after. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order. A resumed command is authorized on a silo from the session recorded with it, where no web request exists: the `IAuthorizationProvider` behind `AddAuthorizingMediator` must answer from the session context — `MembershipAuthorizationProvider` does — or every resumed command is refused and, after its attempts, kept |
 | Command worker (`AddCommandWorkerServices`) | `builder.AddCommandServices()` instead, then `AddStrataraOrleansCommandDispatcher()`, `AddStrataraIntentStore<AppWriteDbContext>()` and `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register the aggregate grains after every other pipeline behaviour. The silo's own sends — from a handler or a saga — are recorded and handed over instead of published. The bus-fed mediator worker is not registered, so the silo consumes no command queue; keep `AddCommandWorkerServices` only while API hosts that still publish to the command topic remain. A silo that also registers a store-reading role needs no broker — see [when the broker can go](#when-the-broker-can-go); one without keeps publishing its bundles to the bus. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
-| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace` and `MessageRetryOptions.MaxDeliveryAttempts` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. Registered with its name, the drain is not constructed until the silo is active. The Redis outbox lock is no longer needed |
+| Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace`, `MessageRetryOptions.MaxDeliveryAttempts` and `MessageRetryOptions.MaxConflictRequeues` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. Registered with its name, the drain is not constructed until the silo is active. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
 | Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per partition hands each fact to the sagas; stateful processes derive from `SagaProcess<TState>`. Processes own durable timers, so the silo runs a reminder service |
 | Heavy command worker (`AddHeavyCommandWorkerServices`) | `ConfigureStrataraHeavyWork(o => o.ClusterWideLimit = …)` | Heavy commands run in a bounded pool per silo under cluster-wide permits; the heavy lane and its host go |
@@ -314,7 +327,7 @@ Every setting is validated when the host starts; an invalid one fails the start 
 
 | Settings | Defaults |
 |---|---|
-| `OrleansDispatchOptions` | `IntentGrace` 30 s, `CompletionWindow` 20 ms, `CompletionBatchSize` 64. The resume bound is `MessageRetryOptions.MaxDeliveryAttempts` |
+| `OrleansDispatchOptions` | `IntentGrace` 30 s, `CompletionWindow` 20 ms, `CompletionBatchSize` 64. The resume bounds are `MessageRetryOptions.MaxDeliveryAttempts`, the dispatch's hand-over counted as the first attempt, and `MessageRetryOptions.MaxConflictRequeues` for concurrency conflicts |
 | `HeavyWorkOptions` | `ClusterWideLimit` 8, `PermitRetry` 100 ms, `PermitLease` 30 s |
 | `ProjectionGrainOptions`, `SagaGrainOptions` | `BatchSize` 500, `PollInterval` 5 s, `KeepAlivePeriod` 1 min |
 | `CommitOrderOptions` | `PartitionCount` 16 |

@@ -153,27 +153,53 @@ recorded and handed over without waiting, in its own turn.
 
 ## Kept commands
 
-A recorded command whose handler keeps failing is resumed up to `MessageRetryOptions.MaxDeliveryAttempts`
-times and then kept: it stays in the outbox table with its attempt count and its last failure, and the
-commands after it are still resumed. Find the kept commands with:
+A recorded command is bounded as a bus message is, by the two bounds of `MessageRetryOptions`:
+
+- **A handler that keeps failing** runs `MaxDeliveryAttempts` times in all and is then kept. The hand-over of
+  the dispatch is the first attempt; `attempt_count` counts the resumptions after it, so a command kept under the
+  default bound of 3 carries `attempt_count = 2`. The record cannot tell whether a host that died right after the
+  record made that first hand-over, so such a command may run one attempt fewer; under a bound of 1 it is resumed
+  once all the same.
+- **A handler that fails on a concurrency conflict** — `ConcurrencyConflictException`, `ConcurrencyException` or
+  EF Core's `DbUpdateConcurrencyException`, after the in-process conflict pipeline has retried — counts the conflict
+  in `conflict_count` and gives its attempt back, so conflicts never use up the delivery bound. A command that has
+  been resumed after a conflict `MaxConflictRequeues` times (100 by default) and conflicts again is kept, which is
+  when the bus moves such a message to its dead-letter destination.
+
+A kept command stays in the outbox table with both counts and its last failure, and the commands after it are
+still resumed. Find the kept commands with:
 
 ```sql
-SELECT id, aggregate_id, attempt_count, last_failure
+SELECT id, aggregate_id, attempt_count, conflict_count, last_failure
 FROM outbox_entry
 WHERE kept_at IS NOT NULL;
 ```
 
-Once the cause is fixed, return a kept command; it is resumed with its attempts starting over:
+Once the cause is fixed, return a kept command; it is resumed with its counts starting over:
 
 ```sql
 UPDATE outbox_entry
-SET kept_at = NULL, attempt_count = 0
+SET kept_at = NULL, attempt_count = 0, conflict_count = 0
 WHERE id = @id AND kept_at IS NOT NULL;
 ```
 
 A failing handler is seen before the command is kept: every attempt that fails is logged as `117_112`
 with the command's identity, its type and the aggregate it names, and a hand-over that fails as `117_113`;
-the resumption that follows logs `117_004` with the attempt number, and the keep logs `117_104`.
+the resumption that follows logs `117_004` with the attempt number, and the keep logs `117_104` with both counts.
+
+A resumed command is run by one runner. Two resumptions can claim the same command — two drains while the singleton
+fails over, or the drain beside a bus outbox worker during adoption — and hand it over twice; so can a hand-over
+that arrives after the command completed. The hand-over carries the stamp of the claim that issued it, and the
+receiver takes the command over only if the record still carries that stamp: the first receiver moves it, and a
+hand-over that finds it moved, or finds the record gone, is dropped without running the handler and logged as
+`117_124` (Debug). A hand-over from a silo still on 4.1 carries no stamp and is not fenced, so the fence holds
+once every silo runs 4.2. A store that fails the fencing renewal fails the hand-over rather than dropping it, and
+the drain hands the command over again after the grace.
+
+Commands that one scope dispatches to one aggregate are resumed in the order they were dispatched, however long
+each took to be recorded: the dispatcher takes the record's time from the registered `TimeProvider` when the
+dispatch starts, at least a millisecond after the previous one of the scope for that aggregate, and the drain
+resumes due commands by that time. Whether a command is due is judged on the same `TimeProvider`.
 
 Under `BusEnvelopeIntegrityMode.Strict` a command is also kept, at once and without an attempt, when its record
 carries no signature (`117_117`) or a signature that does not verify (`117_118`); `last_failure` says which. Returning
@@ -368,7 +394,7 @@ stopped handler is logged as `117_008` with what it was running:
 
 | Path | What happens after the stop |
 |---|---|
-| Recorded command | Its hand-over lapses; another silo resumes it after `OrleansDispatchOptions.IntentGrace`, and no attempt is counted |
+| Recorded command | Its hand-over lapses; another silo resumes it after `OrleansDispatchOptions.IntentGrace`, and the attempt its resumption counted is given back, so a stop never uses up the delivery bound |
 | Forwarded command | The caller's dispatch fails with a message saying the silo stopped; dispatch it again |
 | Heavy work | A unit still waiting for a worker or a permit stops waiting; a running one is resumed like a recorded command |
 | Timer | The timer stays registered and fires on the next silo that serves its owner |
@@ -383,8 +409,7 @@ that dies hard has none of this; its work is resumed as after any crash.
 A heavy command runs in the bounded heavy-work pool, not in its aggregate's activation, so a long unit
 does not hold back the aggregate's other commands. It therefore keeps no order with them: a command
 dispatched after it for the same aggregate does not wait for it, and where both append, the store's
-version check refuses the later one, which is resumed within `MessageRetryOptions.MaxDeliveryAttempts` like
-any failing command. Mark a command heavy only where it rarely meets a stream of other commands on its
+version check refuses the later one, which is resumed as a conflict, within `MessageRetryOptions.MaxConflictRequeues`. Mark a command heavy only where it rarely meets a stream of other commands on its
 aggregate.
 
 The pool is as many pools as `HeavyWorkOptions.ClusterWideLimit` needs, eight slots each, placed on silos

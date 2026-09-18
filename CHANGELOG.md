@@ -83,6 +83,11 @@ applies to the entire NuGet family.
   always used, so an existing `catch (InvalidOperationException)` and a log search on the text keep working; a host
   catches it without referencing any store or broker package.
 
+- **`ICommandIntentStore`: `RecordAsync(…, recordedAt, …)`, `TryRenewFromAsync`, `RecordConflictAsync` and
+  `ReturnAttemptAsync`**, each with a default that does what a store written against 4.1 did — the record's time is
+  the store's own, every hand-over runs, a conflict is recorded as a failure, a stop gives nothing back.
+  `OutboxEntry.ConflictCount` and `RecordedIntent.ConflictCount` (defaulted) carry the conflict count.
+
 ### Changed
 
 - **Security: `"SessionContext": { "AllowTenantHeader": true }` in the host's configuration now turns the tenant-header
@@ -173,12 +178,39 @@ applies to the entire NuGet family.
 - **`PartitionCounterBackfill` positions a batch with one statement on PostgreSQL** instead of one per entry;
   other providers keep the per-entry update, and the positions it hands out are the same.
 
+- **Orleans: a recorded command is counted the bus's way — schema change.** The hand-over of the dispatch is the
+  first of `MessageRetryOptions.MaxDeliveryAttempts`, so a handler that keeps failing runs as often as the bound says
+  (before, once more); `attempt_count` counts the resumptions after it. A concurrency conflict
+  (`ConcurrencyConflictException`, `ConcurrencyException`, `DbUpdateConcurrencyException`) gives its attempt back and
+  counts against `MessageRetryOptions.MaxConflictRequeues` instead (before, against the delivery bound of 3). The
+  count lives in the new column `outbox_entry.conflict_count`: generate and apply an EF Core migration before the
+  first 4.2 host starts, as for 4.1 (see the migration guide). A command recorded under 4.1 is counted the new way and
+  may run one attempt fewer than 4.1 would have run it. An operator returning a kept command resets
+  `conflict_count` too.
+
 ### Deprecated
 
 - **`CommitOrderOptions.MaintainPartitionCounter`** is obsolete: the framework never read it. A write context that
   maintains the partition counter adds `PartitionCounterInterceptor`. The member is removed with the next major.
 
 ### Fixed
+
+- **Orleans: a resumed command runs once however its resumptions meet.** Two claimers stamping the same millisecond
+  — the singleton drain during a failover, a bus outbox worker beside the drain during adoption — both handed the
+  command over, and a command naming no aggregate, or one whose first run had ended, ran twice; so did a hand-over
+  arriving after the command completed. The hand-over now carries the claim's stamp and runs only if its receiver
+  takes the record over from that stamp; one that finds it moved or the record gone is dropped and logged as
+  `117_124` (`IntentHandOverDropped`, Debug).
+- **Orleans: commands one scope dispatches to one aggregate are resumed in dispatch order.** The record's time was
+  taken after the payload was serialized, so a slower first record resumed after the second — `SetPrice 10` after
+  `SetPrice 20`. It is now taken when the dispatch starts, strictly increasing per aggregate within the scope, and due
+  commands are resumed by that time, then by id.
+- **Orleans: a silo that stops no longer takes an attempt from the command it was running.** The stopped handler gives
+  back the attempt its resumption counted, so rolling deploys during a long handler no longer keep the command for
+  an operator.
+- **Orleans: a recorded command's time comes from the registered `TimeProvider`.** It was the wall clock while the
+  drain compared it with the registered clock, so a host or test with its own clock saw commands never become due, or
+  become due at once.
 
 - **An anonymous caller reaching an unguarded save or dispatch is no longer a server error.** The event source, the
   command audit, the bus dispatcher and the execution model's dispatcher threw a plain `InvalidOperationException`
