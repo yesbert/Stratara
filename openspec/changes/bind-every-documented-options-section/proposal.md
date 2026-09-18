@@ -4,9 +4,13 @@
 
 ## Why
 
-Fourteen framework options types declare the configuration section they belong to. Twelve are read
-from it; two are not. `SessionContextOptions` (`SessionContext`) and `ProjectionReplayOptions`
-(`ProjectionReplay`) are registered with `AddOptions<T>()` and nothing binds them, so
+Fourteen framework options types declare the configuration section they belong to. Not all of them
+are read from it. `SessionContextOptions` (`SessionContext`) and `ProjectionReplayOptions`
+(`ProjectionReplay`) are registered with `AddOptions<T>()` and nothing binds them;
+`StrataraBlobEncryptionOptions` (`Stratara:BlobEncryption`), registered by `AddStrataraBlobEncryption()`
+and `AddSecurity()`, is bound only when the host also calls `AddStrataraFileKeyStore(configuration)`,
+although its own example says the section is read; and `AddStrataraOrleansCommandDispatcher` reads no
+`MessageRetry` section on a host that registers no bus transport (found during implementation). So
 
 - `"SessionContext": { "AllowTenantHeader": true }` in `appsettings.json` does nothing, and
 - `"ProjectionReplay": { "LeaseSeconds": 600 }` does nothing,
@@ -20,7 +24,8 @@ rebuild — the hazard the replay lease exists to prevent.
 
 ## What Changes
 
-- **Both are read from their documented section**, wherever the host registers them — directly or
+- **All of them are read from their documented section** — session context, replay, blob encryption,
+  and the message retry of an Orleans-only command host — wherever the host registers them — directly or
   through a composite — when the host has an `IConfiguration`; a bare service collection without one
   keeps working. Settings a host configures in code after registering take precedence, as for every
   other option.
@@ -31,7 +36,8 @@ rebuild — the hazard the replay lease exists to prevent.
 
 **Security-relevant upgrade note.** A host whose `appsettings.json` carries
 `"SessionContext": { "AllowTenantHeader": true }` — inert until now — turns the tenant-header fallback on
-by upgrading. The CHANGELOG says so under *Changed*, first line.
+by upgrading; likewise a `Stratara:BlobEncryption:LegacyBlobsCarryPurpose` entry that was inert takes
+effect. The CHANGELOG says so under *Changed*, first line.
 
 ## Capabilities
 
@@ -47,7 +53,9 @@ _None._
 ## Impact
 
 - Affected specs: `host-composition`
-- Affected code: `src/Stratara.Sessions/DependencyInjection/SessionServiceCollectionExtensions.cs`
+- Affected code: `src/Stratara.Security` (the blob-encryption registration),
+  `src/Stratara.Orleans` (`AddStrataraOrleansCommandDispatcher`),
+  `src/Stratara.Sessions/DependencyInjection/SessionServiceCollectionExtensions.cs`
   (and `Stratara.Sessions.csproj`: a reference to `Microsoft.Extensions.Options.ConfigurationExtensions`,
   already centrally versioned), `src/Stratara.Outbox.RabbitMQ/DependencyInjection/OutboxServiceCollectionExtensions.cs`
 - Tests: `tests/Stratara.Sessions.Tests` (or the existing session tests), `tests/Stratara.Outbox.RabbitMQ.Tests`,
