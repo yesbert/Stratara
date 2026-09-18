@@ -235,7 +235,9 @@ partition. Every other saga applies the entry once and goes on past it, and is n
 failure; the stall is logged and counted under the failing saga's consumer, and that saga is retried, without a
 bound, until it passes. A stateful process reads the same way, under its own consumer, and hands its facts to the
 process's grains. A saga has no retry bound on the execution model and no dead-letter queue: fix the saga, or the
-cause of its failure, and it continues from the entry it stopped at.
+cause of its failure, and it continues from the entry it stopped at. Each saga's reader reads the store on its own,
+so a saga silo runs one reader per saga and partition where it ran one per partition, and a wake-up costs a read per
+saga: size the read and write stores' connection pools for that many readers catching up at once, as for projections.
 
 A saga's checkpoint is keyed by its name. A saga that has no checkpoint in a partition — one registered after the
 deployment's sagas have read, or every saga on the first start after an upgrade from 4.1.x — starts where the

@@ -200,13 +200,14 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
         int gatewayPort,
         Func<IServiceProvider, Task>? beforeStart = null)
     {
+        NpgsqlConnection.ClearAllPools();
         var orleansConnectionString = postgres.ConnectionStringFor("poc_orleans");
         await PocSilo.EnsureSchemaAsync(orleansConnectionString);
 
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:defaultdb"] = postgres.ConnectionStringFor($"{database}_store"),
+            ["ConnectionStrings:defaultdb"] = Pruned(postgres.ConnectionStringFor($"{database}_store")),
             ["ConnectionStrings:rabbitmq"] = rabbit.ConnectionString,
         });
         builder.Logging.AddProvider(logs);
@@ -214,7 +215,7 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
         builder.AddSagaServices();
         builder.Services
             .AddNpgsqlWriteDbContextFactory<PocCommitOrderWriteDbContext>()
-            .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(postgres.ConnectionStringFor($"{database}_read"))
+            .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(Pruned(postgres.ConnectionStringFor($"{database}_read")))
             .AddAggregatesFromAssemblyContaining<Counter>()
             .AddTrustedType<Counter>()
             .AddTrustedType<CounterCreated>()
@@ -256,15 +257,22 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
     }
 
     /// <summary>
-    /// Stops the host and returns the idle connections of every pool to the server: each host of these tests reads
-    /// databases of its own with a reader per saga and partition, and the tests of the collection share one server
-    /// whose connection limit the pools of stopped hosts would otherwise hold on to.
+    /// Stops the host and returns the idle connections of every pool to the server, as each start does too: every host
+    /// of the collection reads databases of its own, a saga host with a reader per saga and partition, and the stopped
+    /// hosts' pools would otherwise hold the shared server's connection limit.
     /// </summary>
     private static async Task StopAsync(IHost app)
     {
         await app.StopAsync();
         NpgsqlConnection.ClearAllPools();
     }
+
+    /// <summary>
+    /// The connection string with idle connections closed within seconds: a saga host reads with a reader per saga and
+    /// partition, and the collection's hosts share one server whose connection limit idle pools would otherwise hold.
+    /// </summary>
+    private static string Pruned(string connectionString) =>
+        new NpgsqlConnectionStringBuilder(connectionString) { ConnectionIdleLifetime = 2, ConnectionPruningInterval = 1 }.ConnectionString;
 
     private static async Task AppendAsync(IServiceProvider services, Guid tenantId, Guid streamId, object @event)
     {
