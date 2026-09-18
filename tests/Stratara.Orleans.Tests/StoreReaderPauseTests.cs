@@ -172,6 +172,82 @@ public sealed class StoreReaderPauseTests
         Assert.All(journal, entry => Assert.Equal(hold.Pauser, entry.Pauser));
     }
 
+    [Fact]
+    public void A_released_pauser_is_remembered_for_one_lease_so_a_late_pause_or_renewal_holds_nothing()
+    {
+        var pausers = new StoreReaderPausers(_clock);
+        var pauser = Guid.NewGuid();
+        pausers.Hold(pauser, Lease);
+        Assert.True(pausers.Release(pauser));
+
+        Assert.False(pausers.Hold(pauser, Lease));
+        Assert.False(pausers.Any);
+
+        _clock.Advance(Lease);
+        Assert.False(pausers.Lapse(_logger, "View", 0));
+        Assert.True(pausers.Hold(pauser, Lease));
+        Assert.Empty(_logger.Entries);
+    }
+
+    [Fact]
+    public async Task A_hold_renews_the_readers_that_paused_while_another_pause_still_waits()
+    {
+        var journal = new List<(string Call, Guid Pauser)>();
+        var renewed = new SemaphoreSlim(0);
+        var slow = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readers = new[]
+        {
+            Journalled("View/0", journal, renewed),
+            new PausedReader("View/1", (_, _) => slow.Task, (_, _) => Task.CompletedTask, _ => Task.CompletedTask),
+        };
+
+        var pausing = StoreReaderPause.PauseAllAsync(readers, new StoreReaderLease(Lease, _clock)).AsTask();
+        _clock.Advance(Lease / 3);
+        Assert.True(await renewed.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken), "the hold did not renew while a pause was still waiting");
+        Assert.False(pausing.IsCompleted);
+
+        slow.SetResult();
+        await using var hold = await pausing;
+        await hold.ResumeAsync();
+    }
+
+    [Fact]
+    public async Task A_pause_that_fails_stops_renewing_before_it_resumes()
+    {
+        var journal = new List<(string Call, Guid Pauser)>();
+        var renewed = new SemaphoreSlim(0);
+        var refusing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readers = new[]
+        {
+            Journalled("View/0", journal, renewed),
+            new PausedReader("View/1", (_, _) => refusing.Task, (_, _) => Task.CompletedTask, _ => Task.CompletedTask),
+        };
+
+        var pausing = StoreReaderPause.PauseAllAsync(readers, new StoreReaderLease(Lease, _clock)).AsTask();
+        _clock.Advance(Lease / 3);
+        Assert.True(await renewed.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken), "the hold did not renew while a pause was still waiting");
+        refusing.SetException(new TimeoutException("the partition did not answer"));
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => pausing);
+        _clock.Advance(Lease);
+
+        Assert.Contains("View/1", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(["pause", "renew", "resume"], journal.Select(entry => entry.Call));
+    }
+
+    [Fact]
+    public async Task Quiescing_pauses_every_reader_again_under_the_holds_pauser()
+    {
+        var journal = new List<(string Call, Guid Pauser)>();
+        var readers = new[] { Journalled("View/0", journal, new SemaphoreSlim(0)), Journalled("View/1", journal, new SemaphoreSlim(0)) };
+
+        await using var hold = await StoreReaderPause.PauseAllAsync(readers, new StoreReaderLease(Lease, _clock));
+        await hold.QuiesceAsync();
+
+        Assert.Equal(4, journal.Count(entry => entry.Call == "pause"));
+        Assert.All(journal, entry => Assert.Equal(hold.Pauser, entry.Pauser));
+    }
+
     private static PausedReader Journalled(string name, List<(string Call, Guid Pauser)> journal, SemaphoreSlim renewed) => new(
         name,
         (pauser, _) => Record(journal, "pause", pauser),

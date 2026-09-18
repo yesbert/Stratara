@@ -70,7 +70,7 @@ public sealed class ProjectionRebuilderTests
 
         Assert.True(ReferenceEquals(finished, rebuild), "the rebuilder resumed the partitions one after another");
         await rebuild;
-        Assert.Equal(Partitions, paused);
+        Assert.Equal(2 * Partitions, paused);
         Assert.Equal(Partitions, resumed);
         projection.Verify(p => p.TruncateAsync(It.IsAny<CancellationToken>()), Times.Once);
         checkpoints.Verify(c => c.ResetAsync("View", It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2 * Partitions));
@@ -112,6 +112,48 @@ public sealed class ProjectionRebuilderTests
             afterTruncation.Take(Partitions).Order(StringComparer.Ordinal));
         Assert.All(afterTruncation.Skip(Partitions), entry => Assert.Equal("resume", entry));
         Assert.Equal(Partitions, afterTruncation.Count(entry => entry == "resume"));
+    }
+
+    /// <summary>
+    /// Every reader is paused again once the projection is emptied and before the checkpoints return to the beginning a
+    /// second time, so a batch a reader had in flight — begun before the truncation — writes its checkpoint before the
+    /// reset rather than over it.
+    /// </summary>
+    [Fact]
+    public async Task The_readers_are_quiesced_between_the_truncation_and_the_second_reset()
+    {
+        var journal = new List<string>();
+        var grains = Enumerable.Range(0, Partitions).ToDictionary(
+            partition => StoreReaderGrainKey.Of("View", partition),
+            _ => (IProjectionGrain)new FakeGrain(
+                () => { lock (journal) { journal.Add("pause"); } },
+                () => { lock (journal) { journal.Add("resume"); } return Task.CompletedTask; }));
+        var grainFactory = new Mock<IGrainFactory>();
+        grainFactory.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => grains[key]);
+        var projection = new Mock<IRebuildableProjection>();
+        projection.Setup(p => p.TruncateAsync(It.IsAny<CancellationToken>())).Callback(() => { lock (journal) { journal.Add("truncate"); } }).Returns(Task.CompletedTask);
+        var handler = new Mock<IProjectionHandler>();
+        handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
+        var checkpoints = new Mock<IProjectionCheckpointStore>();
+        checkpoints
+            .Setup(c => c.ResetAsync("View", It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback(() => { lock (journal) { journal.Add("reset"); } })
+            .Returns(Task.CompletedTask);
+        var reader = new Mock<ICommittedPositionReader>();
+        reader.SetupGet(r => r.Name).Returns("reader/16");
+        var services = new ServiceCollection()
+            .AddScoped(_ => handler.Object)
+            .AddScoped<IProjection>(_ => projection.Object)
+            .AddScoped(_ => checkpoints.Object)
+            .AddScoped(_ => reader.Object)
+            .BuildServiceProvider();
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), Lease());
+
+        await rebuilder.RebuildAsync("View");
+
+        var steps = journal.Where((entry, index) => index == 0 || journal[index - 1] != entry).ToList();
+        Assert.Equal(["pause", "reset", "truncate", "pause", "reset", "resume"], steps);
+        Assert.Equal(2 * Partitions, journal.Count(entry => entry == "pause"));
     }
 
     /// <summary>

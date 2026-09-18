@@ -176,6 +176,35 @@ public sealed class RebuildProbeControl
     public int Truncations => _truncations;
 
     public int CountTruncation() => Interlocked.Increment(ref _truncations);
+
+    private int _applications;
+
+    /// <summary>
+    /// The application with this number, counted from when it is set, signals <see cref="ApplicationHeld"/> and waits on
+    /// <see cref="HoldApplication"/> before it writes its row.
+    /// </summary>
+    public int? HoldApplicationNumber
+    {
+        get;
+        set
+        {
+            Interlocked.Exchange(ref _applications, 0);
+            field = value;
+        }
+    }
+
+    public TaskCompletionSource ApplicationHeld { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource HoldApplication { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async Task CountApplicationAsync(CancellationToken cancellationToken)
+    {
+        if (HoldApplicationNumber is { } held && Interlocked.Increment(ref _applications) == held)
+        {
+            ApplicationHeld.TrySetResult();
+            await HoldApplication.Task.WaitAsync(cancellationToken);
+        }
+    }
 }
 
 /// <summary>
@@ -224,6 +253,7 @@ public sealed class RebuildProbeProjection(IServiceProvider services) : IRebuild
             return;
         }
 
+        await _control.CountApplicationAsync(cancellationToken);
         await using var context = await ContextFactory().CreateDbContextAsync(cancellationToken);
         await context.Database.ExecuteSqlAsync(
             $"INSERT INTO poc_rebuild_probe (stream_id, version) VALUES ({@event.StreamId}, {@event.Version}) ON CONFLICT (stream_id, version) DO NOTHING",

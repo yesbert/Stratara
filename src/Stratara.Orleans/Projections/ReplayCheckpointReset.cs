@@ -44,6 +44,7 @@ internal sealed class ReplayCheckpointResetTruncator(
             token => Task.WhenAll(names.SelectMany(name => Enumerable.Range(0, _partitionCount)
                 .Select(partition => checkpoints.ResetAsync(name, partition, reader, token)))),
             inner.TruncateAllAsync,
+            hold.QuiesceAsync,
             cancellationToken);
 
         await hold.ResumeAsync();

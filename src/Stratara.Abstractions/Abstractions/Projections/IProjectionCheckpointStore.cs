@@ -42,6 +42,11 @@ public interface IProjectionCheckpointStore
     /// The default replaces the position through <see cref="SetAsync"/> and checks nothing. A store that overrides it
     /// refuses a write that finds another position or another reader, so that an activation which outlived its
     /// successor neither rewinds nor overtakes what the successor wrote; the refused reader reads the checkpoint again.
+    /// A rebuild and a full replay rely on that refusal as well: a reader that applied facts while it should have been
+    /// paused, and still holds the position it reached before the read model was emptied, is refused once the rebuild
+    /// returns the checkpoint to the beginning, and reads those facts again. Under the unguarded default such a reader
+    /// writes its position over the beginning and the read model lacks the facts it applied before it was emptied, so a
+    /// store used with a rebuild or a replay should override this method; the framework's store does.
     /// </remarks>
     Task AdvanceAsync(string projection, int partition, string reader, long from, long to, CancellationToken cancellationToken = default) =>
         SetAsync(projection, partition, reader, to, cancellationToken);

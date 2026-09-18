@@ -12,8 +12,9 @@ internal static class StoreReaderPause
 {
     /// <summary>
     /// Pauses every reader under a new pauser and returns the hold that renews the pause and resumes every reader the
-    /// pause was asked of. Where a pause fails, they are resumed before this throws, so a caller that sees the exception
-    /// holds nothing.
+    /// pause was asked of. The hold renews from the moment the pauses are sent, so a reader that answered at once does not
+    /// lapse while another's pause waits for a long batch. Where a pause fails, renewing stops and the readers are resumed
+    /// before this throws, so a caller that sees the exception holds nothing.
     /// </summary>
     /// <param name="readers">The readers to pause, by the name of the partition they read.</param>
     /// <param name="lease">How long a pause lasts without a renewal, and the clock the renewals run on.</param>
@@ -38,6 +39,8 @@ internal static class StoreReaderPause
             }
         }
 
+        // Every reader the call reached may hold the pauser, including one whose answer will be lost.
+        var hold = StoreReaderHold.Start(pauser, [.. pausing.Select(p => p.Reader)], lease);
         foreach (var (reader, pause) in pausing)
         {
             try
@@ -51,14 +54,12 @@ internal static class StoreReaderPause
             }
         }
 
-        // Every reader the call reached may hold the pauser, including one whose answer was lost.
-        var toResume = pausing.Select(p => p.Reader).ToList();
         if (failures.Count == 0)
         {
-            return StoreReaderHold.Start(pauser, toResume, lease);
+            return hold;
         }
 
-        await ResumeQuietlyAsync(toResume, pauser);
+        await hold.DisposeAsync();
         throw new InvalidOperationException(
             $"The store readers of {string.Join(", ", refused)} could not be paused, so nothing was changed and the readers that had paused were resumed.",
             failures[0]);
@@ -137,6 +138,51 @@ internal sealed class StoreReaderHold : IAsyncDisposable
         }
 
         return hold;
+    }
+
+    /// <summary>
+    /// Pauses every reader again under the hold's pauser and waits until none has a batch in flight. A rebuild calls it
+    /// after emptying the read model and before returning the checkpoints to the beginning a second time: a reader that
+    /// read while it should have been paused — its pause lapsed, or its activation moved — may be half-way through a
+    /// batch whose earlier entries the truncation removed, and its checkpoint must be written before the reset, not
+    /// after it. A reader that still holds the pause only waits for nothing.
+    /// </summary>
+    /// <returns>A task that completes when every reader has answered.</returns>
+    /// <exception cref="InvalidOperationException">A reader could not be paused again; the message names which.</exception>
+    public async Task QuiesceAsync()
+    {
+        var pausing = new List<(PausedReader Reader, Task Pause)>(_readers.Count);
+        var failures = new List<(PausedReader Reader, Exception Failure)>();
+        foreach (var reader in _readers)
+        {
+            try
+            {
+                pausing.Add((reader, reader.Pause(_pauser, _lease.Duration)));
+            }
+            catch (Exception ex)
+            {
+                failures.Add((reader, ex));
+            }
+        }
+
+        foreach (var (reader, pause) in pausing)
+        {
+            try
+            {
+                await pause;
+            }
+            catch (Exception ex)
+            {
+                failures.Add((reader, ex));
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"The store readers of {string.Join(", ", failures.Select(failure => failure.Reader.Name))} could not be paused again after the read model was emptied, so a batch they had in flight may not be read again.",
+                failures[0].Failure);
+        }
     }
 
     /// <summary>Stops renewing and resumes every reader, retrying one that fails once, and reports what stayed paused.</summary>

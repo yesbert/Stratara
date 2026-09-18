@@ -69,29 +69,27 @@ internal abstract class StoreReaderGrain(
     /// Pauses for <paramref name="pauser"/> until <paramref name="lease"/> has passed without a renewal, waits for a
     /// running loop to end, and forgets the cached position: whoever pauses is about to change the checkpoint behind
     /// the grain's back. Pausers are held apart, so two callers that overlap hold the reader until the last of them
-    /// resumes or lapses. The lease starts again once the running loop has ended, so a long batch does not eat it.
+    /// resumes or lapses. The lease starts again once the running loop has ended, so a long batch does not eat it — and
+    /// a pause that lapsed during that wait holds again. A pause of a pauser released within the last lease — delivered
+    /// after its own resume — does nothing.
     /// </summary>
     public async Task PauseAsync(Guid pauser, TimeSpan lease)
     {
-        if (Retired)
+        if (Retired || !Pausers.Hold(pauser, lease))
         {
             return;
         }
 
-        Pausers.Hold(pauser, lease);
         await Loop.WaitForRunningAsync(CancellationToken.None);
-        if (Pausers.Holds(pauser))
-        {
-            Pausers.Hold(pauser, lease);
-        }
-
+        Pausers.Hold(pauser, lease);
         Loop.Invalidate();
     }
 
     /// <summary>
     /// Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now. A pauser the grain no longer holds —
     /// its pause lapsed, or the grain was activated again elsewhere and forgot it — pauses the grain again, without
-    /// waiting for a running loop, which stops at its next batch boundary.
+    /// waiting for a running loop, which stops at its next batch boundary. A renewal of a pauser released within the last
+    /// lease — delivered after its resume — does nothing.
     /// </summary>
     public Task RenewPauseAsync(Guid pauser, TimeSpan lease)
     {
@@ -100,12 +98,12 @@ internal abstract class StoreReaderGrain(
             return Task.CompletedTask;
         }
 
-        if (!Pausers.Holds(pauser))
+        var held = Pausers.Holds(pauser);
+        if (Pausers.Hold(pauser, lease) && !held)
         {
             Loop.Invalidate();
         }
 
-        Pausers.Hold(pauser, lease);
         return Task.CompletedTask;
     }
 

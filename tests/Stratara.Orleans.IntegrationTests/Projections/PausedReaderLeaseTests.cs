@@ -99,6 +99,103 @@ public sealed class PausedReaderLeaseTests(PostgreSqlFixture postgres, RedisFixt
         await app.StopAsync();
     }
 
+    /// <summary>
+    /// Review finding on this change: a reader whose pause lapsed reads from the first reset, applies the first entry of
+    /// its batch, and is still applying the rest when the model is emptied. The second reset writes the same beginning
+    /// the reader started from, so without quiescing its advance would be accepted after the reset and the entry it
+    /// applied before the truncation would be missing. The rebuild waits for that batch before the second reset.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_in_flight_across_the_truncation_leaves_the_model_complete()
+    {
+        var control = new RebuildProbeControl();
+        var logs = new CapturedLogs();
+        var neverRenewed = new StoreReaderLease(TimeSpan.FromSeconds(2), new NeverTickingClock());
+        using var app = await StartAsync(control, logs, "poc_spanning_batch_read", neverRenewed, siloPort: 11464, gatewayPort: 30464);
+        var expected = await AppendFactsAsync(app.Services, Guid.NewGuid(), streams: 1);
+        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == expected), "the model was not built before the rebuild");
+
+        control.HoldTruncationNumber = 1;
+        control.HoldApplicationNumber = 2;
+        var rebuild = app.Services.GetRequiredService<IProjectionRebuilder>().RebuildAsync(Consumer);
+        Assert.True(await WaitUntilAsync(() => Task.FromResult(control.Truncations == 1)), "the rebuild never reached the truncation");
+        await control.ApplicationHeld.Task.WaitAsync(Timeout, TestContext.Current.CancellationToken);
+
+        control.HoldTruncation.TrySetResult();
+        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == 0), "the truncation did not empty the model");
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        control.HoldApplication.TrySetResult();
+        await rebuild;
+
+        Assert.True(
+            await WaitUntilAsync(async () => await CountAsync(app.Services) == expected),
+            $"after a batch in flight across the truncation the model holds {await CountAsync(app.Services)} of {expected} rows");
+        await Task.Delay(Settle);
+        Assert.Equal(expected, await CountAsync(app.Services));
+
+        await app.StopAsync();
+    }
+
+    /// <summary>
+    /// The reader's side of a pause it does not hold: a resume for a pauser it never held releases nothing; a renewal
+    /// delivered after its pauser's resume pauses nothing; a renewal of a pauser it has not seen — its activation moved,
+    /// or the pause lapsed — pauses it until that pauser resumes.
+    /// </summary>
+    [Fact]
+    public async Task A_resume_or_a_renewal_for_a_pauser_the_reader_does_not_hold()
+    {
+        var control = new RebuildProbeControl();
+        var logs = new CapturedLogs();
+        using var app = await StartAsync(control, logs, "poc_unknown_pauser_read", lease: null, siloPort: 11465, gatewayPort: 30465);
+        var tenantId = Guid.NewGuid();
+        long rows = await AppendFactsAsync(app.Services, tenantId, streams: 1);
+        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == rows), "the model was not built before the pauses");
+        var grains = Enumerable.Range(0, new CommitOrderOptions().PartitionCount)
+            .Select(partition => app.Services.GetRequiredService<IGrainFactory>().GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(Consumer, partition)))
+            .ToList();
+        var lease = TimeSpan.FromMinutes(1);
+        var held = Guid.NewGuid();
+
+        await Task.WhenAll(grains.Select(grain => grain.PauseAsync(held, lease)));
+        await Task.WhenAll(grains.Select(grain => grain.ResumeAsync(Guid.NewGuid())));
+        rows = await AppendAndExpectAsync(app.Services, tenantId, rows, arrives: false);
+
+        await Task.WhenAll(grains.Select(grain => grain.ResumeAsync(held)));
+        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == rows, Prompt), "the held pauser's resume did not start the readers");
+
+        await Task.WhenAll(grains.Select(grain => grain.RenewPauseAsync(held, lease)));
+        rows = await AppendAndExpectAsync(app.Services, tenantId, rows, arrives: true);
+
+        var unseen = Guid.NewGuid();
+        await Task.WhenAll(grains.Select(grain => grain.RenewPauseAsync(unseen, lease)));
+        rows = await AppendAndExpectAsync(app.Services, tenantId, rows, arrives: false);
+        await Task.WhenAll(grains.Select(grain => grain.ResumeAsync(unseen)));
+        Assert.True(await WaitUntilAsync(async () => await CountAsync(app.Services) == rows, Prompt), "the renewing pauser's resume did not start the readers");
+        Assert.Empty(LapsedPartitions(logs));
+
+        await app.StopAsync();
+    }
+
+    private static readonly TimeSpan Prompt = TimeSpan.FromSeconds(15);
+
+    /// <summary>Appends one fact and checks whether it reaches the model promptly or stays out of it for a while; returns the rows expected once it does.</summary>
+    private static async Task<long> AppendAndExpectAsync(IServiceProvider services, Guid tenantId, long rows, bool arrives)
+    {
+        var streamId = Guid.NewGuid();
+        await AppendAsync(services, tenantId, streamId, new CounterCreated(streamId), create: true);
+        if (arrives)
+        {
+            Assert.True(await WaitUntilAsync(async () => await CountAsync(services) == rows + 1, Prompt), "a fact did not reach the model while no pauser held the readers");
+        }
+        else
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            Assert.Equal(rows, await CountAsync(services));
+        }
+
+        return rows + 1;
+    }
+
     private static HashSet<string> LapsedPartitions(CapturedLogs logs) =>
     [
         .. logs.Entries
@@ -106,9 +203,9 @@ public sealed class PausedReaderLeaseTests(PostgreSqlFixture postgres, RedisFixt
             .Select(entry => entry.Message.Split(' ')[6]),
     ];
 
-    private static async Task<int> AppendFactsAsync(IServiceProvider services, Guid tenantId)
+    private static async Task<int> AppendFactsAsync(IServiceProvider services, Guid tenantId, int streams = Streams)
     {
-        foreach (var streamId in Enumerable.Range(0, Streams).Select(_ => Guid.NewGuid()))
+        foreach (var streamId in Enumerable.Range(0, streams).Select(_ => Guid.NewGuid()))
         {
             await AppendAsync(services, tenantId, streamId, new CounterCreated(streamId), create: true);
             for (var i = 1; i < FactsPerStream; i++)
@@ -117,7 +214,7 @@ public sealed class PausedReaderLeaseTests(PostgreSqlFixture postgres, RedisFixt
             }
         }
 
-        return Streams * FactsPerStream;
+        return streams * FactsPerStream;
     }
 
     /// <summary>The sum of the probe's checkpoints over every partition: above zero once any reader applied after the reset.</summary>
@@ -215,9 +312,11 @@ public sealed class PausedReaderLeaseTests(PostgreSqlFixture postgres, RedisFixt
         return await context.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM poc_rebuild_probe").SingleAsync();
     }
 
-    private static async Task<bool> WaitUntilAsync(Func<Task<bool>> condition)
+    private static Task<bool> WaitUntilAsync(Func<Task<bool>> condition) => WaitUntilAsync(condition, Timeout);
+
+    private static async Task<bool> WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout)
     {
-        var deadline = DateTimeOffset.UtcNow + Timeout;
+        var deadline = DateTimeOffset.UtcNow + timeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (await condition())

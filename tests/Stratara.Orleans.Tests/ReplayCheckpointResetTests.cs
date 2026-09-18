@@ -29,7 +29,7 @@ public sealed class ReplayCheckpointResetTests
         var decorated = Build(journal, truncator.Object);
         await decorated.TruncateAllAsync();
 
-        Assert.Equal(["pause", "pause", "reset View/0", "reset View/1", "truncate", "reset View/0", "reset View/1", "resume", "resume"], Normalised(journal));
+        Assert.Equal(["pause", "pause", "reset View/0", "reset View/1", "truncate", "pause", "pause", "reset View/0", "reset View/1", "resume", "resume"], Normalised(journal));
     }
 
     [Fact]
@@ -114,9 +114,10 @@ public sealed class ReplayCheckpointResetTests
         var truncation = journal.IndexOf("truncate");
         return
         [
-            .. journal.Where(e => e == "pause"),
+            .. journal.Take(truncation).Where(e => e == "pause"),
             .. journal.Take(truncation).Where(e => e.StartsWith("reset", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
             .. journal.Where(e => e == "truncate"),
+            .. journal.Skip(truncation + 1).Where(e => e == "pause"),
             .. journal.Skip(truncation + 1).Where(e => e.StartsWith("reset", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
             .. journal.Where(e => e == "resume"),
         ];
