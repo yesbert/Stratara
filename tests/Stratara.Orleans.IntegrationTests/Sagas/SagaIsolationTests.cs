@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
@@ -74,7 +75,7 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
         Assert.Equal(["created", "incremented:1", "incremented:2"], log.Seen(nameof(FailingSaga), streamId));
         Assert.Equal(["created", "incremented:1", "incremented:2"], log.Seen(nameof(SteadySaga), streamId));
         await WaitForAsync(() => stalled.Current == 0, "the stall was not withdrawn once the saga went on");
-        await app.StopAsync();
+        await StopAsync(app);
     }
 
     [Fact]
@@ -90,7 +91,7 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
         {
             await AppendAsync(app.Services, tenantId, earlier, new CounterCreated(earlier));
             await WaitForAsync(() => before.Seen(nameof(SteadySaga), earlier).Count == 1, "the steady saga did not apply the earlier fact");
-            await app.StopAsync();
+            await StopAsync(app);
         }
 
         var after = new IsolationLog();
@@ -107,7 +108,7 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
             Assert.Equal(["incremented:1"], after.Seen(nameof(LateSaga), earlier));
             Assert.Equal(["created"], after.Seen(nameof(LateSaga), later));
             Assert.Equal(["incremented:1"], after.Seen(nameof(SteadySaga), earlier));
-            await app.StopAsync();
+            await StopAsync(app);
         }
     }
 
@@ -133,7 +134,7 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
                 shared[partition] = await CheckpointAsync(app.Services, Steady, partition);
             }
 
-            await app.StopAsync();
+            await StopAsync(app);
         }
 
         var after = new IsolationLog();
@@ -170,7 +171,7 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
             Assert.DoesNotContain(logs.Entries, entry =>
                 entry.EventId == LogEvents.Orleans.StoreReaderStarted && entry.Message.Contains($"for {SagaGrain.ConsumerName} ", StringComparison.Ordinal));
             Assert.Equal(shared[PartitionOf(earlier)], await CheckpointAsync(app.Services, SagaGrain.ConsumerName, PartitionOf(earlier)));
-            await app.StopAsync();
+            await StopAsync(app);
         }
     }
 
@@ -252,6 +253,17 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
         using var startTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         await app.StartAsync(startTimeout.Token);
         return app;
+    }
+
+    /// <summary>
+    /// Stops the host and returns the idle connections of every pool to the server: each host of these tests reads
+    /// databases of its own with a reader per saga and partition, and the tests of the collection share one server
+    /// whose connection limit the pools of stopped hosts would otherwise hold on to.
+    /// </summary>
+    private static async Task StopAsync(IHost app)
+    {
+        await app.StopAsync();
+        NpgsqlConnection.ClearAllPools();
     }
 
     private static async Task AppendAsync(IServiceProvider services, Guid tenantId, Guid streamId, object @event)
