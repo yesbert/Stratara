@@ -109,7 +109,7 @@ internal sealed class StoreReaderHold : IAsyncDisposable
     private readonly Guid _pauser;
     private readonly IReadOnlyList<PausedReader> _readers;
     private readonly StoreReaderLease _lease;
-    private readonly CancellationTokenSource _stopping = new();
+    private PeriodicTimer? _renewal;
     private Task _renewing = Task.CompletedTask;
     private bool _released;
 
@@ -132,7 +132,8 @@ internal sealed class StoreReaderHold : IAsyncDisposable
         var hold = new StoreReaderHold(pauser, readers, lease);
         if (readers.Count > 0)
         {
-            hold._renewing = hold.RenewAsync(hold._stopping.Token);
+            hold._renewal = new PeriodicTimer(lease.Renewal, lease.Clock);
+            hold._renewing = hold.RenewAsync(hold._renewal);
         }
 
         return hold;
@@ -177,29 +178,20 @@ internal sealed class StoreReaderHold : IAsyncDisposable
             _released = true;
             await StoreReaderPause.ResumeQuietlyAsync(_readers, _pauser);
         }
-
-        _stopping.Dispose();
     }
 
+    /// <summary>Disposing the timer ends a wait for its next tick, and a renewal in flight is waited for.</summary>
     private async Task StopRenewingAsync()
     {
-        await _stopping.CancelAsync();
+        _renewal?.Dispose();
         await _renewing;
     }
 
-    private async Task RenewAsync(CancellationToken cancellationToken)
+    private async Task RenewAsync(PeriodicTimer renewal)
     {
-        using var timer = new PeriodicTimer(_lease.Renewal, _lease.Clock);
-        try
+        while (await renewal.WaitForNextTickAsync())
         {
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-            {
-                await Task.WhenAll(_readers.Select(RenewQuietlyAsync));
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _ = cancellationToken;
+            await Task.WhenAll(_readers.Select(RenewQuietlyAsync));
         }
     }
 

@@ -246,7 +246,8 @@ happened.
 
 During a rolling upgrade from 4.1.x, a rebuild or replay started from a silo still on 4.1.x pauses the readers of
 an upgraded silo for at most ten minutes — it cannot renew — and returns the checkpoints to the beginning only
-once. Start rebuilds from an upgraded silo, or wait until the upgrade is done.
+once, and one started from an upgraded silo cannot pause a reader still hosted on 4.1.x and fails naming it. Rebuild
+once every silo runs the new version.
 
 ## What to watch
 

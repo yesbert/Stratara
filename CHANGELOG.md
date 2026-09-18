@@ -326,7 +326,8 @@ applies to the entire NuGet family.
   again after it — a fact applied in between is applied twice, which a rebuildable projection must tolerate as a
   full replay already requires. *Upgrade note:* during a rolling upgrade, a rebuild or replay started from a
   4.1.x silo pauses an upgraded silo's readers for at most ten minutes, because it cannot renew, and resets the
-  checkpoints only once; start rebuilds from an upgraded silo.
+  checkpoints only once, and one started from an upgraded silo fails naming a reader still hosted on 4.1.x; rebuild
+  once every silo runs the new version.
 - **Orleans: a wake-up that cannot be sent is logged (`117_121`, debug) and no longer costs the other consumers
   of that commit theirs.**
 - **Orleans: the heavy-work pool runs its units beside each other again.** Since the pool became a placed grain

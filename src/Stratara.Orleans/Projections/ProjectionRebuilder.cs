@@ -71,8 +71,8 @@ internal sealed class ProjectionRebuilder(
 
 /// <summary>
 /// The order a rebuild and a replay change a read model in: checkpoints to the beginning, the model emptied,
-/// checkpoints to the beginning again. The second reset runs however the truncation ended — without the caller's
-/// token where the truncation failed, so a cancelled truncation still leaves no checkpoint past an effect it removed.
+/// checkpoints to the beginning again. The second reset runs however the truncation ended, and without the caller's
+/// token: once the model has been emptied, no checkpoint may be left past an effect the truncation removed.
 /// </summary>
 internal static class TruncationBetweenResets
 {
@@ -94,7 +94,7 @@ internal static class TruncationBetweenResets
             throw;
         }
 
-        await reset(cancellationToken);
+        await reset(CancellationToken.None);
     }
 
     private static async Task<Exception?> ResetQuietlyAsync(Func<CancellationToken, Task> reset)
