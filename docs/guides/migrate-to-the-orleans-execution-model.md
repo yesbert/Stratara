@@ -111,8 +111,9 @@ the generated migration as it is.
 column non-null with a default of 0, so the rows in flight need nothing, and a 4.1 host keeps running against the
 migrated table, which it ignores. A 4.2 host against the old table fails its first record.
 
-A command recorded under 4.1 is counted the 4.2 way once a 4.2 drain resumes it: the hand-over of its dispatch is
-its first attempt, so it may run one attempt fewer than 4.1 would have run it. While 4.1 silos remain, their
+A 4.2 record counts the hand-over of its dispatch as its first attempt when it is written. A command recorded under
+4.1 was written with none, so it runs as 4.1 ran it — at most once more than the bound — and a command recorded by a
+4.2 host but resumed by a 4.1 drain during the upgrade runs one time fewer than 4.1 would have run it. While 4.1 silos remain, their
 hand-overs carry no claim stamp and are not fenced; a command two resumptions claim together can run twice until
 every silo runs 4.2.
 

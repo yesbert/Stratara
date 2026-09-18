@@ -155,16 +155,20 @@ recorded and handed over without waiting, in its own turn.
 
 A recorded command is bounded as a bus message is, by the two bounds of `MessageRetryOptions`:
 
-- **A handler that keeps failing** runs `MaxDeliveryAttempts` times in all and is then kept. The hand-over of
-  the dispatch is the first attempt; `attempt_count` counts the resumptions after it, so a command kept under the
-  default bound of 3 carries `attempt_count = 2`. The record cannot tell whether a host that died right after the
-  record made that first hand-over, so such a command may run one attempt fewer; under a bound of 1 it is resumed
-  once all the same.
-- **A handler that fails on a concurrency conflict** — `ConcurrencyConflictException`, `ConcurrencyException` or
-  EF Core's `DbUpdateConcurrencyException`, after the in-process conflict pipeline has retried — counts the conflict
-  in `conflict_count` and gives its attempt back, so conflicts never use up the delivery bound. A command that has
-  been resumed after a conflict `MaxConflictRequeues` times (100 by default) and conflicts again is kept, which is
-  when the bus moves such a message to its dead-letter destination.
+- **A handler that keeps failing** runs `MaxDeliveryAttempts` times in all and is then kept. The record counts the
+  hand-over of the dispatch as the first attempt when it is written, and each resumption adds one, so a command kept
+  under the default bound of 3 carries `attempt_count = 3`. A host that dies after the record and before that
+  hand-over has used the attempt all the same, as a bus message delivered to a consumer that crashes has used its
+  delivery: such a command runs one time fewer, and under a bound of 1 it is kept for an operator without running —
+  kept, never lost.
+- **A handler that fails on a concurrency conflict** — the event store's `ConcurrencyException`, after the
+  in-process conflict pipeline has retried, which is what the bus transports count as a conflict — counts the
+  conflict in `conflict_count` and gives its attempt back, so conflicts never use up the delivery bound. A command
+  that has been resumed after a conflict `MaxConflictRequeues` times (100 by default) and conflicts again is kept,
+  which is when the bus moves such a message to its dead-letter destination. Any other exception, a provider's own
+  conflict exception included, is a failure, as on the bus.
+- **A handler stopped with its silo**, and a command still queued behind it that the stop gives up, gives its attempt
+  back too: a stop never uses up the delivery bound.
 
 A kept command stays in the outbox table with both counts and its last failure, and the commands after it are
 still resumed. Find the kept commands with:
@@ -175,11 +179,12 @@ FROM outbox_entry
 WHERE kept_at IS NOT NULL;
 ```
 
-Once the cause is fixed, return a kept command; it is resumed with its counts starting over:
+Once the cause is fixed, return a kept command; it is resumed with its counts starting over and gets the whole
+delivery bound again:
 
 ```sql
 UPDATE outbox_entry
-SET kept_at = NULL, attempt_count = 0, conflict_count = 0
+SET kept_at = NULL, attempt_count = 0, conflict_count = 0, last_failure = NULL
 WHERE id = @id AND kept_at IS NOT NULL;
 ```
 
@@ -192,8 +197,11 @@ fails over, or the drain beside a bus outbox worker during adoption — and hand
 that arrives after the command completed. The hand-over carries the stamp of the claim that issued it, and the
 receiver takes the command over only if the record still carries that stamp: the first receiver moves it, and a
 hand-over that finds it moved, or finds the record gone, is dropped without running the handler and logged as
-`117_124` (Debug). A hand-over from a silo still on 4.1 carries no stamp and is not fenced, so the fence holds
-once every silo runs 4.2. A store that fails the fencing renewal fails the hand-over rather than dropping it, and
+`117_124` (Debug). The dispatch's own hand-over carries no stamp; when it arrives late — past a sixth of the grace
+after the dispatch — its first renewal also checks that the command is still recorded and not kept, and drops it
+otherwise, so a hand-over delayed past a resumption that already completed the command does not run it again. A
+hand-over from a silo still on 4.1 carries no stamp and is only checked that way, so the fence holds once every silo
+runs 4.2. A store that fails the fencing renewal fails the hand-over rather than dropping it, and
 the drain hands the command over again after the grace.
 
 Commands that one scope dispatches to one aggregate are resumed in the order they were dispatched, however long

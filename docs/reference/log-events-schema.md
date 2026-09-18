@@ -79,7 +79,7 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_121` | NudgeFailed | Debug | A commit's wake-up could not be delivered to a store reader; the reader's poll reads the commit instead |
 | `117_122` | IntentRoutingRefused | Warning | A recorded command's stored routing disagrees with its signed envelope; it is kept under strict integrity mode and resumed by the signed claim otherwise |
 | `117_123` | StoreReaderPauseLapsed | Warning | A store reader's pause lapsed because its pauser — a rebuild, a replay's reset or a test host's reset — stopped renewing it within the lease; carries the consumer, the partition, the pauser and how many pauses remain, and the reader resumes once none is left |
-| `117_124` | IntentHandOverDropped | Debug | A resumed command's hand-over found the command already taken by another runner — a second resumption of the same claim — or completed, and was dropped without running the handler |
+| `117_124` | IntentHandOverDropped | Debug | A hand-over found its command already taken by another runner — a second resumption of the same claim — or completed or kept, and was dropped without running the handler |
 
 ## Authoring a new log event
 
