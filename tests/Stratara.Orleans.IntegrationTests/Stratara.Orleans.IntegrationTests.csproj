@@ -12,6 +12,7 @@
         <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet"/>
         <PackageReference Include="Microsoft.Orleans.Sdk"/>
         <PackageReference Include="Microsoft.Extensions.Hosting"/>
+        <PackageReference Include="Moq"/>
         <PackageReference Include="SSH.NET"/>
         <PackageReference Include="Testcontainers.PostgreSql"/>
         <PackageReference Include="Testcontainers.RabbitMq"/>

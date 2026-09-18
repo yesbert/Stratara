@@ -19,7 +19,9 @@ public sealed class DurableIntentTests(PostgreSqlFixture postgres, RedisFixture 
     private const int Kills = 5;
     private const int HandlerDelayMs = 5_000;
     private const int LongHandlerDelayMs = 8_000;
-    private const string Bound = "attempts=3 kept=true";
+    // The dispatch's own hand-over is the first of the three attempts the bound allows; the record counts the two
+    // resumptions that follow it.
+    private const string Bound = "attempts=2 kept=true";
     private static readonly TimeSpan ResumeTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan KeptTimeout = TimeSpan.FromSeconds(60);
 
