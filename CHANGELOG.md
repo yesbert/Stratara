@@ -214,6 +214,16 @@ applies to the entire NuGet family.
   were reset.
 - **Orleans: the partition counter interceptor releases its transaction when positioning fails.** The
   transaction it opened stayed open on the context until the next save or the context's disposal.
+- **Orleans: the heavy-work pool runs its units beside each other again.** Since the pool became a placed grain
+  its eight slots lived in one activation, which runs one turn at a time: heavy units ran one after another, and a
+  handler that computed without awaiting anything blocked the pool's front door, so the next heavy command was not
+  accepted, not leased, and handed over again after the grace — counting an attempt each time, up to being kept for
+  an operator although it never ran. A unit now runs on one of the silo's own heavy workers, off the pool's
+  scheduler; the pool still accepts, leases and de-duplicates the hand-over.
+- **Orleans: a freed permit goes to a running heavy unit before a waiting one.** A running unit whose permit was
+  lost with its keeper and refused when it registered again asks at every renewal, while units waiting to start ask
+  every hundred milliseconds — under a queue of heavy work the running unit never counted against the bound again.
+  The permit table now reserves the room for it, so the bound is exceeded only until a running unit ends.
 - **Orleans: corrections in the execution model's guides.** The response timeout is named
   `SiloMessagingOptions.ResponseTimeout` (`ClientMessagingOptions.ResponseTimeout` from outside the cluster) —
   configuring the shared `MessagingOptions` base changed nothing; a death declaration needs the lesser of

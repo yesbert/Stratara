@@ -38,6 +38,7 @@ public static class OrleansAggregateServiceCollectionExtensions
         }
 
         AddIntentCompletion(services);
+        AddHeavyWorkers(services);
         Stratara.Orleans.Hosting.SiloStopSignal.Register(services);
         RolePlacement.Publish(services, ExecutionRole.Commands);
         DurableDirectoryCheck.Register(services);
@@ -55,6 +56,19 @@ public static class OrleansAggregateServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IntentCompletionQueue>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IntentCompletionQueue>(sp => sp.GetRequiredService<IntentCompletionQueue>()));
+    }
+
+    /// <summary>
+    /// Every silo of the command role runs the heavy units handed to its pools, on workers of the silo rather than
+    /// in the pool's activation, so a handler that computes without awaiting anything occupies one worker alone.
+    /// </summary>
+    private static void AddHeavyWorkers(IServiceCollection services)
+    {
+        services.AddOptions<HeavyWorkOptions>();
+        OrleansOptionsValidator.Register<HeavyWorkOptions>(services);
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<HeavyWorkRunner>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, HeavyWorkRunner>(sp => sp.GetRequiredService<HeavyWorkRunner>()));
     }
 
     /// <summary>

@@ -4,9 +4,6 @@ using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.GrainDirectory;
 using Orleans.Runtime;
-using Polly;
-using Polly.Retry;
-using Stratara.Diagnostics;
 using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
 
@@ -77,54 +74,70 @@ internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
 /// <summary>
 /// Heavy work runs here rather than in the aggregate's grain, so a long unit does not hold an
 /// aggregate's turn — it runs beside the aggregate's other commands, and the store's version check refuses the
-/// later writer where both append — and here rather than anywhere, so the number running is bounded: per pool by
-/// its worker slots, and across the cluster by the permit grain — the limit the pools alone cannot give. There are
-/// as many pools as the cluster-wide limit needs, placed on silos of the command role, where the handlers are. A
-/// hand-over is accepted at once, and the intent's hand-over is renewed from that moment — while it waits for a
-/// slot, while it waits for a permit and while it runs — so a burst that queues units for longer than the grace
-/// hands none of them over twice; it is completed after the handler, so a crash in between is resumed like any other
-/// intent. A unit renews its permit while it runs, so a permit outlives its unit only by a lease. Both renewals run
-/// from timers of their own, off the activation's scheduler, so a handler that computes without yielding is renewed
-/// all the same. A hand-over the activation already holds is not accepted twice.
+/// later writer where both append — and here rather than anywhere, so the number running is bounded: per silo by
+/// the <see cref="HeavyWorkRunner"/>'s workers, and across the cluster by the permit grain — the limit the silos
+/// alone cannot give. There are as many pools as the cluster-wide limit needs, placed on silos of the command role,
+/// where the handlers are. A hand-over is accepted at once, and the intent's hand-over is renewed from that moment —
+/// while it waits for a worker, while it waits for a permit and while it runs — so a burst that queues units for
+/// longer than the grace hands none of them over twice; it is completed after the handler, so a crash in between is
+/// resumed like any other intent. The unit itself runs on one of the silo's workers, off this activation's
+/// scheduler, so a handler that computes without awaiting anything neither stops the silo's other units nor keeps
+/// the next hand-over from being accepted and leased. A unit renews its permit while it runs, so a permit outlives
+/// its unit only by a lease; both renewals run from timers of their own. A hand-over the activation already holds is
+/// not accepted twice.
 /// </summary>
 [CommandsRolePlacementFilter]
 internal sealed class HeavyWorkGrain(
     IServiceScopeFactory scopeFactory,
-    IOptions<HeavyWorkOptions> options,
-    ILocalSiloDetails localSilo,
-    TimeProvider timeProvider,
-    SiloStopSignal stopSignal,
-    ILogger<HeavyWorkGrain> logger) : Grain, IHeavyWorkGrain
+    HeavyWorkRunner runner,
+    SiloStopSignal stopSignal) : Grain, IHeavyWorkGrain
 {
+    /// <summary>How many units one silo runs at once — the workers of its <see cref="HeavyWorkRunner"/>.</summary>
     public const int MaxLocalWorkers = 8;
 
-    /// <summary>How many pools the cluster-wide limit needs, each with <see cref="MaxLocalWorkers"/> slots; at least one.</summary>
+    /// <summary>How many pools the cluster-wide limit needs; at least one.</summary>
     public static int PoolsFor(int clusterWideLimit) => Math.Max(1, (clusterWideLimit + MaxLocalWorkers - 1) / MaxLocalWorkers);
 
-    private readonly TimeSpan _renewal = options.Value.PermitLease / 2;
-    private readonly SemaphoreSlim _slots = new(MaxLocalWorkers, MaxLocalWorkers);
     private readonly HashSet<Guid> _held = [];
     private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
     private readonly HashSet<Task> _inFlight = [];
 
-    private readonly ResiliencePipeline<bool> _acquirePermit = new ResiliencePipelineBuilder<bool>()
-        .AddRetry(new RetryStrategyOptions<bool>
-        {
-            ShouldHandle = new PredicateBuilder<bool>().HandleResult(false),
-            MaxRetryAttempts = int.MaxValue,
-            BackoffType = DelayBackoffType.Constant,
-            Delay = options.Value.PermitRetry,
-        })
-        .Build();
-
+    /// <summary>
+    /// Accepts the hand-over: the intent's lease starts here, before the unit is queued for a worker, so a unit
+    /// waiting for a worker or a permit counts as running. The unit itself — the handler, inside its lease, under a
+    /// permit — runs on one of the silo's workers.
+    /// </summary>
     public async Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope)
     {
+        ArgumentNullException.ThrowIfNull(envelope);
         if (!_held.Add(intentId))
         {
             return;
         }
 
-        var run = CommandExecution.RunAsync(scopeFactory, envelope, intentId, UnderSlotAndPermitAsync, callerChain: null, _stopping.Token);
+        var scope = scopeFactory.CreateScope();
+        Task run;
+        try
+        {
+            var lease = await IntentLease.StartAsync(scope.ServiceProvider, intentId);
+            run = runner.RunAsync(
+                () => CommandExecution.RunIntentAsync(
+                    scope.ServiceProvider,
+                    envelope,
+                    intentId,
+                    lease,
+                    around: unit => runner.UnderPermitAsync(unit, _stopping.Token),
+                    aggregateId: null,
+                    _stopping.Token),
+                _stopping.Token);
+        }
+        catch
+        {
+            _held.Remove(intentId);
+            scope.Dispose();
+            throw;
+        }
+
         _inFlight.Add(run);
         try
         {
@@ -134,63 +147,20 @@ internal sealed class HeavyWorkGrain(
         {
             _inFlight.Remove(run);
             _held.Remove(intentId);
+            scope.Dispose();
         }
     }
 
     /// <summary>
-    /// Waits for the units in flight within the deactivation budget; past it, cancels their token — a unit waiting for
-    /// a slot or a permit stops waiting, a running handler is told to stop — and waits for them to end.
+    /// Waits for the units in flight within the deactivation budget; past it, cancels their token — a unit still
+    /// queued for a worker ends at the permit it was waiting for, a unit waiting for a permit stops waiting, and a
+    /// running handler is told to stop — and waits for them to end.
     /// </summary>
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
         await AggregateGrain.StopRunningAsync(_stopping, _inFlight.Count == 0 ? null : Task.WhenAll(_inFlight), cancellationToken);
         _stopping.Dispose();
         await base.OnDeactivateAsync(reason, cancellationToken);
-    }
-
-    /// <summary>Runs the unit in one of the activation's slots, under a permit; the intent's lease is already renewing.</summary>
-    private async Task UnderSlotAndPermitAsync(Func<Task> run)
-    {
-        await _slots.WaitAsync(_stopping.Token);
-        try
-        {
-            await UnderPermitAsync(run);
-        }
-        finally
-        {
-            _slots.Release();
-        }
-    }
-
-    /// <summary>
-    /// Runs the unit under a permit. The release after it cannot change the unit's outcome: a release that fails is
-    /// logged, and the permit's lease releases it.
-    /// </summary>
-    private async Task UnderPermitAsync(Func<Task> run)
-    {
-        var permits = GrainFactory.GetGrain<IHeavyWorkPermitGrain>(0);
-        var unitId = Guid.NewGuid();
-        await _acquirePermit.ExecuteAsync(async _ => await permits.TryAcquireAsync(unitId, localSilo.SiloAddress), _stopping.Token);
-
-        var renewal = new PermitRenewal(permits, unitId, localSilo.SiloAddress, logger);
-        var renewing = timeProvider.CreateTimer(static state => ((PermitRenewal)state!).Tick(), renewal, _renewal, _renewal);
-        try
-        {
-            await run();
-        }
-        finally
-        {
-            await renewing.DisposeAsync();
-            await renewal.SettleAsync();
-            try
-            {
-                await permits.ReleaseAsync(unitId);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogPermitReleaseFailed(ex, unitId);
-            }
-        }
     }
 }
 

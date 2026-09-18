@@ -17,10 +17,12 @@ using Stratara.Orleans.Singleton;
 namespace Stratara.Orleans.IntegrationTests.HeavyWork;
 
 /// <summary>
-/// Scenario <em>A heavy handler computes past the grace without yielding</em>: a handler that sleeps the thread
-/// for five seconds under a two-second grace and a two-second permit lease. The lease and the permit are renewed
-/// from a timer of their own, not from the activation's scheduler the handler is blocking, so the drain never
-/// claims the command, it runs once, and its permit is held until it ends.
+/// Scenarios <em>A heavy handler computes past the grace without yielding</em> and <em>Two heavy handlers compute
+/// without yielding</em>: handlers that sleep the thread for five seconds under a two-second grace and a two-second
+/// permit lease. The lease and the permit are renewed from a timer of their own, not from the activation's scheduler
+/// the handler is blocking, so the drain never claims the command, it runs once, and its permit is held until it
+/// ends — and two such handlers run at the same time on the silo's own workers instead of one after another, so
+/// neither is handed over again while the other computes.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class HeavyNonYieldingTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
@@ -59,6 +61,35 @@ public sealed class HeavyNonYieldingTests(PostgreSqlFixture postgres, RedisFixtu
 
         Assert.Equal(1, executions.Started(aggregateId));
         Assert.Equal(1, lowestInUseWhileRunning);
+        await app.StopAsync();
+    }
+
+    [Fact]
+    public async Task Two_handlers_that_never_yield_run_at_the_same_time_and_each_runs_once()
+    {
+        var store = postgres.ConnectionStringFor($"{Database}_pair");
+        using var app = await StartAsync(store, siloPort: 11345, gatewayPort: 30235);
+        var executions = app.Services.GetRequiredService<ExecutionCount>();
+        var aggregates = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(PocSessions.New());
+            var dispatcher = scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>();
+            foreach (var aggregateId in aggregates)
+            {
+                await dispatcher.EnqueueCommandAsync(new ComputeHeavily(aggregateId, ComputeMs));
+            }
+        }
+
+        Assert.True(
+            await WaitUntilAsync(() => Task.FromResult(aggregates.All(id => executions.Completed(id) == 1))),
+            $"the two heavy handlers did not both complete: {string.Join(", ", aggregates.Select(id => $"{id} started {executions.Started(id)}, completed {executions.Completed(id)}"))}");
+        Assert.True(await WaitUntilAsync(async () => await OutboxCountAsync(store) == 0), "a command's record was not removed after it completed");
+        await Task.Delay(Grace * 2);
+
+        Assert.Equal(2, executions.MostAtOnce);
+        Assert.All(aggregates, id => Assert.Equal(1, executions.Started(id)));
         await app.StopAsync();
     }
 
@@ -133,10 +164,28 @@ public sealed class ExecutionCount
 {
     private readonly ConcurrentDictionary<Guid, int> _started = new();
     private readonly ConcurrentDictionary<Guid, int> _completed = new();
+    private int _running;
+    private int _mostAtOnce;
 
-    public void MarkStarted(Guid id) => _started.AddOrUpdate(id, 1, static (_, count) => count + 1);
+    /// <summary>The most handlers that ran at the same time, so a test can tell parallel runs from consecutive ones.</summary>
+    public int MostAtOnce => Volatile.Read(ref _mostAtOnce);
 
-    public void MarkCompleted(Guid id) => _completed.AddOrUpdate(id, 1, static (_, count) => count + 1);
+    public void MarkStarted(Guid id)
+    {
+        _started.AddOrUpdate(id, 1, static (_, count) => count + 1);
+        var running = Interlocked.Increment(ref _running);
+        var most = Volatile.Read(ref _mostAtOnce);
+        while (running > most && Interlocked.CompareExchange(ref _mostAtOnce, running, most) != most)
+        {
+            most = Volatile.Read(ref _mostAtOnce);
+        }
+    }
+
+    public void MarkCompleted(Guid id)
+    {
+        _completed.AddOrUpdate(id, 1, static (_, count) => count + 1);
+        Interlocked.Decrement(ref _running);
+    }
 
     public int Started(Guid id) => _started.GetValueOrDefault(id);
 

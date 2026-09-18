@@ -60,7 +60,9 @@ timeout survives a kill at any point of the step that scheduled it.
 
 **Bounded heavy work.** Heavy commands run in a bounded pool per silo and under a cluster-wide number of
 permits; a permit whose silo died is released, the bound holds across the loss of the silo keeping the
-permits, and interactive commands do not queue behind heavy work.
+permits, and interactive commands do not queue behind heavy work. The pool's units run beside each other
+on workers of the silo, so a handler that computes without awaiting anything occupies one worker and
+neither stops the silo's other units nor delays the next heavy command's acceptance.
 
 **A clean slate on demand.** A host can clear everything the model keeps beside the event stream for its
 own deployment — reminders, membership, the grain directory, the checkpoints of the projections and sagas
