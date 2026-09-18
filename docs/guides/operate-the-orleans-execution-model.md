@@ -108,7 +108,7 @@ work moves in steps, each bounded by a setting:
    A cluster too small for that many voters needs fewer: the runtime requires the lesser of the setting and
    half the active silos rounded up, so in a two-silo cluster the survivor's own vote declares the death.
 3. **Takeover.** The work's keep-alive reminder now belongs to another silo and brings the work's grain up
-   there on its next tick, within `SingletonWorkOptions.KeepAlivePeriod` (one minute).
+   there on its next tick, within the work's `SingletonWorkOptions.KeepAlivePeriod` (one minute).
 4. **The declared silo stops.** A silo that is still running learns of its own declaration at the latest at
    its next read of the membership table, every `TableRefreshTimeout` (one minute), usually sooner through
    gossip, and stops itself.
@@ -121,6 +121,25 @@ it, so the table refresh bounds the overlap only where the table is reachable. W
 overlapping run does no harm: claim what it processes with a compare-and-set in its own store, as the
 framework's outbox drain claims recorded commands, or make each run idempotent. The integration suite measures
 the takeover under the test profile (a five-second keep-alive) and allows it three minutes.
+
+### Settings per work
+
+A work's settings are the host's settings for every singleton work with the work's own registration applied on
+top. `services.Configure<SingletonWorkOptions>(...)` sets the default for every work; the callback given to
+`AddStrataraSingletonWork<TWork>(configure)` or `AddStrataraSingletonWork<TWork>(name, configure)` sets that work
+alone and never reaches another:
+
+```csharp
+builder.Services
+    .Configure<SingletonWorkOptions>(options => options.KeepAlivePeriod = TimeSpan.FromMinutes(2))
+    .AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)
+    .AddStrataraSingletonWork<NightlyCleanupWork>(options => options.KeepAlivePeriod = TimeSpan.FromMinutes(5));
+```
+
+The drain is kept alive every two minutes, the cleanup every five. A work registered twice runs once, with the
+settings of the later registration — a later call without a callback leaves the work on the host's default. Each
+work's settings are validated when the host starts, and an invalid one fails the start naming the setting and the
+work.
 
 ## Sends between aggregates
 

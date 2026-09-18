@@ -159,6 +159,15 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **Orleans: a singleton work's settings apply to that work alone.** The callback given to
+  `AddStrataraSingletonWork<TWork>(configure)` and `AddStrataraSingletonWork<TWork>(name, configure)` configured one
+  settings object shared by every work, so two works registered with keep-alive periods of two and five minutes both
+  ran with whichever callback ran last. Each work now runs with the host's `SingletonWorkOptions` — what
+  `services.Configure<SingletonWorkOptions>(...)` sets — with its own callback applied on top, and a work registered
+  twice runs with the later registration's callback, once, rather than with both. Each work's settings are validated
+  when the host starts. **A host that relied on one work's callback to configure the others** sets the value for all
+  of them with `services.Configure<SingletonWorkOptions>(...)` instead; a host that already configures
+  `SingletonWorkOptions` directly is unaffected.
 - **Orleans: `hybrid: true` keeps a bus dispatcher registered by factory or as an instance.** `AddStrataraProjectionGrains`
   and `AddStrataraSagaGrains` kept publishing bundles to the bus only when the dispatcher had been registered by type; a
   factory- or instance-registered one was removed and bundles stopped reaching the bus.

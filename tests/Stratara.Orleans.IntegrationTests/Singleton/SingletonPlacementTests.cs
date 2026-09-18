@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Singleton;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting;
+using Stratara.Orleans.Singleton;
 
 namespace Stratara.Orleans.IntegrationTests.Singleton;
 
@@ -69,7 +70,8 @@ public static class PlacementProbes
     {
         var keepAlive = TimeSpan.FromSeconds(5);
         services
-            .AddStrataraSingletonWork<PlacementProbe<Probe1>>(o => o.KeepAlivePeriod = keepAlive)
+            .Configure<SingletonWorkOptions>(o => o.KeepAlivePeriod = keepAlive)
+            .AddStrataraSingletonWork<PlacementProbe<Probe1>>()
             .AddStrataraSingletonWork<PlacementProbe<Probe2>>()
             .AddStrataraSingletonWork<PlacementProbe<Probe3>>()
             .AddStrataraSingletonWork<PlacementProbe<Probe4>>()

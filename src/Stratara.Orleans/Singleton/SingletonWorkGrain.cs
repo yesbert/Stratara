@@ -1,10 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Orleans.Hosting;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
 using Stratara.Abstractions.Singleton;
 using Stratara.Orleans.Diagnostics;
+using Stratara.Orleans.Hosting;
 
 namespace Stratara.Orleans.Singleton;
 
@@ -23,18 +25,21 @@ internal interface ISingletonWorkGrain : IGrainWithStringKey
 /// Runs its work on a grain timer, which the runtime never lets overlap with itself or with a
 /// call, and keeps a reminder so that a silo's loss brings the grain back somewhere else. The
 /// grain directory's single-activation guarantee is what makes this "once per cluster". A run that throws is logged
-/// and the timer's next tick runs the work again.
+/// and the timer's next tick runs the work again. Its settings are its work's: the host's settings for every singleton
+/// work with the work's own registration applied on top.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 [SingletonWorkPlacementFilter]
 internal sealed class SingletonWorkGrain(
     IServiceScopeFactory scopeFactory,
     IOptions<SingletonWorkOptions> options,
+    IOptions<ReminderOptions> reminders,
+    SingletonWorkRegistrations registrations,
     ILogger<SingletonWorkGrain> logger) : Grain, ISingletonWorkGrain, IRemindable
 {
     private const string KeepAliveReminder = "keep-alive";
 
-    private readonly TimeSpan _keepAlivePeriod = options.Value.KeepAlivePeriod;
+    private TimeSpan _keepAlivePeriod;
     private IGrainTimer? _timer;
     private long _runs;
 
@@ -65,7 +70,10 @@ internal sealed class SingletonWorkGrain(
             return;
         }
 
-        var period = ResolvePeriod();
+        using var scope = scopeFactory.CreateScope();
+        var work = ResolveWork(scope.ServiceProvider);
+        _keepAlivePeriod = SettingsOf(work).KeepAlivePeriod;
+        var period = work.Period;
         _timer = this.RegisterGrainTimer(RunOnceAsync, new GrainTimerCreationOptions
         {
             DueTime = period,
@@ -75,10 +83,14 @@ internal sealed class SingletonWorkGrain(
         });
     }
 
-    private TimeSpan ResolvePeriod()
+    /// <exception cref="OptionsValidationException">The work's settings are invalid.</exception>
+    private SingletonWorkOptions SettingsOf(ISingletonWork work)
     {
-        using var scope = scopeFactory.CreateScope();
-        return ResolveWork(scope.ServiceProvider).Period;
+        var settings = registrations.SettingsOf(work.GetType(), options.Value);
+        var result = new OrleansOptionsValidator(reminders).ValidateWork(work.GetType(), settings);
+        return result.Failed
+            ? throw new OptionsValidationException(work.Name, typeof(SingletonWorkOptions), result.Failures)
+            : settings;
     }
 
     private async Task RunOnceAsync(CancellationToken cancellationToken)
