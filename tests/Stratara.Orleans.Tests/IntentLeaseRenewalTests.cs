@@ -26,6 +26,7 @@ public sealed class IntentLeaseRenewalTests
         intents.Setup(store => store.RenewAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .Callback(() => Interlocked.Increment(ref renewals))
             .Returns(Task.CompletedTask);
+        intents.Setup(store => store.TryRenewAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var services = new ServiceCollection()
             .AddSingleton(intents.Object)
             .AddSingleton(TimeProvider.System)

@@ -132,3 +132,32 @@ public sealed class WelcomeProcess(Runs runs) : SagaProcess<WelcomeState>
         return Task.CompletedTask;
     }
 }
+
+/// <summary>A command whose handler fails the first <see cref="Failures"/> times it runs, and then completes.</summary>
+public sealed record FailingDeposit(Guid AggregateId, int Failures) : ICommand, IAggregateScopedCommand;
+
+/// <summary>Counts the runs of each <see cref="FailingDeposit"/> and throws until its failures are used up.</summary>
+public sealed class FailingDepositHandler(ResumedRuns runs) : ICommandHandler<FailingDeposit>
+{
+    public Task HandleAsync(FailingDeposit command, CancellationToken cancellationToken)
+    {
+        var run = runs.Count(command.AggregateId);
+        if (run <= command.Failures)
+        {
+            throw new InvalidOperationException($"run {run} of {command.AggregateId} fails");
+        }
+
+        runs.Completed[command.AggregateId] = run;
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>How often each recorded command ran, and at which run it completed.</summary>
+public sealed class ResumedRuns
+{
+    public ConcurrentDictionary<Guid, int> Runs { get; } = new();
+
+    public ConcurrentDictionary<Guid, int> Completed { get; } = new();
+
+    public int Count(Guid id) => Runs.AddOrUpdate(id, 1, static (_, count) => count + 1);
+}

@@ -54,7 +54,8 @@ public sealed class IntentClaimTests(PostgreSqlFixture postgres)
         await using (var context = await store.CreateContextAsync())
         {
             var attempts = await context.Set<OutboxEntry>().AsNoTracking().Select(e => e.AttemptCount).ToListAsync(TestContext.Current.CancellationToken);
-            Assert.All(attempts, attempt => Assert.Equal(1, attempt));
+            // Recorded with the dispatch's hand-over as the first attempt, claimed as the second.
+            Assert.All(attempts, attempt => Assert.Equal(2, attempt));
         }
     }
 

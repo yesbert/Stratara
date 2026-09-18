@@ -102,6 +102,42 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
         RecordedIntentHost.ScalarAsync<int>(store, "SELECT attempt_count FROM outbox_entry WHERE id = @id", ("id", intentId));
 
     [Fact]
+    public async Task A_recorded_command_queued_behind_a_stopped_handler_gives_back_its_attempt()
+    {
+        var control = new StopProbeControl();
+        var cluster = $"stratara-poc-stop-queued-intent-{Guid.NewGuid():N}";
+        using var first = await StartSiloAsync(control, cluster, 11371, 30261, ShortBudget);
+        var aggregate = Guid.NewGuid();
+        var running = Guid.NewGuid();
+        var queued = Guid.NewGuid();
+
+        Guid queuedIntent;
+        await using (var scope = first.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(PocSessions.New());
+            var dispatcher = scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>();
+            await dispatcher.EnqueueCommandAsync(new BlockingProbe(aggregate, running));
+            queuedIntent = await dispatcher.EnqueueCommandAsync(new BlockingProbe(aggregate, queued));
+        }
+
+        Assert.True(await WaitUntilAsync(() => control.Started(running.ToString()) == 1, StartedTimeout), "the first command's handler never started");
+        using var second = await StartSiloAsync(control, cluster, 11372, 30262, ShortBudget);
+        await StopAsync(first);
+        Assert.Equal(0, control.Started(queued.ToString()));
+
+        // The queued command never ran: the stop gave back the attempt its record counted for the dispatch's hand-over,
+        // so its resumption on the second silo is its first counted attempt again.
+        Assert.True(
+            await WaitUntilAsync(() => control.Logs.Entries.Any(e => e.EventId == LogEvents.Orleans.CommandResumed && e.Message.Contains(queuedIntent.ToString(), StringComparison.Ordinal)), TakeoverTimeout),
+            "the queued command was not resumed on the second silo");
+        Assert.Equal(1, await AttemptsAsync(postgres.ConnectionStringFor("poc_stopping_store"), queuedIntent));
+
+        control.Block = false;
+        Assert.True(await WaitUntilAsync(() => control.Completed(queued.ToString()) == 1, TakeoverTimeout), "the queued command did not complete on the second silo");
+        await second.StopAsync();
+    }
+
+    [Fact]
     public async Task The_caller_of_a_forwarded_command_whose_handler_waits_on_its_token_is_told_the_silo_stopped()
     {
         var control = new StopProbeControl();

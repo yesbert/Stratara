@@ -35,8 +35,10 @@ public interface ICommandIntentStore
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>A task that completes when the command is durable.</returns>
     /// <remarks>
-    /// The default records through the overload without <paramref name="recordedAt"/>, so a store that does not
-    /// override it orders commands by the time it stamps them itself.
+    /// A store that overrides it counts the hand-over of the dispatch that follows the record as the command's first
+    /// attempt, as a bus message's first delivery counts, so a record whose host died before that hand-over has used one
+    /// attempt. The default records through the overload without <paramref name="recordedAt"/>, so a store that does not
+    /// override it orders commands by the time it stamps them itself and counts from zero, as before.
     /// </remarks>
     Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, DateTimeOffset recordedAt, CancellationToken cancellationToken) =>
         RecordAsync(intentId, envelope, aggregateId, heavy, cancellationToken);
@@ -98,6 +100,24 @@ public interface ICommandIntentStore
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>A task that completes when the renewal is durable.</returns>
     Task RenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Renews the hand-over of a command that is still recorded and not kept, and reports whether there was one: a late
+    /// hand-over that finds the command gone — it completed through another run — or kept is not run.
+    /// </summary>
+    /// <param name="intentId">The recorded command.</param>
+    /// <param name="now">The time of the renewal.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns><see langword="true"/> when a recorded, not kept command was renewed.</returns>
+    /// <remarks>
+    /// The default renews through <see cref="RenewAsync"/> and returns <see langword="true"/>, so a store that does not
+    /// override it runs every such hand-over.
+    /// </remarks>
+    async Task<bool> TryRenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await RenewAsync(intentId, now, cancellationToken);
+        return true;
+    }
 
     /// <summary>
     /// Takes over a resumed hand-over: renews it only if the command is not kept and its last hand-over is still

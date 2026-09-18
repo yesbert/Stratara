@@ -45,7 +45,8 @@ internal sealed class IntentLease : IAsyncDisposable
     /// Takes the hand-over and keeps renewing it until the lease is disposed. A resumed hand-over — one that carries
     /// <paramref name="claimedAt"/> — is taken only if its record still carries that stamp; one that finds the stamp
     /// moved or the record gone is dropped, logged, and answered with <see langword="null"/>, and its handler does not
-    /// run. Any other hand-over is renewed now unless its record time still holds it.
+    /// run. Any other hand-over is renewed now unless its record time still holds it, and is dropped the same way when
+    /// that renewal finds the record gone or kept.
     /// </summary>
     /// <returns>The lease, or <see langword="null"/> when the hand-over was dropped.</returns>
     /// <remarks>
@@ -66,15 +67,35 @@ internal sealed class IntentLease : IAsyncDisposable
             return null;
         }
 
-        var lease = new IntentLease(intents, timeProvider, logger, intentId);
-        if (claimedAt is null && RenewsAtStart(intentId, now, grace))
+        if (claimedAt is null && RenewsAtStart(intentId, now, grace) && !await TryRenewLateAsync(intents, logger, intentId, now))
         {
-            await lease.RenewAsync(now, CancellationToken.None);
+            logger.LogIntentHandOverDropped(intentId);
+            return null;
         }
+
+        var lease = new IntentLease(intents, timeProvider, logger, intentId);
 
         var period = grace / 3;
         lease._timer = timeProvider.CreateTimer(static state => ((IntentLease)state!).OnTick(), lease, period, period);
         return lease;
+    }
+
+    /// <summary>
+    /// Renews an unstamped hand-over that arrives late and reports whether its command is still recorded and not kept: one
+    /// that completed through another run while this hand-over was on its way is not run again. A renewal that fails is
+    /// logged and the hand-over runs, as it always did.
+    /// </summary>
+    private static async Task<bool> TryRenewLateAsync(ICommandIntentStore intents, ILogger logger, Guid intentId, DateTimeOffset now)
+    {
+        try
+        {
+            return await intents.TryRenewAsync(intentId, now, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogIntentRenewalFailed(ex, intentId);
+            return true;
+        }
     }
 
     /// <summary>

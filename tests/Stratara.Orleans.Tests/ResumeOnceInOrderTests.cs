@@ -94,22 +94,18 @@ public sealed class ResumeOnceInOrderTests
     }
 
     [Theory]
-    [InlineData(0, 0, false, 3, false)]
-    [InlineData(0, 0, true, 3, false)]
-    [InlineData(1, 0, true, 3, false)]
-    [InlineData(2, 0, true, 3, true)]
-    [InlineData(2, 0, false, 3, true)]
-    [InlineData(0, 5, true, 3, false)]
-    [InlineData(0, 6, true, 3, true)]
-    [InlineData(0, 0, false, 1, false)]
-    [InlineData(0, 0, true, 1, true)]
-    [InlineData(0, 1, true, 1, false)]
-    [InlineData(1, 1, true, 1, true)]
-    public void A_command_is_kept_at_the_delivery_bound_counting_its_first_hand_over_or_past_the_conflict_bound(
-        int attempts, int conflicts, bool failureRecorded, int maxDeliveryAttempts, bool kept)
+    [InlineData(0, 0, 3, false)]
+    [InlineData(2, 0, 3, false)]
+    [InlineData(3, 0, 3, true)]
+    [InlineData(0, 5, 3, false)]
+    [InlineData(0, 6, 3, true)]
+    [InlineData(0, 0, 1, false)]
+    [InlineData(1, 0, 1, true)]
+    [InlineData(1, 6, 1, true)]
+    public void A_command_is_kept_at_the_delivery_bound_or_past_the_conflict_bound(int attempts, int conflicts, int maxDeliveryAttempts, bool kept)
     {
         var resumer = Resumer(new Mock<ICommandIntentStore>().Object, new Grains(), new FakeTimeProvider(Start), new MessageRetryOptions { MaxDeliveryAttempts = maxDeliveryAttempts, MaxConflictRequeues = 5 });
-        var intent = Recorded(Guid.NewGuid()) with { AttemptCount = attempts, ConflictCount = conflicts, LastFailure = failureRecorded ? "failed" : null };
+        var intent = Recorded(Guid.NewGuid()) with { AttemptCount = attempts, ConflictCount = conflicts, LastFailure = "failed" };
 
         Assert.Equal(kept, resumer.IsExhausted(intent));
     }
@@ -118,9 +114,9 @@ public sealed class ResumeOnceInOrderTests
     public async Task A_resumption_keeps_a_command_at_its_bound_and_hands_the_rest_over_with_the_claims_stamp()
     {
         var clock = new FakeTimeProvider(Start.AddTicks(1234));
-        var exhausted = Recorded(Guid.NewGuid()) with { AttemptCount = 2, LastFailure = "failed" };
+        var exhausted = Recorded(Guid.NewGuid()) with { AttemptCount = 3, LastFailure = "failed" };
         var conflicted = Recorded(Guid.NewGuid()) with { ConflictCount = 6, LastFailure = "conflict" };
-        var due = Recorded(Guid.NewGuid()) with { AttemptCount = 1, ConflictCount = 5, LastFailure = "failed" };
+        var due = Recorded(Guid.NewGuid()) with { AttemptCount = 2, ConflictCount = 5, LastFailure = "failed" };
         DateTimeOffset? claimedAt = null;
         var intents = new Mock<ICommandIntentStore>();
         intents.Setup(s => s.GetDueAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync([exhausted, conflicted, due]);
@@ -186,19 +182,76 @@ public sealed class ResumeOnceInOrderTests
     }
 
     [Fact]
-    public void The_framework_and_store_conflicts_are_conflicts_and_nothing_else_is()
+    public async Task A_late_unstamped_hand_over_whose_command_is_gone_or_kept_is_dropped()
     {
-        Assert.True(IntentFailure.IsConflict(new ConcurrencyConflictException()));
+        var intentId = Guid.CreateVersion7(Start.AddHours(-1));
+        var logger = new RecordingLogger();
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(s => s.TryRenewAsync(intentId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var lease = await IntentLease.StartAsync(LeaseServices(intents.Object, logger), intentId, claimedAt: null);
+
+        Assert.Null(lease);
+        Assert.Single(logger.Entries, e => e.EventId.Id == LogEvents.Orleans.IntentHandOverDropped);
+    }
+
+    [Fact]
+    public async Task A_late_unstamped_hand_over_runs_when_its_command_is_recorded_or_its_renewal_fails()
+    {
+        var recorded = Guid.CreateVersion7(Start.AddHours(-1));
+        var unanswered = Guid.CreateVersion7(Start.AddHours(-1));
+        var fresh = Guid.CreateVersion7(Start);
+        var logger = new RecordingLogger();
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(s => s.TryRenewAsync(recorded, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        intents.Setup(s => s.TryRenewAsync(unanswered, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ThrowsAsync(new TimeoutException("the store did not answer"));
+        var services = LeaseServices(intents.Object, logger);
+
+        await using var first = await IntentLease.StartAsync(services, recorded, claimedAt: null);
+        await using var second = await IntentLease.StartAsync(services, unanswered, claimedAt: null);
+        await using var third = await IntentLease.StartAsync(services, fresh, claimedAt: null);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotNull(third);
+        Assert.Single(logger.Entries, e => e.EventId.Id == LogEvents.Orleans.IntentRenewalFailed);
+        intents.Verify(s => s.TryRenewAsync(fresh, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task A_long_lived_scope_forgets_the_order_of_lanes_whose_last_dispatch_is_a_step_behind()
+    {
+        var clock = new FakeTimeProvider(Start);
+        var intents = new Mock<ICommandIntentStore>();
+        await using var provider = Dispatching(intents.Object, clock);
+        await using var scope = provider.CreateAsyncScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<OrleansCommandDispatcher>();
+
+        for (var lane = 0; lane < 3; lane++)
+        {
+            await dispatcher.EnqueueCommandAsync(new Probe(Guid.NewGuid(), 1));
+        }
+
+        Assert.Equal(3, dispatcher.RememberedLanes);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        await dispatcher.EnqueueCommandAsync(new Probe(Guid.NewGuid(), 1));
+
+        Assert.Equal(1, dispatcher.RememberedLanes);
+    }
+
+    [Fact]
+    public void A_conflict_is_what_the_bus_transports_count_as_one_and_nothing_else()
+    {
         Assert.True(IntentFailure.IsConflict(new ConcurrencyException(Guid.NewGuid(), "Order")));
-        Assert.True(IntentFailure.IsConflict(new DbUpdateConcurrencyException("the row moved")));
-        Assert.False(IntentFailure.IsConflict(new DbUpdateException("the insert failed")));
+        Assert.False(IntentFailure.IsConflict(new ConcurrencyConflictException()));
+        Assert.False(IntentFailure.IsConflict(new DbUpdateConcurrencyException("the row moved")));
         Assert.False(IntentFailure.IsConflict(new InvalidOperationException("the handler failed")));
     }
 
     [Fact]
     public async Task A_conflict_is_recorded_as_a_conflict_and_any_other_failure_as_a_failure()
     {
-        var intentId = Guid.NewGuid();
+        var intentId = Guid.CreateVersion7(Start);
         var intents = new Mock<ICommandIntentStore>();
         await using var lease = await IntentLease.StartAsync(LeaseServices(intents.Object, new RecordingLogger()), intentId, claimedAt: null)
                                 ?? throw new InvalidOperationException("the lease was not started");

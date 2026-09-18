@@ -22,6 +22,7 @@ public sealed class IntentFailureLoggingTests
         var logger = new RecordingLogger();
         var intents = new Mock<ICommandIntentStore>();
         intents.Setup(store => store.RecordFailureAsync(intentId, It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        intents.Setup(store => store.TryRenewAsync(intentId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var services = new ServiceCollection()
             .AddSingleton(intents.Object)
             .AddSingleton(TimeProvider.System)

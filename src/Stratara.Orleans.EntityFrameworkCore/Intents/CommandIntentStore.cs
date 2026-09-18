@@ -23,7 +23,10 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
     public Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, CancellationToken cancellationToken) =>
         RecordAsync(intentId, envelope, aggregateId, heavy, timeProvider.GetUtcNow(), cancellationToken);
 
-    /// <summary>One insert; the record's time is the dispatch's, taken before the envelope was built.</summary>
+    /// <summary>
+    /// One insert. The record's time is the dispatch's, taken before the envelope was built, and the hand-over of the
+    /// dispatch that follows the record is counted as the command's first attempt.
+    /// </summary>
     public async Task RecordAsync(Guid intentId, CommandEnvelope envelope, Guid? aggregateId, bool heavy, DateTimeOffset recordedAt, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(envelope);
@@ -35,6 +38,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             DataJson = JsonSerializer.Serialize(envelope),
             DataTypeName = CommandTypeName,
             Timestamp = recordedAt,
+            AttemptCount = 1,
             AggregateId = aggregateId,
             Heavy = heavy,
         });
@@ -146,6 +150,15 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         var renewed = await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.KeptAt == null && e.LastHandedOverAt == claimedAt)
             .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)renewal), cancellationToken);
+        return renewed == 1;
+    }
+
+    public async Task<bool> TryRenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var renewed = await context.Set<OutboxEntry>()
+            .Where(e => e.Id == intentId && e.KeptAt == null)
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
         return renewed == 1;
     }
 

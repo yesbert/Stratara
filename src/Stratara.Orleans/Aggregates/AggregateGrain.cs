@@ -77,7 +77,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
     public const string StoppedMessage = "The silo running the aggregate's activation stopped before the handler completed; dispatch the command again.";
 
     private readonly Queue<Accepted> _accepted = new();
-    private readonly HashSet<Guid> _heldIntents = [];
+    private readonly Dictionary<Guid, AcceptedIntent> _heldIntents = [];
     private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
     private TaskCompletionSource? _turn;
     private bool _running;
@@ -89,18 +89,34 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
         return completion.Task;
     }
 
-    /// <summary>The place in the queue is taken before the first await, so accepted intents keep the order their calls arrived in.</summary>
+    /// <summary>
+    /// The place in the queue is taken before the first await, so accepted intents keep the order their calls arrived in.
+    /// A hand-over whose lease was dropped or failed stops holding its intent at once, so a later hand-over of the same
+    /// intent is judged by its own lease rather than refused while the dropped one waits in the queue.
+    /// </summary>
     public async Task AcceptIntentAsync(Guid intentId, AggregateCommandEnvelope envelope)
     {
-        if (!_heldIntents.Add(intentId))
+        if (_heldIntents.ContainsKey(intentId))
         {
             return;
         }
 
         var scope = scopeFactory.CreateScope();
         var intent = new AcceptedIntent(intentId, scope, IntentLease.StartAsync(scope.ServiceProvider, intentId, envelope.ClaimedAt));
+        _heldIntents[intentId] = intent;
         Accept(new Accepted(envelope, Completion: null, intent, CallerChain: null));
-        await intent.Lease;
+        try
+        {
+            if (await intent.Lease is null)
+            {
+                Forget(intent);
+            }
+        }
+        catch
+        {
+            Forget(intent);
+            throw;
+        }
     }
 
     /// <summary>
@@ -261,7 +277,8 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
 
     /// <summary>
     /// Fails every forwarded command still queued back to its caller, and stops renewing every recorded intent still
-    /// queued, so the drain resumes it after the grace.
+    /// queued, giving back the attempt its hand-over counted because it never ran, so the drain resumes it after the
+    /// grace.
     /// </summary>
     private async Task AbandonAsync()
     {
@@ -277,6 +294,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
             {
                 if (await intent.Lease is { } lease)
                 {
+                    await lease.ReturnAttemptAsync();
                     await lease.DisposeAsync();
                 }
             }
@@ -294,7 +312,16 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
     private void Release(AcceptedIntent intent)
     {
         intent.Scope.Dispose();
-        _heldIntents.Remove(intent.Id);
+        Forget(intent);
+    }
+
+    /// <summary>Stops holding the intent, unless a later hand-over of it holds it now.</summary>
+    private void Forget(AcceptedIntent intent)
+    {
+        if (_heldIntents.TryGetValue(intent.Id, out var held) && ReferenceEquals(held, intent))
+        {
+            _heldIntents.Remove(intent.Id);
+        }
     }
 
     private sealed record Accepted(AggregateCommandEnvelope Envelope, TaskCompletionSource? Completion, AcceptedIntent? Intent, Guid[]? CallerChain);

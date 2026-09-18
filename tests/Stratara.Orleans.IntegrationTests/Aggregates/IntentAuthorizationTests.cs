@@ -39,9 +39,10 @@ public sealed class IntentAuthorizationTests(PostgreSqlFixture postgres, RedisFi
         Assert.True(await WaitForAsync(host, $"intent {intent}", answer => answer.Contains("kept=true", StringComparison.Ordinal)), $"the refused command was not kept: {await host.SendAsync($"intent {intent}")}");
         var state = await host.SendAsync($"intent {intent}");
         var attempts = int.Parse(state.Split(' ')[0]["attempts=".Length..], System.Globalization.CultureInfo.InvariantCulture);
-        Assert.True(attempts > 0, state);
+        Assert.True(attempts > 1, state);
         Assert.Contains("AuthorizationException", state, StringComparison.Ordinal);
-        Assert.Equal(attempts.ToString(System.Globalization.CultureInfo.InvariantCulture), await host.SendAsync($"attempt-logs {intent}"));
+        // The record counts the dispatch's hand-over, which a host that only recorded never made, as its first attempt.
+        Assert.Equal((attempts - 1).ToString(System.Globalization.CultureInfo.InvariantCulture), await host.SendAsync($"attempt-logs {intent}"));
         Assert.Equal("false", await host.SendAsync($"ran {probe}"));
     }
 

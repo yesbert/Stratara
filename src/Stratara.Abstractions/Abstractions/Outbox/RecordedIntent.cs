@@ -9,8 +9,8 @@ namespace Stratara.Abstractions.Outbox;
 /// <param name="AggregateId">The aggregate the command names, or <see langword="null"/> for one that names none.</param>
 /// <param name="Heavy">Whether the command declared itself long-running.</param>
 /// <param name="AttemptCount">
-/// How often it has been handed over by a resumption since it was recorded or returned, less the attempts given back
-/// for a concurrency conflict or a stop; the hand-over of its dispatch is not among them.
+/// How often it has been handed over since it was recorded or returned — the hand-over of its dispatch counted when it
+/// was recorded, by a store that counts it — less the attempts given back for a concurrency conflict or a stop.
 /// </param>
 /// <param name="LastHandedOverAt">When it was last handed over, or <see langword="null"/> if never.</param>
 /// <param name="LastFailure">The failure of its last attempt, if one was recorded.</param>

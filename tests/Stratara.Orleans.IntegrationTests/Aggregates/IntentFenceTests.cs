@@ -35,7 +35,7 @@ public sealed class IntentFenceTests(PostgreSqlFixture postgres)
         Assert.Single(renewals, renewed => renewed);
         var entry = await EntryAsync(store, id);
         Assert.Equal(stamp.AddMilliseconds(1), entry.LastHandedOverAt);
-        Assert.Equal(1, entry.AttemptCount);
+        Assert.Equal(2, entry.AttemptCount);
         Assert.False(await intents.TryRenewFromAsync(id, stamp, DateTimeOffset.UtcNow, TestContext.Current.CancellationToken));
     }
 

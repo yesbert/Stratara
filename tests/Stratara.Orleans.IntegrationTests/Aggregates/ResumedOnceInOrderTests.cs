@@ -130,10 +130,10 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
         await Task.Delay(Settle);
 
         Assert.Equal(maxDeliveryAttempts, probes.RunsOf(failing));
-        Assert.Equal((maxDeliveryAttempts - 1, 0), await CountsAsync(store, failingIntent));
+        Assert.Equal((maxDeliveryAttempts, 0), await CountsAsync(store, failingIntent));
         Assert.Equal(maxConflictRequeues + 1, probes.RunsOf(conflicting));
         Assert.Equal((0, maxConflictRequeues + 1), await CountsAsync(store, conflictingIntent));
-        Assert.Contains("ConcurrencyConflictException", await RecordedIntentHost.ScalarAsync<string>(store, "SELECT last_failure FROM outbox_entry WHERE id = @id", ("id", conflictingIntent)), StringComparison.Ordinal);
+        Assert.Contains("ConcurrencyException", await RecordedIntentHost.ScalarAsync<string>(store, "SELECT last_failure FROM outbox_entry WHERE id = @id", ("id", conflictingIntent)), StringComparison.Ordinal);
         Assert.Contains(probes.Logs.Entries, e => e.EventId == LogEvents.Orleans.CommandKept && e.Message.Contains(failingIntent.ToString(), StringComparison.Ordinal) && e.Message.Contains($"after {maxDeliveryAttempts} attempts", StringComparison.Ordinal));
         await host.StopAsync();
     }
@@ -205,6 +205,188 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
         Assert.Equal(1, (await ResumeAsync(services)).Resumed);
         Assert.Equal(intent, aggregate.HandedOver[^1].Intent);
         Assert.NotNull(aggregate.HandedOver[^1].ClaimedAt);
+    }
+
+    /// <summary>
+    /// The runs a command gets, with the outcomes of its first runs given — <c>s</c> stopped with its silo, <c>c</c> a
+    /// conflict, <c>f</c> a failure, <c>-</c> the dispatch's hand-over never made because its host died — and every run
+    /// after them failing. The outcomes are recorded through the store as the receiving lease records them; a stop or a
+    /// conflict never uses up the delivery bound, and a hand-over that was never made counts as an attempt, as a bus
+    /// message's delivery to a consumer that crashed does.
+    /// </summary>
+    [Theory]
+    [InlineData("s", 3, 4)]
+    [InlineData("c", 2, 3)]
+    [InlineData("c", 3, 4)]
+    [InlineData("cs", 2, 4)]
+    [InlineData("sc", 3, 5)]
+    [InlineData("f", 3, 3)]
+    [InlineData("f", 1, 1)]
+    [InlineData("s", 1, 2)]
+    [InlineData("-", 1, 0)]
+    [InlineData("-", 3, 2)]
+    public async Task A_command_fails_as_often_as_its_delivery_bound_allows_whatever_came_before(string first, int maxDeliveryAttempts, int runs)
+    {
+        var counting = await CountingAsync($"poc_resume_counting_{maxDeliveryAttempts}", maxDeliveryAttempts);
+        await using var _ = counting;
+        var outcomes = new Queue<char>(first);
+        var intent = await counting.DispatchAsync();
+        var ran = 0;
+        if (outcomes.Peek() == '-')
+        {
+            outcomes.Dequeue();
+        }
+        else
+        {
+            ran++;
+            await counting.RecordOutcomeAsync(intent, outcomes.TryDequeue(out var outcome) ? outcome : 'f');
+        }
+
+        ran += await counting.ResumeUntilKeptAsync(intent, outcomes);
+
+        Assert.Equal(runs, ran);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task A_kept_command_an_operator_returns_fails_as_often_as_its_delivery_bound_allows_again(int maxDeliveryAttempts)
+    {
+        var counting = await CountingAsync($"poc_resume_return_{maxDeliveryAttempts}", maxDeliveryAttempts);
+        await using var _ = counting;
+        var intent = await counting.DispatchAsync();
+        await counting.RecordOutcomeAsync(intent, 'f');
+        Assert.Equal(maxDeliveryAttempts - 1, await counting.ResumeUntilKeptAsync(intent, new Queue<char>()));
+
+        Assert.Equal(1, await RecordedIntentHost.ScalarAsync<int>(counting.Connection, ReturnKept, ("id", intent)));
+
+        Assert.Equal(maxDeliveryAttempts, await counting.ResumeUntilKeptAsync(intent, new Queue<char>()));
+    }
+
+    /// <summary>The operator's return, as the operations guide gives it.</summary>
+    private const string ReturnKept =
+        "WITH returned AS (UPDATE outbox_entry SET kept_at = NULL, attempt_count = 0, conflict_count = 0, last_failure = NULL " +
+        "WHERE id = @id AND kept_at IS NOT NULL RETURNING 1) SELECT count(*)::int FROM returned";
+
+    private async Task<Counting> CountingAsync(string database, int maxDeliveryAttempts)
+    {
+        var connection = postgres.ConnectionStringFor(database);
+        var store = await PocStore<PocWriteDbContext>.CreateAsync(connection);
+        await using (var context = await store.CreateContextAsync())
+        {
+            await context.Database.ExecuteSqlRawAsync("DELETE FROM outbox_entry");
+        }
+
+        var clock = new SettableClock(DateTimeOffset.UtcNow);
+        var aggregate = new RecordingAggregate();
+        return new Counting(store, connection, clock, aggregate, OwnClockHost(store, clock, aggregate, CountingGrace, maxDeliveryAttempts));
+    }
+
+    private static readonly TimeSpan CountingGrace = TimeSpan.FromSeconds(30);
+
+    /// <summary>A dispatcher and its resumption over PostgreSQL whose hand-overs are recorded, not run: the test plays the runs.</summary>
+    private sealed class Counting(PocStore<PocWriteDbContext> store, string connection, SettableClock clock, RecordingAggregate aggregate, ServiceProvider services) : IAsyncDisposable
+    {
+        public string Connection => connection;
+
+        public async Task<Guid> DispatchAsync()
+        {
+            await using var scope = services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>().EnqueueCommandAsync(new OrderedProbe(Guid.NewGuid(), 1));
+        }
+
+        /// <summary>What the lease of a run records for <paramref name="outcome"/>.</summary>
+        public async Task RecordOutcomeAsync(Guid intent, char outcome)
+        {
+            await using var scope = services.CreateAsyncScope();
+            var intents = scope.ServiceProvider.GetRequiredService<ICommandIntentStore>();
+            await (outcome switch
+            {
+                's' => intents.ReturnAttemptAsync(intent, CancellationToken.None),
+                'c' => intents.RecordConflictAsync(intent, "Stratara.Abstractions.EventSourcing.ConcurrencyException: conflict", CancellationToken.None),
+                _ => intents.RecordFailureAsync(intent, "System.InvalidOperationException: failed", CancellationToken.None),
+            });
+        }
+
+        /// <summary>Lets the grace pass and resumes until the command is kept, playing each resumed run; returns the runs.</summary>
+        public async Task<int> ResumeUntilKeptAsync(Guid intent, Queue<char> outcomes)
+        {
+            var runs = 0;
+            for (var pass = 0; pass < 20; pass++)
+            {
+                if (await RecordedIntentHost.ScalarAsync<bool>(connection, "SELECT kept_at IS NOT NULL FROM outbox_entry WHERE id = @id", ("id", intent)))
+                {
+                    return runs;
+                }
+
+                clock.Advance(CountingGrace + TimeSpan.FromSeconds(1));
+                var handedOver = aggregate.HandedOver.Count;
+                await ResumeAsync(services);
+                if (aggregate.HandedOver.Count > handedOver)
+                {
+                    runs++;
+                    await RecordOutcomeAsync(intent, outcomes.TryDequeue(out var outcome) ? outcome : 'f');
+                }
+            }
+
+            throw new InvalidOperationException($"the command was not kept after {runs} runs");
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await services.DisposeAsync();
+            await store.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task A_hand_over_the_fence_dropped_does_not_hold_its_command_against_the_next_one()
+    {
+        var probes = new RecordedIntentProbes();
+        var store = postgres.ConnectionStringFor("poc_resume_dropped_release");
+        using var host = await RecordedIntentHost.StartAsync(Settings(store, 11369, 30259, probes, NoDrain));
+        var aggregate = Guid.NewGuid();
+        var blocking = Guid.NewGuid();
+        var behind = Guid.NewGuid();
+        var gate = probes.Hold(blocking);
+        var blockingIntent = await RecordedIntentHost.RecordAsync(host, Guid.NewGuid(), blocking, aggregate);
+        var (blockingPayload, _) = await ClaimAsync(host, blockingIntent);
+        await HandOverAsync(host, blockingIntent, blockingPayload, heavy: false, aggregate);
+        Assert.True(await RecordedIntentHost.WaitUntilAsync(() => Task.FromResult(probes.Started.ContainsKey(blocking)), RunTimeout), "the blocking command did not start");
+
+        var behindIntent = await RecordedIntentHost.RecordAsync(host, Guid.NewGuid(), behind, aggregate);
+        var (payload, claimedAt) = await ClaimAsync(host, behindIntent);
+        await HandOverAsync(host, behindIntent, payload with { ClaimedAt = claimedAt.AddSeconds(-1) }, heavy: false, aggregate);
+        await HandOverAsync(host, behindIntent, payload, heavy: false, aggregate);
+        gate.SetResult();
+
+        Assert.True(await RecordedIntentHost.WaitUntilAsync(() => Task.FromResult(probes.Ran.ContainsKey(behind)), RunTimeout), "the hand-over after the dropped one was refused");
+        Assert.Equal(1, probes.RunsOf(behind));
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task A_late_dispatch_hand_over_after_a_resumed_run_completed_is_dropped()
+    {
+        var probes = new RecordedIntentProbes();
+        var store = postgres.ConnectionStringFor("poc_resume_late_dispatch");
+        using var host = await RecordedIntentHost.StartAsync(Settings(store, 11370, 30260, probes, NoDrain));
+        var aggregate = Guid.NewGuid();
+        var probe = Guid.NewGuid();
+
+        // An id an hour old: the dispatch's hand-over arrives long after the record, as one delayed past the grace does.
+        var intent = await RecordedIntentHost.RecordAsync(host, Guid.NewGuid(), probe, aggregate, intentId: Guid.CreateVersion7(DateTimeOffset.UtcNow.AddHours(-1)));
+        var (payload, _) = await ClaimAsync(host, intent);
+        await HandOverAsync(host, intent, payload, heavy: false, aggregate);
+        Assert.True(await RecordedIntentHost.WaitUntilAsync(() => Task.FromResult(probes.Ran.ContainsKey(probe)), RunTimeout), "the resumed command did not run");
+        Assert.True(await GoneAsync(store, intent), "the command's record was not removed");
+
+        await HandOverAsync(host, intent, payload with { ClaimedAt = null }, heavy: false, aggregate);
+        await Task.Delay(Settle);
+
+        Assert.Equal(1, probes.RunsOf(probe));
+        Assert.Contains(probes.Logs.Entries, e => e.EventId == LogEvents.Orleans.IntentHandOverDropped && e.Message.Contains(intent.ToString(), StringComparison.Ordinal));
+        await host.StopAsync();
     }
 
     /// <summary>A grace no test outlasts, so the drain never resumes on its own and the test hands over itself.</summary>
@@ -333,7 +515,7 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
         public Task KeepAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken) => inner.KeepAsync(intentId, now, cancellationToken);
     }
 
-    private static ServiceProvider OwnClockHost(PocStore<PocWriteDbContext> store, TimeProvider clock, RecordingAggregate aggregate, TimeSpan grace)
+    private static ServiceProvider OwnClockHost(PocStore<PocWriteDbContext> store, TimeProvider clock, RecordingAggregate aggregate, TimeSpan grace, int maxDeliveryAttempts = 3)
     {
         var grains = new Mock<IGrainFactory>();
         grains.Setup(f => f.GetGrain<IAggregateGrain>(It.IsAny<Guid>(), null)).Returns(aggregate);
@@ -351,6 +533,7 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
             .AddSingleton(serializer.Object)
             .AddSingleton(sessions.Object)
             .AddSingleton(new Mock<IProjectionReplayState>().Object)
+            .Configure<MessageRetryOptions>(options => options.MaxDeliveryAttempts = maxDeliveryAttempts)
             .BuildServiceProvider();
     }
 

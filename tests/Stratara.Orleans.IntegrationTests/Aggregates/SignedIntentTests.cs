@@ -40,10 +40,11 @@ public sealed class SignedIntentTests(PostgreSqlFixture postgres, RedisFixture r
         Assert.True(kept, "the altered command was not kept");
         var reason = await RecordedIntentHost.ScalarAsync<string>(store, "SELECT last_failure FROM outbox_entry WHERE id = @id", ("id", intent));
         Assert.Contains("does not verify", reason, StringComparison.Ordinal);
-        Assert.Equal(0, await RecordedIntentHost.ScalarAsync<int>(store, "SELECT attempt_count FROM outbox_entry WHERE id = @id", ("id", intent)));
+        // Kept without an attempt of its own: the one it carries is the hand-over its record counts for the dispatch.
+        Assert.Equal(1, await RecordedIntentHost.ScalarAsync<int>(store, "SELECT attempt_count FROM outbox_entry WHERE id = @id", ("id", intent)));
 
         await RecordedIntentHost.ScalarAsync<int>(store,
-            "UPDATE outbox_entry SET data_json = replace(data_json, @from, @to), kept_at = NULL, attempt_count = 0 WHERE id = @id",
+            "UPDATE outbox_entry SET data_json = replace(data_json, @from, @to), kept_at = NULL, attempt_count = 0, conflict_count = 0, last_failure = NULL WHERE id = @id",
             ("from", otherTenant.ToString()), ("to", dispatchedTenant.ToString()), ("id", intent));
 
         Assert.True(await RecordedIntentHost.WaitUntilAsync(() => Task.FromResult(probes.Ran.ContainsKey(probe)), KeptTimeout), "the restored and returned command did not run");

@@ -6,7 +6,6 @@ using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Outbox;
-using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
 using Stratara.Diagnostics;
@@ -90,10 +89,23 @@ internal sealed class OrleansCommandDispatcher(
         return resumer.ResumeDueAsync(batchSize, cancellationToken);
     }
 
+    /// <summary>How many lanes the scope still remembers a time for.</summary>
+    internal int RememberedLanes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _lastRecordedAt.Count;
+            }
+        }
+    }
+
     /// <summary>
     /// The record's time: <paramref name="now"/>, or one step past the last time this scope took for the same ordered
     /// lane where that is not earlier — a step every provider keeps apart after its rounding. Only a lane that keeps an
-    /// order, an aggregate's, is remembered.
+    /// order, an aggregate's, is remembered, and only while its last time is within a step of now: past that, now is
+    /// later anyway, so a long-lived scope remembers only the lanes it dispatched to in the last step.
     /// </summary>
     private DateTimeOffset RecordedAt(Guid key, DateTimeOffset now, bool ordered)
     {
@@ -104,6 +116,11 @@ internal sealed class OrleansCommandDispatcher(
 
         lock (_gate)
         {
+            foreach (var stale in _lastRecordedAt.Where(lane => lane.Value + OrderStep <= now).Select(lane => lane.Key).ToList())
+            {
+                _lastRecordedAt.Remove(stale);
+            }
+
             var recordedAt = _lastRecordedAt.TryGetValue(key, out var last) && now < last + OrderStep ? last + OrderStep : now;
             _lastRecordedAt[key] = recordedAt;
             return recordedAt;
@@ -169,7 +186,7 @@ internal readonly record struct ResumePass(int Resumed, bool Full)
 
 /// <summary>
 /// The bounded resume. A due command that has reached either bound the host configures for bus messages — the delivery
-/// bound, the hand-over of its dispatch counted as the first attempt, or the conflict bound — is kept for an operator; a due command whose record does not verify under the host's integrity mode is
+/// bound, which counts the hand-over of its dispatch as the first attempt, or the conflict bound — is kept for an operator; a due command whose record does not verify under the host's integrity mode is
 /// kept at once under strict mode, with the reason, and resumed with the failure logged under permissive mode; every
 /// other due command is claimed in one call — its hand-over stamped and its attempt counted — and handed over with the
 /// claim's stamp, in the order it was read, in the order of the aggregate the record names. A hand-over that cannot be issued is recorded as
@@ -230,7 +247,7 @@ internal sealed class IntentResumer(
             {
                 await intents.KeepAsync(intent.Id, now, cancellationToken);
                 ApplicationDiagnostics.Metrics.OrleansIntentKept.Add(1);
-                logger.LogCommandKept(intent.Id, Attempts(intent), intent.ConflictCount, intent.LastFailure ?? "none recorded");
+                logger.LogCommandKept(intent.Id, intent.AttemptCount, intent.ConflictCount, intent.LastFailure ?? "none recorded");
                 continue;
             }
 
@@ -247,7 +264,7 @@ internal sealed class IntentResumer(
         foreach (var intent in claimable.Where(intent => claimed.Contains(intent.Id)))
         {
             ApplicationDiagnostics.Metrics.OrleansIntentResumed.Add(1);
-            logger.LogCommandResumed(intent.Id, Attempts(intent) + 1);
+            logger.LogCommandResumed(intent.Id, intent.AttemptCount + 1);
             var payload = new AggregateCommandEnvelope(intent.Envelope.CommandTypeName, intent.Envelope.CommandJson, intent.Envelope.SessionContextJson, claimedAt);
 
             // Where it runs is taken from the signed envelope, not from the row beside it: the heavy claim is one of
@@ -271,22 +288,13 @@ internal sealed class IntentResumer(
     }
 
     /// <summary>
-    /// Whether the command has reached a bound: its delivery bound, counted by <see cref="Attempts"/>, or its conflict
-    /// bound, which it reaches once it has been resumed after a conflict as often as the bound allows — the count at
-    /// which the bus moves a message that keeps conflicting to its dead-letter destination.
+    /// Whether the command has reached a bound: its delivery bound — the record counts the hand-over of its dispatch as
+    /// its first attempt — or its conflict bound, which it reaches once it has been resumed after a conflict as often as
+    /// the bound allows, the count at which the bus moves a message that keeps conflicting to its dead-letter
+    /// destination.
     /// </summary>
     internal bool IsExhausted(RecordedIntent intent) =>
-        Attempts(intent) >= _maxAttempts || intent.ConflictCount > _maxConflicts;
-
-    /// <summary>
-    /// The attempts the delivery bound counts: the resumptions the record counts, and the hand-over of its dispatch as
-    /// the first. The record does not say whether that hand-over was made, so it is counted once the record shows an
-    /// attempt — a resumption, or a failure other than a conflict. A command whose host died before its hand-over, or
-    /// whose first run stopped with its silo or met a conflict, is therefore resumed at least once under a bound of 1;
-    /// under any larger bound the dispatch's hand-over is always counted.
-    /// </summary>
-    internal static int Attempts(RecordedIntent intent) =>
-        intent.AttemptCount + (intent.AttemptCount > 0 || (intent.LastFailure is not null && intent.ConflictCount == 0) ? 1 : 0);
+        intent.AttemptCount >= _maxAttempts || intent.ConflictCount > _maxConflicts;
 
     /// <summary>
     /// Verifies the record under the host's integrity mode. A record that does not verify is kept at once under strict
@@ -349,29 +357,14 @@ internal sealed class IntentResumer(
 /// <summary>How a failure is recorded with a command, and whether it is a concurrency conflict.</summary>
 internal static class IntentFailure
 {
-    private const string StoreConflictTypeName = "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
-
     public static string Describe(Exception exception) => $"{exception.GetType().FullName}: {exception.Message}";
 
     /// <summary>
-    /// Whether the failure is a concurrency conflict, as the bus counts one: the framework's two conflict exceptions,
-    /// or the store provider's own, which this package names rather than references.
+    /// Whether the failure is a concurrency conflict as the bus transports classify one: the event store's
+    /// <see cref="ConcurrencyException"/>. Anything else — a provider's own conflict included — is a failure there, and
+    /// here.
     /// </summary>
-    public static bool IsConflict(Exception exception) =>
-        exception is ConcurrencyConflictException or ConcurrencyException || IsStoreConflict(exception.GetType());
-
-    private static bool IsStoreConflict(Type? type)
-    {
-        for (; type is not null; type = type.BaseType)
-        {
-            if (type.FullName == StoreConflictTypeName)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    public static bool IsConflict(Exception exception) => exception is ConcurrencyException;
 }
 
 /// <summary>Settings for the Orleans-backed command dispatcher.</summary>

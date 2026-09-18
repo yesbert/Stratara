@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
-using Stratara.Abstractions.Persistence;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Session;
 using Stratara.Orleans.Aggregates;
 using Stratara.Orleans.IntegrationTests.Hosting;
@@ -103,16 +103,16 @@ internal static class RecordedIntentHost
     /// Records a probe command for <paramref name="tenantId"/> without handing it over, as a host that died right after
     /// the record leaves it, at the time the host's clock gives and under the aggregate and heavy flag given.
     /// </summary>
-    public static async Task<Guid> RecordAsync(IHost host, Guid tenantId, Guid probeId, Guid? aggregateId = null, bool heavy = false)
+    public static async Task<Guid> RecordAsync(IHost host, Guid tenantId, Guid probeId, Guid? aggregateId = null, bool heavy = false, Guid? intentId = null)
     {
         await using var scope = host.Services.CreateAsyncScope();
         var session = PocSessions.For(tenantId);
         scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(session);
-        var intentId = Guid.CreateVersion7();
+        var id = intentId ?? Guid.CreateVersion7();
         var recordedAt = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
         await scope.ServiceProvider.GetRequiredService<IntentRecorder>().RecordAsync(
-            new IntentDispatch(intentId, session, aggregateId, heavy, recordedAt), new TenantProbe(Guid.NewGuid(), probeId), CancellationToken.None);
-        return intentId;
+            new IntentDispatch(id, session, aggregateId, heavy, recordedAt), new TenantProbe(Guid.NewGuid(), probeId), CancellationToken.None);
+        return id;
     }
 
     public static async Task<T?> ScalarAsync<T>(string store, string sql, params (string Name, object Value)[] parameters)
@@ -228,7 +228,7 @@ public sealed class ConflictingProbeHandler(RecordedIntentProbes probes) : IComm
     public Task HandleAsync(ConflictingProbe command, CancellationToken cancellationToken)
     {
         probes.Counted(command.ProbeId);
-        throw new ConcurrencyConflictException($"probe {command.ProbeId} conflicts on every attempt");
+        throw new ConcurrencyException(command.AggregateId, nameof(ConflictingProbe));
     }
 }
 

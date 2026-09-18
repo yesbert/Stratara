@@ -30,8 +30,9 @@ public sealed class OutboxEntry : IEntity, IBucket, IHasRowVersion
     public uint RowVersion { get; set; }
 
     /// <summary>
-    /// How many times the entry has been handed over for execution by a resumption since it was stored or returned, less
-    /// the attempts given back for a concurrency conflict or a stop.
+    /// How many times the entry has been handed over for execution since it was stored or returned — for a recorded
+    /// command the hand-over of its dispatch is counted when it is stored — less the attempts given back for a
+    /// concurrency conflict or a stop.
     /// </summary>
     public int AttemptCount { get; set; }
 

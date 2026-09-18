@@ -35,6 +35,16 @@ public sealed class IntentStoreDefaultsTests
     }
 
     [Fact]
+    public async Task A_late_renewal_renews_and_runs()
+    {
+        ICommandIntentStore store = new OldStore();
+        var id = Guid.NewGuid();
+
+        Assert.True(await store.TryRenewAsync(id, Now, CancellationToken.None));
+        Assert.Equal([$"renew {id} {Now:O}"], ((OldStore)store).Calls);
+    }
+
+    [Fact]
     public async Task A_conflict_is_recorded_as_a_failure()
     {
         ICommandIntentStore store = new OldStore();

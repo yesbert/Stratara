@@ -262,7 +262,7 @@ public sealed class AppliedTable(string connectionString)
 
     /// <summary>The operator's return of a kept command: the statement the operations page documents.</summary>
     public Task<int> ReturnKeptAsync(Guid aggregateId) =>
-        ExecuteAsync("UPDATE outbox_entry SET kept_at = NULL, attempt_count = 0, conflict_count = 0 WHERE aggregate_id = @id AND kept_at IS NOT NULL", aggregateId);
+        ExecuteAsync("UPDATE outbox_entry SET kept_at = NULL, attempt_count = 0, conflict_count = 0, last_failure = NULL WHERE aggregate_id = @id AND kept_at IS NOT NULL", aggregateId);
 
     public Task RecordOrderAsync(Guid aggregateId, int sequence) =>
         ExecuteAsync("INSERT INTO poc_order (aggregate_id, sequence) VALUES (@id, " + sequence.ToString(CultureInfo.InvariantCulture) + ")", aggregateId);
