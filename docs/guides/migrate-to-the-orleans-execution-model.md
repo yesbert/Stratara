@@ -153,7 +153,11 @@ the consumer `sagas`. From 4.2.0 each saga reads with a checkpoint of its own, u
 to be migrated: on its first start a 4.2.0 saga silo starts every saga at the shared checkpoint of its partition,
 so no fact at or below it is applied again, and the shared reader, brought back by the keep-alive the old
 deployment registered, retires on the new silo (`117_125`) and reads nothing. The shared checkpoint is left as it
-was; the [reset](operate-the-orleans-execution-model.md#reset-what-the-model-keeps) removes it.
+was; the [reset](operate-the-orleans-execution-model.md#reset-what-the-model-keeps) removes it. Seeding such a store
+starts each saga at the shared checkpoint too, not at the head, so what the shared reader had not yet applied is not
+skipped. Before upgrading, rename one of any two saga classes that share a type name — a host that registers both
+does not start — and, where the host keeps its checkpoints in a store of its own, implement
+`IProjectionCheckpointStore.FindAsync` and `CreateAsync`, which the saga readers need.
 
 Upgrade the saga-role silos **together** where you can. While a 4.1.x saga silo still runs beside a 4.2.0 one, its
 shared reader and the new per-saga readers both apply the facts above the shared checkpoint, so a fact may reach a

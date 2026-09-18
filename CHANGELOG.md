@@ -18,6 +18,11 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **`IProjectionCheckpointStore.FindAsync` and `CreateAsync`**: a checkpoint's position, or `null` where none exists, where
+  `GetAsync` answers `0` for a missing checkpoint and one at the beginning alike; and a first checkpoint written only where none exists, never replacing one. The
+  framework's store implements both; the defaults throw `NotSupportedException` naming the members, so a store of the
+  consumer's own keeps compiling and fails only where a store-reading saga needs them.
+
 - **New package `Stratara.Testing.Orleans`** (test-support, the 28th package): `ExecutionModelTestHost` runs the Orleans
   execution model in a test's own process — one silo, in-memory reminders and grain directory, the real write stack,
   portable commit-order reader, checkpoint and intent stores on in-memory SQLite, and every period shortened to
@@ -103,7 +108,13 @@ applies to the entire NuGet family.
   retires and logs `117_125` (information). While a 4.1.x saga silo runs beside a 4.2.0 one both apply the facts
   above the shared checkpoint, so upgrade the saga silos together. A rollback to 4.1.x resumes the shared reader
   from the shared checkpoint, which 4.2.0 never advanced, and applies what the per-saga readers applied since
-  again.
+  again. Seeding a store with the shared checkpoint starts each saga there rather than at the head, so the shared
+  reader's backlog is not skipped. A host that registers two saga types of the same type name — in different
+  namespaces — no longer starts, naming both, because they would share one checkpoint; rename one before upgrading.
+  A saga's reader brought back on a silo that registers no saga of its name — a removed or renamed saga — retires,
+  unregisters its keep-alive and logs `117_126` (information) instead of stalling on every entry. A host with a
+  checkpoint store of its own must implement `IProjectionCheckpointStore.FindAsync` and `CreateAsync` (see *Added*)
+  to run store-reading sagas.
 
 - **Security: `"SessionContext": { "AllowTenantHeader": true }` in the host's configuration now turns the tenant-header
   fallback on.** `AddSessionContext()` did not read the `SessionContext` section, so such an entry did nothing unless

@@ -235,18 +235,34 @@ partition. Every other saga applies the entry once and goes on past it, and is n
 failure; the stall is logged and counted under the failing saga's consumer, and that saga is retried, without a
 bound, until it passes. A stateful process reads the same way, under its own consumer, and hands its facts to the
 process's grains. A saga has no retry bound on the execution model and no dead-letter queue: fix the saga, or the
-cause of its failure, and it continues from the entry it stopped at. Each saga's reader reads the store on its own,
-so a saga silo runs one reader per saga and partition where it ran one per partition, and a wake-up costs a read per
-saga: size the read and write stores' connection pools for that many readers catching up at once, as for projections.
+cause of its failure, and it continues from the entry it stopped at.
+
+A reader per saga costs what a reader per projection does. With S sagas and P partitions a saga silo runs S×P
+reader activations and S×P keep-alive reminders where it ran P, a silo's start ensures S×P readers, and every wake-up
+costs a read of the store per saga. A reader's first catch-up after it is activated asks the checkpoint store once
+per saga of the host whether that saga has a checkpoint in the partition, so a cold start of the cluster costs S×S×P
+such queries. Size the read and write stores' connection pools for that many readers catching up at once, as for
+projections. A stateless saga's reader passes over an entry of a type the saga does not handle without
+deserialising it.
 
 A saga's checkpoint is keyed by its name. A saga that has no checkpoint in a partition — one registered after the
 deployment's sagas have read, or every saga on the first start after an upgrade from 4.1.x — starts where the
 host's sagas read there: at the furthest checkpoint a saga of the host holds, or the checkpoint the sagas shared
 before 4.2.0, and at the beginning of the store only where no saga has read. A saga added to a running deployment
 therefore never runs its side effects for the store's history. Renaming a saga class makes it a new consumer,
-which starts at the same point — not at its old checkpoint, which nothing reads any more. Two saga classes of the
-same type name in different namespaces would share one consumer; their reader stops at its first entry naming both,
-so give each saga a type name of its own.
+which starts at the same point — not at its old checkpoint. The old name's reader is still brought back by its
+keep-alive; on a silo that registers no saga of that name it unregisters its keep-alive, logs `117_126`
+(Information) naming the saga and the partition, reads nothing and deactivates, so a silo that still registers the
+saga — a rolling deployment — can host it. The old name's checkpoints stay in the read store until the
+[reset](#reset-what-the-model-keeps) of a host that registers the name, or a delete the host owns. Two saga
+classes of the same type name in different namespaces would share one consumer, so a host that registers them does
+not start, naming both; give each saga a type name of its own.
+
+The saga readers need the checkpoint store to tell a missing checkpoint from one at the beginning and to write a
+saga's first checkpoint without replacing one: `IProjectionCheckpointStore.FindAsync` and `CreateAsync`. The
+framework's store (`AddStrataraProjectionCheckpoints`) implements both. A store of the host's own that does not
+fails every saga reader's first catch-up with a message naming the two members, logged as `117_103`; projections do
+not use them.
 
 Under the portable reader a partition also stops at an entry that has **no partition position**: a process
 appended it without `PartitionCounterInterceptor`. The logged failure names the entry, the interceptor and
