@@ -143,7 +143,7 @@ internal sealed class EventSource(
     /// Thrown when an optimistic-concurrency conflict (duplicate stream-version) is detected while
     /// persisting the buffered events.
     /// </exception>
-    /// <exception cref="InvalidOperationException">Thrown when no <see cref="SessionContext"/> is set on the current scope.</exception>
+    /// <exception cref="SessionRequiredException">Thrown when no <see cref="SessionContext"/> is set on the current scope.</exception>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var eventBundle = PrepareEventBundle();
@@ -203,7 +203,7 @@ internal sealed class EventSource(
     /// </summary>
     private EventBundle PrepareEventBundle()
     {
-        var sessionContext = sessionContextProvider.Current ?? throw new InvalidOperationException("Session context is not set");
+        var sessionContext = sessionContextProvider.Current ?? throw new SessionRequiredException("Session context is not set");
         var eventBundle = _eventStreamEntries.MapToEventBundle(sessionContext);
         return signer is null ? eventBundle : eventBundle with { Signature = signer.Sign(BusEnvelopeCanonical.Of(eventBundle)) };
     }
@@ -221,7 +221,7 @@ internal sealed class EventSource(
         where TAggregate : notnull, new()
     {
         var session = sessionContextProvider.Current
-                      ?? throw new InvalidOperationException("Session context is not set");
+                      ?? throw new SessionRequiredException("Session context is not set");
         var correlationId = session.CorrelationId;
         var causationId = session.CausationId;
 

@@ -31,6 +31,8 @@ internal sealed class AggregateGrainBehavior<TRequest>(
     where TRequest : IRequest
 {
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The command would call back into an aggregate whose turn encloses this one.</exception>
+    /// <exception cref="SessionRequiredException">The command is forwarded to its grain and no session context is set.</exception>
     public async Task HandleAsync(TRequest request, Func<Task> next, CancellationToken cancellationToken)
     {
         if (request is not IAggregateScopedCommand scoped || AggregateTurn.IsInside(scoped.AggregateId))
@@ -44,7 +46,7 @@ internal sealed class AggregateGrainBehavior<TRequest>(
             throw new InvalidOperationException(AggregateTurn.CycleMessage(scoped.AggregateId));
         }
 
-        var session = sessionContextProvider.Current ?? throw new InvalidOperationException("Session context is not set");
+        var session = sessionContextProvider.Current ?? throw new SessionRequiredException("Session context is not set");
         var grain = grainFactory.GetGrain<IAggregateGrain>(scoped.AggregateId);
         var carried = AggregateTurn.Carry();
         if (carried is not null)

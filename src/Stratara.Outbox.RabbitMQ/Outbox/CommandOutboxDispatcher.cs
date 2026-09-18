@@ -52,7 +52,7 @@ internal sealed class CommandOutboxDispatcher(
     /// <inheritdoc/>
     public async Task<Guid> EnqueueCommandAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
     {
-        var sessionContext = sessionContextProvider.Current ?? throw new InvalidOperationException("Session context is not set");
+        var sessionContext = sessionContextProvider.Current ?? throw new SessionRequiredException("Session context is not set");
         var commandEnvelope = await command.MapToAsync(sessionContext, serializer, cancellationToken);
         if (signer is not null)
         {

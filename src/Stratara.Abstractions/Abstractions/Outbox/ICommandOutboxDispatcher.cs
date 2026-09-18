@@ -27,6 +27,7 @@ public interface ICommandOutboxDispatcher
     /// <param name="command">The command to dispatch.</param>
     /// <param name="cancellationToken">Propagated to the bus / outbox write.</param>
     /// <returns>The id assigned to the envelope.</returns>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task<Guid> EnqueueCommandAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand;
 
     /// <summary>

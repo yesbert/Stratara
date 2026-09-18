@@ -44,7 +44,7 @@ internal sealed class OrleansCommandDispatcher(
     /// <inheritdoc/>
     public async Task<Guid> EnqueueCommandAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
     {
-        var session = sessionContextProvider.Current ?? throw new InvalidOperationException("Session context is not set");
+        var session = sessionContextProvider.Current ?? throw new SessionRequiredException("Session context is not set");
         var intentId = Guid.CreateVersion7();
         var heavy = command is IHeavyCommand;
         var aggregateId = (command as IAggregateScopedCommand)?.AggregateId;

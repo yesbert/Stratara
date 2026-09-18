@@ -28,7 +28,8 @@ public class CommandAuditRepositoryTests
         var serializer = new Mock<ISecureJsonSerializer>(MockBehavior.Strict);
 
         var repo = new CommandAuditRepository(ctx, sessionProvider.Object, serializer.Object);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => repo.AddAsync(new DummyCommand(), CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<SessionRequiredException>(() => repo.AddAsync(new DummyCommand(), CancellationToken.None));
+        Assert.Equal("Session context is null", exception.Message);
     }
 
     [Fact]
