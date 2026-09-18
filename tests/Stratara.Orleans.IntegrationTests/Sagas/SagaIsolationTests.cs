@@ -20,6 +20,7 @@ using Stratara.Orleans.IntegrationTests.Hosting;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Projections;
 using Stratara.Orleans.IntegrationTests.Store;
+using Stratara.Orleans.Projections;
 using Stratara.Orleans.Sagas;
 using Stratara.Sagas.Abstractions;
 using Stratara.Shared.Partitioning;
@@ -79,7 +80,7 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
     }
 
     [Fact]
-    public async Task A_saga_added_to_a_running_deployment_reacts_only_to_facts_after_the_host_s_sagas()
+    public async Task A_saga_added_to_a_running_deployment_reacts_only_to_facts_after_the_host_s_sagas_and_a_removed_one_retires()
     {
         const string database = "poc_saga_added";
         var tenantId = Guid.NewGuid();
@@ -95,7 +96,8 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
         }
 
         var after = new IsolationLog();
-        using (var app = await StartAsync(database, after, new CapturedLogs(), [typeof(SteadySaga), typeof(LateSaga)], siloPort: 11473, gatewayPort: 30473))
+        var logs = new CapturedLogs();
+        using (var app = await StartAsync(database, after, logs, [typeof(SteadySaga), typeof(LateSaga)], siloPort: 11473, gatewayPort: 30473))
         {
             await AppendAsync(app.Services, tenantId, earlier, new CounterIncremented(earlier, 1));
             await AppendAsync(app.Services, tenantId, later, new CounterCreated(later));
@@ -108,6 +110,23 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
             Assert.Equal(["incremented:1"], after.Seen(nameof(LateSaga), earlier));
             Assert.Equal(["created"], after.Seen(nameof(LateSaga), later));
             Assert.Equal(["incremented:1"], after.Seen(nameof(SteadySaga), earlier));
+
+            var removed = app.Services.GetRequiredService<IGrainFactory>().GetGrain<ISagaReaderGrain>(StoreReaderGrainKey.Of(SagaReaderGrain.ConsumerOf("RemovedSaga"), 0));
+            var reminders = app.Services.GetRequiredService<IReminderTable>();
+            await reminders.UpsertRow(new ReminderEntry
+            {
+                GrainId = removed.GetGrainId(),
+                ReminderName = "keep-alive",
+                StartAt = DateTime.UtcNow.AddSeconds(1),
+                Period = TimeSpan.FromSeconds(5),
+            });
+            await WaitForAsync(
+                async () => (await reminders.ReadRows(removed.GetGrainId())).Reminders.Count == 0,
+                "the removed saga's keep-alive was not unregistered");
+            Assert.Contains(logs.Entries, entry =>
+                entry.EventId == LogEvents.Orleans.UnregisteredSagaReaderRetired && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
+            Assert.DoesNotContain(logs.Entries, entry =>
+                entry.EventId is LogEvents.Orleans.PartitionStalled or LogEvents.Orleans.CatchUpFaulted && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
             await StopAsync(app);
         }
     }
