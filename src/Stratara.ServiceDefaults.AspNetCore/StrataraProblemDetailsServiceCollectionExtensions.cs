@@ -16,6 +16,11 @@ public static class StrataraProblemDetailsServiceCollectionExtensions
     /// </summary>
     /// <remarks>
     /// <para>
+    /// A caller that is not authenticated is answered <c>401</c> instead — for a refusal, a denial and
+    /// a request that needed a session alike — through the host's default authentication challenge
+    /// where one is registered.
+    /// </para>
+    /// <para>
     /// The mapping is opt-in and converts nothing a host does not ask it to: any failure the
     /// framework did not raise propagates unchanged, so a host keeping its own error model simply
     /// does not call this.
