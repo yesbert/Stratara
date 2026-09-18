@@ -460,9 +460,11 @@ SHALL state that window, SHALL name how long a failover takes in terms of the cl
 settings and the work's keep-alive period, and SHALL say that the window is bounded by those settings
 only while the declared silo can still read the cluster's membership — one that cannot never learns of
 its declaration. A run that fails SHALL be logged whatever it failed with,
-including a cancellation the work was not asked for, except where the silo it runs on is stopping. Two
-works SHALL NOT carry one name: the name is what a work's single run is keyed by, so the second would
-never run, and a host that registers two SHALL fail rather than run one of them. Owner-checked durable
+including a cancellation the work was not asked for, except where the silo it runs on is stopping. Two works SHALL NOT carry one name: the name is what a work's single run is keyed by, so the second would
+never run, and a host that registers two SHALL fail rather than run one of them. Settings given with a
+work's registration SHALL apply to that work alone; settings the host configures for singleton work as
+a whole SHALL apply to every work whose registration does not set them; and a work registered twice
+SHALL run with the settings of its later registration, once. Owner-checked durable
 timers SHALL fire once per cluster on or after their due time, SHALL fire for an owner that exists and
 never for one that was removed, and SHALL survive a restart of the silo that registered them. A timer
 SHALL NOT fire a further period late because the clocks of the silos differ slightly. A process
@@ -594,6 +596,17 @@ start with a message naming both.
 
 - **WHEN** a host registers a singleton work under a name that is not the work's `Name`
 - **THEN** the silo fails at start with a message naming both
+
+#### Scenario: Two works are registered with different keep-alive periods
+
+- **WHEN** a host registers one singleton work with a keep-alive period of two minutes and another with
+  five
+- **THEN** the first is kept alive every two minutes and the second every five
+
+#### Scenario: A work is registered twice with different settings
+
+- **WHEN** a host registers the same singleton work twice, each time with a different keep-alive period
+- **THEN** the work runs once, with the period of the later registration
 
 ### Requirement: Heavy work is bounded across the cluster by permits that expire with their holder
 
@@ -945,4 +958,3 @@ sample that does so.
 - **THEN** its handlers, projections, sagas and timers run through the registrations it uses in
   production, in the test's process, without a cluster, a broker or a database server — and the
   shipped sample runs the same in one console run
-
