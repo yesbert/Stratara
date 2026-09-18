@@ -7,9 +7,12 @@ using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
 using Stratara.Orleans.Projections;
 using Stratara.Sagas.Abstractions;
+using Stratara.Abstractions.Reflections;
+using Stratara.Shared.Reflections;
 
 namespace Stratara.Orleans.Sagas;
 
@@ -88,32 +91,51 @@ internal sealed class SagaReaderGrain(
     /// <summary>What every saga's consumer name starts with, so that no saga shares a checkpoint with a projection.</summary>
     public const string ConsumerPrefix = "sagas:";
 
+    private readonly Dictionary<string, bool> _handledTypeNames = new(StringComparer.Ordinal);
     private Type? _sagaType;
+    private IReadOnlySet<string>? _relevant;
 
     /// <summary>The consumer a saga reads under: <see cref="ConsumerPrefix"/> and the name the saga handler gives it.</summary>
     public static string ConsumerOf(string sagaName) => ConsumerPrefix + sagaName;
 
-    /// <summary>The consumer of every registered saga, once each, in registration order.</summary>
-    public static List<string> ConsumersOf(ISagaHandler sagaHandler, IEnumerable<ISaga> sagas) =>
-        [.. sagas.Select(saga => ConsumerOf(sagaHandler.GetSagaName(saga))).Distinct(StringComparer.Ordinal)];
-
     private string SagaName => Consumer[ConsumerPrefix.Length..];
+
+    private SagaRegistrations Registrations => ServiceProvider.GetRequiredService<SagaRegistrations>();
+
+    /// <summary>
+    /// A reader whose saga this silo does not register — the saga was removed or renamed, or the silo runs a version
+    /// without it — retires and deactivates, so that it neither stalls on every entry nor keeps its keep-alive, and a
+    /// silo that registers the saga can host it.
+    /// </summary>
+    protected override StoreReaderRetirement RetiresAs =>
+        Registrations.TypeOf(SagaName) is null ? StoreReaderRetirement.Unregistered : StoreReaderRetirement.None;
+
+    protected override void LogRetirement() => logger.LogUnregisteredSagaReaderRetired(SagaName, Partition);
 
     /// <summary>
     /// One scope and one saga instance per session run, resolved after the run's session is set, so a saga's
     /// dependency that takes its tenant when it is constructed takes the entry's; per entry, the recorded session. A
-    /// fact a process handles travels to its grain with the session it was recorded under.
+    /// fact a process handles travels to its grain with the session it was recorded under. Once the grain knows which
+    /// event types a stateless saga declares, an entry of another type is passed over before it is deserialised and
+    /// before a scope is built for it.
     /// </summary>
     protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
         await using var runs = new SessionRuns<SagaReaderRun>(ScopeFactory, services =>
         {
             var handler = services.GetRequiredService<ISagaHandler>();
-            return new SagaReaderRun(handler, ResolveSaga(services, handler), GrainFactory);
+            var run = new SagaReaderRun(handler, ResolveSaga(services), GrainFactory);
+            _relevant ??= run.IsProcess ? null : run.RelevantTypeNames;
+            return run;
         });
 
         return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
         {
+            if (_relevant is { } relevant && !Handles(relevant, entry))
+            {
+                return;
+            }
+
             var run = await runs.EnterAsync(entry);
             var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
             await run.ApplyAsync(entry, events, entryToken);
@@ -121,45 +143,43 @@ internal sealed class SagaReaderGrain(
     }
 
     /// <summary>A saga without a checkpoint starts where the host's sagas read; see <see cref="SagaStart"/>.</summary>
-    protected override async Task StartAsync(IProjectionCheckpointStore checkpoints, string reader, CancellationToken cancellationToken)
+    protected override Task StartAsync(IProjectionCheckpointStore checkpoints, string reader, CancellationToken cancellationToken) =>
+        SagaStart.EnsureAsync(checkpoints, reader, Partition, Consumer, Registrations.Consumers, cancellationToken);
+
+    /// <summary>
+    /// Whether the stateless saga declares a handler for the entry's event type, as the mapped event would name it — after
+    /// the upcasters and the trusted-type resolution the mapping applies — decided once per stored type name.
+    /// </summary>
+    private bool Handles(IReadOnlySet<string> relevant, EventStreamEntry entry)
     {
-        List<string> consumers;
-        await using (var scope = ScopeFactory.CreateAsyncScope())
+        if (_handledTypeNames.TryGetValue(entry.EventTypeName, out var known))
         {
-            consumers = ConsumersOf(scope.ServiceProvider.GetRequiredService<ISagaHandler>(), scope.ServiceProvider.GetServices<ISaga>());
+            return known;
         }
 
-        await SagaStart.EnsureAsync(checkpoints, reader, Partition, Consumer, consumers, cancellationToken);
+        var upcasters = ServiceProvider.GetService<IEventUpcasterPipeline>();
+        var types = ServiceProvider.GetService<ITrustedTypeResolver>();
+        if (upcasters is null || types is null)
+        {
+            return true;
+        }
+
+        var name = types.Resolve(upcasters.Upcast(entry.EventTypeName, entry.DataJson).EventTypeName).GetQualifiedTypeName();
+        return _handledTypeNames[entry.EventTypeName] = relevant.Contains(name);
     }
 
     /// <summary>
-    /// The first batch finds the saga among every registered one by its name and remembers its type; every later batch
-    /// resolves that type where it is registered as itself, and finds it among the registered sagas again where it is
-    /// not. The container always builds it, so a factory registration or a lifetime the host chose holds for every batch.
+    /// Resolves the saga of the grain's name, whose type the registrations name; the container builds it, so a factory
+    /// registration or a lifetime the host chose holds for every batch.
     /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// No saga of the grain's name is registered on this silo, or sagas of more than one type carry the name.
-    /// </exception>
-    private ISaga ResolveSaga(IServiceProvider services, ISagaHandler handler)
+    /// <exception cref="InvalidOperationException">The saga is no longer registered on this silo.</exception>
+    private ISaga ResolveSaga(IServiceProvider services)
     {
-        if (_sagaType is { } type)
-        {
-            return services.GetService(type) as ISaga
-                   ?? services.GetServices<ISaga>().FirstOrDefault(s => s.GetType() == type)
-                   ?? throw new InvalidOperationException($"The saga {type.FullName} named '{SagaName}' is no longer registered on this silo.");
-        }
-
-        var named = services.GetServices<ISaga>().Where(s => handler.GetSagaName(s) == SagaName).ToList();
-        var types = named.Select(s => s.GetType()).Distinct().ToList();
-        if (types.Count > 1)
-        {
-            throw new InvalidOperationException(
-                $"The sagas {string.Join(", ", types.Select(t => t.FullName))} share the name '{SagaName}' and would share one checkpoint; give each saga a type name of its own.");
-        }
-
-        var saga = named.FirstOrDefault() ?? throw new InvalidOperationException($"No saga named '{SagaName}' is registered on this silo.");
-        _sagaType = saga.GetType();
-        return saga;
+        var type = _sagaType ??= Registrations.TypeOf(SagaName)
+                                 ?? throw new InvalidOperationException($"No saga named '{SagaName}' is registered on this silo.");
+        return services.GetService(type) as ISaga
+               ?? services.GetServices<ISaga>().FirstOrDefault(s => s.GetType() == type)
+               ?? throw new InvalidOperationException($"The saga {type.FullName} named '{SagaName}' is no longer registered on this silo.");
     }
 }
 
@@ -171,6 +191,12 @@ internal sealed class SagaReaderGrain(
 internal sealed class SagaReaderRun(ISagaHandler handler, ISaga saga, IGrainFactory grainFactory)
 {
     private readonly HashSet<string> _relevant = new(handler.GetRelevantEventTypeNames(saga), StringComparer.Ordinal);
+
+    /// <summary>Whether the saga is a stateful process, whose facts are decided by the process rather than by the event types it declares.</summary>
+    public bool IsProcess => saga is ISagaProcess;
+
+    /// <summary>The event types, by their qualified names, the saga declares a handler for.</summary>
+    public IReadOnlySet<string> RelevantTypeNames => _relevant;
 
     public async Task ApplyAsync(EventStreamEntry entry, IReadOnlyList<IEvent> events, CancellationToken cancellationToken)
     {
@@ -215,6 +241,7 @@ internal static class SagaStart
     /// <param name="consumer">The consumer of the saga whose reader starts.</param>
     /// <param name="hostConsumers">The consumer of every saga the host registers.</param>
     /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <exception cref="NotSupportedException">The checkpoint store does not tell a missing checkpoint from one at the beginning.</exception>
     public static async Task EnsureAsync(
         IProjectionCheckpointStore checkpoints,
         string reader,
@@ -223,39 +250,38 @@ internal static class SagaStart
         IReadOnlyList<string> hostConsumers,
         CancellationToken cancellationToken)
     {
-        var first = FirstCheckpoint.Of(checkpoints, reader);
         List<string> consumers = [consumer, .. hostConsumers.Where(other => !string.Equals(other, consumer, StringComparison.Ordinal))];
-        var missing = new List<string>();
+        var held = new Dictionary<string, long?>(StringComparer.Ordinal);
         foreach (var candidate in consumers)
         {
-            if (!await first.ExistsAsync(candidate, partition, cancellationToken))
-            {
-                missing.Add(candidate);
-            }
+            held[candidate] = await checkpoints.FindAsync(candidate, partition, reader, cancellationToken);
         }
 
+        var missing = consumers.Where(candidate => held[candidate] is null).ToList();
         if (missing.Count == 0)
         {
             return;
         }
 
-        var position = await checkpoints.GetAsync(SagaGrain.ConsumerName, partition, reader, cancellationToken);
-        foreach (var held in consumers.Except(missing, StringComparer.Ordinal))
-        {
-            position = Math.Max(position, await checkpoints.GetAsync(held, partition, reader, cancellationToken));
-        }
-
+        var position = StartingPosition(await checkpoints.FindAsync(SagaGrain.ConsumerName, partition, reader, cancellationToken), held.Values);
         foreach (var starting in missing)
         {
-            await first.CreateAsync(starting, partition, reader, position, cancellationToken);
+            await checkpoints.CreateAsync(starting, partition, reader, position, cancellationToken);
         }
     }
+
+    /// <summary>
+    /// Where a saga without a checkpoint starts: the furthest of the checkpoint the sagas shared before 4.2.0 and the
+    /// checkpoints the host's sagas hold, or the beginning where there is none.
+    /// </summary>
+    public static long StartingPosition(long? shared, IEnumerable<long?> held) =>
+        held.Aggregate(shared ?? 0, (furthest, position) => Math.Max(furthest, position ?? 0));
 }
 
-/// <summary>Every registered saga's reader for the partition.</summary>
-internal sealed class SagaNudgeTarget(ISagaHandler sagaHandler, IEnumerable<ISaga> sagas, StoreReaderLease lease) : INudgeTarget
+/// <summary>Every registered saga's reader for the partition, named from the registrations without building a saga.</summary>
+internal sealed class SagaNudgeTarget(SagaRegistrations registrations, StoreReaderLease lease) : INudgeTarget
 {
-    private readonly List<string> _names = SagaReaderGrain.ConsumersOf(sagaHandler, sagas);
+    private readonly IReadOnlyList<string> _names = registrations.Consumers;
 
     public IReadOnlyList<string> ConsumerNames => _names;
 

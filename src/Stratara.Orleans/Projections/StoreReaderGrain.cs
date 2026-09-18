@@ -16,13 +16,26 @@ namespace Stratara.Orleans.Projections;
 /// <param name="PartitionCount">How many partitions the host reads; a grain of a partition at or beyond it retires.</param>
 internal sealed record StoreReaderSettings(int BatchSize, TimeSpan PollInterval, TimeSpan KeepAlivePeriod, int PartitionCount);
 
+/// <summary>Why a store-reading grain retires when it is activated, if it does.</summary>
+internal enum StoreReaderRetirement
+{
+    /// <summary>The grain reads.</summary>
+    None,
+
+    /// <summary>The host reads what the grain read under other names now; the grain answers calls until it is collected.</summary>
+    Superseded,
+
+    /// <summary>The grain's consumer is not registered on this silo; the grain deactivates at once.</summary>
+    Unregistered,
+}
+
 /// <summary>
 /// What every store-reading grain does, whatever it applies: parse its key into consumer and
 /// partition, run one catch-up loop at a time over its partition, read when nudged, when its poll
 /// fires and when its keep-alive reminder arrives, and wait for a running loop before it deactivates
 /// so a successor never applies beside it. A grain of a partition the host no longer has — its count was lowered —
 /// retires when it is activated: it unregisters its keep-alive, logs that it did, reads nothing and deactivates, and
-/// every call it still receives does nothing; so does a grain whose reader a derived grain says was superseded. A
+/// every call it still receives does nothing; so does a grain a derived grain says is superseded or unregistered. A
 /// derived grain says what applying a batch means, when reading is suspended beyond the pauses and the replay this one
 /// already counts, and where a consumer without a checkpoint starts.
 /// </summary>
@@ -178,10 +191,15 @@ internal abstract class StoreReaderGrain(
             return;
         }
 
-        if (Superseded)
+        if (RetiresAs is var retirement and not StoreReaderRetirement.None)
         {
             await RetireAsync();
-            LogSuperseded();
+            if (retirement == StoreReaderRetirement.Unregistered)
+            {
+                this.DeactivateOnIdle();
+            }
+
+            LogRetirement();
             await base.OnActivateAsync(cancellationToken);
             return;
         }
@@ -267,16 +285,17 @@ internal abstract class StoreReaderGrain(
     }
 
     /// <summary>
-    /// Whether the reader the grain's key names was superseded — the host reads what it read under other names now — so
-    /// the grain retires when it is activated, as one beyond the partition count does. The default is not. A superseded
-    /// grain is not deactivated at once but left to the runtime's idle collection: a silo of an earlier release still
-    /// calls it in a rolling cluster, and the call that activated it is answered, doing nothing, instead of being
-    /// forwarded to an activation that retires again until the runtime rejects it.
+    /// Whether the grain's key names a reader the host does not run, so the grain retires when it is activated, as one
+    /// beyond the partition count does; the default is <see cref="StoreReaderRetirement.None"/>. A superseded reader is
+    /// left to the runtime's idle collection rather than deactivated at once: a silo of an earlier release still calls
+    /// it in a rolling cluster, and the call that activated it is answered, doing nothing, instead of being forwarded to
+    /// an activation that retires again until the runtime rejects it. An unregistered reader deactivates at once, so
+    /// that a silo that registers its consumer can host it.
     /// </summary>
-    protected virtual bool Superseded => false;
+    protected virtual StoreReaderRetirement RetiresAs => StoreReaderRetirement.None;
 
-    /// <summary>Says why a superseded grain retired; called once it has unregistered its keep-alive.</summary>
-    protected virtual void LogSuperseded()
+    /// <summary>Says why the grain retired; called once it has unregistered its keep-alive.</summary>
+    protected virtual void LogRetirement()
     {
     }
 

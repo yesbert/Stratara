@@ -1,6 +1,12 @@
 using Moq;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Stratara.Abstractions.CommitOrder;
+using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Hosting;
 using Stratara.Orleans.Projections;
 using Stratara.Orleans.Sagas;
 using Stratara.Sagas.Abstractions;
@@ -136,8 +142,106 @@ public sealed class SagaReaderTests
         return @event.Object;
     }
 
+    [Fact]
+    public async Task A_saga_reader_on_a_store_that_cannot_tell_a_missing_checkpoint_fails_its_start_naming_the_members()
+    {
+        var refused = await Assert.ThrowsAsync<NotSupportedException>(() =>
+            SagaStart.EnsureAsync(new PortOnlyCheckpoints(), Reader, Partition, Billing, [Billing], TestContext.Current.CancellationToken));
+
+        Assert.Contains("FindAsync", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("CreateAsync", refused.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(PortOnlyCheckpoints), refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Two_saga_types_of_one_name_are_refused_naming_both()
+    {
+        var services = new ServiceCollection()
+            .AddScoped<ISaga, BillingSaga>()
+            .AddScoped<ISaga, Elsewhere.BillingSaga>();
+
+        var refused = Assert.Throws<InvalidOperationException>(() => SagaRegistrations.From(services, services.BuildServiceProvider()));
+
+        Assert.Contains(typeof(BillingSaga).FullName!, refused.Message, StringComparison.Ordinal);
+        Assert.Contains(typeof(Elsewhere.BillingSaga).FullName!, refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_host_whose_sagas_share_a_name_does_not_start()
+    {
+        var services = new ServiceCollection()
+            .AddScoped<ISaga, BillingSaga>()
+            .AddScoped<ISaga, Elsewhere.BillingSaga>();
+        SagaRegistrations.Register(services);
+        await using var provider = services.BuildServiceProvider();
+
+        var check = provider.GetServices<IHostedService>().First();
+
+        Assert.IsType<SagaRegistrationCheck>(check);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => check.StartAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void The_registrations_name_each_saga_once_without_building_one_registered_by_type()
+    {
+        var services = new ServiceCollection()
+            .AddScoped<ISaga, BillingSaga>()
+            .AddScoped<ISaga, BillingSaga>()
+            .AddScoped<ISaga>(_ => new EmailSaga());
+
+        var registrations = SagaRegistrations.From(services, services.BuildServiceProvider());
+
+        Assert.Equal([Billing, Email], registrations.Consumers);
+        Assert.Equal(typeof(BillingSaga), registrations.TypeOf("BillingSaga"));
+        Assert.Null(registrations.TypeOf("AuditSaga"));
+    }
+
+    [Fact]
+    public async Task A_seeding_of_a_store_whose_sagas_shared_a_checkpoint_starts_the_sagas_there_and_not_at_the_head()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        await checkpoints.SetAsync(SagaGrain.ConsumerName, 0, Reader, 40);
+        var services = new ServiceCollection().AddScoped<ISaga, BillingSaga>().AddScoped<ISaga, EmailSaga>();
+        var sagas = new SagaNudgeTarget(SagaRegistrations.From(services, services.BuildServiceProvider()), new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
+        var seeding = new StoreReaderSeeding(
+            [sagas],
+            new HeadReader(Reader, [100, 200]),
+            checkpoints,
+            Options.Create(new CommitOrderOptions { PartitionCount = 2 }));
+
+        var report = await seeding.SeedAtHeadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(new StoreReaderSeedingReport(Seeded: 4, Existing: 0), report);
+        Assert.Equal(40, await checkpoints.GetAsync(Billing, 0, Reader));
+        Assert.Equal(40, await checkpoints.GetAsync(Email, 0, Reader));
+        Assert.Equal(200, await checkpoints.GetAsync(Billing, 1, Reader));
+    }
+
+    private sealed class BillingSaga : ISaga;
+
+    private sealed class EmailSaga : ISaga;
+
+    /// <summary>Answers the head per partition directly.</summary>
+    private sealed class HeadReader(string name, long[] heads) : ICommittedPositionReader
+    {
+        public string Name => name;
+
+        public Task<CommittedBatch> ReadAfterAsync(int partition, long afterPosition, int batchSize, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("the seeding asks for the head, not for entries");
+
+        public Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default) => Task.FromResult(heads[partition]);
+    }
+
+    /// <summary>A store of the port's required members only.</summary>
+    private sealed class PortOnlyCheckpoints : IProjectionCheckpointStore
+    {
+        public Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) => Task.FromResult(0L);
+
+        public Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     /// <summary>A store that tells a missing checkpoint from one at the beginning and creates a first one only where none exists, as the framework's does.</summary>
-    private sealed class MemoryCheckpoints : IProjectionCheckpointStore, IFirstCheckpointStore
+    private sealed class MemoryCheckpoints : IProjectionCheckpointStore
     {
         private readonly Dictionary<(string, int), long> _rows = [];
 
@@ -152,9 +256,10 @@ public sealed class SagaReaderTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> ExistsAsync(string consumer, int partition, CancellationToken cancellationToken) => Task.FromResult(Has(consumer, partition));
+        public Task<long?> FindAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_rows.TryGetValue((projection, partition), out var position) ? position : (long?)null);
 
-        public Task<bool> CreateAsync(string consumer, int partition, string reader, long position, CancellationToken cancellationToken) =>
-            Task.FromResult(_rows.TryAdd((consumer, partition), position));
+        public Task<bool> CreateAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_rows.TryAdd((projection, partition), position));
     }
 }

@@ -67,4 +67,39 @@ public interface IProjectionCheckpointStore
     /// </remarks>
     Task ResetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) =>
         SetAsync(projection, partition, reader, 0, cancellationToken);
+
+    /// <summary>
+    /// Returns the stored position, or <see langword="null"/> where the consumer has no checkpoint in the partition —
+    /// unlike <see cref="GetAsync"/>, which answers <c>0</c> for a missing checkpoint and for one at the beginning alike.
+    /// Store-reading sagas need the difference: a saga without a checkpoint starts where the host's other sagas read,
+    /// one at the beginning has not yet applied its first entry.
+    /// </summary>
+    /// <param name="projection">The consumer, by the name the framework gives it.</param>
+    /// <param name="partition">The partition.</param>
+    /// <param name="reader">The name of the reader whose positions are expected.</param>
+    /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <returns>The position to resume after, or <see langword="null"/> where none is stored.</returns>
+    /// <exception cref="InvalidOperationException">A checkpoint exists but was written under a different reader.</exception>
+    /// <exception cref="NotSupportedException">The store does not implement this member; the default does not.</exception>
+    Task<long?> FindAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException(Unsupported(GetType(), nameof(FindAsync)));
+
+    /// <summary>
+    /// Stores a position only where the consumer has no checkpoint in the partition, and never replaces one — the verb a
+    /// store-reading saga's first checkpoint is written with, so that two readers starting together agree on it.
+    /// </summary>
+    /// <param name="projection">The consumer, by the name the framework gives it.</param>
+    /// <param name="partition">The partition.</param>
+    /// <param name="reader">The name of the reader whose position this is.</param>
+    /// <param name="position">The position to resume after.</param>
+    /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <returns><see langword="true"/> where the position was stored; <see langword="false"/> where a checkpoint existed.</returns>
+    /// <exception cref="NotSupportedException">The store does not implement this member; the default does not.</exception>
+    Task<bool> CreateAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException(Unsupported(GetType(), nameof(CreateAsync)));
+
+    private static string Unsupported(Type store, string member) =>
+        $"The checkpoint store {store.FullName} does not implement {nameof(IProjectionCheckpointStore)}.{member}. Store-reading sagas need " +
+        $"{nameof(FindAsync)} and {nameof(CreateAsync)} to tell a missing checkpoint from one at the beginning and to write a saga's first " +
+        "checkpoint without replacing one; implement both, or use the framework's store (AddStrataraProjectionCheckpoints).";
 }

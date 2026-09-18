@@ -50,13 +50,6 @@ public sealed class StoreReaderConsumerNamesTests
         handler.Setup(h => h.GetProjectionName(orders)).Returns("Orders");
         handler.Setup(h => h.GetProjectionName(totals)).Returns("Totals");
         handler.Setup(h => h.GetProjectionName(totalsAgain)).Returns("Totals");
-        var billing = new Mock<ISaga>().Object;
-        var email = new Mock<ISaga>().Object;
-        var emailAgain = new Mock<ISaga>().Object;
-        var sagaHandler = new Mock<ISagaHandler>();
-        sagaHandler.Setup(h => h.GetSagaName(billing)).Returns("BillingSaga");
-        sagaHandler.Setup(h => h.GetSagaName(email)).Returns("EmailSaga");
-        sagaHandler.Setup(h => h.GetSagaName(emailAgain)).Returns("EmailSaga");
 
         var services = new ServiceCollection()
             .AddLogging()
@@ -65,14 +58,17 @@ public sealed class StoreReaderConsumerNamesTests
             .AddScoped(_ => orders)
             .AddScoped(_ => totals)
             .AddScoped(_ => totalsAgain)
-            .AddScoped(_ => sagaHandler.Object)
-            .AddScoped(_ => billing)
-            .AddScoped(_ => email)
-            .AddScoped(_ => emailAgain);
+            .AddScoped<ISaga, BillingSaga>()
+            .AddScoped<ISaga, EmailSaga>()
+            .AddScoped<ISaga>(_ => new EmailSaga());
         register(services);
 
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
         return [.. scope.ServiceProvider.GetServices<INudgeTarget>().SelectMany(names).Order(StringComparer.Ordinal)];
     }
+
+    private sealed class BillingSaga : ISaga;
+
+    private sealed class EmailSaga : ISaga;
 }

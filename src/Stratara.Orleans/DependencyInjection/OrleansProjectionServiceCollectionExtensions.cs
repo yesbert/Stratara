@@ -99,6 +99,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         OrleansOptionsValidator.Register<SagaGrainOptions>(services);
         AddStoreReaderCore(services, hybrid);
         RolePlacement.Publish(services, ExecutionRole.Sagas);
+        SagaRegistrations.Register(services);
         AddNudgeTarget<SagaNudgeTarget>(services);
         AddSagaProcessTimers(services);
         return services;

@@ -25,6 +25,12 @@ internal static partial class OrleansLog
     public static partial void LogSharedSagaReaderRetired(this ILogger logger, int partition);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.UnregisteredSagaReaderRetired,
+        Level = LogLevel.Information,
+        Message = "The reader of saga {Saga} on partition {Partition} retired: no saga of that name is registered on this silo; its keep-alive is unregistered.")]
+    public static partial void LogUnregisteredSagaReaderRetired(this ILogger logger, string saga, int partition);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.ResumeHeldBackByReplay,
         Level = LogLevel.Information,
         Message = "Recorded commands are held back while a full replay is active; they are resumed once it ends.")]

@@ -96,9 +96,9 @@ internal sealed class SagaGrain(
     /// <summary>The consumer the shared reader kept its checkpoints under.</summary>
     public const string ConsumerName = "sagas";
 
-    protected override bool Superseded => true;
+    protected override StoreReaderRetirement RetiresAs => StoreReaderRetirement.Superseded;
 
-    protected override void LogSuperseded() => logger.LogSharedSagaReaderRetired(Partition);
+    protected override void LogRetirement() => logger.LogSharedSagaReaderRetired(Partition);
 
     /// <summary>Never reached: the grain retires when it is activated.</summary>
     protected override Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken) => Task.FromResult(0);
