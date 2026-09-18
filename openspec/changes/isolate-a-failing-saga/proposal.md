@@ -1,6 +1,6 @@
 # isolate-a-failing-saga
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-18 — recorded at the owner's request)
 
 ## Why
 

@@ -1,6 +1,6 @@
 # let-a-paused-reader-always-come-back
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-09-18 — recorded at the owner's request)
 
 ## Why
 
