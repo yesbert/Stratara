@@ -15,7 +15,7 @@
 
 ## 3. Documentation
 
-- [ ] 3.1 `docs/concepts/session-context.md`: one statement, the section and the upgrade note.
-- [ ] 3.2 `docs/guides/write-a-projection.md`: the `ProjectionReplay` block is read as shown.
-- [ ] 3.3 `CHANGELOG.md` `[Unreleased]` → *Changed*, first line: the security note; *Fixed*: both sections read, the lease
+- [x] 3.1 `docs/concepts/session-context.md`: one statement, the section and the upgrade note.
+- [x] 3.2 `docs/guides/write-a-projection.md`: the `ProjectionReplay` block is read as shown.
+- [x] 3.3 `CHANGELOG.md` `[Unreleased]` → *Changed*, first line: the security note; *Fixed*: both sections read, the lease
       refused at zero.

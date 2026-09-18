@@ -258,8 +258,10 @@ builder.Services.Configure<ProjectionReplayOptions>(
     o => o.LeaseSeconds = 600);   // default 300
 ```
 
-Or bind it from the `ProjectionReplay` configuration section
-(`ProjectionReplayOptions.SectionName`):
+Or set it in the `ProjectionReplay` configuration section (`ProjectionReplayOptions.SectionName`).
+`AddProjectionReplayState()` — which `AddOutboxDispatcher()` and the worker composites call — reads
+the section from the host's configuration as it stands, with no code; a value configured in code after
+that call takes precedence:
 
 ```jsonc
 {
@@ -269,7 +271,8 @@ Or bind it from the `ProjectionReplay` configuration section
 }
 ```
 
-Err long. Too long only delays the clearing of a marking whose replay already died; too short lets
+A lease of zero or less is refused when the host starts, with an `OptionsValidationException`
+naming `ProjectionReplay:LeaseSeconds`. Err long. Too long only delays the clearing of a marking whose replay already died; too short lets
 the marking lapse while the replay is still running, which resumes suppressed publication against
 half-rebuilt read models and tells nobody.
 

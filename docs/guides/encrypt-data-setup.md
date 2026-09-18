@@ -155,7 +155,8 @@ section (`StrataraBlobEncryptionOptions.SectionName`):
 }
 ```
 
-The default is `false` — a legacy stream is read as carrying no purpose field, and `"blob"` is
+`AddSecurity()`, `AddStrataraBlobEncryption()` and `AddStrataraFileKeyStore(configuration)` read the section
+from the host's configuration. The default is `false` — a legacy stream is read as carrying no purpose field, and `"blob"` is
 assumed. New streams are always written in the v2 format regardless of this setting, so this is a
 read-path compatibility switch and nothing else.
 
