@@ -102,7 +102,8 @@ builder.Services.AddScoped<ICrossTenantAuthorizer, PlatformAdminCrossTenantAutho
 
 `TenantAccessDeniedException` is declared in `Stratara.Abstractions.Multitenancy`, so a host can catch
 it without referencing the behavior. On ASP.NET hosts the framework maps it to **HTTP 403 (Forbidden)**
-alongside `AuthorizationException`, in one RFC 7807 problem shape. The mapping is opt-in — a host that
+alongside `AuthorizationException`, in one RFC 7807 problem shape — or to **HTTP 401** when the caller is
+not authenticated, because what that caller lacks is an identity. The mapping is opt-in — a host that
 does not register it keeps its own error model, and the exception reaches its own diagnostics
 unchanged:
 

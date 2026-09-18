@@ -34,7 +34,7 @@ internal sealed class CommandAuditRepository(IWriteDbContext context, ISessionCo
         var sessionContext = sessionContextProvider.Current;
         if (sessionContext is null)
         {
-            throw new InvalidOperationException("Session context is null");
+            throw new SessionRequiredException("Session context is null");
         }
 
         var commandId = Guid.CreateVersion7();

@@ -121,7 +121,8 @@ SHALL NOT fail after the commit because the bundle could not be recorded.
 #### Scenario: No session is set
 
 - **WHEN** a save is attempted with no session context
-- **THEN** it fails rather than publishing a bundle with no attributable origin
+- **THEN** it fails rather than publishing a bundle with no attributable origin, with a failure that
+  identifies itself as a missing identity and can be caught without reference to the store
 
 ### Requirement: Every recorded event carries its provenance
 
@@ -439,4 +440,3 @@ a store with entries it has not positioned.
 - **WHEN** a host sets the setting that once claimed to maintain the counter
 - **THEN** the build warns that it is obsolete, names the interceptor as what maintains the counter, and
   the value changes nothing
-

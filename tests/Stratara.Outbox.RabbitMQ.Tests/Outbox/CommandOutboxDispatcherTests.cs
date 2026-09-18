@@ -97,8 +97,9 @@ public class CommandOutboxDispatcherTests
         var harness = new Harness();
         harness.SessionContext.Setup(s => s.Current).Returns((SessionContext?)null);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        var exception = await Assert.ThrowsAsync<SessionRequiredException>(
             () => harness.Sut.EnqueueCommandAsync(new TestCommand(Guid.NewGuid())));
+        Assert.Equal("Session context is not set", exception.Message);
     }
 
     [Fact]

@@ -15,5 +15,6 @@ public interface ICommandAuditRepository
     /// <param name="command">The command being dispatched.</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
     /// <returns>The id assigned to the audit row. Used as <c>CausationId</c> downstream.</returns>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task<Guid> AddAsync(ICommandBase command, CancellationToken cancellationToken);
 }

@@ -39,6 +39,7 @@ public interface IEventSource
     /// <param name="streamId">The stream id.</param>
     /// <param name="event">The creation event (typically an <see cref="IAggregateCreationEvent"/>).</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task CreateAsync<TAggregate>(Guid streamId, object @event, CancellationToken cancellationToken = default)
         where TAggregate : notnull, new();
 
@@ -47,6 +48,7 @@ public interface IEventSource
     /// <param name="streamId">The stream id.</param>
     /// <param name="events">The events to append, in order.</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task CreateRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
 
@@ -55,6 +57,7 @@ public interface IEventSource
     /// <param name="streamId">The stream id.</param>
     /// <param name="event">The event payload.</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task AppendAsync<TAggregate>(Guid streamId, object @event, CancellationToken cancellationToken = default)
         where TAggregate : notnull, new();
 
@@ -63,6 +66,7 @@ public interface IEventSource
     /// <param name="streamId">The stream id.</param>
     /// <param name="events">The events to append, in order.</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task AppendRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
 
@@ -82,6 +86,7 @@ public interface IEventSource
     /// </param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
     /// <exception cref="ArgumentException"><paramref name="subject"/> names no tenant.</exception>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task AppendOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
 
@@ -90,5 +95,6 @@ public interface IEventSource
     /// <see cref="ConcurrencyException"/> if another writer committed first.
     /// </summary>
     /// <exception cref="ConcurrencyException">Another writer beat this one to the stream's head version.</exception>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

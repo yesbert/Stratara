@@ -77,6 +77,11 @@ applies to the entire NuGet family.
 - **Orleans: log event `117_114`** (`LogEvents.Orleans.PermitReclaimRefused`) for a running heavy unit that was
   refused its permit when it registered again after the permit keeper was lost, and runs outside the
   cluster-wide bound until a permit is free.
+- **`SessionRequiredException`** (`Stratara.Abstractions.Session`): the failure of an operation that must be
+  attributed to a caller and runs with no session context — a save, a command audit, a dispatch on the bus path and
+  on the execution model's path. It derives from `InvalidOperationException` and keeps the message these operations
+  always used, so an existing `catch (InvalidOperationException)` and a log search on the text keep working; a host
+  catches it without referencing any store or broker package.
 
 ### Changed
 
@@ -86,6 +91,14 @@ applies to the entire NuGet family.
   configuration for `AllowTenantHeader` and remove the entry or set it to `false` unless the host means to accept the
   `X-Tenant-Id` header. Likewise, a `Stratara:BlobEncryption:LegacyBlobsCarryPurpose` entry now takes effect for a host
   that registers the blob encryptor through `AddSecurity()` or `AddStrataraBlobEncryption()` alone.
+- **`AddStrataraProblemDetails()` answers a caller that is not authenticated with 401.** An authorization refusal, a
+  tenant-access denial and a `SessionRequiredException` alike: what such a caller lacks is an identity, not a
+  permission. Where the host has a default authentication scheme the mapping challenges through it — a bearer client
+  receives `WWW-Authenticate`, a cookie client is redirected, as `[Authorize]` would do — and writes the problem body
+  where the challenge leaves a 401; without a scheme it writes a 401 problem response. **A client that treated 403 as
+  "log in" now receives 401**, which is the status that says so. An authenticated caller's denial stays 403, and a
+  `SessionRequiredException` for an authenticated caller is not converted — it means the host did not run the
+  session middleware. A host that does not register the mapping sees nothing new but the exception type.
 - **Orleans: `hybrid: true` without a bus dispatcher fails at registration** naming `AddOutboxDispatcher`; it ran
   grain-only without a word.
 - **The execution model's operating limits are documented**: a forwarded command whose handler outlasts the response
@@ -167,6 +180,11 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **An anonymous caller reaching an unguarded save or dispatch is no longer a server error.** The event source, the
+  command audit, the bus dispatcher and the execution model's dispatcher threw a plain `InvalidOperationException`
+  that the problem-details mapping let through as a 500 reading like a framework bug; they now throw
+  `SessionRequiredException`, which the mapping answers 401 for a caller that is not authenticated.
+  `RequireAuthorization()` on every endpoint is no longer needed to avoid that.
 - **Orleans: a singleton work's settings apply to that work alone.** The callback given to
   `AddStrataraSingletonWork<TWork>(configure)` and `AddStrataraSingletonWork<TWork>(name, configure)` configured one
   settings object shared by every work, so two works registered with keep-alive periods of two and five minutes both

@@ -65,7 +65,7 @@ Request validation as a mediator pipeline behavior. An `IValidator<T>` (from `St
 
 ## Tenant Isolation
 
-Request-level tenant enforcement as a mediator pipeline behavior — the command-/query-entrance counterpart to the database-side tenant query filters. A request that opts in via the `ITenantScopedRequest` marker (from `Stratara.Abstractions.Multitenancy`) is checked before the handler: its `TenantId` must match the session's data-owner tenant (the **Subject**, not the **Actor** — see *Actor vs Subject*), otherwise the pipeline throws `TenantAccessDeniedException` (mapped to HTTP 403). In `TenantIsolationMode.Strict`, any cross-tenant operation (actor tenant ≠ data-owner tenant — e.g. a platform admin acting on another tenant's data) must additionally be granted by an `ICrossTenantAuthorizer`; the shipped default denies all. Wired with `AddStrataraTenantIsolation()`.
+Request-level tenant enforcement as a mediator pipeline behavior — the command-/query-entrance counterpart to the database-side tenant query filters. A request that opts in via the `ITenantScopedRequest` marker (from `Stratara.Abstractions.Multitenancy`) is checked before the handler: its `TenantId` must match the session's data-owner tenant (the **Subject**, not the **Actor** — see *Actor vs Subject*), otherwise the pipeline throws `TenantAccessDeniedException` (mapped to HTTP 403, or 401 for a caller that is not authenticated). In `TenantIsolationMode.Strict`, any cross-tenant operation (actor tenant ≠ data-owner tenant — e.g. a platform admin acting on another tenant's data) must additionally be granted by an `ICrossTenantAuthorizer`; the shipped default denies all. Wired with `AddStrataraTenantIsolation()`.
 
 ## Key Scope
 

@@ -276,15 +276,30 @@ public class EventSourceTests
     }
 
     [Fact]
-    public async Task SaveChangesAsync_NoSessionContext_ThrowsInvalidOperationException()
+    public async Task CreateAsync_NoSessionContext_ThrowsSessionRequiredException()
     {
         _sessionContextProviderMock.Setup(s => s.Current).Returns((SessionContext?)null);
 
         var streamId = Guid.NewGuid();
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<SessionRequiredException>(() =>
             _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test")));
+        Assert.Equal("Session context is not set", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_SessionClearedAfterTheAppend_ThrowsSessionRequiredException_BeforeAnythingIsWritten()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
+        _sessionContextProviderMock.Setup(s => s.Current).Returns((SessionContext?)null);
+
+        var exception = await Assert.ThrowsAsync<SessionRequiredException>(() => _eventSource.SaveChangesAsync());
+
+        Assert.Equal("Session context is not set", exception.Message);
+        Assert.Empty(_capturedAddRangeCalls);
     }
 
     [Fact]
