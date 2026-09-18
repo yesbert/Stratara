@@ -97,7 +97,9 @@ internal static class RecordedIntentHost
         var session = PocSessions.For(tenantId);
         scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(session);
         var intentId = Guid.CreateVersion7();
-        await scope.ServiceProvider.GetRequiredService<IntentRecorder>().RecordAsync(intentId, new TenantProbe(Guid.NewGuid(), probeId), session, aggregateId: null, heavy: false, CancellationToken.None);
+        var recordedAt = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
+        await scope.ServiceProvider.GetRequiredService<IntentRecorder>().RecordAsync(
+            new IntentDispatch(intentId, session, AggregateId: null, Heavy: false, recordedAt), new TenantProbe(Guid.NewGuid(), probeId), CancellationToken.None);
         return intentId;
     }
 

@@ -27,7 +27,8 @@ internal interface IAggregateGrain : IGrainWithGuidKey
     /// <summary>
     /// Accepts a recorded intent into the aggregate's order and returns once its hand-over is renewed; it runs after
     /// every command accepted before it, and is marked complete once it has. An intent the activation already holds
-    /// is not accepted twice.
+    /// is not accepted twice, and a resumed hand-over another runner already took, or of an intent that completed, is
+    /// answered as accepted and does not run.
     /// </summary>
     [AlwaysInterleave]
     [Alias("AcceptIntentAsync")]
@@ -97,7 +98,7 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
         }
 
         var scope = scopeFactory.CreateScope();
-        var intent = new AcceptedIntent(intentId, scope, IntentLease.StartAsync(scope.ServiceProvider, intentId));
+        var intent = new AcceptedIntent(intentId, scope, IntentLease.StartAsync(scope.ServiceProvider, intentId, envelope.ClaimedAt));
         Accept(new Accepted(envelope, Completion: null, intent, CallerChain: null));
         await intent.Lease;
     }
@@ -232,11 +233,15 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
             TaskScheduler.Current);
     }
 
+    /// <summary>Runs the intent under its lease; a hand-over its lease dropped — taken by another runner, or completed — does not run.</summary>
     private async Task RunIntentAsync(AggregateCommandEnvelope envelope, AcceptedIntent intent)
     {
         try
         {
-            await CommandExecution.RunIntentAsync(intent.Scope.ServiceProvider, envelope, intent.Id, await intent.Lease, around: null, this.GetPrimaryKey(), _stopping.Token);
+            if (await intent.Lease is { } lease)
+            {
+                await CommandExecution.RunIntentAsync(intent.Scope.ServiceProvider, envelope, intent.Id, lease, around: null, this.GetPrimaryKey(), _stopping.Token);
+            }
         }
         finally
         {
@@ -270,7 +275,10 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
 
             try
             {
-                await (await intent.Lease).DisposeAsync();
+                if (await intent.Lease is { } lease)
+                {
+                    await lease.DisposeAsync();
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -291,11 +299,12 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
 
     private sealed record Accepted(AggregateCommandEnvelope Envelope, TaskCompletionSource? Completion, AcceptedIntent? Intent, Guid[]? CallerChain);
 
-    private sealed record AcceptedIntent(Guid Id, IServiceScope Scope, Task<IntentLease> Lease);
+    private sealed record AcceptedIntent(Guid Id, IServiceScope Scope, Task<IntentLease?> Lease);
 }
 
 /// <summary>
-/// Runs an intent that names no aggregate: once, somewhere in the cluster, keyed by the intent. A run outlasting the
+/// Runs an intent that names no aggregate: once, somewhere in the cluster, keyed by the intent. A resumed hand-over that
+/// finds the intent already taken by another runner or completed is dropped without running. A run outlasting the
 /// deactivation budget has its handler's token cancelled and is resumed elsewhere.
 /// </summary>
 [CommandsRolePlacementFilter]
@@ -349,14 +358,18 @@ internal static class CommandExecution
             return;
         }
 
-        await RunIntentAsync(services, envelope, id, await IntentLease.StartAsync(services, id), around, aggregateId: null, stopping);
+        if (await IntentLease.StartAsync(services, id, envelope.ClaimedAt) is { } lease)
+        {
+            await RunIntentAsync(services, envelope, id, lease, around, aggregateId: null, stopping);
+        }
     }
 
     /// <summary>
     /// Runs a recorded intent under a lease that is already renewing its hand-over, and takes the lease over: it ends
     /// the lease after the handler, records the failure of an attempt that throws, and hands the record to the
-    /// completion queue once the handler has completed. A handler cancelled because the silo stops counts no attempt
-    /// and is logged; the lease ends, so the drain resumes the intent elsewhere after the grace.
+    /// completion queue once the handler has completed. A concurrency conflict is recorded as a conflict. A handler
+    /// cancelled because the silo stops is logged and gives back the attempt its hand-over counted; the lease ends, so the
+    /// drain resumes the intent elsewhere after the grace.
     /// </summary>
     public static async Task RunIntentAsync(IServiceProvider services, AggregateCommandEnvelope envelope, Guid intentId, IntentLease lease, Func<Func<Task>, Task>? around = null, Guid? aggregateId = null, CancellationToken stopping = default)
     {
@@ -378,6 +391,7 @@ internal static class CommandExecution
                         envelope.CommandTypeName, $"intent {intentId}, aggregate {(aggregateId is { } id ? id.ToString() : "none")}");
                 }
 
+                await lease.ReturnAttemptAsync();
                 throw;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

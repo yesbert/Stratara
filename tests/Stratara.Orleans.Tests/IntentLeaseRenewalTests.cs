@@ -37,7 +37,7 @@ public sealed class IntentLeaseRenewalTests
         var renewalsWhileBlocked = await Task.Factory.StartNew(
             async () =>
             {
-                await using var lease = await IntentLease.StartAsync(services, Guid.NewGuid());
+                await using var lease = await IntentLease.StartAsync(services, Guid.NewGuid(), claimedAt: null);
                 var before = Volatile.Read(ref renewals);
 #pragma warning disable S2925 // Blocking the scheduler's only thread is what the test measures; an await would free it.
                 Thread.Sleep(Blocked);
