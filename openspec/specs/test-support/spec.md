@@ -246,16 +246,19 @@ therefore refused only when something states an environment and that environment
 
 ### Requirement: A test can run the execution model in one process
 
-The framework SHALL offer a host that runs the Orleans execution model in the test's own process —
-one silo clustered with itself, reminders and the grain directory in memory, the framework's real
-write stack, commit-order reader and checkpoint store on an in-memory database — so that a test
-exercises a consumer's handlers, projections, sagas and timers through the same registrations and
-the same grains as production, without a cluster, a broker or a database server. Every period the
-execution model keeps as a reminder or a poll SHALL be short enough on the host that a projection
-applies and a timer fires within seconds, and a test SHALL be able to shorten or lengthen them. The
-host SHALL expose the session it operates under, the timers, the seeding and the reset the execution
-model offers, and a wait that returns once every registered store reader has reached the store's
-head, so that a test asserts on a read model without polling it.
+The framework SHALL offer a host that runs the Orleans execution model in the test's own process,
+without a cluster, a broker or a database server, so that a test exercises a consumer's handlers,
+projections, sagas and timers through the same registrations and the same grains as production. Every
+period the execution model keeps as a reminder or a poll SHALL be short enough on the host that a
+projection applies and a timer fires within seconds, and a test SHALL be able to shorten or lengthen
+them. The host SHALL expose the session it operates under, the timers, the seeding and the reset the
+execution model offers, and a wait that returns once every registered store reader has reached the
+store's head, so that a test asserts on a read model without polling it.
+
+The host's reset SHALL be usable while the host runs, because that is where a test between two tests
+uses it: it SHALL leave every registered store reader reading on from what the store holds at that
+moment, so that the next test's facts are applied, the last test's are not applied again, and the wait
+for the readers returns. A start that fails SHALL leave nothing of the host running.
 
 A host that runs alone in memory is one silo: the host SHALL say so, and a test of what happens
 across silos belongs to an integration test against real infrastructure.
@@ -283,9 +286,21 @@ across silos belongs to an integration test against real infrastructure.
 - **WHEN** a test appends facts, seeds the host's readers at the head, registers a projection and
   starts it
 - **THEN** the projection applies nothing appended before the seeding and everything after; and after a
-  reset the host remembers no checkpoint and no timer
+  reset the host remembers no timer and every reader is where the store's head is
+
+#### Scenario: A host's start fails
+
+- **WHEN** the host cannot start — what a test asked to run before the start throws
+- **THEN** the test is given that failure, and nothing the host had started keeps running
+
+#### Scenario: A host is reset between two tests
+
+- **WHEN** a test resets a running host after facts were applied, and then dispatches again
+- **THEN** the wait for the readers returns, what the next dispatch commits is applied, and nothing
+  applied before the reset is applied a second time
 
 #### Scenario: A test shortens a period below the runtime's default
 
 - **WHEN** a test sets the host's poll interval, keep-alive or retry period to one second
-- **THEN** the host starts, because it lowers the runtime's minimum reminder period with them
+- **THEN** the host starts, with the shortened periods in force
+
