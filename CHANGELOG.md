@@ -214,6 +214,15 @@ applies to the entire NuGet family.
   were reset.
 - **Orleans: the partition counter interceptor releases its transaction when positioning fails.** The
   transaction it opened stayed open on the context until the next save or the context's disposal.
+- **Orleans: corrections in the execution model's guides.** The response timeout is named
+  `SiloMessagingOptions.ResponseTimeout` (`ClientMessagingOptions.ResponseTimeout` from outside the cluster) —
+  configuring the shared `MessagingOptions` base changed nothing; a death declaration needs the lesser of
+  `NumVotesForDeathDeclaration` and half the active silos, so a two-silo cluster does declare one; the overlap of
+  singleton work during a failover is bounded by the table refresh only while the declared silo can still read the
+  membership table; the cut-over draws the seeded head in one window with nothing appending, and the guide now says
+  what the alternative costs — applying twice where the bus workers stay up, applying not at all where they stop
+  while appends continue; and a full re-read is a reset without a seeding, because a checkpoint at the beginning
+  counts as absent and is seeded again.
 
 ## [4.1.1] — 2026-09-16
 

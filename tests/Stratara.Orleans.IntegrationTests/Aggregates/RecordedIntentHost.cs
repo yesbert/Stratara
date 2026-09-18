@@ -23,7 +23,19 @@ namespace Stratara.Orleans.IntegrationTests.Aggregates;
 /// </summary>
 internal static class RecordedIntentHost
 {
+    /// <summary>Builds the host and starts it; a test that records before the drain can see anything builds and starts in two steps.</summary>
     public static async Task<IHost> StartAsync(RecordedIntentSettings settings)
+    {
+        var host = await BuildAsync(settings);
+        await StartAsync(host);
+        return host;
+    }
+
+    /// <summary>
+    /// Builds the host with its schema created and its outbox emptied, without starting it: nothing runs yet, so a
+    /// test can record a backlog the drain then finds whole on its first pass.
+    /// </summary>
+    public static async Task<IHost> BuildAsync(RecordedIntentSettings settings)
     {
         await PocSilo.EnsureSchemaAsync(settings.Orleans);
 
@@ -68,9 +80,14 @@ internal static class RecordedIntentHost
             await context.Database.ExecuteSqlRawAsync("DELETE FROM outbox_entry");
         }
 
+        return host;
+    }
+
+    /// <summary>Starts a host built with <see cref="BuildAsync"/>.</summary>
+    public static async Task StartAsync(IHost host)
+    {
         using var startTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         await host.StartAsync(startTimeout.Token);
-        return host;
     }
 
     /// <summary>Records a probe command for <paramref name="tenantId"/> without handing it over, as a host that died right after the record leaves it.</summary>
@@ -130,19 +147,34 @@ internal sealed record RecordedIntentSettings(
 /// <summary>A command whose handler records the tenant it ran under.</summary>
 public sealed record TenantProbe(Guid AggregateId, Guid ProbeId) : ICommand;
 
-/// <summary>Which tenant each probe ran under, and when; and every log entry the host wrote.</summary>
+/// <summary>Which tenant each probe ran under, and when; which probes started; and every log entry the host wrote.</summary>
 public sealed class RecordedIntentProbes
 {
     public ConcurrentDictionary<Guid, (Guid Tenant, DateTimeOffset At)> Ran { get; } = new();
 
+    /// <summary>Probes whose handler has begun, whether or not it has ended.</summary>
+    public ConcurrentDictionary<Guid, DateTimeOffset> Started { get; } = new();
+
+    /// <summary>Probes whose handler waits to be released, so a test can read the store while the command is running.</summary>
+    public ConcurrentDictionary<Guid, TaskCompletionSource> Gates { get; } = new();
+
     public CapturedLogs Logs { get; } = new();
+
+    /// <summary>Holds the probe's handler until the returned source is completed.</summary>
+    public TaskCompletionSource Hold(Guid probeId) =>
+        Gates.GetOrAdd(probeId, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
 }
 
 public sealed class TenantProbeHandler(RecordedIntentProbes probes, ISessionContextProvider sessions) : ICommandHandler<TenantProbe>
 {
-    public Task HandleAsync(TenantProbe command, CancellationToken cancellationToken)
+    public async Task HandleAsync(TenantProbe command, CancellationToken cancellationToken)
     {
+        probes.Started[command.ProbeId] = DateTimeOffset.UtcNow;
+        if (probes.Gates.TryGetValue(command.ProbeId, out var gate))
+        {
+            await gate.Task.WaitAsync(cancellationToken);
+        }
+
         probes.Ran[command.ProbeId] = (sessions.Current?.TenantId ?? Guid.Empty, DateTimeOffset.UtcNow);
-        return Task.CompletedTask;
     }
 }

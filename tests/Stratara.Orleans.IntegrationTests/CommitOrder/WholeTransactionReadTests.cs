@@ -12,8 +12,8 @@ namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 /// <summary>
 /// Scenario <em>One transaction holds more entries than a batch</em>: the native reader never ends a batch inside one
 /// transaction's entries. It cuts before a transaction that would straddle the batch, holds a transaction back whole
-/// when the batch ends inside it, and returns a transaction larger than the batch whole — a batch larger than the
-/// batch size.
+/// when the batch ends inside it, returns a transaction larger than the batch whole — a batch larger than the
+/// batch size — and cuts at the batch size where the transactions of a batch fit inside it.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class WholeTransactionReadTests(PostgreSqlFixture postgres)
@@ -57,6 +57,26 @@ public sealed class WholeTransactionReadTests(PostgreSqlFixture postgres)
             Assert.Equal(i < transactions.Length - 1, batch.HasMore);
             position = batch.Position;
         }
+    }
+
+    [Fact]
+    public async Task Transactions_that_fit_are_cut_at_the_batch_size()
+    {
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(postgres.ConnectionStringFor("poc_whole_transaction"), maintainCounter: false);
+        var (reader, partition, bucket, position) = await ReaderAtHeadAsync(store);
+        var committed = new List<Guid>();
+        for (var i = 0; i < BatchSize + 2; i++)
+        {
+            committed.AddRange(await CommitAsync(store, bucket, 1));
+        }
+
+        var first = await reader.ReadAfterAsync(partition, position, BatchSize, TestContext.Current.CancellationToken);
+        var second = await reader.ReadAfterAsync(partition, first.Position, BatchSize, TestContext.Current.CancellationToken);
+
+        Assert.Equal(committed.Take(BatchSize), Ids(first));
+        Assert.True(first.HasMore);
+        Assert.Equal(committed.Skip(BatchSize), Ids(second));
+        Assert.False(second.HasMore);
     }
 
     private static async Task<(ICommittedPositionReader Reader, int Partition, int Bucket, long Position)> ReaderAtHeadAsync(PocStore<PocCommitOrderWriteDbContext> store)

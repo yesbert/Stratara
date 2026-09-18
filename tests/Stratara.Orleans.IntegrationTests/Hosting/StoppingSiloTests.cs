@@ -10,6 +10,8 @@ using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Session;
 using Stratara.Abstractions.Timers;
 using Stratara.Diagnostics;
+using Stratara.Orleans.Aggregates;
+using Stratara.Orleans.IntegrationTests.Aggregates;
 using Stratara.Orleans.IntegrationTests.Fixtures;
 using Stratara.Orleans.IntegrationTests.Hosting.Scenarios;
 using Stratara.Orleans.IntegrationTests.Store;
@@ -63,10 +65,11 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
         using var first = await StartSiloAsync(control, cluster, 11250, 30140, ShortBudget);
         var probe = Guid.NewGuid();
 
+        Guid intentId;
         await using (var scope = first.Services.CreateAsyncScope())
         {
             scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(PocSessions.New());
-            await scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>().EnqueueCommandAsync(new BlockingProbe(Guid.NewGuid(), probe));
+            intentId = await scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>().EnqueueCommandAsync(new BlockingProbe(Guid.NewGuid(), probe));
         }
 
         Assert.True(await WaitUntilAsync(() => control.Started(probe.ToString()) == 1, StartedTimeout), "the recorded command's handler never started");
@@ -75,6 +78,12 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
 
         Assert.Equal(1, control.Cancelled(probe.ToString()));
         Assert.Contains(control.Logs.Entries, e => e.EventId == LogEvents.Orleans.HandlerStoppedWithSilo && e.Message.Contains(nameof(BlockingProbe), StringComparison.Ordinal) && e.Message.Contains("intent ", StringComparison.Ordinal));
+        // The handler that stopped with its silo counts the stop as no attempt of its own: the record carries no
+        // failure. Its attempt count is not asserted, because the drain that resumes it counts its own claim.
+        Assert.Equal(1, await RecordedIntentHost.ScalarAsync<int>(
+            postgres.ConnectionStringFor("poc_stopping_store"),
+            "SELECT count(*) FILTER (WHERE last_failure IS NULL)::int FROM outbox_entry WHERE id = @id", ("id", intentId)));
+
         control.Block = false;
         Assert.True(await WaitUntilAsync(() => control.Completed(probe.ToString()) == 1, TakeoverTimeout), "the recorded command was not resumed on the remaining silo");
         Assert.Equal(2, control.Started(probe.ToString()));
@@ -100,7 +109,7 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
 
         var failed = await Assert.ThrowsAnyAsync<Exception>(() => call.WaitAsync(TakeoverTimeout));
         Assert.Equal(1, control.Cancelled(probe.ToString()));
-        Assert.Contains("stopped", failed.Message, StringComparison.Ordinal);
+        Assert.Contains(AggregateGrain.StoppedMessage, failed.Message, StringComparison.Ordinal);
         Assert.Contains(control.Logs.Entries, e => e.EventId == LogEvents.Orleans.HandlerStoppedWithSilo && e.Message.Contains(aggregate.ToString(), StringComparison.Ordinal));
         await second.StopAsync();
     }

@@ -74,8 +74,10 @@ Singleton work is placed the same way, on the silos that registered it.
 
 ## The response timeout
 
-The runtime's `MessagingOptions.ResponseTimeout` (thirty seconds by default) bounds a caller's wait for one
-grain call. On this model that is the wait for **one forwarded command**: a command a handler sends for
+The runtime's response timeout (thirty seconds by default) bounds a caller's wait for one
+grain call. A silo reads it from `SiloMessagingOptions.ResponseTimeout` and a host that calls into the cluster
+from outside from `ClientMessagingOptions.ResponseTimeout`; configuring the shared `MessagingOptions` base
+changes neither. On this model that is the wait for **one forwarded command**: a command a handler sends for
 another aggregate, or a command dispatched through the mediator that names an aggregate. A handler that
 cannot finish inside it is heavy work — mark the command `IHeavyCommand` — or the host sizes the timeout.
 The aggregate's own order is not bounded by it: the commands accepted into one aggregate's order run to the
@@ -89,7 +91,8 @@ its end and commits. A caller that retries on the timeout runs the command a sec
 that already appended, a concurrency conflict at best. Do not retry on a timeout; choose one of these instead:
 
 - **Mark the command `IHeavyCommand`**, so it runs in the heavy pool and the caller does not wait for it.
-- **Size `MessagingOptions.ResponseTimeout`** above the longest handler of a forwarded command.
+- **Size `SiloMessagingOptions.ResponseTimeout`** — `ClientMessagingOptions.ResponseTimeout` on a host that
+  calls in from outside the cluster — above the longest handler of a forwarded command.
 - **Dispatch through `ICommandOutboxDispatcher`** where the caller need not wait for the result: the command is
   recorded before the call returns, and the call returns without waiting for the handler.
 
@@ -102,6 +105,8 @@ work moves in steps, each bounded by a setting:
    `ProbeTimeout` (5 s) is suspected by the silo probing it.
 2. **Declaration.** Once `NumVotesForDeathDeclaration` silos (2) have voted, it is declared dead in the
    membership table — with the defaults in the order of fifteen to thirty seconds after it stopped answering.
+   A cluster too small for that many voters needs fewer: the runtime requires the lesser of the setting and
+   half the active silos rounded up, so in a two-silo cluster the survivor's own vote declares the death.
 3. **Takeover.** The work's keep-alive reminder now belongs to another silo and brings the work's grain up
    there on its next tick, within `SingletonWorkOptions.KeepAlivePeriod` (one minute).
 4. **The declared silo stops.** A silo that is still running learns of its own declaration at the latest at
@@ -109,7 +114,10 @@ work moves in steps, each bounded by a setting:
    gossip, and stops itself.
 
 With the defaults a failover therefore completes within about a minute and a half. Between steps 3 and 4 the
-work **may run on two silos at once** — at most one table refresh period plus one run. Write a work so that an
+work **may run on two silos at once** — at most one table refresh period plus one run, and only as long as the
+declared silo can still read the membership table. A silo partitioned from it may never learn of its
+declaration — gossip reaches it only from silos it can still talk to — and runs the work until something stops
+it, so the table refresh bounds the overlap only where the table is reachable. Write a work so that an
 overlapping run does no harm: claim what it processes with a compare-and-set in its own store, as the
 framework's outbox drain claims recorded commands, or make each run idempotent. The integration suite measures
 the takeover under the test profile (a five-second keep-alive) and allows it three minutes.
@@ -261,8 +269,10 @@ The reset brings a deployment back to "nothing remembered", and a host started a
 store again. A host whose read models are current does the opposite before its first start: it seeds a
 checkpoint at the head for every consumer it registers, with `IStoreReaderSeeding`, resolved from a scope
 like the reset — see [Start on a populated store](migrate-to-the-orleans-execution-model.md#start-on-a-populated-store).
-A checkpoint at the beginning counts as absent and is seeded, so run the reset first where a full re-read is
-wanted, and seed afterwards only the consumers that are current.
+A checkpoint at the beginning counts as absent and is seeded, and the seeding takes no list of consumers, so
+seeding after a reset puts every consumer back at the head and nothing is re-read: where a full re-read is
+wanted, reset and start without seeding. Where only some read models are to be rebuilt, seed and rebuild
+those afterwards with `IProjectionRebuilder`.
 
 ### Sharing a read store
 

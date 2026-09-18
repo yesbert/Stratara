@@ -24,7 +24,6 @@ them without further configuration.
 | `AddStrataraProjectionCheckpoints<TReadContext>()` | Keeps the checkpoints in the read context |
 | `AddStrataraIntentStore<TWriteContext>()` | Records the commands the execution model's dispatcher accepts, in the outbox table, and claims a due batch in two statements |
 | `AddStrataraExecutionModelReset<TReadContext>()` | Clears reminders, membership, directory and the host's checkpoints while no silo runs |
-| `IStoreReaderSeeding` (registered with the store-reading roles) | Seeds the host's checkpoints at the store's head before a first start on a populated store |
 
 ## Quick start
 
