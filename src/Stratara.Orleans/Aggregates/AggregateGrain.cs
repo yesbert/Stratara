@@ -130,7 +130,11 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
                 }
                 catch (OperationCanceledException) when (_stopping.IsCancellationRequested && next.Intent is null)
                 {
-                    logger.LogHandlerStoppedWithSilo(next.Envelope.CommandTypeName, $"aggregate {this.GetPrimaryKey()}");
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.LogHandlerStoppedWithSilo(next.Envelope.CommandTypeName, $"aggregate {this.GetPrimaryKey()}");
+                    }
+
                     next.Completion?.TrySetException(new InvalidOperationException(StoppedMessage));
                 }
                 catch (Exception ex)
@@ -367,8 +371,13 @@ internal static class CommandExecution
             }
             catch (OperationCanceledException) when (stopping.IsCancellationRequested)
             {
-                services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(CommandExecution)).LogHandlerStoppedWithSilo(
-                    envelope.CommandTypeName, $"intent {intentId}, aggregate {(aggregateId is { } id ? id.ToString() : "none")}");
+                var stoppedLogger = services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(CommandExecution));
+                if (stoppedLogger.IsEnabled(LogLevel.Information))
+                {
+                    stoppedLogger.LogHandlerStoppedWithSilo(
+                        envelope.CommandTypeName, $"intent {intentId}, aggregate {(aggregateId is { } id ? id.ToString() : "none")}");
+                }
+
                 throw;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -487,7 +496,15 @@ internal static class AggregateTurn
     {
         var previous = Current.Value;
         var outer = callerChain ?? (IReadOnlyList<Guid>?)previous ?? [];
-        Current.Value = aggregateId is { } id ? [.. outer, id] : outer.Count == 0 ? null : [.. outer];
+        if (aggregateId is { } id)
+        {
+            Current.Value = [.. outer, id];
+        }
+        else
+        {
+            Current.Value = outer.Count == 0 ? null : [.. outer];
+        }
+
         return new Exit(previous);
     }
 

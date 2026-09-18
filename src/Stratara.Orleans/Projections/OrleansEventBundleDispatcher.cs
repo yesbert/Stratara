@@ -77,7 +77,11 @@ internal sealed class OrleansEventBundleDispatcher(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            (logger ?? (ILogger)NullLogger.Instance).LogNudgeFailed(exception, string.Join(", ", target.ConsumerNames), partition);
+            var log = logger ?? (ILogger)NullLogger.Instance;
+            if (log.IsEnabled(LogLevel.Debug))
+            {
+                log.LogNudgeFailed(exception, string.Join(", ", target.ConsumerNames), partition);
+            }
         }
     }
 

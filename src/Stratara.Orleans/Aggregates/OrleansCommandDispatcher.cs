@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -27,6 +28,9 @@ namespace Stratara.Orleans.Aggregates;
 /// as the bus dispatcher does. Hand-overs to one aggregate from one scope keep their order; a heavy command runs
 /// outside its aggregate's turn and order, so its hand-over neither waits for the calls before it nor holds the ones after it.
 /// </remarks>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "DI-resolved sealed internal dispatcher; primary-constructor parameters reflect intrinsic " +
+                    "framework dependencies (recorder, hand-over, resumer, session, replay state, send lane, replay suspension, logger) and are not a hand-called API surface.")]
 internal sealed class OrleansCommandDispatcher(
     IntentRecorder recorder,
     IntentHandOver handOver,
@@ -136,6 +140,9 @@ internal readonly record struct ResumePass(int Resumed, bool Full)
 /// order it was read, in the order of the aggregate the record names. A hand-over that cannot be issued is recorded as
 /// the command's failure and does not end the pass.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "DI-resolved sealed internal resumer; primary-constructor parameters reflect intrinsic " +
+                    "framework dependencies (intent store, hand-over, send lane, dispatch and retry options, time provider, logger, signer, integrity options) and are not a hand-called API surface.")]
 internal sealed class IntentResumer(
     ICommandIntentStore intents,
     IntentHandOver handOver,

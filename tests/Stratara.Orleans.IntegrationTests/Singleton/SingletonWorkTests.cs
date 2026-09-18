@@ -67,9 +67,8 @@ public sealed class SingletonWorkTests(PostgreSqlFixture postgres, RedisFixture 
         await app.StopAsync();
 
         Assert.True(probe.Succeeded > 0, "The work did not run again after its failing run.");
-        var failed = logs.Entries.Where(entry => entry.EventId == LogEvents.Orleans.SingletonWorkFailed).ToList();
-        Assert.Single(failed);
-        Assert.Contains(FlakyWork.WorkName, failed[0].Message, StringComparison.Ordinal);
+        var failed = Assert.Single(logs.Entries, entry => entry.EventId == LogEvents.Orleans.SingletonWorkFailed);
+        Assert.Contains(FlakyWork.WorkName, failed.Message, StringComparison.Ordinal);
     }
 
     [Fact]

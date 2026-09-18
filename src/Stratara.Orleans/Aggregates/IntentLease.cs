@@ -129,7 +129,7 @@ internal sealed class IntentLease : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            return;
+            // The lease stopped; there is nothing left to renew.
         }
         finally
         {

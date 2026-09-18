@@ -64,7 +64,8 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
         {
             // The runtime does not report a failure of this callback to SaveChangesFailedAsync, so the transaction this
             // interceptor opened is released here; otherwise the context's next save would run inside it and never commit.
-            await ReleaseAsync(context, commit: false);
+            // The caller's token is not forwarded: a cancelled save must still roll back.
+            await ReleaseAsync(context, commit: false, CancellationToken.None);
             throw;
         }
 

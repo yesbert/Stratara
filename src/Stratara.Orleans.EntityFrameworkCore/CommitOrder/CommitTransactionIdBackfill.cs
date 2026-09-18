@@ -66,7 +66,7 @@ public static class CommitTransactionIdBackfill
         }
     }
 
-    private static DbParameter Parameter(string name, long value) =>
+    private static NpgsqlParameter Parameter(string name, long value) =>
         new NpgsqlParameter(name, NpgsqlTypes.NpgsqlDbType.Bigint) { Value = value };
 
     /// <summary>The highest sequence number of the next batch, or <see langword="null"/> where nothing is left.</summary>
