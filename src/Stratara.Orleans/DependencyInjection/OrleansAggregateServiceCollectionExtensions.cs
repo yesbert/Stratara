@@ -76,7 +76,11 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// with the durable-intent one: commands are recorded before the dispatch returns and handed to
     /// their grain, and the outbox drain resumes any hand-off that was lost, up to the
     /// <see cref="MessageRetryOptions.MaxDeliveryAttempts"/> the host configures for bus messages,
-    /// after which the command is kept for an operator. Binds no configuration of its own. Requires an
+    /// after which the command is kept for an operator. Reads <see cref="MessageRetryOptions"/> from the
+    /// <c>MessageRetry</c> section of the host's configuration, validated when the host starts; where a bus
+    /// transport registered before this call already reads that section, the transport's reading is the only
+    /// one, and a transport registered after it reads the section again and keeps the last word. A value
+    /// configured in code after this call takes precedence over the section. Requires an
     /// <see cref="Stratara.Abstractions.Outbox.ICommandIntentStore"/> — for example
     /// <c>AddStrataraIntentStore&lt;TWriteContext&gt;()</c> — and the host fails at start without one.
     /// Register it after the composite that registered the bus dispatcher, and register
@@ -104,7 +108,7 @@ public static class OrleansAggregateServiceCollectionExtensions
             options.Configure(configure);
         }
 
-        services.AddOptions<MessageRetryOptions>();
+        MessageRetryOptionsBinding.Register(services);
         services.TryAddScoped<AggregateSendLane>();
         services.TryAddScoped<IntentRecorder>();
         services.TryAddScoped<IntentHandOver>();

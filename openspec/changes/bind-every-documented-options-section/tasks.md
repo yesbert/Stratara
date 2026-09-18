@@ -5,6 +5,13 @@
 - [x] 1.1 `AddSessionContext`: lazy bind from `SessionContext`; package reference in `Stratara.Sessions.csproj`.
 - [x] 1.2 `AddProjectionReplayState`: lazy bind from `ProjectionReplay`; `Validate(LeaseSeconds > 0)` and `ValidateOnStart`.
 - [x] 1.3 XML docs of both registrations and both options types state the section and the precedence.
+- [x] 1.4 `AddStrataraBlobEncryption` (and so `AddSecurity`): lazy, run-once bind from `Stratara:BlobEncryption`;
+      `AddStrataraFileKeyStore`'s own configuration keeps precedence. Test: `BlobEncryptionOptionsBindingTests`
+      (`tests/Stratara.Security.Tests`) and the `StrataraBlobEncryptionOptions` cases of `OptionsSectionBindingTests`.
+- [x] 1.5 `AddStrataraOrleansCommandDispatcher`: lazy, run-once bind from `MessageRetry` with start-up validation, added
+      only where no bus transport registered before it reads the section. Test: `MessageRetryBindingTests`
+      (`tests/Stratara.Orleans.Tests`) and the `MessageRetryOptions via AddStrataraOrleansCommandDispatcher() without a bus`
+      case of `OptionsSectionBindingTests`.
 
 ## 2. Tests
 

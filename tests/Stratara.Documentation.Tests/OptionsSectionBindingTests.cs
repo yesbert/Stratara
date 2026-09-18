@@ -59,6 +59,8 @@ public class OptionsSectionBindingTests
             b => b.AddMessaging()),
         Case<MessageRetryOptions>("AddAzureServiceBus(connectionString)", "MaxDeliveryAttempts", "17",
             b => b.Services.AddAzureServiceBus(ServiceBusConnectionString)),
+        Case<MessageRetryOptions>("AddStrataraOrleansCommandDispatcher() without a bus", "MaxDeliveryAttempts", "17",
+            b => b.Services.AddStrataraOrleansCommandDispatcher()),
 
         Case<BusEnvelopeIntegrityOptions>("AddBusEnvelopeIntegrity(configuration)", "Mode", "Permissive",
             b => b.Services.AddBusEnvelopeIntegrity(b.Configuration)),

@@ -183,7 +183,10 @@ applies to the entire NuGet family.
   now read the section from the host's configuration, directly or through `AddOutboxDispatcher()`, `AddSecurity()` and
   the worker composites. A service collection without an `IConfiguration` keeps the defaults; a value configured in
   code after the registration takes precedence, and calling a registration again does not re-apply the section over
-  it. A test now holds every public options type with a section name to being read from it.
+  it. `AddStrataraOrleansCommandDispatcher()` likewise reads `MessageRetryOptions` (`MessageRetry`) and validates it at
+  start when no bus transport is registered before it — a host whose commands run only through the execution model
+  set the resume bound in that section to no effect; where a transport registered first already reads the section, it
+  stays the only reading. A test now holds every public options type with a section name to being read from it.
 - **A projection replay lease of zero or less is refused at start.** `ProjectionReplayOptions.LeaseSeconds <= 0` fails
   the host with an `OptionsValidationException` naming `ProjectionReplay:LeaseSeconds`; it was accepted, and on the
   in-process replay state the marking lapsed at once and publication resumed in the middle of a rebuild.
