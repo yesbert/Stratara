@@ -8,10 +8,10 @@
 
 ## 2. Tests
 
-- [ ] 2.1 Session: a value from an in-memory configuration arrives; code after the registration wins; no configuration
+- [x] 2.1 Session: a value from an in-memory configuration arrives; code after the registration wins; no configuration
       registered still resolves defaults.
-- [ ] 2.2 Replay: a value arrives; a lease of 0 fails `ValidateOnStart` naming the setting.
-- [ ] 2.3 The reflection test over every published options type with a section name (D3).
+- [x] 2.2 Replay: a value arrives; a lease of 0 fails `ValidateOnStart` naming the setting.
+- [x] 2.3 The reflection test over every published options type with a section name (D3).
 
 ## 3. Documentation
 
