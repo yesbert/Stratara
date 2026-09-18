@@ -135,17 +135,25 @@ public class StrataraProblemDetailsExceptionHandlerTests
         Assert.Equal(0, context.Response.Body.Length);
     }
 
-    public static TheoryData<Exception> MissingIdentityFailures() =>
+    public static TheoryData<string> MissingIdentityFailures() =>
     [
-        new SessionRequiredException("Session context is not set"),
-        new AuthorizationException("Admin"),
-        new TenantAccessDeniedException(Guid.CreateVersion7(), Guid.Empty, "no session")
+        nameof(SessionRequiredException),
+        nameof(AuthorizationException),
+        nameof(TenantAccessDeniedException)
     ];
+
+    private static Exception MissingIdentityFailure(string kind) => kind switch
+    {
+        nameof(SessionRequiredException) => new SessionRequiredException("Session context is not set"),
+        nameof(AuthorizationException) => new AuthorizationException("Admin"),
+        _ => new TenantAccessDeniedException(Guid.CreateVersion7(), Guid.Empty, "no session")
+    };
 
     [Theory]
     [MemberData(nameof(MissingIdentityFailures))]
-    public async Task AnAnonymousCaller_WithoutAScheme_IsAnsweredUnauthorized_InTheProblemShape(Exception exception)
+    public async Task AnAnonymousCaller_WithoutAScheme_IsAnsweredUnauthorized_InTheProblemShape(string kind)
     {
+        var exception = MissingIdentityFailure(kind);
         var context = ContextFor();
 
         var handled = await Handler.TryHandleAsync(context, exception, CancellationToken.None);
@@ -173,8 +181,9 @@ public class StrataraProblemDetailsExceptionHandlerTests
 
     [Theory]
     [MemberData(nameof(MissingIdentityFailures))]
-    public async Task AnAnonymousCaller_WithABearerScheme_IsChallenged_AndReceivesTheProblemBody(Exception exception)
+    public async Task AnAnonymousCaller_WithABearerScheme_IsChallenged_AndReceivesTheProblemBody(string kind)
     {
+        var exception = MissingIdentityFailure(kind);
         await using var services = ServicesWith(collection =>
             collection.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer());
         var context = ContextFor(services: services);

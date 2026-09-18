@@ -198,19 +198,7 @@ internal sealed class StoreReaderLoop(
         using var scope = scopeFactory.CreateScope();
         var (reader, checkpoints) = Resolve(scope.ServiceProvider);
         var readerName = reader.Name;
-
-        if (!_positionKnown)
-        {
-            if (!_started && start is not null)
-            {
-                await start(checkpoints, readerName, cancellationToken);
-                _started = true;
-            }
-
-            var invalidations = _invalidations;
-            _position = await checkpoints.GetAsync(consumer, partition, readerName, cancellationToken);
-            _positionKnown = invalidations == _invalidations;
-        }
+        await EnsurePositionAsync(checkpoints, readerName, cancellationToken);
 
         var total = 0;
 
@@ -340,6 +328,28 @@ internal sealed class StoreReaderLoop(
         {
             ApplicationDiagnostics.Metrics.OrleansReaderStalled.Add(-1, _tags);
         }
+    }
+
+    /// <summary>
+    /// Reads the checkpoint where the cached position was forgotten, after the grain's start where it has not run yet. A
+    /// position read while an invalidation arrived stays unknown, so the next catch-up reads the checkpoint again.
+    /// </summary>
+    private async Task EnsurePositionAsync(IProjectionCheckpointStore checkpoints, string readerName, CancellationToken cancellationToken)
+    {
+        if (_positionKnown)
+        {
+            return;
+        }
+
+        if (!_started && start is not null)
+        {
+            await start(checkpoints, readerName, cancellationToken);
+            _started = true;
+        }
+
+        var invalidations = _invalidations;
+        _position = await checkpoints.GetAsync(consumer, partition, readerName, cancellationToken);
+        _positionKnown = invalidations == _invalidations;
     }
 
     private static (ICommittedPositionReader Reader, IProjectionCheckpointStore Checkpoints) Resolve(IServiceProvider services) =>

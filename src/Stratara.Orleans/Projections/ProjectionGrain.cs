@@ -67,10 +67,13 @@ internal interface IProjectionGrain : IGrainWithStringKey
     [Alias("PauseHeldAsync")]
     Task PauseAsync(Guid pauser, TimeSpan lease);
 
-    /// <summary>Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now, and pauses again where the pause was lost.</summary>
+    /// <summary>
+    /// The pause of a silo of an older version: stops reading for an anonymous pauser for ten minutes, or until
+    /// <see cref="ResumeAsync()"/>; returns once no batch is in flight.
+    /// </summary>
     [AlwaysInterleave]
-    [Alias("RenewPauseAsync")]
-    Task RenewPauseAsync(Guid pauser, TimeSpan lease);
+    [Alias("PauseAsync")]
+    Task PauseAsync();
 
     /// <summary>
     /// Releases <paramref name="pauser"/>'s pause and reads again, from whatever the checkpoint now says, once no pauser is
@@ -80,17 +83,14 @@ internal interface IProjectionGrain : IGrainWithStringKey
     [Alias("ResumeHeldAsync")]
     Task ResumeAsync(Guid pauser);
 
-    /// <summary>
-    /// The pause of a silo of an older version: stops reading for an anonymous pauser for ten minutes, or until
-    /// <see cref="ResumeAsync()"/>; returns once no batch is in flight.
-    /// </summary>
-    [AlwaysInterleave]
-    [Alias("PauseAsync")]
-    Task PauseAsync();
-
     /// <summary>The resume of a silo of an older version: releases the oldest anonymous pause; returns once the read is requested, not once it is done.</summary>
     [Alias("ResumeAsync")]
     Task ResumeAsync();
+
+    /// <summary>Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now, and pauses again where the pause was lost.</summary>
+    [AlwaysInterleave]
+    [Alias("RenewPauseAsync")]
+    Task RenewPauseAsync(Guid pauser, TimeSpan lease);
 }
 
 /// <summary>

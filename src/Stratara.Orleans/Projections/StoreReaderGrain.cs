@@ -99,26 +99,17 @@ internal abstract class StoreReaderGrain(
         Loop.Invalidate();
     }
 
-    /// <summary>
-    /// Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now. A pauser the grain no longer holds —
-    /// its pause lapsed, or the grain was activated again elsewhere and forgot it — pauses the grain again, without
-    /// waiting for a running loop, which stops at its next batch boundary. A renewal of a pauser released within the last
-    /// lease — delivered after its resume — does nothing.
-    /// </summary>
-    public Task RenewPauseAsync(Guid pauser, TimeSpan lease)
+    /// <summary>A pause of an older silo, which cannot renew it: held for an anonymous pauser for <see cref="AnonymousLease"/>.</summary>
+    public async Task PauseAsync()
     {
         if (Retired)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        var held = Pausers.Holds(pauser);
-        if (Pausers.Hold(pauser, lease) && !held)
-        {
-            Loop.Invalidate();
-        }
-
-        return Task.CompletedTask;
+        Pausers.HoldAnonymously(AnonymousLease);
+        await Loop.WaitForRunningAsync(CancellationToken.None);
+        Loop.Invalidate();
     }
 
     /// <summary>
@@ -143,19 +134,6 @@ internal abstract class StoreReaderGrain(
         return Task.CompletedTask;
     }
 
-    /// <summary>A pause of an older silo, which cannot renew it: held for an anonymous pauser for <see cref="AnonymousLease"/>.</summary>
-    public async Task PauseAsync()
-    {
-        if (Retired)
-        {
-            return;
-        }
-
-        Pausers.HoldAnonymously(AnonymousLease);
-        await Loop.WaitForRunningAsync(CancellationToken.None);
-        Loop.Invalidate();
-    }
-
     /// <summary>
     /// A resume of an older silo: releases the oldest anonymous pause, and starts the reader again where it was the last;
     /// where it releases nothing, the grain forgets its cached position as a held resume does.
@@ -173,6 +151,28 @@ internal abstract class StoreReaderGrain(
         }
 
         Loop.Invalidate();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Extends <paramref name="pauser"/>'s pause to <paramref name="lease"/> from now. A pauser the grain no longer holds —
+    /// its pause lapsed, or the grain was activated again elsewhere and forgot it — pauses the grain again, without
+    /// waiting for a running loop, which stops at its next batch boundary. A renewal of a pauser released within the last
+    /// lease — delivered after its resume — does nothing.
+    /// </summary>
+    public Task RenewPauseAsync(Guid pauser, TimeSpan lease)
+    {
+        if (Retired)
+        {
+            return Task.CompletedTask;
+        }
+
+        var held = Pausers.Holds(pauser);
+        if (Pausers.Hold(pauser, lease) && !held)
+        {
+            Loop.Invalidate();
+        }
+
         return Task.CompletedTask;
     }
 

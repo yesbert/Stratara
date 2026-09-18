@@ -75,13 +75,13 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
     public ValidateOptionsResult Validate(string? name, SingletonWorkOptions options) => Result<SingletonWorkOptions>(
         [AtLeastReminderMinimum(options.KeepAlivePeriod, nameof(options.KeepAlivePeriod)), .. OwnSettingsFailures(options)]);
 
-    /// <summary>Validates the settings <paramref name="workType"/> runs with — the host's for every work with its own on top.</summary>
-    public ValidateOptionsResult ValidateWork(Type workType, SingletonWorkOptions settings) => Result<SingletonWorkOptions>(
-        OfWork(workType, AtLeastReminderMinimum(settings.KeepAlivePeriod, nameof(settings.KeepAlivePeriod))));
-
     public ValidateOptionsResult Validate(string? name, OutboxDrainOptions options) => Result<OutboxDrainOptions>(
         Positive(options.PollingInterval, nameof(options.PollingInterval)),
         Positive(options.BatchSize, nameof(options.BatchSize)));
+
+    /// <summary>Validates the settings <paramref name="workType"/> runs with — the host's for every work with its own on top.</summary>
+    public ValidateOptionsResult ValidateWork(Type workType, SingletonWorkOptions settings) => Result<SingletonWorkOptions>(
+        OfWork(workType, AtLeastReminderMinimum(settings.KeepAlivePeriod, nameof(settings.KeepAlivePeriod))));
 
     private IEnumerable<string?> OwnSettingsFailures(SingletonWorkOptions siloWide)
     {

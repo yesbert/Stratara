@@ -29,8 +29,8 @@ public sealed class CommitOrderOptions
     /// read by the portable counter adds <c>PartitionCounterInterceptor</c> to its write context's interceptors; an
     /// entry appended without it stops its partition's reader. The member is removed with the next major version.
     /// </remarks>
-    [Obsolete("The framework does not read this value. A write context that maintains the partition counter adds PartitionCounterInterceptor to its interceptors; see the migration guide.")]
 #pragma warning disable S1133 // Kept for source compatibility until the next major version, as the remarks state.
+    [Obsolete("The framework does not read this value. A write context that maintains the partition counter adds PartitionCounterInterceptor to its interceptors; see the migration guide.")]
     public bool MaintainPartitionCounter { get; set; } = true;
 #pragma warning restore S1133
 }

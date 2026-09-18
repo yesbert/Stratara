@@ -53,24 +53,24 @@ internal interface ISagaGrain : IGrainWithStringKey
     [Alias("PauseHeldAsync")]
     Task PauseAsync(Guid pauser, TimeSpan lease);
 
-    /// <summary>A renewed pause; the retired grain holds none.</summary>
+    /// <summary>The pause of a silo of an older version; the retired grain holds none.</summary>
     [AlwaysInterleave]
-    [Alias("RenewPauseAsync")]
-    Task RenewPauseAsync(Guid pauser, TimeSpan lease);
+    [Alias("PauseAsync")]
+    Task PauseAsync();
 
     /// <summary>A released pause; the retired grain holds none.</summary>
     [AlwaysInterleave]
     [Alias("ResumeHeldAsync")]
     Task ResumeAsync(Guid pauser);
 
-    /// <summary>The pause of a silo of an older version; the retired grain holds none.</summary>
-    [AlwaysInterleave]
-    [Alias("PauseAsync")]
-    Task PauseAsync();
-
     /// <summary>The resume of a silo of an older version; the retired grain holds none.</summary>
     [Alias("ResumeAsync")]
     Task ResumeAsync();
+
+    /// <summary>A renewed pause; the retired grain holds none.</summary>
+    [AlwaysInterleave]
+    [Alias("RenewPauseAsync")]
+    Task RenewPauseAsync(Guid pauser, TimeSpan lease);
 }
 
 /// <summary>

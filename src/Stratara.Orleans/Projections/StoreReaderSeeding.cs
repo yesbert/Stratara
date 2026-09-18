@@ -64,7 +64,7 @@ internal sealed class StoreReaderSeeding(
     /// would start it, not at the head, because the shared reader may not have applied everything below the head. A
     /// partition without the shared checkpoint answers <see langword="null"/> and is seeded at the head.
     /// </summary>
-    private async Task<long?> SharedSagaStartAsync(IReadOnlyCollection<string> sagas, int partition, CancellationToken cancellationToken)
+    private async Task<long?> SharedSagaStartAsync(HashSet<string> sagas, int partition, CancellationToken cancellationToken)
     {
         var shared = await checkpoints.GetAsync(SagaGrain.ConsumerName, partition, reader.Name, cancellationToken);
         if (shared == 0)

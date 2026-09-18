@@ -96,6 +96,8 @@ public class ProjectionReplayOptionsBindingTests
         using var host = builder.Build();
 
         await host.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(300, host.Services.GetRequiredService<IOptions<ProjectionReplayOptions>>().Value.LeaseSeconds);
         await host.StopAsync(TestContext.Current.CancellationToken);
     }
 
