@@ -31,6 +31,7 @@ applies to the entire NuGet family.
   before version 1, and no retry could help, because the beginning was behind it in the same partition
   rather than late. Each stream's entries are now returned in version order, which is what the portable
   counter already did. Entries of different streams in one commit may still be interleaved in any order.
+
 ### Changed
 
 - **Appending without a causation identity is refused before the commit.** The session context carries a

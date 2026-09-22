@@ -311,8 +311,9 @@ public class EventSourceTests
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
 
-        var exception = await Assert.ThrowsAsync<SessionRequiredException>(() => _eventSource.SaveChangesAsync());
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => _eventSource.SaveChangesAsync());
 
+        Assert.IsNotType<SessionRequiredException>(exception);
         Assert.Contains("AddCommandAuditing()", exception.Message, StringComparison.Ordinal);
         Assert.Empty(_capturedAddRangeCalls);
     }

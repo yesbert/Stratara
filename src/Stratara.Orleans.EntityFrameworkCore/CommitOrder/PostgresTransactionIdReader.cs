@@ -128,10 +128,10 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     }
 
     /// <summary>
-    /// The entries of one commit in the order a consumer reads them: the streams in the order they
-    /// first appear, each stream's entries in version order. The order the rows were inserted in is
-    /// the database's to choose and is not the order the entries were appended in, so a stream's
-    /// creating fact can carry the higher sequence number.
+    /// The entries of one commit in the order a consumer reads them: each stream's entries in version
+    /// order, the streams themselves in the order the store numbered their first entry. The order the
+    /// rows were inserted in is the database's to choose and is not the order the entries were
+    /// appended in, so a stream's creating fact can carry the higher sequence number.
     /// </summary>
     private static IEnumerable<Row> InStreamOrder(IEnumerable<Row> rows) =>
         rows.GroupBy(row => row.Entry.StreamId)
@@ -166,9 +166,7 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
             var transaction = Column(CommitOrderSchema.TransactionIdColumn);
             var columns = string.Join(
                 ", ",
-                entity.GetProperties()
-                    .Select(property => property.GetColumnName(table))
-                    .OfType<string>()
+                ColumnsOf(entity, table)
                     .Distinct(StringComparer.Ordinal)
                     .Select(sql.DelimitIdentifier));
 
@@ -192,6 +190,29 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
                 WHERE {{bucket}} % {0} = {1}
                   AND {{transaction}} < pg_snapshot_xmin(pg_current_snapshot())
                 """);
+        }
+
+        /// <summary>
+        /// Every column the type maps in that table, complex properties flattened, so that a context
+        /// mapping more than the framework's own scalars is still read through the columns it declares.
+        /// </summary>
+        private static IEnumerable<string> ColumnsOf(ITypeBase type, StoreObjectIdentifier table)
+        {
+            foreach (var property in type.GetProperties())
+            {
+                if (property.GetColumnName(table) is { } column)
+                {
+                    yield return column;
+                }
+            }
+
+            foreach (var complex in type.GetComplexProperties())
+            {
+                foreach (var column in ColumnsOf(complex.ComplexType, table))
+                {
+                    yield return column;
+                }
+            }
         }
     }
 }
