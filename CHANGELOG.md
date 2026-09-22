@@ -50,16 +50,22 @@ applies to the entire NuGet family.
   before version 1, and no retry could help, because the beginning was behind it in the same partition
   rather than late. Each stream's entries are now returned in version order, which is what the portable
   counter already did. Entries of different streams in one commit may still be interleaved in any order.
-- **The cross-tenant authorizer finds a configured platform role where the actor holds it.**
-  `MembershipCrossTenantAuthorizerOptions.CrossTenantRoles` is documented as the path for an operator
-  who holds no membership in the tenant they administer, but the role was looked up through a role
-  check that reads the subject tenant — the very tenant the option says the actor is not a member of.
-  On the membership level it could therefore never pass, and a machine actor has no global role level
-  at all. The actor's own membership is now consulted as well. **This permits operations that were
-  refused before**, in the direction the requirement has always stated, and only where the host had
-  already named the role.
 
 ### Changed
+
+- **The cross-tenant authorizer now recognises a configured platform role held through the actor's own
+  membership.** `MembershipCrossTenantAuthorizerOptions.CrossTenantRoles` is documented as the path for
+  an operator who holds no membership in the tenant they administer, but the role was looked up through
+  a role check that reads the subject tenant — the very tenant the option says the actor is not a member
+  of. On the membership level it could therefore never pass, and a machine actor has no global role
+  level at all, so for a machine actor the option did nothing. The actor's own membership is now
+  consulted as well.
+  **This permits cross-tenant operations that were refused before.** Before upgrading, check what the
+  names in your `CrossTenantRoles` mean on both role levels: a host that configured `"Admin"` intending
+  the global Identity role now also admits an actor holding a tenant-scoped membership role of the same
+  name in its own tenant. `"Admin"`, `"Owner"` and `"TenantAdmin"` collide between the two levels
+  routinely. The widening is in the direction the requirement has always stated, and it reaches only
+  actors holding a role the host itself named.
 
 - **Appending without a causation identity is refused before the commit.** The session context carries a
   nullable causation id, but the store requires one of every entry, and only `AddCommandAuditing()`

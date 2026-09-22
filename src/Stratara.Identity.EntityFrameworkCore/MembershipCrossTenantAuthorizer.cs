@@ -49,14 +49,26 @@ public sealed class MembershipCrossTenantAuthorizer(
             return false;
         }
 
-        var atHome = session.ActorTenantId == session.TenantId
-            ? null
-            : await membershipStore.GetMembershipAsync(session.ActorUserId, session.ActorTenantId, cancellationToken);
+        // Read once, and only where it can decide something: an actor operating on its own tenant has
+        // already been answered above, and a role the provider grants costs no membership lookup at all.
+        TenantMembership? atHome = null;
+        var readAtHome = session.ActorTenantId == session.TenantId;
 
         foreach (var role in options.CrossTenantRoles)
         {
-            if (MembershipRoleEvaluator.Carries(atHome, role)
-                || await authorizationProvider.IsInRoleAsync(role, cancellationToken))
+            if (await authorizationProvider.IsInRoleAsync(role, cancellationToken))
+            {
+                return true;
+            }
+
+            if (!readAtHome)
+            {
+                atHome = await membershipStore.GetMembershipAsync(
+                    session.ActorUserId, session.ActorTenantId, cancellationToken);
+                readAtHome = true;
+            }
+
+            if (MembershipRoleEvaluator.Carries(atHome, role))
             {
                 return true;
             }

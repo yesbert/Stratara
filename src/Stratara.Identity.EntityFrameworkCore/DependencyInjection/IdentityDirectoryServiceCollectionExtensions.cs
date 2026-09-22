@@ -243,23 +243,24 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// </code>
     /// </example>
     /// <remarks>
-    /// Without a callback the options are registered only if the host has not configured them
-    /// already, so that the parameterless registration never silently drops a configured role,
-    /// whichever order the two calls are made in.
+    /// The options are registered once and every call configures that one instance, so neither the
+    /// order of the calls nor their number loses a role: a module naming one role and a module naming
+    /// another end up with both, and the parameterless registration adds nothing.
     /// </remarks>
     public static IServiceCollection AddMembershipAuthorizationOptions(
         this IServiceCollection services,
         Action<MembershipAuthorizationOptions>? configure)
     {
-        if (configure is null)
+        var registered = services.FirstOrDefault(service =>
+            service.ServiceType == typeof(MembershipAuthorizationOptions))?.ImplementationInstance;
+
+        if (registered is not MembershipAuthorizationOptions options)
         {
-            services.TryAddSingleton(new MembershipAuthorizationOptions());
-            return services;
+            options = new MembershipAuthorizationOptions();
+            services.AddSingleton(options);
         }
 
-        var options = new MembershipAuthorizationOptions();
-        configure(options);
-        services.AddSingleton(options);
+        configure?.Invoke(options);
         return services;
     }
 

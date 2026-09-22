@@ -1,3 +1,4 @@
+using Moq;
 using Stratara.Abstractions.Authorization;
 using Stratara.Abstractions.Multitenancy;
 using Stratara.Testing;
@@ -108,6 +109,25 @@ public class MembershipCrossTenantAuthorizerTests
         var authorizer = new MembershipCrossTenantAuthorizer(store, new FixedRoleProvider(), options);
 
         Assert.False(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
+    }
+
+    [Fact]
+    public async Task A_global_role_passes_without_reading_the_actors_own_membership()
+    {
+        var store = new Mock<ITenantMembershipStore>();
+        store.Setup(s => s.GetMembershipAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TenantMembership?)null);
+        var options = new MembershipCrossTenantAuthorizerOptions();
+        options.CrossTenantRoles.Add("PlatformAdmin");
+
+        var authorizer = new MembershipCrossTenantAuthorizer(
+            store.Object, new FixedRoleProvider("PlatformAdmin"), options);
+
+        Assert.True(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
+        // Only the subject-tenant lookup: the actor's own membership could not have changed the answer.
+        store.Verify(
+            s => s.GetMembershipAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
