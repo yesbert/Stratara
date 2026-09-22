@@ -436,6 +436,14 @@ An owner id is at most 139 characters and a purpose at most 130: the reminder ta
 grain type's name or the due time taking the rest. A longer one is refused by `IDurableTimers` on every member,
 with a message naming the limit.
 
+An `ITimerHandler` runs in a fresh scope with **no session**, because no request started the work. A handler
+that dispatches a command or appends an event sets one — and the shape for it is
+`SessionContext.ForPlatform(tenantId)`, which names the platform as the actor, the tenant the work is for as the
+data owner, and carries the causation id the store requires. Only the handler knows which tenant its owner id
+belongs to, so the framework cannot set it for you. Strict tenant isolation lets that session through without
+consulting the cross-tenant authorizer; see
+[Enforce Tenant Isolation](enforce-tenant-isolation.md#work-the-platform-starts-is-not-cross-tenant).
+
 ## Stopping a silo
 
 A silo stopped gracefully waits for the handlers running on its grain paths — a command in its aggregate's

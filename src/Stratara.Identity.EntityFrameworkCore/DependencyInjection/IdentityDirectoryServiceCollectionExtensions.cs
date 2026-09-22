@@ -181,7 +181,7 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <summary>
     /// Register <see cref="MembershipAuthorizationProvider"/> as the
     /// <see cref="IAuthorizationProvider"/> — role checks pass on tenant-scoped membership roles
-    /// only. Use the generic overload (<see cref="AddMembershipAuthorization{TUser}"/>) when the
+    /// only. Use the generic overload (<see cref="AddMembershipAuthorization{TUser}(IServiceCollection)"/>) when the
     /// host also gates on global ASP.NET Identity roles.
     /// </summary>
     /// <remarks>
@@ -201,8 +201,66 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// </code>
     /// </example>
     public static IServiceCollection AddMembershipAuthorization(this IServiceCollection services)
+        => services.AddMembershipAuthorization(configure: null);
+
+    /// <summary>
+    /// Register <see cref="MembershipAuthorizationProvider"/> as the
+    /// <see cref="IAuthorizationProvider"/>, naming the roles that resolve in the actor's own tenant.
+    /// </summary>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <param name="configure">Callback to name the roles resolved in the actor's own tenant.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// A service that holds one machine key and names the tenant per request: the key's role is held
+    /// in the tenant the key was issued for, and the request concerns another.
+    /// <code>
+    /// services.AddMembershipAuthorization(o =&gt; o.HomeTenantRoles.Add("Service"));
+    /// services.AddAuthorizingMediator&lt;MembershipAuthorizationProvider&gt;();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddMembershipAuthorization(
+        this IServiceCollection services,
+        Action<MembershipAuthorizationOptions>? configure)
     {
+        services.AddMembershipAuthorizationOptions(configure);
         services.TryAddScoped<IAuthorizationProvider, MembershipAuthorizationProvider>();
+        return services;
+    }
+
+    /// <summary>
+    /// Register the membership authorization options alone — for a host that passes the provider to
+    /// <c>AddAuthorizingMediator&lt;TProvider&gt;()</c> rather than registering it here.
+    /// </summary>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <param name="configure">Callback to name the roles resolved in the actor's own tenant.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    /// <example>
+    /// Binds no configuration key — the roles are named in code. The provider itself is registered by
+    /// the authorizing mediator here, so only the options come from this call:
+    /// <code>
+    /// services.AddMembershipAuthorizationOptions(o =&gt; o.HomeTenantRoles.Add("Service"));
+    /// services.AddAuthorizingMediator&lt;MembershipAuthorizationProvider&gt;();
+    /// </code>
+    /// </example>
+    /// <remarks>
+    /// The options are registered once and every call configures that one instance, so neither the
+    /// order of the calls nor their number loses a role: a module naming one role and a module naming
+    /// another end up with both, and the parameterless registration adds nothing.
+    /// </remarks>
+    public static IServiceCollection AddMembershipAuthorizationOptions(
+        this IServiceCollection services,
+        Action<MembershipAuthorizationOptions>? configure)
+    {
+        var registered = services.FirstOrDefault(service =>
+            service.ServiceType == typeof(MembershipAuthorizationOptions))?.ImplementationInstance;
+
+        if (registered is not MembershipAuthorizationOptions options)
+        {
+            options = new MembershipAuthorizationOptions();
+            services.AddSingleton(options);
+        }
+
+        configure?.Invoke(options);
         return services;
     }
 
@@ -223,7 +281,22 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddMembershipAuthorization<TUser>(this IServiceCollection services)
         where TUser : class
+        => services.AddMembershipAuthorization<TUser>(configure: null);
+
+    /// <summary>
+    /// Register <see cref="MembershipAuthorizationProvider{TUser}"/> as the
+    /// <see cref="IAuthorizationProvider"/>, naming the roles that resolve in the actor's own tenant.
+    /// </summary>
+    /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <param name="configure">Callback to name the roles resolved in the actor's own tenant.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    public static IServiceCollection AddMembershipAuthorization<TUser>(
+        this IServiceCollection services,
+        Action<MembershipAuthorizationOptions>? configure)
+        where TUser : class
     {
+        services.AddMembershipAuthorizationOptions(configure);
         services.TryAddScoped<IAuthorizationProvider, MembershipAuthorizationProvider<TUser>>();
         return services;
     }

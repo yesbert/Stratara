@@ -89,6 +89,32 @@ erasure sweeps (`RemoveAllForTenantAsync`, `RemoveAllForUserAsync`) remove those
 revoking a key removes its access, not merely its credential. Personal access tokens write no
 membership row — they ride the user's existing one.
 
+### Which tenant a key's roles are looked up in
+
+A role is looked up in the tenant the **request concerns**, not the tenant the key was issued for.
+As long as they are the same tenant, there is nothing to think about.
+
+They come apart for a key that serves many tenants: one key, issued in its own tenant, with an
+endpoint that promotes the data owner per request (see
+[Session Context](../concepts/session-context.md)). The key's single membership row is in the tenant
+it was issued for, and it can have no membership in the tenants it acts on — those are not
+registered anywhere. Every `[RequireRole]` check would then fail.
+
+Name the key's role so it resolves where the key holds it:
+
+```csharp
+services.AddMembershipAuthorization(o => o.HomeTenantRoles.Add("Service"));
+```
+
+Only the roles you name cross, and only when the actor's tenant differs from the data owner's. The
+set is empty by default, so nothing changes for a host that does not configure it. The same option
+covers an operator administering a tenant they never joined.
+
+For the cross-tenant *decision* — whether the key may act on that tenant at all — see
+`AddMembershipCrossTenantAuthorizer` in
+[Enforce Tenant Isolation](enforce-tenant-isolation.md). The two are separate questions: one asks
+whether the actor may act on the tenant, the other which role it holds while doing so.
+
 ## Wiring the scheme
 
 ```csharp

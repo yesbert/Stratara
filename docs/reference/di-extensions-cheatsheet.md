@@ -210,8 +210,9 @@ own `OnModelCreating`.
 |---|---|
 | `services.AddTenantMembershipStore<TContext>()` | EF `ITenantMembershipStore` (`tenant_membership`, `active_tenant`) — shares the request's context |
 | `services.AddTenantMembershipStoreFromContextFactory<TContext>()` | Same store, a fresh context per operation (needs `AddDbContextFactory<TContext>()`) |
-| `services.AddMembershipAuthorization()` | `IAuthorizationProvider` over tenant-scoped membership roles |
-| `services.AddMembershipAuthorization<TUser>()` | Above ∪ global ASP.NET Identity roles |
+| `services.AddMembershipAuthorization(opts?)` | `IAuthorizationProvider` over tenant-scoped membership roles. `HomeTenantRoles` names the roles resolved in the actor's own tenant instead |
+| `services.AddMembershipAuthorization<TUser>(opts?)` | Above ∪ global ASP.NET Identity roles |
+| `services.AddMembershipAuthorizationOptions(opts)` | Those options alone, for a host that passes the provider to `AddAuthorizingMediator<TProvider>()` instead |
 | `services.AddMembershipCrossTenantAuthorizer(opts?)` | `ICrossTenantAuthorizer` for strict tenant isolation (membership OR a configured platform role) |
 | `services.AddPermissionCatalog(c => …)` | Declares the permission vocabulary + role grants (throws on an undeclared grant) |
 | `services.AddCatalogPermissionResolver()` | `IPermissionResolver` — membership roles through the catalog |

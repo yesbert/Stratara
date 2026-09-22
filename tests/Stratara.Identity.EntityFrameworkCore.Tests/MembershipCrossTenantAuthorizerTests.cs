@@ -1,3 +1,4 @@
+using Moq;
 using Stratara.Abstractions.Authorization;
 using Stratara.Abstractions.Multitenancy;
 using Stratara.Testing;
@@ -67,6 +68,66 @@ public class MembershipCrossTenantAuthorizerTests
             new InMemoryTenantMembershipStore(), new FixedRoleProvider("SomeOtherRole"), options);
 
         Assert.False(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
+    }
+
+    [Fact]
+    public async Task Configured_role_held_through_the_actors_own_membership_allows()
+    {
+        var store = new InMemoryTenantMembershipStore();
+        await store.SetMembershipAsync(new TenantMembership(ActorUser, ActorTenant, ["PlatformAdmin"]));
+        var options = new MembershipCrossTenantAuthorizerOptions();
+        options.CrossTenantRoles.Add("PlatformAdmin");
+
+        // A machine actor has no global role level at all: a key becomes a membership.
+        var authorizer = new MembershipCrossTenantAuthorizer(store, new FixedRoleProvider(), options);
+
+        Assert.True(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
+    }
+
+    [Fact]
+    public async Task An_unconfigured_role_held_at_home_does_not_allow()
+    {
+        var store = new InMemoryTenantMembershipStore();
+        await store.SetMembershipAsync(new TenantMembership(ActorUser, ActorTenant, ["TenantAdmin"]));
+        var options = new MembershipCrossTenantAuthorizerOptions();
+        options.CrossTenantRoles.Add("PlatformAdmin");
+
+        var authorizer = new MembershipCrossTenantAuthorizer(store, new FixedRoleProvider(), options);
+
+        Assert.False(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
+    }
+
+    [Fact]
+    public async Task A_pending_membership_at_home_does_not_carry_the_configured_role()
+    {
+        var store = new InMemoryTenantMembershipStore();
+        await store.SetMembershipAsync(
+            new TenantMembership(ActorUser, ActorTenant, ["PlatformAdmin"], MembershipStatus.Pending));
+        var options = new MembershipCrossTenantAuthorizerOptions();
+        options.CrossTenantRoles.Add("PlatformAdmin");
+
+        var authorizer = new MembershipCrossTenantAuthorizer(store, new FixedRoleProvider(), options);
+
+        Assert.False(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
+    }
+
+    [Fact]
+    public async Task A_global_role_passes_without_reading_the_actors_own_membership()
+    {
+        var store = new Mock<ITenantMembershipStore>();
+        store.Setup(s => s.GetMembershipAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TenantMembership?)null);
+        var options = new MembershipCrossTenantAuthorizerOptions();
+        options.CrossTenantRoles.Add("PlatformAdmin");
+
+        var authorizer = new MembershipCrossTenantAuthorizer(
+            store.Object, new FixedRoleProvider("PlatformAdmin"), options);
+
+        Assert.True(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
+        // Only the subject-tenant lookup: the actor's own membership could not have changed the answer.
+        store.Verify(
+            s => s.GetMembershipAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

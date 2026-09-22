@@ -106,6 +106,89 @@ public class MembershipAuthorizationProviderTests
         Assert.False(await provider.IsInRoleAsync("PlatformAdmin"));
     }
 
+    [Fact]
+    public async Task Named_role_held_in_the_actors_own_tenant_passes()
+    {
+        var actorTenant = Guid.CreateVersion7();
+        var subjectTenant = Guid.CreateVersion7();
+        var actorUser = Guid.CreateVersion7();
+        var store = new InMemoryTenantMembershipStore();
+        await store.SetMembershipAsync(new TenantMembership(actorUser, actorTenant, ["Service"]));
+        var options = new MembershipAuthorizationOptions();
+        options.HomeTenantRoles.Add("Service");
+
+        var provider = new MembershipAuthorizationProvider(
+            new TestSessionContextProvider(TestSessionContext.ForActorAndSubject(actorTenant, actorUser, subjectTenant)),
+            store,
+            options);
+
+        Assert.True(await provider.IsInRoleAsync("Service"));
+    }
+
+    [Fact]
+    public async Task Unnamed_role_held_in_the_actors_own_tenant_fails()
+    {
+        var actorTenant = Guid.CreateVersion7();
+        var subjectTenant = Guid.CreateVersion7();
+        var actorUser = Guid.CreateVersion7();
+        var store = new InMemoryTenantMembershipStore();
+        await store.SetMembershipAsync(new TenantMembership(actorUser, actorTenant, ["Service", "TenantAdmin"]));
+        var options = new MembershipAuthorizationOptions();
+        options.HomeTenantRoles.Add("Service");
+
+        var provider = new MembershipAuthorizationProvider(
+            new TestSessionContextProvider(TestSessionContext.ForActorAndSubject(actorTenant, actorUser, subjectTenant)),
+            store,
+            options);
+
+        Assert.False(await provider.IsInRoleAsync("TenantAdmin"));
+    }
+
+    [Fact]
+    public async Task Without_options_the_actors_own_tenant_is_never_consulted()
+    {
+        var actorTenant = Guid.CreateVersion7();
+        var subjectTenant = Guid.CreateVersion7();
+        var actorUser = Guid.CreateVersion7();
+        var store = StoreHolding(new TenantMembership(actorUser, actorTenant, ["Service"]));
+
+        var provider = new MembershipAuthorizationProvider(
+            new TestSessionContextProvider(TestSessionContext.ForActorAndSubject(actorTenant, actorUser, subjectTenant)),
+            store.Object);
+
+        Assert.False(await provider.IsInRoleAsync("Service"));
+        store.Verify(
+            s => s.GetMembershipAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task A_same_tenant_session_reads_one_membership()
+    {
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        var store = StoreHolding(new TenantMembership(userId, tenantId, []));
+        var options = new MembershipAuthorizationOptions();
+        options.HomeTenantRoles.Add("Service");
+
+        var provider = new MembershipAuthorizationProvider(
+            TestSessionContextProvider.ForTenant(tenantId, userId), store.Object, options);
+
+        Assert.False(await provider.IsInRoleAsync("Service"));
+        store.Verify(
+            s => s.GetMembershipAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    private static Mock<ITenantMembershipStore> StoreHolding(TenantMembership membership)
+    {
+        var store = new Mock<ITenantMembershipStore>();
+        store.Setup(s => s.GetMembershipAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid userId, Guid tenantId, CancellationToken _) =>
+                userId == membership.UserId && tenantId == membership.TenantId ? membership : null);
+        return store;
+    }
+
     private static UserManager<IdentityUser> CreateUserManager(IdentityUser user, params string[] globalRoles)
     {
         var mock = CreateUserManagerMock();

@@ -16,6 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **`SessionContext.ForPlatform(tenantId)`**: the session for work the platform starts on a tenant's
+  behalf — a durable timer, a saga step, a sweep. It carries the reserved system actor identities, a
+  fresh correlation id and a causation id of its own, so the work can append without a command having
+  preceded it. Strict tenant isolation recognises the shape and permits it without consulting the
+  cross-tenant authorizer, recorded under its own log event (`114_104`): the platform acting *for* a
+  tenant is not one tenant acting *on* another. The data-owner check applies unchanged. A host that
+  wants to decide for itself sets `TenantIsolationOptions.AuthorizePlatformActor`. Until now the
+  sentinels existed, the documentation named them, and nothing in the framework acted on them — the
+  honest session was refused by strict mode, and the session that passed claimed the tenant had acted.
+- **`MembershipAuthorizationOptions.HomeTenantRoles`**: roles that resolve in the tenant the actor is a
+  member of rather than in the tenant the request concerns. For an actor acting on a tenant it holds no
+  membership in and never can: a machine key, which materialises one membership in the tenant it was
+  issued for and serves many, or an operator administering a tenant they never joined — both were
+  refused every role check. Configure it with `AddMembershipAuthorization(o => o.HomeTenantRoles.Add("Service"))`.
+  Empty by default, consulted only when the actor's tenant differs from the data owner's, and only the
+  named roles cross.
+
 ### Fixed
 
 - **The native PostgreSQL commit-order reader reads a store under any column mapping.** It selected the
@@ -33,6 +52,20 @@ applies to the entire NuGet family.
   counter already did. Entries of different streams in one commit may still be interleaved in any order.
 
 ### Changed
+
+- **The cross-tenant authorizer now recognises a configured platform role held through the actor's own
+  membership.** `MembershipCrossTenantAuthorizerOptions.CrossTenantRoles` is documented as the path for
+  an operator who holds no membership in the tenant they administer, but the role was looked up through
+  a role check that reads the subject tenant — the very tenant the option says the actor is not a member
+  of. On the membership level it could therefore never pass, and a machine actor has no global role
+  level at all, so for a machine actor the option did nothing. The actor's own membership is now
+  consulted as well.
+  **This permits cross-tenant operations that were refused before.** Before upgrading, check what the
+  names in your `CrossTenantRoles` mean on both role levels: a host that configured `"Admin"` intending
+  the global Identity role now also admits an actor holding a tenant-scoped membership role of the same
+  name in its own tenant. `"Admin"`, `"Owner"` and `"TenantAdmin"` collide between the two levels
+  routinely. The widening is in the direction the requirement has always stated, and it reaches only
+  actors holding a role the host itself named.
 
 - **Appending without a causation identity is refused before the commit.** The session context carries a
   nullable causation id, but the store requires one of every entry, and only `AddCommandAuditing()`

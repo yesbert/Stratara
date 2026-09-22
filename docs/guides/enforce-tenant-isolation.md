@@ -81,6 +81,31 @@ internal sealed class PlatformAdminCrossTenantAuthorizer(IHttpContextAccessor ht
 > An authorizer that reads request-role state belongs on the in-process path; the worker path must
 > decide from the `SessionContext` alone.
 
+### Work the platform starts is not cross-tenant
+
+A durable timer, a saga step or a nightly sweep has no inherited actor. Its session names the
+platform — build it with `SessionContext.ForPlatform(tenantId)`, see
+[Session Context](../concepts/session-context.md). Strict mode recognises that shape, permits it
+without consulting your authorizer, and records it under its own log event (`114_104`) rather than
+as a permitted cross-tenant operation. You do not have to teach your authorizer about the
+framework's own background work.
+
+The subject check applies unchanged: such a session operates on exactly the tenant it names, and a
+request targeting another one is refused like any other.
+
+A host that would rather decide for itself refers it to the authorizer:
+
+```csharp
+builder.Services.AddStrataraTenantIsolation(o =>
+{
+    o.Mode = TenantIsolationMode.Strict;
+    o.AuthorizePlatformActor = true;
+});
+```
+
+With the shipped deny-everything default, that refuses every platform-initiated request until your
+authorizer permits it — which is the point of the switch, and the reason it is off by default.
+
 ## Register it
 
 Call `AddStrataraTenantIsolation()` **after** `AddStrataraValidation()` so validation stays the
