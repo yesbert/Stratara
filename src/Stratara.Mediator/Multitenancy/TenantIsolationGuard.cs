@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.Multitenancy;
 using Stratara.Abstractions.Session;
+using Stratara.Contracts.Session;
 
 namespace Stratara.Mediator.Multitenancy;
 
@@ -45,6 +46,12 @@ internal static class TenantIsolationGuard
             return;
         }
 
+        if (!options.AuthorizePlatformActor && IsPlatformInitiated(session))
+        {
+            logger.LogPlatformActorAllowed(requestType, session.TenantId);
+            return;
+        }
+
         var allowed = await crossTenantAuthorizer.IsCrossTenantAllowedAsync(session, cancellationToken);
         if (!allowed)
         {
@@ -57,4 +64,13 @@ internal static class TenantIsolationGuard
 
         logger.LogCrossTenantAllowed(requestType, session.ActorTenantId, session.TenantId);
     }
+
+    /// <summary>
+    /// Work the platform started on a tenant's behalf, as <c>SessionContext.ForPlatform</c> builds it.
+    /// Both reserved identities are required: a session carrying one of them and a real principal in
+    /// the other is a cross-tenant operation like any other.
+    /// </summary>
+    private static bool IsPlatformInitiated(SessionContext session) =>
+        session.ActorTenantId == SessionContext.SystemActorTenantId
+        && session.ActorUserId == SessionContext.SystemActorUserId;
 }

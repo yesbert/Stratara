@@ -25,4 +25,10 @@ internal static partial class LoggerTenantIsolationExtensions
         Level = LogLevel.Information,
         Message = "Tenant-isolation (strict) permitted cross-tenant request '{RequestType}': actor tenant {ActorTenantId} operating on tenant {SessionTenantId}.")]
     public static partial void LogCrossTenantAllowed(this ILogger logger, string requestType, Guid actorTenantId, Guid sessionTenantId);
+
+    [LoggerMessage(
+        EventId = LogEvents.TenantIsolation.PlatformActorAllowed,
+        Level = LogLevel.Information,
+        Message = "Tenant-isolation (strict) permitted platform-initiated request '{RequestType}' on tenant {SessionTenantId}.")]
+    public static partial void LogPlatformActorAllowed(this ILogger logger, string requestType, Guid sessionTenantId);
 }

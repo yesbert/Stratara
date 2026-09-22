@@ -16,6 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **`SessionContext.ForPlatform(tenantId)`**: the session for work the platform starts on a tenant's
+  behalf — a durable timer, a saga step, a sweep. It carries the reserved system actor identities, a
+  fresh correlation id and a causation id of its own, so the work can append without a command having
+  preceded it. Strict tenant isolation recognises the shape and permits it without consulting the
+  cross-tenant authorizer, recorded under its own log event (`114_104`): the platform acting *for* a
+  tenant is not one tenant acting *on* another. The data-owner check applies unchanged. A host that
+  wants to decide for itself sets `TenantIsolationOptions.AuthorizePlatformActor`. Until now the
+  sentinels existed, the documentation named them, and nothing in the framework acted on them — the
+  honest session was refused by strict mode, and the session that passed claimed the tenant had acted.
+- **`MembershipAuthorizationOptions.HomeTenantRoles`**: roles that resolve in the tenant the actor is a
+  member of rather than in the tenant the request concerns. For an actor acting on a tenant it holds no
+  membership in and never can: a machine key, which materialises one membership in the tenant it was
+  issued for and serves many, or an operator administering a tenant they never joined — both were
+  refused every role check. Configure it with `AddMembershipAuthorization(o => o.HomeTenantRoles.Add("Service"))`.
+  Empty by default, consulted only when the actor's tenant differs from the data owner's, and only the
+  named roles cross.
+
 ### Fixed
 
 - **The native PostgreSQL commit-order reader reads a store under any column mapping.** It selected the
@@ -31,6 +50,15 @@ applies to the entire NuGet family.
   before version 1, and no retry could help, because the beginning was behind it in the same partition
   rather than late. Each stream's entries are now returned in version order, which is what the portable
   counter already did. Entries of different streams in one commit may still be interleaved in any order.
+- **The cross-tenant authorizer finds a configured platform role where the actor holds it.**
+  `MembershipCrossTenantAuthorizerOptions.CrossTenantRoles` is documented as the path for an operator
+  who holds no membership in the tenant they administer, but the role was looked up through a role
+  check that reads the subject tenant — the very tenant the option says the actor is not a member of.
+  On the membership level it could therefore never pass, and a machine actor has no global role level
+  at all. The actor's own membership is now consulted as well. **This permits operations that were
+  refused before**, in the direction the requirement has always stated, and only where the host had
+  already named the role.
+
 ### Changed
 
 - **Appending without a causation identity is refused before the commit.** The session context carries a

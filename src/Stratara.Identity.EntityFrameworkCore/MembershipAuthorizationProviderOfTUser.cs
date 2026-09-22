@@ -15,25 +15,29 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// <remarks>
 /// The membership level is consulted first; the global level via
 /// <see cref="UserManager{TUser}"/> only on a membership miss, so tenant-scoped checks incur no
-/// Identity-store round trip. Fail-closed: no ambient session or no matching role on either
-/// level evaluates to <c>false</c>. The actor's user id is matched against the Identity user's
+/// Identity-store round trip. A role named in
+/// <see cref="MembershipAuthorizationOptions.HomeTenantRoles"/> is looked for in the actor's own
+/// tenant between the two levels, when the actor's tenant differs from the data owner's.
+/// Fail-closed: no ambient session or no matching role on any level evaluates to <c>false</c>. The actor's user id is matched against the Identity user's
 /// string key (ASP.NET Identity's default keys are GUID strings).
 /// </remarks>
 /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
 /// <param name="sessionContextProvider">Accessor for the ambient session (actor + data-owner tenant).</param>
 /// <param name="membershipStore">The membership store the tenant-scoped roles are read from.</param>
 /// <param name="userManager">The Identity user manager the global roles are read from.</param>
+/// <param name="options">The roles that resolve in the actor's own tenant; none when unregistered.</param>
 public sealed class MembershipAuthorizationProvider<TUser>(
     ISessionContextProvider sessionContextProvider,
     ITenantMembershipStore membershipStore,
-    UserManager<TUser> userManager) : IAuthorizationProvider
+    UserManager<TUser> userManager,
+    MembershipAuthorizationOptions? options = null) : IAuthorizationProvider
     where TUser : class
 {
     /// <inheritdoc/>
     public async Task<bool> IsInRoleAsync(string role, CancellationToken cancellationToken = default)
     {
         if (await MembershipRoleEvaluator.IsInMembershipRoleAsync(
-                sessionContextProvider, membershipStore, role, cancellationToken))
+                sessionContextProvider, membershipStore, role, options, cancellationToken))
         {
             return true;
         }

@@ -114,6 +114,58 @@ public class TenantIsolationBehaviorTests
     }
 
     [Fact]
+    public async Task PlatformActor_Strict_PassesWithoutConsultingTheAuthorizer()
+    {
+        var authorizer = new RecordingAuthorizer(allow: false);
+        var behavior = ResultBehavior(SessionContext.ForPlatform(TenantB), authorizer, TenantIsolationMode.Strict);
+
+        var result = await behavior.HandleAsync(new ScopedQuery(TenantB), () => Task.FromResult("handled"), CancellationToken.None);
+
+        Assert.Equal("handled", result);
+        Assert.False(authorizer.WasConsulted);
+    }
+
+    [Fact]
+    public async Task PlatformActor_Strict_StillBoundToItsOwnTenant()
+    {
+        var behavior = ResultBehavior(SessionContext.ForPlatform(TenantB), new AllowAuthorizer(), TenantIsolationMode.Strict);
+
+        await Assert.ThrowsAsync<TenantAccessDeniedException>(() =>
+            behavior.HandleAsync(new ScopedQuery(TenantA), () => Task.FromResult("handled"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task HalfBuiltPlatformSession_Strict_IsACrossTenantRequest()
+    {
+        var authorizer = new RecordingAuthorizer(allow: false);
+        var session = SessionContext.ForPlatform(TenantB) with { ActorUserId = Guid.NewGuid() };
+        var behavior = ResultBehavior(session, authorizer, TenantIsolationMode.Strict);
+
+        await Assert.ThrowsAsync<TenantAccessDeniedException>(() =>
+            behavior.HandleAsync(new ScopedQuery(TenantB), () => Task.FromResult("handled"), CancellationToken.None));
+        Assert.True(authorizer.WasConsulted);
+    }
+
+    [Fact]
+    public async Task PlatformActor_Strict_ReferredToTheAuthorizerWhenTheHostSaysSo()
+    {
+        var authorizer = new RecordingAuthorizer(allow: false);
+        var behavior = new TenantIsolationBehavior<ScopedQuery, string>(
+            new FakeSessionContextProvider(SessionContext.ForPlatform(TenantB)),
+            authorizer,
+            Options.Create(new TenantIsolationOptions
+            {
+                Mode = TenantIsolationMode.Strict,
+                AuthorizePlatformActor = true,
+            }),
+            NullLogger<TenantIsolationBehavior<ScopedQuery, string>>.Instance);
+
+        await Assert.ThrowsAsync<TenantAccessDeniedException>(() =>
+            behavior.HandleAsync(new ScopedQuery(TenantB), () => Task.FromResult("handled"), CancellationToken.None));
+        Assert.True(authorizer.WasConsulted);
+    }
+
+    [Fact]
     public async Task NoSession_Rejected()
     {
         var behavior = ResultBehavior(null, new AllowAuthorizer(), TenantIsolationMode.Default);

@@ -11,6 +11,12 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// <see cref="MembershipCrossTenantAuthorizerOptions.CrossTenantRoles"/> (the
 /// operator-impersonation path for platform administrators, who typically hold no membership in
 /// the tenants they administer).
+/// <para>
+/// A configured role is recognised where the actor holds it: in the actor's own membership, or
+/// through the registered role checker, which is where a global platform role is found. An actor
+/// whose only role level is its membership — a machine actor holds no global roles — therefore
+/// passes by a configured role too.
+/// </para>
 /// </summary>
 /// <remarks>
 /// Replaces the framework's deny-all default with stored facts. Register it via
@@ -38,9 +44,19 @@ public sealed class MembershipCrossTenantAuthorizer(
             return true;
         }
 
+        if (options.CrossTenantRoles.Count == 0)
+        {
+            return false;
+        }
+
+        var atHome = session.ActorTenantId == session.TenantId
+            ? null
+            : await membershipStore.GetMembershipAsync(session.ActorUserId, session.ActorTenantId, cancellationToken);
+
         foreach (var role in options.CrossTenantRoles)
         {
-            if (await authorizationProvider.IsInRoleAsync(role, cancellationToken))
+            if (MembershipRoleEvaluator.Carries(atHome, role)
+                || await authorizationProvider.IsInRoleAsync(role, cancellationToken))
             {
                 return true;
             }

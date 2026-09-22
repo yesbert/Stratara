@@ -226,6 +226,8 @@ public static class LogEvents
         public const int CrossTenantRejected = 114_102;
         /// <summary>Strict mode permitted a cross-tenant operation after the cross-tenant authorizer granted it.</summary>
         public const int CrossTenantAllowed = 114_003;
+        /// <summary>Strict mode permitted work the platform started on a tenant's behalf, without consulting the cross-tenant authorizer.</summary>
+        public const int PlatformActorAllowed = 114_104;
     }
 
     /// <summary>Key-management event-IDs (112_000s) — emitted by the key-store startup probe and related lifecycle.</summary>

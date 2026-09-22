@@ -45,6 +45,37 @@ public sealed record SessionContext(
     /// </summary>
     public static readonly Guid SystemActorUserId = new("00000000-0000-0000-0000-000000000001");
 
+    /// <summary>
+    /// Returns a session for work the platform starts on a tenant's behalf — a durable timer, a saga
+    /// step, a sweep — with the reserved system actor identities, a fresh correlation identity and a
+    /// causation identity of its own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The audit trail then records that the platform acted for the tenant, rather than recording the
+    /// tenant as having acted. Strict tenant isolation recognises the shape and does not refer it to
+    /// the cross-tenant authorizer, because the platform acting for a tenant is not one tenant acting
+    /// on another.
+    /// </para>
+    /// <para>
+    /// The causation identity is minted here because no command preceded the work and the event store
+    /// requires one of every entry it records.
+    /// </para>
+    /// </remarks>
+    /// <param name="tenantId">The tenant the work is done for — the data owner.</param>
+    /// <param name="userId">The user the work concerns, or <see langword="null"/> for tenant-scoped work.</param>
+    /// <returns>A session naming the platform as the actor and <paramref name="tenantId"/> as the data owner.</returns>
+    public static SessionContext ForPlatform(Guid tenantId, Guid? userId = null) =>
+        new(
+            Guid.CreateVersion7().ToString("N"),
+            Guid.CreateVersion7().ToString("N"),
+            null,
+            SystemActorTenantId,
+            SystemActorUserId,
+            tenantId,
+            userId
+        );
+
     /// <summary>Returns an empty/anonymous session-context value with freshly generated correlation + causation ids.</summary>
     public static SessionContext Empty() =>
         new(

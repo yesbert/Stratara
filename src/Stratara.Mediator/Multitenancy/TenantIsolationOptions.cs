@@ -31,4 +31,18 @@ public sealed class TenantIsolationOptions
     /// The enforcement mode. Defaults to <see cref="TenantIsolationMode.Default"/>.
     /// </summary>
     public TenantIsolationMode Mode { get; set; } = TenantIsolationMode.Default;
+
+    /// <summary>
+    /// Whether work the platform starts on a tenant's behalf — a session carrying the reserved system
+    /// actor identities, as <c>SessionContext.ForPlatform</c> builds it — is referred to the
+    /// cross-tenant authorizer like any other cross-tenant operation.
+    /// <para>
+    /// <c>false</c> by default: the platform acting for a tenant is not one tenant acting on another,
+    /// so strict mode permits it and records it under its own log event, and a host does not have to
+    /// teach its authorizer about the framework's own timers, saga steps and sweeps. Set it to
+    /// <c>true</c> to decide in the authorizer instead — with the shipped deny-everything default
+    /// that refuses every platform-initiated request. The data-owner check applies either way.
+    /// </para>
+    /// </summary>
+    public bool AuthorizePlatformActor { get; set; }
 }

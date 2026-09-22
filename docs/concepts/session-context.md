@@ -38,7 +38,7 @@ both actor and data owner. They differ in three cases:
 |---|---|---|
 | A privileged operation acts on a foreign tenant | the **target** tenant | the tenant of the principal who triggered it |
 | An anonymous request | whatever the endpoint sets | the empty identifier (`Guid.Empty`) |
-| A system or saga flow with no inherited actor | the tenant the flow works on | `SessionContext.SystemActorTenantId` and `SessionContext.SystemActorUserId` |
+| Work the platform starts for a tenant — a timer, a saga step, a sweep | the tenant the work is for | `SessionContext.SystemActorTenantId` and `SessionContext.SystemActorUserId` (build it with `SessionContext.ForPlatform`) |
 
 The system values are reserved sentinels. They are not `Guid.Empty`, so an audit record can tell a
 system flow from an anonymous request.
@@ -92,9 +92,10 @@ context.
   promotion above is an example: a second `Set` replaces the first.
 - **`Clear()`** removes the value at the end of a unit of work, and later reads see `null` again.
 
-A flow that doesn't start from a request sets its own context. It names the system as the actor,
-carries a causation id of its own — no command preceded it, and the store requires one of every
-event it appends — and clears the context when it is done:
+A flow that doesn't start from a request sets its own context. `SessionContext.ForPlatform` builds
+the shape for it: the platform as the actor, the tenant the work is for as the data owner, a fresh
+correlation id, and a causation id of its own — no command preceded the work, and the store requires
+one of every event it appends. Clear the context when the work is done:
 
 ```csharp
 using Stratara.Abstractions.Session;
@@ -104,14 +105,7 @@ public sealed class NightlyInvoiceRun(ISessionContextProvider sessions)
 {
     public Task RunForTenantAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        sessions.Set(new SessionContext(
-            CorrelationId: Guid.CreateVersion7().ToString("N"),
-            CausationId: Guid.CreateVersion7().ToString("N"),
-            ClientConnectionId: null,
-            ActorTenantId: SessionContext.SystemActorTenantId,
-            ActorUserId: SessionContext.SystemActorUserId,
-            TenantId: tenantId,
-            UserId: null));
+        sessions.Set(SessionContext.ForPlatform(tenantId));
 
         try
         {
@@ -125,6 +119,13 @@ public sealed class NightlyInvoiceRun(ISessionContextProvider sessions)
     }
 }
 ```
+
+The audit trail then says the platform acted for the tenant, rather than saying the tenant acted.
+Strict tenant isolation recognises the shape and lets it through without consulting the cross-tenant
+authorizer — the platform acting *for* a tenant is not one tenant acting *on* another. The
+data-owner check still applies: such a session reaches exactly the one tenant it names. A host that
+would rather decide for itself sets `AuthorizePlatformActor` (see
+[Enforce tenant isolation](../guides/enforce-tenant-isolation.md)).
 
 Register the provider with `services.AddSessionContext()`. The worker composite
 `AddCommonFrameworkServices()` from `Stratara.EventSourcing.WorkerDefaults` already calls it. The
