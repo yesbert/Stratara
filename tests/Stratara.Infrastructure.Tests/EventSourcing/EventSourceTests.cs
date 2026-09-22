@@ -303,6 +303,22 @@ public class EventSourceTests
     }
 
     [Fact]
+    public async Task SaveChangesAsync_SessionWithoutCausationId_ThrowsBeforeAnythingIsWritten()
+    {
+        _sessionContextProviderMock.Setup(s => s.Current)
+            .Returns(new SessionContext("corr-1", null, null, _tenantId, _userId, _tenantId, null));
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Test"));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => _eventSource.SaveChangesAsync());
+
+        Assert.IsNotType<SessionRequiredException>(exception);
+        Assert.Contains("AddCommandAuditing()", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(_capturedAddRangeCalls);
+    }
+
+    [Fact]
     public async Task SaveChangesAsync_OnPostgresUniqueViolation_ThrowsConcurrencyExceptionWithStreamInfo()
     {
         var streamId = Guid.NewGuid();

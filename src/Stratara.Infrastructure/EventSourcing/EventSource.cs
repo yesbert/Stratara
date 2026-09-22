@@ -144,6 +144,12 @@ internal sealed class EventSource(
     /// persisting the buffered events.
     /// </exception>
     /// <exception cref="SessionRequiredException">Thrown when no <see cref="SessionContext"/> is set on the current scope.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when an event was appended under a session carrying no causation id — the store requires
+    /// one of every entry, and the command-audit pipeline is what supplies it. A host that has not
+    /// registered it is misconfigured, which is not the same as a caller without an identity, so this
+    /// is not a <see cref="SessionRequiredException"/>. Thrown before anything is written.
+    /// </exception>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var eventBundle = PrepareEventBundle();
@@ -204,6 +210,15 @@ internal sealed class EventSource(
     private EventBundle PrepareEventBundle()
     {
         var sessionContext = sessionContextProvider.Current ?? throw new SessionRequiredException("Session context is not set");
+        if (_eventStreamEntries.Find(entry => string.IsNullOrWhiteSpace(entry.CausationId)) is { } uncaused)
+        {
+            throw new InvalidOperationException(
+                $"Event {uncaused.EventTypeName} on stream {uncaused.StreamId} was appended under a session that " +
+                "carries no causation id, which the store requires of every entry. Register the command-audit " +
+                "pipeline with AddCommandAuditing() so a dispatched command supplies one, or set a causation id on " +
+                "the session for work that no command started.");
+        }
+
         var eventBundle = _eventStreamEntries.MapToEventBundle(sessionContext);
         return signer is null ? eventBundle : eventBundle with { Signature = signer.Sign(BusEnvelopeCanonical.Of(eventBundle)) };
     }

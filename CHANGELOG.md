@@ -16,7 +16,30 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.2.0`._
+### Fixed
+
+- **The native PostgreSQL commit-order reader reads a store under any column mapping.** It selected the
+  event table with a wildcard, which returns no system column. A write context that applies the
+  framework's own row-version convention maps the entry's row version onto PostgreSQL's `xmin`, so every
+  catch-up of every projection grain failed with `42703: column s.xmin does not exist` and retried for
+  ever — no checkpoint written, nothing dead-lettered, the host reporting healthy and every write
+  succeeding. The reader now names the columns the model maps. A consumer who worked around this by
+  unmapping `EventStreamEntry.RowVersion` can drop the workaround.
+- **Entries committed together reach a store-reading projection in stream order.** The native reader
+  returned the entries of one commit in the order the database inserted the rows, which is not the order
+  they were appended in: a stream created and appended to in one save could hand a projection version 2
+  before version 1, and no retry could help, because the beginning was behind it in the same partition
+  rather than late. Each stream's entries are now returned in version order, which is what the portable
+  counter already did. Entries of different streams in one commit may still be interleaved in any order.
+
+### Changed
+
+- **Appending without a causation identity is refused before the commit.** The session context carries a
+  nullable causation id, but the store requires one of every entry, and only `AddCommandAuditing()`
+  supplies it. A host that had not registered it met a `23502` not-null violation from the database that
+  read like a schema fault. `SaveChangesAsync` now refuses the append before the transaction opens, with a
+  message naming the registration. `AddCommandServices()` still does not register the auditing behaviours
+  — where they sit in the pipeline is a consumer's decision.
 
 ## [4.2.0] — 2026-09-18
 

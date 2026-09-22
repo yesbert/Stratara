@@ -50,6 +50,23 @@ services.AddCommandHandlersFromAssemblyContaining<DepositHandler>();
 
 That's it — the handler is now resolved per-scope and dispatched whenever `mediator.HandleAsync(new DepositCommand(...))` is called.
 
+### A handler that appends events needs command auditing
+
+Every recorded event carries the identity of the command that caused it, and the command-audit
+pipeline is what supplies it. A host whose handlers append events registers it:
+
+```csharp
+services.AddCommandAuditing();
+```
+
+It lives in `Stratara.EventSourcing.Pipeline.CommandAudit` and `AddCommandServices()` does not
+register it for you, because where it sits in the pipeline is yours to decide — a host composing the
+Orleans execution model keeps the aggregate-grain behaviour innermost, so the order matters.
+
+Without it, `SaveChangesAsync` refuses the append before anything is written, with a message naming
+this registration. A flow that appends without a command having preceded it — a timer, a sweep —
+sets a causation id on the session it builds instead.
+
 ## Which tenant owns the events you append
 
 A handler that writes events appends them through `IEventSource` and commits them with
