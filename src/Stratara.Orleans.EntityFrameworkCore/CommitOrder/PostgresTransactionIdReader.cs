@@ -36,7 +36,10 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// </para>
 /// <para>
 /// The table and column names come from the context's model, so a model that does not follow the
-/// snake-case convention is read the same way.
+/// snake-case convention is read the same way. Each statement names the columns the model maps
+/// rather than selecting them all, because a wildcard returns no system column: a context that maps
+/// a property onto one — which the framework's row-version convention does on PostgreSQL — would
+/// otherwise be read with a statement the database rejects.
 /// </para>
 /// </remarks>
 /// <typeparam name="TContext">A write context derived from the framework's write context on PostgreSQL.</typeparam>
@@ -66,8 +69,9 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
         // the cut below depends on the order, so it is restored here.
         var rows = projected
             .Select(row => new Row(row.Entry, row.TransactionId))
-            .OrderBy(row => row.TransactionId)
-            .ThenBy(row => row.Entry.SequenceNumber)
+            .GroupBy(row => row.TransactionId)
+            .OrderBy(group => group.Key)
+            .SelectMany(InStreamOrder)
             .ToList();
 
         if (rows.Count == 0)
@@ -120,8 +124,19 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        return [.. rows.Select(entry => new Row(entry, transactionId))];
+        return [.. InStreamOrder(rows.Select(entry => new Row(entry, transactionId)))];
     }
+
+    /// <summary>
+    /// The entries of one commit in the order a consumer reads them: the streams in the order they
+    /// first appear, each stream's entries in version order. The order the rows were inserted in is
+    /// the database's to choose and is not the order the entries were appended in, so a stream's
+    /// creating fact can carry the higher sequence number.
+    /// </summary>
+    private static IEnumerable<Row> InStreamOrder(IEnumerable<Row> rows) =>
+        rows.GroupBy(row => row.Entry.StreamId)
+            .OrderBy(group => group.Min(row => row.Entry.SequenceNumber))
+            .SelectMany(group => group.OrderBy(row => row.Entry.Version));
 
     private sealed record Row(EventStreamEntry Entry, ulong TransactionId);
 
@@ -149,10 +164,17 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
             var bucket = Column(nameof(EventStreamEntry.BucketId));
             var sequence = Column(nameof(EventStreamEntry.SequenceNumber));
             var transaction = Column(CommitOrderSchema.TransactionIdColumn);
+            var columns = string.Join(
+                ", ",
+                entity.GetProperties()
+                    .Select(property => property.GetColumnName(table))
+                    .OfType<string>()
+                    .Distinct(StringComparer.Ordinal)
+                    .Select(sql.DelimitIdentifier));
 
             return new Statements(
                 $$"""
-                SELECT * FROM {{from}}
+                SELECT {{columns}} FROM {{from}}
                 WHERE {{bucket}} % {0} = {1}
                   AND {{transaction}} > CAST({2} AS xid8)
                   AND {{transaction}} < pg_snapshot_xmin(pg_current_snapshot())
@@ -160,7 +182,7 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
                 LIMIT {3}
                 """,
                 $$"""
-                SELECT * FROM {{from}}
+                SELECT {{columns}} FROM {{from}}
                 WHERE {{bucket}} % {0} = {1}
                   AND {{transaction}} = CAST({2} AS xid8)
                 ORDER BY {{sequence}}

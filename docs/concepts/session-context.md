@@ -92,8 +92,9 @@ context.
   promotion above is an example: a second `Set` replaces the first.
 - **`Clear()`** removes the value at the end of a unit of work, and later reads see `null` again.
 
-A flow that doesn't start from a request sets its own context. It names the system as the actor and
-clears the context when it is done:
+A flow that doesn't start from a request sets its own context. It names the system as the actor,
+carries a causation id of its own — no command preceded it, and the store requires one of every
+event it appends — and clears the context when it is done:
 
 ```csharp
 using Stratara.Abstractions.Session;
@@ -105,7 +106,7 @@ public sealed class NightlyInvoiceRun(ISessionContextProvider sessions)
     {
         sessions.Set(new SessionContext(
             CorrelationId: Guid.CreateVersion7().ToString("N"),
-            CausationId: null,
+            CausationId: Guid.CreateVersion7().ToString("N"),
             ClientConnectionId: null,
             ActorTenantId: SessionContext.SystemActorTenantId,
             ActorUserId: SessionContext.SystemActorUserId,

@@ -153,6 +153,18 @@ A host that needs every bundle applied in the order the transport delivers it se
 `Projections:DegreeOfParallelism` to `1`. A value that is not a positive number means one consumer
 per processor.
 
+### Within one commit, a stream's own order holds
+
+A projection that reads the store in commit order — the Orleans execution model's way — receives the
+entries of one save with **each stream's entries in version order**, under either reader. A stream
+whose creating fact and its follow-up were committed together, which is the natural shape of
+"accepted, and a request raised", therefore arrives beginning first, and the follow-up handler finds
+its row.
+
+Entries of *different* streams committed together may be interleaved in any order. Nothing promises
+that stream A's facts all precede stream B's, so a projection that joins two aggregates still needs
+`PrecedingFactMissingException` for the case where the other stream's beginning has not landed yet.
+
 ### The two races, and the one that needs help
 
 Two things happen routinely and are not faults. A row can vanish between your read and your write,

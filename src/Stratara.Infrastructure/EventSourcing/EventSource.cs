@@ -143,7 +143,11 @@ internal sealed class EventSource(
     /// Thrown when an optimistic-concurrency conflict (duplicate stream-version) is detected while
     /// persisting the buffered events.
     /// </exception>
-    /// <exception cref="SessionRequiredException">Thrown when no <see cref="SessionContext"/> is set on the current scope.</exception>
+    /// <exception cref="SessionRequiredException">
+    /// Thrown when no <see cref="SessionContext"/> is set on the current scope, or when an event was
+    /// appended under a session carrying no causation id — the store requires one of every entry, and
+    /// the command-audit pipeline is what supplies it. Both are thrown before anything is written.
+    /// </exception>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var eventBundle = PrepareEventBundle();
@@ -204,6 +208,15 @@ internal sealed class EventSource(
     private EventBundle PrepareEventBundle()
     {
         var sessionContext = sessionContextProvider.Current ?? throw new SessionRequiredException("Session context is not set");
+        if (_eventStreamEntries.Find(entry => string.IsNullOrWhiteSpace(entry.CausationId)) is { } uncaused)
+        {
+            throw new SessionRequiredException(
+                $"Event {uncaused.EventTypeName} on stream {uncaused.StreamId} was appended under a session that " +
+                "carries no causation id, which the store requires of every entry. Register the command-audit " +
+                "pipeline with AddCommandAuditing() so a dispatched command supplies one, or set a causation id on " +
+                "the session for work that no command started.");
+        }
+
         var eventBundle = _eventStreamEntries.MapToEventBundle(sessionContext);
         return signer is null ? eventBundle : eventBundle with { Signature = signer.Sign(BusEnvelopeCanonical.Of(eventBundle)) };
     }
