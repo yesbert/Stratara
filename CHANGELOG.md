@@ -16,6 +16,28 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.3.0`._
+
+## [4.3.0] — 2026-09-23
+
+A correctness release for the Orleans execution model's store readers, and the release that makes
+Stratara say who acted. The native PostgreSQL commit-order reader could be switched off entirely by a
+convention this framework's own API reference recommends — silently, in a deployment that reported
+healthy. Beyond that, an actor acting on a tenant it holds no membership in can now hold a role the
+host names, and work the platform starts for a tenant has a session shape of its own.
+
+**Upgrading:**
+- **If you read the store in commit order on PostgreSQL, upgrade.** A write context that applies
+  `ApplyRowVersionConvention(RowVersionMode.Uint)` made every projection catch-up fail with
+  `42703: column s.xmin does not exist`, for ever, without the host reporting unhealthy. A consumer
+  who worked around it by unmapping `EventStreamEntry.RowVersion` can drop the workaround.
+- **Check what your `CrossTenantRoles` names mean on both role levels.** The cross-tenant authorizer
+  now also recognises a configured role held through the actor's own membership, so it permits
+  operations it refused before.
+- **A host whose handlers append events needs `AddCommandAuditing()`.** It always did; now it is
+  refused before the commit instead of failing in the database.
+- No schema change, no migration.
+
 ### Added
 
 - **`SessionContext.ForPlatform(tenantId)`**: the session for work the platform starts on a tenant's
@@ -3795,7 +3817,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.2.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.3.0...main
+[4.3.0]: https://github.com/yesbert/Stratara/releases/tag/v4.3.0
 [4.2.0]: https://github.com/yesbert/Stratara/releases/tag/v4.2.0
 [4.1.1]: https://github.com/yesbert/Stratara/releases/tag/v4.1.1
 [4.1.0]: https://github.com/yesbert/Stratara/releases/tag/v4.1.0
