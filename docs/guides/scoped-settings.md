@@ -36,6 +36,21 @@ builder.Services
 `AddSettingStore<TContext>()` registers both halves: the `ISettingStore` SPI over the `setting_entry`
 table and the `ISettingProvider` read facade on top of it.
 
+The catalog may be declared in parts — one call per module, before or after the store. Every call
+adds to the one catalog; a name declared in two parts throws exactly as a name declared twice in one
+part does:
+
+```csharp
+builder.Services
+    .AddSettingCatalog(c => c.Add(new SettingDefinition("Ui.Theme", DefaultValue: "system")))
+    .AddSettingStore<DirectoryDbContext>()
+    .AddSettingCatalog(c => c.Add(new SettingDefinition("Billing.VatId", IsInherited: false)));
+```
+
+A host with nothing to declare may skip `AddSettingCatalog` entirely. The store then brings an empty
+catalog: it works — erasure sweeps included — and reading any setting through `ISettingProvider`
+fails as undeclared.
+
 ## Write exactly, read by fallback
 
 The two interfaces are deliberately asymmetric. `ISettingStore` addresses **one exact scope** — it is

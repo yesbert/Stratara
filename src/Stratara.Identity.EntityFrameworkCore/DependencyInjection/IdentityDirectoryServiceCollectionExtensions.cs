@@ -335,9 +335,19 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// declared permission vocabulary plus its role→permission grants, consumed by the catalog
     /// permission resolvers and the HTTP permission policies.
     /// </summary>
+    /// <remarks>
+    /// The catalog may be declared in parts, one call per module: every call adds to the catalog
+    /// registered by the calls before it, a redeclared permission has no effect, and grants to one
+    /// role accumulate across parts. A grant is checked against the permissions declared so far, so a
+    /// part may grant a permission an earlier part declared.
+    /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configure">Callback that declares permissions and role grants.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// A <see cref="PermissionCatalog"/> is already registered, but as a factory or a type rather than
+    /// as an instance, so there is nothing this call can add to.
+    /// </exception>
     /// <example>
     /// The catalog is the vocabulary: granting a permission it does not declare throws at start-up
     /// rather than silently granting nothing:
@@ -353,9 +363,7 @@ public static class IdentityDirectoryServiceCollectionExtensions
         this IServiceCollection services,
         Action<PermissionCatalog> configure)
     {
-        var catalog = new PermissionCatalog();
-        configure(catalog);
-        services.AddSingleton(catalog);
+        configure(services.GetOrAddCatalog<PermissionCatalog>(nameof(AddPermissionCatalog)));
         return services;
     }
 
@@ -407,9 +415,18 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// (singleton) — the declared setting vocabulary with defaults and flags, consumed by the
     /// setting provider and the encrypting store decorator.
     /// </summary>
+    /// <remarks>
+    /// The catalog may be declared in parts, one call per module: every call adds to the catalog
+    /// registered by the calls before it and by the setting store, whichever ran first. A name
+    /// declared in two parts fails as a name declared twice in one part does.
+    /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configure">Callback that declares the settings.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// A <see cref="SettingCatalog"/> is already registered, but as a factory or a type rather than as
+    /// an instance, so there is nothing this call can add to.
+    /// </exception>
     /// <example>
     /// Declares each setting with its default, whether it inherits down the scope chain, and whether it
     /// is stored encrypted:
@@ -423,9 +440,7 @@ public static class IdentityDirectoryServiceCollectionExtensions
         this IServiceCollection services,
         Action<SettingCatalog> configure)
     {
-        var catalog = new SettingCatalog();
-        configure(catalog);
-        services.AddSingleton(catalog);
+        configure(services.GetOrAddCatalog<SettingCatalog>(nameof(AddSettingCatalog)));
         return services;
     }
 
@@ -450,13 +465,19 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <para>
     /// Calling both registrations leaves whichever ran first in place; they do not compose.
     /// </para>
+    /// <para>
+    /// Declaring settings is optional. Without <see cref="AddSettingCatalog"/> the store registers an
+    /// empty catalog: the store works, the removal of a subject's settings included, and reading any
+    /// setting through <see cref="ISettingProvider"/> fails as undeclared. <see cref="AddSettingCatalog"/>
+    /// may run before or after this call.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <example>
     /// Registers the store and the provider facade that walks the fallback chain. Declare the
-    /// vocabulary first — a setting the catalog does not know has no default to fall back to:
+    /// vocabulary — a setting the catalog does not know has no default to fall back to:
     /// <code>
     /// services.AddSettingCatalog(c =&gt; c.Add(new SettingDefinition("ui.theme", DefaultValue: "light")));
     /// services.AddSettingStore&lt;DirectoryDbContext&gt;();
@@ -493,6 +514,9 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// Calling this together with <see cref="AddSettingStore{TContext}"/> leaves whichever ran first in
     /// place; they do not compose.
     /// </para>
+    /// <para>
+    /// Declaring settings is optional, exactly as for <see cref="AddSettingStore{TContext}"/>.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TContext">The DbContext hosting the directory tables.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
@@ -514,6 +538,8 @@ public static class IdentityDirectoryServiceCollectionExtensions
     private static IServiceCollection AddSettingStoreCore<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
+        services.TryAddSingleton(new SettingCatalog());
+
         services.TryAddScoped<ISettingStore>(provider =>
         {
             var efStore = new EfSettingStore<TContext>(
@@ -541,5 +567,22 @@ public static class IdentityDirectoryServiceCollectionExtensions
                 provider.GetService<IConfiguration>()));
 
         return services;
+    }
+
+    private static TCatalog GetOrAddCatalog<TCatalog>(this IServiceCollection services, string registration)
+        where TCatalog : class, new()
+    {
+        var registered = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(TCatalog) && !descriptor.IsKeyedService);
+        if (registered is null)
+        {
+            var catalog = new TCatalog();
+            services.AddSingleton(catalog);
+            return catalog;
+        }
+
+        return registered.ImplementationInstance as TCatalog
+               ?? throw new InvalidOperationException(
+                   $"The registered {typeof(TCatalog).Name} is a factory or a type registration, so {registration} " +
+                   $"has no instance to add to. Declare the catalog through {registration} only, or register it as an instance.");
     }
 }

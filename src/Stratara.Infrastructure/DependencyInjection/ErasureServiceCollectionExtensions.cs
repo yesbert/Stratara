@@ -18,7 +18,9 @@ public static class ErasureServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
-    /// The four stores it sweeps must already be registered — this call adds none of them:
+    /// The stores it sweeps must already be registered — this call adds none of them. The setting
+    /// store needs no declared settings; without a catalog it sweeps what was stored all the same.
+    /// The key store comes from the security plane's registration:
     /// <code>
     /// services.AddTenantMembershipStore&lt;DirectoryDbContext&gt;();
     /// services.AddApiKeyStore&lt;DirectoryDbContext&gt;();
