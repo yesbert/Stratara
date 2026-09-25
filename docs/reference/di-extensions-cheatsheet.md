@@ -214,10 +214,10 @@ own `OnModelCreating`.
 | `services.AddMembershipAuthorization<TUser>(opts?)` | Above ∪ global ASP.NET Identity roles |
 | `services.AddMembershipAuthorizationOptions(opts)` | Those options alone, for a host that passes the provider to `AddAuthorizingMediator<TProvider>()` instead |
 | `services.AddMembershipCrossTenantAuthorizer(opts?)` | `ICrossTenantAuthorizer` for strict tenant isolation (membership OR a configured platform role) |
-| `services.AddPermissionCatalog(c => …)` | Declares the permission vocabulary + role grants (throws on an undeclared grant) |
+| `services.AddPermissionCatalog(c => …)` | Declares the permission vocabulary + role grants (throws on an undeclared grant); repeated calls add to one catalog |
 | `services.AddCatalogPermissionResolver()` | `IPermissionResolver` — membership roles through the catalog |
 | `services.AddCatalogPermissionResolver<TUser>()` | Above ∪ global ASP.NET Identity roles |
-| `services.AddSettingCatalog(c => …)` | Declares the setting vocabulary (defaults, `IsInherited`, `IsEncrypted`) |
+| `services.AddSettingCatalog(c => …)` | Declares the setting vocabulary (defaults, `IsInherited`, `IsEncrypted`); repeated calls add to one catalog, and the setting store needs none |
 | `services.AddSettingStore<TContext>()` | EF `ISettingStore` (`setting_entry`) **+** the `ISettingProvider` fallback facade |
 | `services.AddSettingStoreFromContextFactory<TContext>()` | Same pair, a fresh context per operation |
 | `services.AddApiKeyStore<TContext>()` | EF `IApiKeyStore` (`api_key`) — issue / import / validate / revoke / sweep |

@@ -16,7 +16,23 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.3.0`._
+### Fixed
+
+- **The setting store works without declared settings.** `AddSettingStore<TContext>()` and
+  `AddSettingStoreFromContextFactory<TContext>()` resolved the `SettingCatalog` inside a factory, so a
+  host that registered the store and `AddStrataraErasure()` but declared no settings built, passed
+  `ValidateOnBuild` and every start-up check, and failed on its first erasure with *No service for type
+  `SettingCatalog` has been registered*. The store now registers an empty catalog when none is declared:
+  the store works, erasure included, and reading any setting through `ISettingProvider` fails as
+  undeclared. The example on `AddStrataraErasure` was exactly that composition. A host that declared an
+  empty catalog as a workaround can drop it.
+- **A second `AddSettingCatalog` or `AddPermissionCatalog` call no longer replaces the first.** Each
+  call registered a new catalog and the last one won, so a host declaring its vocabulary per module kept
+  only the last module's — the others' settings failed as undeclared and their permissions were denied
+  without a word. Every call now adds to the one registered catalog, in whichever order it runs relative
+  to the setting store. A setting name declared in two parts throws as a duplicate; a redeclared
+  permission has no effect and grants to one role accumulate. A catalog registered as a factory cannot be
+  added to, and the next call now throws `InvalidOperationException` saying so instead of replacing it.
 
 ## [4.3.0] — 2026-09-23
 

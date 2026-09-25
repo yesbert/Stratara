@@ -22,7 +22,7 @@ mediator boundary every dispatch already crosses.
 ## Declare the vocabulary
 
 The `PermissionCatalog` is the single source of what permission names exist, plus which roles grant
-them. Declare it once during service registration:
+them. Declare it during service registration:
 
 ```csharp
 builder.Services.AddPermissionCatalog(c =>
@@ -42,6 +42,12 @@ That catalog is the whole grant map — roles on the left, the permissions they 
 
 `Add` declares; `GrantToRole` maps; `Contains`, `GetRolePermissions`, and `All` read it back. Build
 it completely at registration and treat it as immutable afterwards.
+
+The catalog may be declared in parts — one `AddPermissionCatalog` call per module. Every call adds
+to the one catalog: a redeclared permission has no effect, grants to one role accumulate across the
+parts, and a grant may name a permission an earlier part declared. A grant is checked against what
+has been declared so far, so a part that grants another module's permission is registered after
+that module's part.
 
 ## Guard a request
 
