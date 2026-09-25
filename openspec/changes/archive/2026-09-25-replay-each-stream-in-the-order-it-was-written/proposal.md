@@ -70,9 +70,10 @@ None.
   bound.
 - `src/Stratara.Orleans.EntityFrameworkCore/CommitOrder/PartitionCounterBackfill.cs`: the batch
   bound and the positioning order, on both the set-based and the per-entry path.
-- Tests in `tests/Stratara.WriteStore.Tests`, `tests/Stratara.Projections.Tests` and
-  `tests/Stratara.Orleans.IntegrationTests`, each with a commit whose sequence numbers run against
-  its versions and a batch boundary that splits it.
+- Tests in `tests/Stratara.WriteStore.Tests`, `tests/Stratara.Projections.Tests`,
+  `tests/Stratara.Orleans.IntegrationTests` and `tests/Stratara.Testing.Orleans.Tests` (the portable
+  backfill's per-entry path on SQLite), each with a commit whose sequence numbers run against its
+  versions and a batch boundary that splits it.
 - `docs/guides/write-a-projection.md` (what a replay promises about order) and
   `docs/guides/migrate-to-the-orleans-execution-model.md` (what the backfills promise, and how to
   repair history backfilled before this release).
