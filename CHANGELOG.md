@@ -16,6 +16,31 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.3.1`._
+
+## [4.3.1] — 2026-09-25
+
+A correctness release. A projection replay could apply a stream's later fact before its first and
+then fail on every attempt, leaving the read models it had emptied empty; the two backfills that
+prepare existing history for the Orleans execution model's commit-order readers took the same wrong
+order. Beyond that, the setting store no longer needs declared settings, and a setting or permission
+vocabulary can be declared in parts.
+
+**Upgrading:**
+- **If you replay projections, upgrade.** A store in which one save appended several versions of a
+  stream can hold sequence numbers that run against those versions, and a replay over it could not
+  complete. No entry is rewritten and no migration is needed.
+- **If you implement `IEventStreamRepository` yourself,** override
+  `GetManyAfterSequenceInStreamOrderAsync` to give your replay the same guarantee; the default keeps
+  sequence order.
+- **If you backfilled a store for a commit-order reader before this release,** the Orleans migration
+  guide gives the query that tells whether that history holds a stream out of version order, and how
+  to repair it.
+- **A host that declared an empty `SettingCatalog` as a workaround can drop it.** A host that
+  registers a catalog through a factory and then calls `AddSettingCatalog` or `AddPermissionCatalog`
+  now fails at registration instead of replacing that catalog.
+- No schema change.
+
 ### Added
 
 - **`IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync`**: a range of the store in the order a
@@ -3855,7 +3880,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.3.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.3.1...main
+[4.3.1]: https://github.com/yesbert/Stratara/releases/tag/v4.3.1
 [4.3.0]: https://github.com/yesbert/Stratara/releases/tag/v4.3.0
 [4.2.0]: https://github.com/yesbert/Stratara/releases/tag/v4.2.0
 [4.1.1]: https://github.com/yesbert/Stratara/releases/tag/v4.1.1
