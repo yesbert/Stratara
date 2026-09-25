@@ -96,10 +96,12 @@ ALTER TABLE event_stream_entry ALTER COLUMN commit_transaction_id SET NOT NULL;
 CREATE INDEX ix_event_stream_entry_commit_transaction_id ON event_stream_entry (commit_transaction_id);
 ```
 
-Adding the column nullable without a default is a metadata change; the backfill stamps the history in the
-order it was appended, in batches of the given size, each under a transaction of its own, so the reader
-returns history in batch-sized groups in append order; setting the default and the constraint afterwards
-touches no row. An entry appended during the backfill receives no id before the default is set and a
+Adding the column nullable without a default is a metadata change; the backfill stamps the history in
+batches of the given size, each under a transaction of its own, so the reader returns history in batch-sized
+groups; setting the default and the constraint afterwards touches no row. A save does not number its entries in
+version order, so the sequence alone is not append order within a stream: the reader orders each stamped batch
+by stream and version, and the backfill extends a batch that would end between two versions of one stream until
+it does not — a batch can therefore hold more entries than the size given. An entry appended during the backfill receives no id before the default is set and a
 later id than newer entries after it, which inverts the order inside its stream — stop the appending
 hosts for the window. Running the backfill again on a stamped table changes nothing. An empty table takes
 the generated migration as it is.
@@ -225,11 +227,32 @@ position remains. Running the backfill again changes nothing.
 
 The backfill never moves a position it did not hand out: unpositioned entries take the positions after the
 last one of their partition, so a checkpoint written before a backfill stays true and the reader resumes from
-it. On a store nothing has appended to with the counter yet, that is the history in the order it was appended.
+it. On a store nothing has appended to with the counter yet, that is the history in the order it was appended —
+except within a stream: a save does not number its entries in version order, so each stream's entries take the
+positions its sequence numbers hold in version order, and a batch is extended until it no longer ends between two
+versions of one stream.
 An entry a process appended without the counter **after** entries appended with it is read after those — a
 later version of its own stream included. Stop the process that appends without the counter before running
 the backfill; a read model that stops on the resulting order — a missing preceding fact — is repaired by
 rebuilding it.
+
+**History backfilled before 4.3.1** was prepared in sequence order, which within one save need not be version
+order. Neither backfill revisits what it prepared — a checkpoint stands on those commit records and positions —
+so check a store that was backfilled with an earlier version. With the default PostgreSQL naming, this lists
+every stream whose read order contradicts its versions under the native reader; for the portable reader,
+replace `commit_transaction_id` with `partition_position`:
+
+```sql
+SELECT DISTINCT stream_id FROM (
+    SELECT stream_id, commit_transaction_id,
+           lag(commit_transaction_id) OVER (PARTITION BY bucket_id, stream_id ORDER BY version) AS previous
+    FROM event_stream_entry
+) AS ordered
+WHERE commit_transaction_id < previous;
+```
+
+An empty result means there is nothing to do. A stream it lists is read out of order by a projection that
+re-reads the store from the beginning.
 
 ## Adopt the roles
 
@@ -340,9 +363,9 @@ emptied, and the readers read from the beginning once the replay ends. Register 
 the host at start.
 
 A full replay therefore applies the store **twice** to a projection that reads the store: once by the replay
-itself, in sequence order, and once more by the projection's readers from the beginning, in commit order. The
-second pass is the one the commit-order guarantee stands on — it catches an entry the sequence-order pass
-could miss under interleaved commits — and the result is correct because projections apply idempotently. A
+itself, in sequence order with each stream in version order, and once more by the projection's readers from the
+beginning, in commit order. The second pass is the one the commit-order guarantee stands on — it catches an entry
+the sequence-order pass could miss under interleaved commits — and the result is correct because projections apply idempotently. A
 projection that counts its applications sees each fact twice. To re-read one read model once, implement
 `IRebuildableProjection` and call `IProjectionRebuilder.RebuildAsync` — only that projection's model is
 emptied and re-read, and nothing else is.

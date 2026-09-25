@@ -16,8 +16,30 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **`IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync`**: a range of the store in the order a
+  replay applies it — each stream's entries in version order, the streams interleaved as their sequence numbers
+  interleave them, and the range extended until it no longer ends between two versions of one stream. The default
+  implementation returns `GetManyAfterSequenceAsync`, sequence order, so a repository of your own compiles and
+  behaves as before; override the member to give your replay the guarantee.
+
 ### Fixed
 
+- **A projection replay applies each stream in version order.** A save does not number its entries in version
+  order — EF Core chooses the statement order and the identity column numbers the rows as they arrive — and the
+  replay walked the store by sequence number, so it met a stream's later fact before its first. A projection that
+  reports a missing preceding fact then failed the batch on every attempt, and because a replay empties the read
+  models first, each attempt left the read side empty. On a store where many saves wrote several versions of one
+  stream, no replay could complete. The replay now reads through the new repository member; a batch can hold more
+  entries than `Projections:BatchSize`. No entry is rewritten and no migration is needed.
+- **Both commit-order backfills keep each stream in version order.** `CommitTransactionIdBackfill` could end a
+  batch between two versions of one stream, stamping the later one with the earlier transaction.
+  `PartitionCounterBackfill` handed out positions in sequence order, so every save it positioned that the store
+  had numbered against its versions was read inverted by the portable reader. Both now extend a batch until it no
+  longer ends inside a stream, and the portable backfill positions each stream's entries in version order.
+  History backfilled with an earlier version is not revisited, because checkpoints stand on its commit records and
+  positions; the Orleans migration guide gives the query that tells whether a store holds such a stream.
 - **The setting store works without declared settings.** `AddSettingStore<TContext>()` and
   `AddSettingStoreFromContextFactory<TContext>()` resolved the `SettingCatalog` inside a factory, so a
   host that registered the store and `AddStrataraErasure()` but declared no settings built, passed

@@ -35,6 +35,35 @@ public interface IEventStreamRepository
     Task<IReadOnlyList<EventStreamEntry>> GetManyAfterSequenceAsync(long afterSequenceNumber, int batchSize,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the entries after <paramref name="afterSequenceNumber"/> in the order a replay applies
+    /// them: each stream's entries in version order, and the streams interleaved as their sequence
+    /// numbers interleave them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A save does not number its entries in version order, so the sequence number alone can put a
+    /// stream's later version before its earlier one. The result covers every entry of a contiguous
+    /// range of sequence numbers — at least <paramref name="batchSize"/> entries where the store holds
+    /// that many — and within the range each stream's entries take the places its sequence numbers
+    /// hold, in version order. The range is extended until no stream in it has an entry of a lower
+    /// version beyond it, so the result may hold more than <paramref name="batchSize"/> entries.
+    /// </para>
+    /// <para>
+    /// The next range starts after the highest sequence number in the result, which is not
+    /// necessarily that of its last entry. The default implementation returns
+    /// <see cref="GetManyAfterSequenceAsync"/> — sequence order, which is version order only for a
+    /// store that numbers its entries that way; an implementation overrides it to give the guarantee.
+    /// </para>
+    /// </remarks>
+    /// <param name="afterSequenceNumber">The sequence number the range starts after.</param>
+    /// <param name="batchSize">How many entries the range holds at least, where the store has them.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The range's entries in replay order; empty when no entry follows <paramref name="afterSequenceNumber"/>.</returns>
+    Task<IReadOnlyList<EventStreamEntry>> GetManyAfterSequenceInStreamOrderAsync(long afterSequenceNumber, int batchSize,
+        CancellationToken cancellationToken = default) =>
+        GetManyAfterSequenceAsync(afterSequenceNumber, batchSize, cancellationToken);
+
     /// <summary>Returns the maximum sequence number across all streams.</summary>
     Task<long> GetMaxSequenceNumberAsync(CancellationToken cancellationToken = default);
 

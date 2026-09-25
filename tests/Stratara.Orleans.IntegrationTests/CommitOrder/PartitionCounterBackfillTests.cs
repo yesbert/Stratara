@@ -144,6 +144,61 @@ public sealed class PartitionCounterBackfillTests(PostgreSqlFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Two streams whose sequence numbers run against their versions, one early in the partition and one where the
+    /// first backfill batch would end between its versions: both are positioned in version order, the second after
+    /// the batch was extended, and the portable reader returns both in version order.
+    /// </summary>
+    [Fact]
+    public async Task Inverted_streams_are_positioned_in_version_order_with_and_without_a_batch_boundary_between_them()
+    {
+        const int bucketId = 8;
+        const int fillers = 995;
+        var connectionString = postgres.ConnectionStringFor(Database + "_inverted");
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, Configure, maintainCounter: false);
+        await using (var context = await store.CreateContextAsync())
+        {
+            await context.Set<EventStreamEntry>().ExecuteDeleteAsync();
+            await context.Database.ExecuteSqlRawAsync("UPDATE partition_position SET position = 0");
+        }
+
+        var early = Guid.NewGuid();
+        var straddling = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        await AppendOneByOneAsync(store, bucketId, tenantId, (early, 3), (early, 2), (early, 1));
+        await using (var context = await store.CreateContextAsync())
+        {
+            context.Set<EventStreamEntry>().AddRange(Enumerable.Range(0, fillers)
+                .Select(_ => PocStore<PocCommitOrderWriteDbContext>.NewEntry(Guid.NewGuid(), 1, bucketId, tenantId)));
+            await context.SaveChangesAsync();
+        }
+
+        await AppendOneByOneAsync(store, bucketId, tenantId, (straddling, 3), (straddling, 2), (straddling, 1));
+
+        await using (var context = await store.CreateContextAsync())
+        {
+            Assert.Equal(fillers + 6, await PartitionCounterBackfill.RunAsync(context, store.Options));
+        }
+
+        var reader = new PortableCounterReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
+        var read = await DrainAsync(reader, PartitionMap.PartitionOf(bucketId, PartitionCount));
+
+        Assert.Equal(fillers + 6, read.Count);
+        Assert.Equal([1L, 2L, 3L], read.Where(e => e.Entry.StreamId == early).Select(e => e.Entry.Version));
+        Assert.Equal([1L, 2L, 3L], read.Where(e => e.Entry.StreamId == straddling).Select(e => e.Entry.Version));
+        Assert.Equal(Enumerable.Range(1, read.Count).Select(i => (long)i), read.Select(e => e.Position));
+    }
+
+    private static async Task AppendOneByOneAsync(PocStore<PocCommitOrderWriteDbContext> store, int bucketId, Guid tenantId, params (Guid Stream, long Version)[] entries)
+    {
+        foreach (var (stream, version) in entries)
+        {
+            await using var context = await store.CreateContextAsync();
+            context.Set<EventStreamEntry>().Add(PocStore<PocCommitOrderWriteDbContext>.NewEntry(stream, version, bucketId, tenantId));
+            await context.SaveChangesAsync();
+        }
+    }
+
     private static async Task<List<EventStreamEntry>> AppendAsync(PocStore<PocCommitOrderWriteDbContext> store, int count, Func<int, int> bucketOf)
     {
         var tenantId = Guid.NewGuid();

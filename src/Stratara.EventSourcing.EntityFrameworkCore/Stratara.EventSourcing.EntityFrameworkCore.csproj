@@ -30,6 +30,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="Stratara.EntityFrameworkCore.Tests"/>
         <InternalsVisibleTo Include="Stratara.WriteStore.Tests"/>
+        <InternalsVisibleTo Include="Stratara.Orleans.IntegrationTests"/>
     </ItemGroup>
 
     <ItemGroup>

@@ -76,7 +76,7 @@ public class ProjectionReplayWorkerTests
 
         var capturedAfterSequences = new List<long>();
         harness.EventStreamRepository
-            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns<long, int, CancellationToken>((afterSeq, _, _) =>
             {
                 capturedAfterSequences.Add(afterSeq);
@@ -94,6 +94,38 @@ public class ProjectionReplayWorkerTests
         harness.ProjectionManager.Verify(
             m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()),
             Times.Exactly(3));
+    }
+
+    [Fact]
+    public async Task ReplayCallback_ReorderedBatch_IsAppliedAsReturnedAndTheNextStartsAfterItsHighestSequence()
+    {
+        var harness = new Harness();
+        var first = NewEntry(sequenceNumber: 22);
+        var second = NewEntry(sequenceNumber: 21);
+        var third = NewEntry(sequenceNumber: 20);
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(22);
+
+        var capturedAfterSequences = new List<long>();
+        harness.EventStreamRepository
+            .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns<long, int, CancellationToken>((afterSeq, _, _) =>
+            {
+                capturedAfterSequences.Add(afterSeq);
+                return Task.FromResult<IReadOnlyList<EventStreamEntry>>(afterSeq == 0 ? [first, second, third] : []);
+            });
+        var applied = new List<long>();
+        harness.EventMapperFactory
+            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, CancellationToken _) =>
+            {
+                applied.AddRange(entries.Select(e => e.SequenceNumber));
+                return new List<IEvent> { Mock.Of<IEvent>() };
+            });
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Equal([22L, 21L, 20L], applied);
+        Assert.Equal([0L, 22L], capturedAfterSequences);
     }
 
     [Fact]
@@ -165,7 +197,7 @@ public class ProjectionReplayWorkerTests
         var entry = NewEntry(sequenceNumber: 1);
         harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         harness.EventStreamRepository
-            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns<long, int, CancellationToken>((afterSeq, _, _) =>
                 Task.FromResult<IReadOnlyList<EventStreamEntry>>(afterSeq == 0 ? [entry] : []));
         var calls = 0;
@@ -194,7 +226,7 @@ public class ProjectionReplayWorkerTests
         harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         var capturedAfterSequences = new List<long>();
         harness.EventStreamRepository
-            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns<long, int, CancellationToken>((afterSeq, _, _) =>
             {
                 capturedAfterSequences.Add(afterSeq);
@@ -222,7 +254,7 @@ public class ProjectionReplayWorkerTests
         var entry = NewEntry(sequenceNumber: 1);
         harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         harness.EventStreamRepository
-            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([entry]);
         harness.ProjectionManager
             .Setup(m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()))
@@ -245,7 +277,7 @@ public class ProjectionReplayWorkerTests
         var entry = NewEntry(sequenceNumber: 1);
         harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         harness.EventStreamRepository
-            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([entry]);
         harness.ProjectionManager
             .Setup(m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()))
@@ -272,7 +304,7 @@ public class ProjectionReplayWorkerTests
     {
         var queue = new Queue<IReadOnlyList<EventStreamEntry>>(batches);
         harness.EventStreamRepository
-            .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns(() => Task.FromResult(queue.Count > 0 ? queue.Dequeue() : (IReadOnlyList<EventStreamEntry>)[]));
     }
 
@@ -313,7 +345,7 @@ public class ProjectionReplayWorkerTests
                 .Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(0);
             EventStreamRepository
-                .Setup(r => r.GetManyAfterSequenceAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
             EventMapperFactory
                 .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))

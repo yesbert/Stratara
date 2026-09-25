@@ -17,11 +17,15 @@ namespace Stratara.Projections.Services;
 
 /// <summary>
 /// Background service that replays the full event stream against all projections on demand. Triggered via
-/// <see cref="IProjectionReplayState"/>; truncates all projection views and re-applies every event in
-/// sequence-number order, batched by <see cref="ProjectionOptions.BatchSize"/>.
+/// <see cref="IProjectionReplayState"/>; truncates all projection views and re-applies every event, batched
+/// by <see cref="ProjectionOptions.BatchSize"/>, each stream in version order and the streams interleaved as
+/// their sequence numbers interleave them.
 /// </summary>
 /// <remarks>
-/// Each batch is processed in a fresh DI scope so the unit-of-work and session context lifecycle matches
+/// A save does not number its entries in version order, so a batch is read through
+/// <see cref="IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync"/>, which may return more entries than
+/// the batch size and whose last entry need not carry its highest sequence number; the next batch starts after
+/// the highest. Each batch is processed in a fresh DI scope so the unit-of-work and session context lifecycle matches
 /// what real-time projection dispatch sees. Each batch — reading it and applying it — runs under the
 /// <see cref="ResilienceNames.ProjectionReplayBatch"/> policy: a failed attempt disposes its scope and the
 /// batch is applied again from its first entry in a new one, so a passing failure such as a read-store
@@ -156,7 +160,7 @@ internal sealed class ProjectionReplayWorker(
         await using var transaction = await writeUnitOfWork.StartAsync(cancellationToken);
         var eventStreamRepository = writeUnitOfWork.CreateEventStreamRepository(transaction);
 
-        var entries = await eventStreamRepository.GetManyAfterSequenceAsync(
+        var entries = await eventStreamRepository.GetManyAfterSequenceInStreamOrderAsync(
             afterSequence, _options.BatchSize, cancellationToken);
 
         if (entries.Count == 0)
@@ -180,7 +184,7 @@ internal sealed class ProjectionReplayWorker(
             await projectionManager.HandleAsync(events, cancellationToken);
         }
 
-        return new ReplayedBatch(entries.Count, entries[^1].SequenceNumber);
+        return new ReplayedBatch(entries.Count, entries.Max(entry => entry.SequenceNumber));
     }
 
     private sealed record ReplayedBatch(int Count, long LastSequence)

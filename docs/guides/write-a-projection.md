@@ -243,6 +243,15 @@ slow. A retried batch is applied again **from its first entry**, in a fresh scop
 converge-not-accumulate rule above is not optional. A failure that persists through every attempt
 ends the replay exactly as an unretried one would.
 
+**Each stream is replayed in version order.** A save does not number the entries it writes in
+version order — the database hands out sequence numbers in the order the provider chose to insert
+the rows — so the sequence number alone can put a stream's third fact before its first. The replay
+reads each batch with every stream's entries in version order and the streams interleaved as their
+sequence numbers interleave them, so a projection that stops on a missing preceding fact does not
+stop on a sound stream. A batch that would end between two versions of one stream is extended
+until it does not, so a batch can hold more entries than `Projections:BatchSize`. A store written
+before this guarantee needs no migration; the order comes from reading, not from the rows.
+
 And when it ends, it marks itself inactive **whether it succeeded or not**. A replay that dies
 half-way leaves you with partially rebuilt read models and no active flag saying so — only the
 failure message described under [Watch a replay](#watch-a-replay). Treat a failed replay
