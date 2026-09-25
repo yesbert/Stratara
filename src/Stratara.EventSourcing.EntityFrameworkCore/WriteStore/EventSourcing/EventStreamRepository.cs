@@ -76,6 +76,64 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
             .ToListAsync(cancellationToken);
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<EventStreamEntry>> GetManyAfterSequenceInStreamOrderAsync(long afterSequenceNumber, int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        var range = new List<EventStreamEntry>(await GetManyAfterSequenceAsync(afterSequenceNumber, batchSize, cancellationToken));
+        if (range.Count == 0)
+        {
+            return range;
+        }
+
+        var end = range[^1].SequenceNumber;
+        while (await FindStragglerAsync(afterSequenceNumber, end, cancellationToken) is { } straggler)
+        {
+            var from = end;
+            range.AddRange(await context.Set<EventStreamEntry>().AsNoTracking()
+                .Where(e => e.SequenceNumber > from && e.SequenceNumber <= straggler)
+                .OrderBy(e => e.SequenceNumber)
+                .ToListAsync(cancellationToken));
+            end = straggler;
+        }
+
+        return InStreamOrder(range);
+    }
+
+    /// <summary>
+    /// The highest sequence number beyond <paramref name="end"/> of an entry whose stream appears in the range at a
+    /// higher version, or <see langword="null"/> where no stream of the range continues below its top beyond it.
+    /// </summary>
+    private Task<long?> FindStragglerAsync(long afterSequenceNumber, long end, CancellationToken cancellationToken)
+    {
+        var entries = context.Set<EventStreamEntry>().AsNoTracking();
+        var tops = entries
+            .Where(e => e.SequenceNumber > afterSequenceNumber && e.SequenceNumber <= end)
+            .GroupBy(e => new { e.BucketId, e.StreamId })
+            .Select(g => new { g.Key.BucketId, g.Key.StreamId, Top = g.Max(e => e.Version) });
+
+        return entries
+            .Where(e => e.SequenceNumber > end)
+            .Join(tops,
+                e => new { e.BucketId, e.StreamId },
+                t => new { t.BucketId, t.StreamId },
+                (e, t) => new { e.SequenceNumber, e.Version, t.Top })
+            .Where(x => x.Version < x.Top)
+            .MaxAsync(x => (long?)x.SequenceNumber, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gives each stream's places in the range, in sequence order, to its entries in version order: a slot takes the
+    /// lowest version of its stream not yet placed, so the streams keep the interleaving the sequence gives them.
+    /// </summary>
+    private static List<EventStreamEntry> InStreamOrder(List<EventStreamEntry> range)
+    {
+        var versions = range
+            .GroupBy(e => (e.BucketId, e.StreamId))
+            .ToDictionary(g => g.Key, g => new Queue<EventStreamEntry>(g.OrderBy(e => e.Version)));
+        return [.. range.Select(slot => versions[(slot.BucketId, slot.StreamId)].Dequeue())];
+    }
+
+    /// <inheritdoc/>
     public async Task<long> GetMaxSequenceNumberAsync(CancellationToken cancellationToken = default) =>
         await context.Set<EventStreamEntry>().AsNoTracking()
             .OrderByDescending(e => e.SequenceNumber)

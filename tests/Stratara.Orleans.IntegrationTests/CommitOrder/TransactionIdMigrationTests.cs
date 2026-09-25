@@ -107,6 +107,63 @@ public sealed class TransactionIdMigrationTests(PostgreSqlFixture postgres)
     }
 
     /// <summary>
+    /// A stream whose sequence numbers run against its versions, with a backfill batch that would end between them:
+    /// the batch is extended, the stream is stamped under one transaction, and the native reader, which orders a
+    /// transaction's entries by version, returns it in version order.
+    /// </summary>
+    [Fact]
+    public async Task The_backfill_never_ends_a_batch_inside_a_streams_inverted_run()
+    {
+        var connectionString = postgres.ConnectionStringFor("poc_xid_migration_inverted");
+        await PostgresTimerHostSchema.EnsureDatabaseAsync(connectionString);
+        const int bucketId = 7;
+        var stream = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        await using (var before = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false))
+        {
+            await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ADD COLUMN IF NOT EXISTS {Column} xid8 NOT NULL DEFAULT pg_current_xact_id()");
+            await ExecuteAsync(connectionString, $"DELETE FROM {Table}");
+            var tenantId = Guid.NewGuid();
+            foreach (var (streamId, version) in new[] { (other, 1L), (stream, 3L), (stream, 2L), (stream, 1L), (other, 2L) })
+            {
+                await using var context = await before.CreateContextAsync();
+                context.Set<EventStreamEntry>().Add(PocStore<PocCommitOrderWriteDbContext>.NewEntry(streamId, version, bucketId, tenantId));
+                await context.SaveChangesAsync();
+            }
+
+            await ExecuteAsync(connectionString, $"ALTER TABLE {Table} DROP COLUMN {Column}");
+        }
+
+        await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ADD COLUMN {Column} xid8 NULL");
+        await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, maintainCounter: false);
+        await using (var context = await store.CreateContextAsync())
+        {
+            Assert.Equal(5, await CommitTransactionIdBackfill.RunAsync(context, batchSize: 2));
+        }
+
+        await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ALTER COLUMN {Column} SET DEFAULT pg_current_xact_id()");
+        await ExecuteAsync(connectionString, $"ALTER TABLE {Table} ALTER COLUMN {Column} SET NOT NULL");
+
+        var reader = new PostgresTransactionIdReader<PocCommitOrderWriteDbContext>(store.ContextFactory, Options.Create(store.Options));
+        var partition = PartitionMap.PartitionOf(bucketId, store.Options.PartitionCount);
+        var read = new List<EventStreamEntry>();
+        var position = 0L;
+        while (true)
+        {
+            var batch = await reader.ReadAfterAsync(partition, position, ReadBatch);
+            read.AddRange(batch.Entries.Select(entry => entry.Entry));
+            position = batch.Position;
+            if (!batch.HasMore || batch.Entries.Count == 0)
+            {
+                break;
+            }
+        }
+
+        Assert.Equal([1L, 2L, 3L], read.Where(e => e.StreamId == stream).Select(e => e.Version));
+        Assert.Equal([1L, 2L], read.Where(e => e.StreamId == other).Select(e => e.Version));
+    }
+
+    /// <summary>
     /// A table as it was before the column existed: the store is created, entries are appended over three buckets
     /// in sequence order, and the column is dropped — every write context of 4.1 declares it, so the table of an
     /// earlier version is the same table without it.
