@@ -182,6 +182,16 @@
   its events behind — a snapshot written before them is change `write-a-snapshot-only-of-committed-events`' to
   move, and `design.md` says so.
 
+- [x] 2b.20 Round 16 of the review: with commits running to their end, a handler that finished after its silo's
+  deactivation budget ran out returned normally into code that still used the cancelled token. `TimerOwnerGrain`
+  now takes its gate with no token once the handler has returned, so the reminder is unregistered rather than fired
+  again (the path `CommittedTimerTests` covers for a handover failure); `StoreReaderLoop` records the checkpoint of a
+  full batch with no token, like the cut batch already did
+  (`StoreReaderLoopTests.A_batch_that_finishes_as_the_reader_stops_still_records_its_checkpoint`, red with the
+  token). `CommandIntentStore.RenewAsync` keeps the caller's token again — a renewal reported cancelled does no harm,
+  and the lease's disposal waits for it; the CHANGELOG no longer claims the interceptor covers checkpoint updates,
+  and the interceptor's documentation says what `Never` leaves uncovered.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

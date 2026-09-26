@@ -174,6 +174,42 @@ public sealed class StoreReaderLoopTests
         Assert.Equal(entries.Select(e => e.Entry.Id), attempts);
     }
 
+    /// <summary>
+    /// The reader stops while the batch's last entry applies, and the entry finishes — its save's commit runs to its
+    /// end. The checkpoint is still recorded for the whole batch, so the next activation does not apply it again.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_that_finishes_as_the_reader_stops_still_records_its_checkpoint()
+    {
+        var checkpoints = new TokenHonouringCheckpoints();
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), checkpoints, batchSize: 10);
+        using var stopping = new CancellationTokenSource();
+
+        var applied = await loop.CatchUpAsync(async (batch, _) =>
+        {
+            await stopping.CancelAsync();
+            return batch.Entries.Count;
+        }, () => false, stopping.Token);
+
+        Assert.Equal(3, applied);
+        Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
+    /// <summary>Refuses a write with a cancelled token before sending it, as a database driver does.</summary>
+    private sealed class TokenHonouringCheckpoints : IProjectionCheckpointStore
+    {
+        private readonly MemoryCheckpoints _inner = new();
+
+        public Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) =>
+            _inner.GetAsync(projection, partition, reader, CancellationToken.None);
+
+        public Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return _inner.SetAsync(projection, partition, reader, position, CancellationToken.None);
+        }
+    }
+
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)
     {
         var services = new ServiceCollection()

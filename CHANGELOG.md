@@ -68,12 +68,13 @@ applies to the entire NuGet family.
   write or read — the framework's unit of work saves without the caller's token, so the save runs to its
   end whole, bounded by the connection's pool wait and command timeout rather than the caller. Such a
   host adds the interceptor — the Orleans execution model on a store other than PostgreSQL, to its write
-  and read contexts, beside `PartitionCounterInterceptor`, last among the transaction interceptors — which
-  also covers the execution model's own checkpoint saves on those contexts. The recorded-command store
-  runs every statement that changes a record to its end, so a recorded command is never recorded twice and
+  and read contexts, beside `PartitionCounterInterceptor`, last among the transaction interceptors. The
+  recorded-command store runs every statement whose outcome it acts on to its end, so a recorded command is never recorded twice and
   a claim never spends an attempt on a hand-over that did not happen. The Orleans commit-order interceptor
   commits without the token and releases its transaction when a save is cancelled (a cancelled append left
-  it open, and the context's next save ran inside it); a saga step no longer fails after its save committed — a failure to reread its state or
+  it open, and the context's next save ran inside it); a durable timer whose handler finished as its silo
+  stopped is unregistered rather than fired again, and a store reader whose batch finished as it stopped
+  records its checkpoint rather than applying the whole batch again; a saga step no longer fails after its save committed — a failure to reread its state or
   cancel its timers is logged (`LogEvents.Orleans.SagaStepAftermathFailed`, `117_130`); and the
   event-bundle dispatcher records a bundle whose publication a cancellation cut short instead of losing
   it.

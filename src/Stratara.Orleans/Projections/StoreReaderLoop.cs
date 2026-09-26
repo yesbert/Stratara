@@ -234,7 +234,7 @@ internal sealed class StoreReaderLoop(
             }
 
             MarkAdvancing(onRead: false);
-            await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, batch.Position, cancellationToken);
+            await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, batch.Position, CancellationToken.None);
             _position = batch.Position;
             if (!batch.HasMore)
             {

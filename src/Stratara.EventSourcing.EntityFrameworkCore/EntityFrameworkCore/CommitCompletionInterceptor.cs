@@ -24,7 +24,8 @@ namespace Stratara.EventSourcing.EntityFrameworkCore;
 /// Add it after any transaction interceptor that must act before the commit: it performs the commit in its own
 /// <c>TransactionCommittingAsync</c>, and an interceptor that runs after it sees the commit already done. A commit is
 /// bounded by the connection's own command timeout (with Npgsql, <c>Command Timeout</c> in the connection string). A
-/// context whose <c>AutoTransactionBehavior</c> was set to <c>Never</c> keeps it, and none of its saves are covered. The
+/// context whose <c>AutoTransactionBehavior</c> was set to <c>Never</c> keeps it, and its saves outside an explicit
+/// transaction are not covered. The
 /// framework's unit of work reads whether a context's options carry this interceptor: on one that does not, it saves
 /// without the caller's token at all, so that save runs to its end whole. A host that enables a retrying
 /// execution strategy should know that the strategy runs a save again when the acknowledgement of its commit was lost;

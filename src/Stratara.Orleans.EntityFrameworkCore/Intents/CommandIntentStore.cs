@@ -11,9 +11,11 @@ namespace Stratara.Orleans.EntityFrameworkCore.Intents;
 /// <summary>
 /// The command-intent bookkeeping in the write store's outbox table: a recorded command is an outbox
 /// entry of the execution model's own record type, and its resume bookkeeping is the entry's attempt and conflict counts,
-/// hand-over time, last failure and kept state. Every operation is one statement on a context of its own. A statement that
-/// changes a record runs to its end whatever the caller's cancellation says: one the store committed but reported as
-/// cancelled would record a command twice, or spend an attempt on a hand-over that never happened.
+/// hand-over time, last failure and kept state. Every operation is one statement on a context of its own. A statement whose
+/// outcome the caller acts on runs to its end whatever the caller's cancellation says: one the store committed but
+/// reported as cancelled would record a command twice, or spend an attempt on a hand-over that never happened. A lease
+/// renewal is the exception — it keeps the caller's token, because one that committed and reported cancellation does no
+/// harm, and the lease's disposal waits for it.
 /// </summary>
 /// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> contextFactory, TimeProvider timeProvider) : ICommandIntentStore
@@ -137,7 +139,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.KeptAt == null)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), CancellationToken.None);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
     }
 
     /// <summary>
