@@ -6,10 +6,22 @@ namespace Stratara.Abstractions.EventSourcing;
 /// <see cref="SaveChangesAsync"/>.
 /// </summary>
 /// <remarks>
-/// All <c>AppendAsync</c> / <c>CreateAsync</c> calls infer the Subject (data-owner) from
-/// the ambient <c>ISessionContextProvider</c>. Use
-/// <see cref="AppendOnBehalfOfAsync{TAggregate}"/> when the Subject must be overridden
-/// (PlatformAdmin cross-tenant flows, EventStoreMigration regeneration).
+/// <para>
+/// Every event is recorded under the tenant that owns it — its Subject — and that tenant is not
+/// simply the one in the caller's session. For each event the store takes the first of these that
+/// names a tenant: the Subject stated for that event with
+/// <see cref="AppendOnBehalfOfAsync{TAggregate}"/>; the owner already resolved for the same stream
+/// earlier in the batch; the tenant recorded on the stream's first event; the
+/// <see cref="IAggregateCreationEvent.TenantId"/> of a creation event; and only then the tenant in
+/// the session. If none of them names a tenant, the append fails.
+/// </para>
+/// <para>
+/// A stream therefore keeps the owner it was created with, whoever's session appends to it later,
+/// and a new stream's owner is stated on its first event by making that event an
+/// <see cref="IAggregateCreationEvent"/>. A first event that states none takes the tenant in the
+/// session — right when the caller creates the aggregate in its own tenant, wrong when an operator
+/// creates it for another one.
+/// </para>
 /// </remarks>
 /// <example>
 /// Append events from a command handler and commit the unit-of-work:
@@ -35,15 +47,27 @@ public interface IEventSource
     Task<long> GetCurrentVersionAsync(Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>Create a new stream with the first event. Fails if the stream already exists.</summary>
+    /// <remarks>
+    /// The new stream's owner is the tenant the event carries when it is an
+    /// <see cref="IAggregateCreationEvent"/>, otherwise the tenant in the session. Every later event
+    /// on the stream keeps that owner.
+    /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type the stream represents.</typeparam>
     /// <param name="streamId">The stream id.</param>
-    /// <param name="event">The creation event (typically an <see cref="IAggregateCreationEvent"/>).</param>
+    /// <param name="event">
+    /// The creation event. Implement <see cref="IAggregateCreationEvent"/> on it to state the new
+    /// stream's owner instead of taking the tenant in the session.
+    /// </param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task CreateAsync<TAggregate>(Guid streamId, object @event, CancellationToken cancellationToken = default)
         where TAggregate : notnull, new();
 
     /// <summary>Create a new stream with multiple events in order.</summary>
+    /// <remarks>
+    /// The owner is resolved from the first event as in <see cref="CreateAsync{TAggregate}"/>, and
+    /// the events after it take the same owner.
+    /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type the stream represents.</typeparam>
     /// <param name="streamId">The stream id.</param>
     /// <param name="events">The events to append, in order.</param>
@@ -53,6 +77,10 @@ public interface IEventSource
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
 
     /// <summary>Append an event to an existing stream.</summary>
+    /// <remarks>
+    /// The event takes the owner recorded on the stream, not the tenant in the session. Use
+    /// <see cref="AppendOnBehalfOfAsync{TAggregate}"/> for an event that belongs to someone else.
+    /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type.</typeparam>
     /// <param name="streamId">The stream id.</param>
     /// <param name="event">The event payload.</param>
@@ -62,6 +90,7 @@ public interface IEventSource
         where TAggregate : notnull, new();
 
     /// <summary>Append multiple events to an existing stream in order.</summary>
+    /// <remarks>The events take the owner recorded on the stream, as in <see cref="AppendAsync{TAggregate}"/>.</remarks>
     /// <typeparam name="TAggregate">The aggregate type.</typeparam>
     /// <param name="streamId">The stream id.</param>
     /// <param name="events">The events to append, in order.</param>
@@ -71,11 +100,14 @@ public interface IEventSource
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
 
     /// <summary>
-    /// Append an event with an explicit Subject (data owner), overriding the
-    /// SessionContext-derived Subject. Used by PlatformAdmin cross-tenant flows
-    /// and EventStoreMigration regeneration. The Actor stays the calling
-    /// SessionContext's ActorTenantId/ActorUserId.
+    /// Append an event with an explicit Subject (data owner), overriding every other source — the
+    /// stream's recorded owner, a creation event's tenant and the session — for this one event.
     /// </summary>
+    /// <remarks>
+    /// For an event that genuinely belongs to someone other than the stream's owner. The actor
+    /// recorded with the event stays the caller's session; only the owner changes. An event recorded
+    /// under another owner than its stream's is erased with that owner, not with the stream's.
+    /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type.</typeparam>
     /// <param name="streamId">The stream id.</param>
     /// <param name="event">The event payload.</param>
