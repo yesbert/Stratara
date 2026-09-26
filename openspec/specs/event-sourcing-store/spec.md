@@ -145,10 +145,16 @@ the operation that produced it, the actor who triggered it, and the tenant and u
 
 The tenant an event belongs to SHALL be resolved in this order: an explicit subject supplied by the
 caller for that event; the subject already established for that stream in the current batch; the
-tenant recorded on the stream's first existing event; a tenant carried by the event itself where the
+owner recorded on the stream's first existing event; a tenant carried by the event itself where the
 event declares itself a creation event; and only then the session's data-owner tenant. Every
 candidate SHALL name a tenant to be used, including the explicitly supplied one. Where none of these
 yields a tenant, the append SHALL fail rather than guess.
+
+The owner a stream contributes SHALL be the whole owner recorded on its first event: its tenant, and
+its user where one was recorded. A stream whose first event names a user SHALL give that user to
+every later event for which no subject is stated, whatever user the session names; a stream whose
+first event names no user SHALL give such events none. This SHALL hold alike for events appended in
+the save that created the stream and for events appended in any later save.
 
 An explicit subject that names no tenant SHALL fail the append rather than fall through to the
 remaining candidates, because a caller who stated the subject has already said which other candidate
@@ -159,9 +165,9 @@ silently re-homing an existing aggregate into another tenant. That reasoning doe
 aggregate's shape, so neither does the rule: **a stream's recorded owner is stable for every
 aggregate**, whether or not the aggregate exposes its tenant as a property.
 
-An aggregate whose events carry different owners cannot be fully erased — each tenant's erasure
-reaches only its own entries — and, once one of those keys is shredded, cannot be rehydrated at all,
-because the remaining entries are decrypted under a key that no longer exists. A consumer that
+An aggregate whose events carry different owners cannot be fully erased — each tenant's or user's
+erasure reaches only its own entries — and, once one of those keys is shredded, cannot be rehydrated
+at all, because the remaining entries are decrypted under a key that no longer exists. A consumer that
 genuinely wants an event attributed to another subject SHALL state it explicitly rather than obtain
 it by omission.
 
@@ -170,6 +176,19 @@ it by omission.
 - **WHEN** an event is appended to an existing stream
 - **THEN** the tenant recorded on that stream is used, even if the session names a different one,
   and regardless of whether the aggregate exposes a tenant of its own
+
+#### Scenario: An existing user-owned stream is appended to
+
+- **WHEN** an event is appended, in a later save, to a stream whose first event was recorded for a
+  tenant and a user
+- **THEN** the event is recorded for that tenant and that user, even if the session names a
+  different user or none, so an erasure of that user reaches every event of the stream
+
+#### Scenario: A stream recorded without a user is appended to by a session naming one
+
+- **WHEN** an event is appended to a stream whose first event names no user, under a session whose
+  data-owner user is set
+- **THEN** the event is recorded with no user, as the stream's first event was
 
 #### Scenario: A new tenant-scoped aggregate is created
 
