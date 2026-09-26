@@ -11,17 +11,15 @@ namespace Stratara.Outbox.RabbitMQ.Tests.DependencyInjection;
 public class MessagingServiceCollectionExtensionsTests
 {
     [Fact]
-    public async Task AddMessaging_RegistersRabbitMqBusAsSingletonMessageBus()
+    public void AddMessaging_RegistersRabbitMqBusAsSingletonMessageBus()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
 
         builder.AddMessaging();
 
         var descriptor = Assert.Single(builder.Services, d => d.ServiceType == typeof(IMessageBus));
+        Assert.Equal(typeof(RabbitMqBus), descriptor.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
-        await using var provider = builder.Services.BuildServiceProvider();
-        var bus = Assert.IsType<RabbitMqBus>(provider.GetRequiredService<IMessageBus>());
-        Assert.Same(provider.GetRequiredService<RabbitMqBus>(), bus);
     }
 
     [Fact]
@@ -67,14 +65,16 @@ public class MessagingServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddMessaging_RegistersTheDrainOfStoppingSubscriptionsOnce()
+    public async Task AddMessaging_RegistersTheStoppingSubscriptionsOnceAsAHostedService()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
 
         builder.AddMessaging();
         builder.AddMessaging();
 
-        Assert.Single(builder.Services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(RabbitMqSubscriptionsDrain));
+        await using var provider = builder.Services.BuildServiceProvider();
+        var stops = Assert.Single(provider.GetServices<IHostedService>().OfType<RabbitMqSubscriptionStops>());
+        Assert.Same(provider.GetRequiredService<RabbitMqSubscriptionStops>(), stops);
     }
 
     [Fact]

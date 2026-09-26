@@ -164,9 +164,9 @@ of the framework's exceptions read empty on the far side, and their messages car
 `StrataraValidationException` is the exception: its `Failures` cross with it — field, message and code,
 not the attempted value — so the problem-details handler still names the fields to correct, and its
 message stays generic, because a failure's message may quote the input and exception messages are
-logged. During a rolling upgrade from an earlier version, a silo that is not yet upgraded cannot read a
-validation failure an upgraded silo sends it: that call fails there with a serialization failure
-until every silo runs the new version. The
+logged. During a rolling upgrade from an earlier version, silos of the two versions cannot read each
+other's validation failures: such a call fails on the caller's side with a serialization failure until
+every silo runs the new version. The
 setting only decides what a silo sends; what a silo accepts is Orleans' own type filter, which stays as
 it is. A host that sets its own `SupportedExceptionTypeFilter` on
 `Orleans.Serialization.ExceptionSerializationOptions` after these registrations replaces the

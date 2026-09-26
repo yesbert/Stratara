@@ -38,10 +38,10 @@ public static class MessagingServiceCollectionExtensions
     /// </example>
     public static IHostApplicationBuilder AddMessaging(this IHostApplicationBuilder builder)
     {
-        // The concrete bus is a service of its own, so the drain reaches it even when the message bus is decorated.
-        builder.Services.TryAddSingleton<RabbitMqBus>();
-        builder.Services.AddSingleton<IMessageBus>(provider => provider.GetRequiredService<RabbitMqBus>());
-        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RabbitMqSubscriptionsDrain>());
+        builder.Services.AddSingleton<IMessageBus, RabbitMqBus>();
+        builder.Services.TryAddSingleton<RabbitMqSubscriptionStops>();
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RabbitMqSubscriptionStops>(
+            provider => provider.GetRequiredService<RabbitMqSubscriptionStops>()));
         builder.Services
             .AddSingleton<IMessagingIdentifier, MessagingIdentifier>()
             .AddOptions<MessagingOptions>().Bind(builder.Configuration.GetSection(MessagingOptions.SectionName))

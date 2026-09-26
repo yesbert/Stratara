@@ -15,14 +15,16 @@ again or moving it to the dead-letter destination, whatever the subscription's o
 says, and SHALL log the failure with the topic at error level. A second delivery would record the
 same facts again. Every outcome of a handler SHALL be settled with the transport whatever the
 subscription's own cancellation says. A subscription that stops SHALL stop taking messages and let
-the handlers it is running settle theirs before it closes — while the host stops, for as long as the
-host's shutdown timeout allows; otherwise for a bounded time — so that a handler that completed while
-the host stops, or whose save committed, is acknowledged rather than handed back to run again. A host
-that stops SHALL count as stopped only once its stopping subscriptions have closed, within its
-shutdown timeout, so their handlers settle while the services they use still exist, and a handler that
-never returns SHALL hold up neither the host's stop nor its disposal beyond that. A handler that
-stops because its subscription stops has not failed: its message SHALL go back to the queue, never to
-the dead-letter destination. A message the transport had already fetched but not yet handed to a
+the handlers it is running settle theirs before it closes — from the moment the application starts
+stopping until the host has stopped, for as long as the host's shutdown timeout allows; otherwise for a
+bounded time — so that a handler that completed while the host stops, or whose save committed, is
+acknowledged rather than handed back to run again. A host that stops SHALL count as stopped only once
+its stopping subscriptions have closed, within its shutdown timeout, so their handlers settle while the
+services they use still exist, and a handler that never returns SHALL hold up neither the host's stop
+nor its disposal beyond that. A subscription whose wait has run out SHALL still stop taking messages.
+A handler that stops because its subscription stops has not failed: the framework SHALL put its
+message back on the queue rather than move it to the dead-letter destination; the broker counts that
+delivery like any other. A message the transport had already fetched but not yet handed to a
 handler SHALL go back to the queue unhandled; the broker counts it as delivered once more, so the
 number of messages a subscription fetches ahead of its handler SHALL be bounded, and where a transport
 fetches ahead the host SHALL be able to configure that bound, with a default.

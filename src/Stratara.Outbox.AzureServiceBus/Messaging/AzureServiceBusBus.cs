@@ -3,6 +3,7 @@ using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
@@ -55,8 +56,8 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// running to settle — as long as the host's shutdown timeout allows when the host is stopping, twenty seconds
 /// otherwise. A handler still running after that keeps its message locked until the lock expires, and the client
 /// closes the processor's links when it is disposed. A message taken after the subscription started stopping is
-/// abandoned unhandled, and a handler that stops on the subscription's token has its message abandoned, never
-/// dead-lettered.
+/// abandoned unhandled, and a handler that stops on the subscription's token has its message abandoned rather than
+/// dead-lettered by the framework; the broker counts that delivery too.
 /// </para>
 /// </remarks>
 /// <example>
@@ -72,14 +73,15 @@ internal sealed class AzureServiceBusBus(
     ServiceBusClient client,
     IOptions<BusEnvelopeJsonOptions> envelopeOptions,
     IOptions<MessageRetryOptions> retryOptions,
-    ServiceBusAdministrationClient? administration = null) : IMessageBus, IAsyncDisposable
+    ServiceBusAdministrationClient? administration = null,
+    AzureServiceBusSubscriptionStops? subscriptionStops = null) : IMessageBus, IAsyncDisposable
 {
     private const int MaxDeadLetterDescriptionLength = 4096;
 
     /// <summary>
     /// How long a subscription that stops while the host is not stopping — its own token was cancelled — waits for the
     /// handler it is running to settle its message. While the host stops, the host's shutdown timeout bounds the wait
-    /// instead (<see cref="SettleWithin"/>).
+    /// instead (<see cref="AzureServiceBusSubscriptionStops"/>).
     /// </summary>
     private static readonly TimeSpan HandlerSettleTimeout = TimeSpan.FromSeconds(20);
 
@@ -88,43 +90,15 @@ internal sealed class AzureServiceBusBus(
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MessageRetryPolicy> _subscriptionPolicies = new(StringComparer.Ordinal);
-    private readonly System.Collections.Concurrent.ConcurrentBag<Task> _stops = new();
-    private readonly CancellationTokenSource _hostShutdownElapsed = new();
-    private volatile bool _hostStopping;
-
-    /// <summary>
-    /// Completes when every subscription that was stopped has finished stopping: its running handlers settled, or the
-    /// wait for them ran out.
-    /// </summary>
-    internal Task WhenSubscriptionsStoppedAsync() => Task.WhenAll(_stops);
-
-    /// <summary>
-    /// Tells the bus the host is stopping, before any subscription stops with it: from then on a stopping subscription
-    /// waits for its running handler until <paramref name="shutdown"/> — the host's shutdown timeout — runs out, rather
-    /// than for <see cref="HandlerSettleTimeout"/>.
-    /// </summary>
-    /// <returns>The registration on <paramref name="shutdown"/>, to dispose once the host has stopped.</returns>
-    internal CancellationTokenRegistration SettleWithin(CancellationToken shutdown)
-    {
-        _hostStopping = true;
-        return shutdown.Register(ShutdownElapsed);
-    }
-
-    /// <summary>
-    /// The host's shutdown timeout ran out: the stopping subscriptions stop waiting for their handler and close.
-    /// </summary>
-    internal void ShutdownElapsed() => _hostShutdownElapsed.Cancel();
+    private readonly AzureServiceBusSubscriptionStops _stops = subscriptionStops ?? new(NullLogger<AzureServiceBusSubscriptionStops>.Instance);
 
     /// <inheritdoc/>
     /// <remarks>
     /// Waits for every subscription that was stopped to finish stopping, so its running handlers could settle. A host
-    /// waits for them earlier, when it stops; this covers a bus used without one.
+    /// waits for them earlier, when it stops (<see cref="AzureServiceBusSubscriptionStops"/>); this covers a bus used
+    /// without one.
     /// </remarks>
-    public async ValueTask DisposeAsync()
-    {
-        await WhenSubscriptionsStoppedAsync();
-        _hostShutdownElapsed.Dispose();
-    }
+    public async ValueTask DisposeAsync() => await _stops.WhenAllStoppedAsync();
 
     /// <inheritdoc/>
     public async Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default)
@@ -193,7 +167,8 @@ internal sealed class AzureServiceBusBus(
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // The handler stopped because the subscription stops — the host is shutting down. That is not a
-                // failure: the message goes back for the next consumer, never to the dead-letter queue.
+                // failure: the framework abandons the message for the next consumer rather than dead-letter it. The broker
+                // counts the delivery like any other.
                 await args.AbandonMessageAsync(args.Message, cancellationToken: CancellationToken.None);
             }
             catch (Exception ex)
@@ -227,15 +202,16 @@ internal sealed class AzureServiceBusBus(
 
         async Task StopAsync()
         {
+            // Taken when the token is cancelled, so it is the host's shutdown timeout while the host stops.
+            using var settle = _stops.Deadline(HandlerSettleTimeout);
             await Task.Yield();
-            using var settle = _hostStopping
-                ? CancellationTokenSource.CreateLinkedTokenSource(_hostShutdownElapsed.Token)
-                : new CancellationTokenSource(HandlerSettleTimeout);
 
-            // Closing is what disposing the processor does. Bounded: a handler that does not settle in time keeps its
-            // message locked until the lock expires, and the client closes the links when it is disposed. An unbounded
-            // wait here would hold the host's stop — and its disposal — up for as long as the handler runs.
-            var closing = processor.CloseAsync(settle.Token);
+            // Closing is what disposing the processor does, and it is never cancelled itself: a close cancelled before it
+            // began would leave the processor receiving. Only the wait for it is bounded — a handler that does not settle
+            // in time keeps its message locked until the lock expires, the close finishes in the background, and the
+            // client closes the links when it is disposed. An unbounded wait here would hold the host's stop, and its
+            // disposal, up for as long as the handler runs.
+            var closing = processor.CloseAsync(CancellationToken.None);
             try
             {
                 await closing.WaitAsync(settle.Token);
@@ -243,11 +219,14 @@ internal sealed class AzureServiceBusBus(
             catch (Exception ex)
             {
                 logger.LogSubscriptionCleanupFailed(subscription, ex);
-                _ = closing.ContinueWith(
-                    closed => logger.LogSubscriptionCleanupFailed(subscription, closed.Exception!),
-                    CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
+                if (!closing.IsCompleted)
+                {
+                    _ = closing.ContinueWith(
+                        closed => logger.LogSubscriptionCleanupFailed(subscription, closed.Exception!),
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default);
+                }
             }
         }
     }

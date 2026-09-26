@@ -238,6 +238,56 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
     }
 
     /// <summary>
+    /// The host stops with no shutdown time left, so the subscription's wait for its handler has run out before it
+    /// starts, and the handler finishes after that. The processor still stops taking messages: one published afterwards
+    /// stays on the subscription, never delivered, instead of being taken and handed back over and over.
+    /// </summary>
+    [Fact]
+    public async Task HostStopsWithNoTimeLeft_TheProcessorStillStopsTakingMessages()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var subscribed = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        var handled = 0;
+
+        var host = BuildHost(TimeSpan.Zero, "test-host-no-time-left", subscribed, async _ =>
+        {
+            Interlocked.Increment(ref handled);
+            entered.TrySetResult();
+            await release.Task;
+        });
+        try
+        {
+            await host.StartAsync(cts.Token);
+            await subscribed.Task.WaitAsync(cts.Token);
+            var bus = host.Services.GetRequiredService<IMessageBus>();
+            await bus.PublishAsync("test-host-no-time-left", new TestMessage("first"), cts.Token);
+            await entered.Task.WaitAsync(cts.Token);
+
+            await host.StopAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+
+            // The handler finishes after the host gave up on it, which frees the processor to take another message
+            // if it were still receiving.
+            release.TrySetResult();
+            await Task.Delay(TimeSpan.FromSeconds(1), cts.Token);
+            await bus.PublishAsync("test-host-no-time-left", new TestMessage("after the stop"), cts.Token);
+            await Task.Delay(TimeSpan.FromSeconds(3), cts.Token);
+
+            Assert.Equal(1, handled);
+            await using var receiver = _client.CreateReceiver("test-host-no-time-left", "worker");
+            var waiting = await receiver.PeekMessagesAsync(10, cancellationToken: cts.Token);
+            var after = Assert.Single(waiting, message => message.Body.ToString().Contains("after the stop", StringComparison.Ordinal));
+            Assert.Equal(0, after.DeliveryCount);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await ((IAsyncDisposable)host).DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// The handler gives up because its subscription stops — it observed the stopping token — on the message's last
     /// allowed delivery. That is not a failure: the message is abandoned, not dead-lettered.
     /// </summary>

@@ -7,8 +7,8 @@ namespace Stratara.Orleans.Hosting;
 /// A validation failure as it crosses from one silo to another: which field failed, how and under what code, so a
 /// caller on the far side — the problem-details handler of a web host — can still say which field to correct. The
 /// attempted value does not cross; a failure's message crosses as the validator wrote it, and may quote that value.
-/// A silo of a version without this surrogate cannot read it: until every silo is upgraded, a validation failure
-/// from an upgraded silo fails the call on an older one with a serialization failure instead.
+/// Silos of a version with and a version without this surrogate cannot read each other's validation failures: until
+/// every silo is upgraded, such a call fails on the caller's side with a serialization failure instead.
 /// </summary>
 [GenerateSerializer]
 [Alias("Stratara.Orleans.ValidationExceptionSurrogate")]

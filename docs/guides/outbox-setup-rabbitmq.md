@@ -261,13 +261,16 @@ dropped — there is nobody to return a message to.
 
 A subscription stops with the token it was opened with — for a worker, the host's stopping token. It
 takes no further message, waits for the handler it is running to settle, and then closes its channel.
-While the host stops, it waits as long as the host's shutdown timeout allows
-(`HostOptions.ShutdownTimeout`, 30 seconds by default); a subscription whose own token was cancelled
-waits twenty seconds. The host counts as stopped only after its subscriptions have closed, so a handler
-that is still running finishes while the services it uses exist, and its message is acknowledged
-rather than delivered again. A handler's outcome is settled whatever the subscription's token says, and
-a handler that gives up on that token — an `OperationCanceledException` while the subscription stops —
-has its message put back on the queue, never on the dead-letter queue.
+From the moment the application starts stopping — `ApplicationStopping` included — until the host has
+stopped, it waits as long as the host's shutdown timeout allows (`HostOptions.ShutdownTimeout`, 30
+seconds by default; an infinite timeout waits as long as the handler runs); a subscription whose own
+token was cancelled at any other time waits twenty seconds. The host counts as stopped only after its
+subscriptions have closed, so a handler that is still running finishes while the services it uses
+exist, and its message is acknowledged rather than delivered again. A handler's outcome is settled
+whatever the subscription's token says, and a handler that gives up on that token — an
+`OperationCanceledException` while the subscription stops — has its message requeued rather than
+dead-lettered by the framework. The broker counts that delivery like any other: it uses up one of
+`MaxDeliveryAttempts`, and before RabbitMQ 4.3 it counts against the queue's `x-delivery-limit` too.
 
 A handler that takes longer than the wait does not hold the stop up. The subscription closes its
 channel; the broker acknowledges the close and puts the handler's message back at once, so another

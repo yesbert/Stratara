@@ -66,6 +66,12 @@
             ]
           },
           {
+            "Name": "test-host-no-time-left",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
             "Name": "test-handler-gives-up",
             "Subscriptions": [
               { "Name": "worker" }

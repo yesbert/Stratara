@@ -13,7 +13,7 @@ public class TransportSelectionTests
         "Endpoint=sb://example.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=v";
 
     [Fact]
-    public async Task AddAzureServiceBus_AfterAddMessaging_OverridesRabbitMqAsTheMessageBus()
+    public void AddAzureServiceBus_AfterAddMessaging_OverridesRabbitMqAsTheMessageBus()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
         builder.AddMessaging();   // RabbitMQ umbrella claims IMessageBus first
@@ -21,95 +21,90 @@ public class TransportSelectionTests
         builder.Services.AddAzureServiceBus(SampleConnectionString);
 
         var descriptor = Assert.Single(builder.Services, d => d.ServiceType == typeof(IMessageBus));
+        Assert.Equal(AzureServiceBusBusTypeName, descriptor.ImplementationType?.FullName);
+        Assert.NotEqual(typeof(RabbitMqBus), descriptor.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
-        Assert.Equal(AzureServiceBusBusTypeName, await ResolvedBusTypeNameAsync(builder.Services));
-    }
-
-    private static async Task<string?> ResolvedBusTypeNameAsync(IServiceCollection services)
-    {
-        services.AddLogging();
-        await using var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<IMessageBus>().GetType().FullName;
     }
 
     [Fact]
-    public async Task AddAzureServiceBus_OnAnEmptyCollection_RegistersItselfAsTheMessageBus()
+    public void AddAzureServiceBus_OnAnEmptyCollection_RegistersItselfAsTheMessageBus()
     {
         var services = new ServiceCollection();
 
         services.AddAzureServiceBus(SampleConnectionString);
 
-        Assert.Single(services, d => d.ServiceType == typeof(IMessageBus));
-        Assert.Equal(AzureServiceBusBusTypeName, await ResolvedBusTypeNameAsync(services));
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(IMessageBus));
+        Assert.Equal(AzureServiceBusBusTypeName, descriptor.ImplementationType?.FullName);
     }
 
     [Fact]
-    public async Task AddAzureServiceBusWithManagedIdentity_AfterAddMessaging_OverridesRabbitMq()
+    public void AddAzureServiceBusWithManagedIdentity_AfterAddMessaging_OverridesRabbitMq()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
         builder.AddMessaging();
 
         builder.Services.AddAzureServiceBusWithManagedIdentity("example.servicebus.windows.net");
 
-        Assert.Single(builder.Services, d => d.ServiceType == typeof(IMessageBus));
-        Assert.Equal(AzureServiceBusBusTypeName, await ResolvedBusTypeNameAsync(builder.Services));
+        var descriptor = Assert.Single(builder.Services, d => d.ServiceType == typeof(IMessageBus));
+        Assert.Equal(AzureServiceBusBusTypeName, descriptor.ImplementationType?.FullName);
     }
 
     [Fact]
-    public void AddAzureServiceBus_RegistersTheDrainOfStoppingSubscriptionsOnce()
+    public async Task AddAzureServiceBus_RegistersTheStoppingSubscriptionsOnceAsAHostedService()
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
 
         services.AddAzureServiceBus(SampleConnectionString);
         services.AddAzureServiceBusWithManagedIdentity("example.servicebus.windows.net");
 
-        Assert.Single(services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(AzureServiceBusSubscriptionsDrain));
+        await using var provider = services.BuildServiceProvider();
+        var stops = Assert.Single(provider.GetServices<IHostedService>().OfType<AzureServiceBusSubscriptionStops>());
+        Assert.Same(provider.GetRequiredService<AzureServiceBusSubscriptionStops>(), stops);
     }
 
     [Fact]
-    public async Task TheDrains_WithoutAStoppedSubscription_HaveNothingToWaitFor()
+    public async Task TheStoppingSubscriptions_WithoutAStoppedSubscription_HaveNothingToWaitFor()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
         builder.AddMessaging();
         builder.Services.AddAzureServiceBus(SampleConnectionString);
         await using var provider = builder.Services.BuildServiceProvider();
 
-        var drains = provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>().ToList();
+        var hosted = provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>().ToList();
 
-        Assert.Equal(2, drains.Count);
-        foreach (var drain in drains)
+        Assert.Equal(2, hosted.Count);
+        foreach (var service in hosted)
         {
-            await drain.StoppingAsync(TestContext.Current.CancellationToken);
-            await drain.StoppedAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await service.StartedAsync(TestContext.Current.CancellationToken);
+            await service.StoppingAsync(TestContext.Current.CancellationToken);
+            await service.StoppedAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         }
     }
 
+    /// <summary>
+    /// The hosted service that waits for stopping subscriptions needs nothing the bus needs, so a host that replaced
+    /// the message bus — a test host with a fake and a placeholder connection string — starts as before.
+    /// </summary>
     [Fact]
-    public async Task A_decorated_message_bus_still_reaches_the_bus_the_drain_waits_for()
+    public async Task A_host_that_replaced_the_message_bus_starts_without_building_the_transport()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
-        builder.AddMessaging();
-        var inner = builder.Services.Last(d => d.ServiceType == typeof(IMessageBus));
-        builder.Services.Remove(inner);
-        builder.Services.AddSingleton<IMessageBus>(provider => new DecoratedBus((IMessageBus)inner.ImplementationFactory!(provider)));
-        await using var provider = builder.Services.BuildServiceProvider();
+        builder.Services.AddAzureServiceBus("not a connection string");
+        builder.Services.AddSingleton<IMessageBus, FakeBus>();
+        using var host = builder.Build();
 
-        var decorated = Assert.IsType<DecoratedBus>(provider.GetRequiredService<IMessageBus>());
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(TestContext.Current.CancellationToken);
 
-        Assert.Same(provider.GetRequiredService<RabbitMqBus>(), decorated.Inner);
+        Assert.IsType<FakeBus>(host.Services.GetRequiredService<IMessageBus>());
     }
 
-    private sealed class DecoratedBus(IMessageBus inner) : IMessageBus
+    private sealed class FakeBus : IMessageBus
     {
-        public IMessageBus Inner => inner;
+        public Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default) =>
-            inner.PublishAsync(topic, message, cancellationToken);
+        public Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default) =>
-            inner.SubscribeAsync(topic, subscription, handler, cancellationToken);
-
-        public Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default) =>
-            inner.EnsureSubscriptionAsync(topic, subscription, cancellationToken);
+        public Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

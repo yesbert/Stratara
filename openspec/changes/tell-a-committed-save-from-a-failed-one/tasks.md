@@ -87,10 +87,21 @@
   timeout), and cancelling the RabbitMQ consumer counts against the same deadline; a handler that never returns
   holds neither the host's stop nor its disposal up (`HostStopsWhileAHandlerNeverReturns_…` on both
   transports, which found that the drain's timeout branch could dispose its registration before the
-  registration's callback ran, so the drain now tells the bus itself); a Service Bus close abandoned after the deadline has its fault logged; the drains take the
-  concrete bus, registered as a service of its own, so a decorated `IMessageBus` does not hide it; the
-  documentation says that a validation failure from an upgraded silo cannot be read by an older one during a
+  registration's callback ran, so the drain now says so itself); a Service Bus close abandoned after the
+  deadline has its fault logged; the drains take the concrete bus, so a decorated `IMessageBus` does not hide
+  it (superseded in round 8); the documentation says that a validation failure from an upgraded silo cannot be read by an older one during a
   rolling upgrade, and when RabbitMQ puts a stuck handler's message back.
+
+- [x] 2b.12 Round 8 of the review: a Service Bus subscription whose wait had already run out — a host with no
+  shutdown time left — cancelled its processor's close before it began, so once its handler returned the
+  processor kept receiving and handed every new message back; the close is no longer cancellable, only the wait
+  for it (`HostStopsWithNoTimeLeft_TheProcessorStillStopsTakingMessages`, red with the old close); a host's stop
+  no longer outlives it — a subscription stopped after the host has stopped waits twenty seconds again; the
+  application's stopping token starts the host's wait as well; the hosted service is a tracker the bus reports
+  its stops to, so it no longer builds the bus, `IMessageBus` is registered by type again and the bus is
+  disposed once (`A_host_that_replaced_the_message_bus_starts_without_building_the_transport`); the documents
+  say that the broker counts a put-back delivery, that an infinite shutdown timeout waits as long as the
+  handler, and that a rolling upgrade breaks validation failures in both directions.
 
 ## 3. Documentation
 
