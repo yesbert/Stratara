@@ -29,6 +29,11 @@ internal sealed class SnapshotService(
     ISnapshotStrategy snapshotStrategy) : ISnapshotService
 {
     /// <inheritdoc/>
+    /// <remarks>
+    /// Each stream is snapshotted on its own: one that cannot be — an unreadable earlier snapshot, a type the
+    /// host does not trust — does not keep the others from being written. The failures are thrown together
+    /// once the others are stored, naming each stream and type.
+    /// </remarks>
     public async Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default)
     {
         var batch = eventStreamEntries.ToList();
@@ -37,21 +42,34 @@ internal sealed class SnapshotService(
         var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
 
+        List<Exception>? failures = null;
         foreach (var streamGroup in streamGroups)
         {
             var streamId = streamGroup.Key.StreamId;
             var streamEntries = streamGroup.ToList();
-            if (!await ShouldCreateSnapshot(snapshotRepository, streamId, streamEntries, cancellationToken))
+            try
             {
-                continue;
-            }
+                if (!await ShouldCreateSnapshot(snapshotRepository, streamId, streamEntries, cancellationToken))
+                {
+                    continue;
+                }
 
-            var owner = await ResolveStreamOwnerAsync(eventStreamRepository, streamId, batch, cancellationToken);
-            var aggregatedEvent = await CreateSnapshot(streamId, streamEntries, owner, cancellationToken);
-            await snapshotRepository.AddAsync(aggregatedEvent, cancellationToken);
+                var owner = await ResolveStreamOwnerAsync(eventStreamRepository, streamId, batch, cancellationToken);
+                var aggregatedEvent = await CreateSnapshot(streamId, streamEntries, owner, cancellationToken);
+                await snapshotRepository.AddAsync(aggregatedEvent, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                (failures ??= []).Add(new InvalidOperationException(
+                    $"No snapshot of stream {streamId} ({streamGroup.Key.TypeKey}) could be written.", ex));
+            }
         }
 
         await transaction.SaveChangesAsync(cancellationToken);
+        if (failures is not null)
+        {
+            throw new AggregateException(failures);
+        }
     }
 
     /// <remarks>
@@ -79,9 +97,9 @@ internal sealed class SnapshotService(
     }
 
     /// <remarks>
-    /// The stream's owner is recorded on its first entry. When this batch creates the stream that entry
-    /// is in the batch — possibly under another aggregate type than the one being snapshotted — and not
-    /// committed yet; otherwise it is read. The batch's own first entry for the stream is not used: it
+    /// The stream's owner is recorded on its first entry. When this batch created the stream that entry
+    /// is in the batch — possibly under another aggregate type than the one being snapshotted — and is
+    /// taken from there; otherwise it is read. The batch's own first entry for the stream is not used: it
     /// may carry a Subject stated for that one event, which is not the stream's owner.
     /// </remarks>
     private static async Task<EventSubject> ResolveStreamOwnerAsync(

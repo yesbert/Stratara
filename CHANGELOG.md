@@ -26,9 +26,10 @@ applies to the entire NuGet family.
   writes the snapshot after the events are committed and their bundle handed on, from the committed
   stream up to the save's highest version. A failure to write it, a cancellation included, is logged
   (`LogEvents.EventStore.SnapshotFailed`, `102_006`) and no longer fails a save whose events are
-  recorded. A snapshot that an earlier release wrote this way stays in the store. To be sure none is
-  left, delete the snapshots and let the next threshold write them again; a rebuild without one
-  replays the events.
+  recorded. A snapshot that an earlier release wrote this way stays in the store and keeps serving
+  rebuilds. The framework has no API to find it, so to be sure none is left, delete the snapshots
+  (`DELETE FROM snapshot;` on the write store) and let the strategy write them again. Until each stream
+  is snapshotted again, its rebuilds replay the whole stream.
 
 - **An erasure finds every key that names the subject, not only the ones the directory names.** A
   key is named by level, tenant and user together, and the eraser computed those names from the

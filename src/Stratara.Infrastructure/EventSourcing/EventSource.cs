@@ -199,15 +199,18 @@ internal sealed partial class EventSource(
         }
         catch (Exception ex)
         {
-            LogSnapshotFailed(logger ?? NullLogger<EventSource>.Instance, ex, _eventStreamEntries.Count);
+            var streams = string.Join(", ", _eventStreamEntries
+                .Select(entry => $"{entry.StreamId} ({entry.AggregateTypeName.GetVersionIndependentTypeName()})")
+                .Distinct());
+            var level = ex is OperationCanceledException ? LogLevel.Information : LogLevel.Warning;
+            LogSnapshotFailed(logger ?? NullLogger<EventSource>.Instance, level, ex, streams);
         }
     }
 
     [LoggerMessage(
         EventId = LogEvents.EventStore.SnapshotFailed,
-        Level = LogLevel.Warning,
-        Message = "Writing a snapshot after {EventCount} committed event(s) failed. The events are recorded and published; a later save writes a snapshot.")]
-    private static partial void LogSnapshotFailed(ILogger logger, Exception exception, int eventCount);
+        Message = "Writing the snapshots due after the save of {Streams} failed. The events are recorded and published; a later save the snapshot strategy approves writes them.")]
+    private static partial void LogSnapshotFailed(ILogger logger, LogLevel level, Exception exception, string streams);
 
     private void ClearBatchState()
     {
