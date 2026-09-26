@@ -60,6 +60,34 @@ public class ResilienceFactoryTests
         Assert.True(executed);
     }
 
+    /// <summary>A save that committed before it failed must not run again: it would record its facts twice.</summary>
+    [Theory]
+    [InlineData(nameof(ResilienceFactory.CreateCommandDispatcherPipeline))]
+    [InlineData(nameof(ResilienceFactory.CreateEventBundleDispatcherPipeline))]
+    public async Task DispatcherPipelines_DoNotRetryCommittedEventsNotPublished(string pipelineName)
+    {
+        var builder = new ResiliencePipelineBuilder();
+        if (pipelineName == nameof(ResilienceFactory.CreateCommandDispatcherPipeline))
+        {
+            ResilienceFactory.CreateCommandDispatcherPipeline(builder);
+        }
+        else
+        {
+            ResilienceFactory.CreateEventBundleDispatcherPipeline(builder);
+        }
+
+        var pipeline = builder.Build();
+
+        var attempts = 0;
+        await Assert.ThrowsAsync<CommittedEventsNotPublishedException>(async () => await pipeline.ExecuteAsync(_ =>
+        {
+            attempts++;
+            throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("boom"));
+        }));
+
+        Assert.Equal(1, attempts);
+    }
+
     [Fact]
     public async Task CreatePrecedingFactPipeline_RetriesAMissingPrecedingFact()
     {

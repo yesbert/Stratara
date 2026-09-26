@@ -53,8 +53,8 @@ is wrapped, and there is no cost to having the behaviour registered.
 | Constant on `ResilienceNames` | Behaviour | Use it when |
 |---|---|---|
 | `ResilienceNames.ConcurrencyConflict` | Retries **only** a concurrency conflict — `ConcurrencyException` from the event source or `ConcurrencyConflictException` from a unit of work — up to six attempts, short exponential backoff | Your handler re-reads and re-applies on a version clash |
-| `ResilienceNames.CommandDispatcher` | Up to four attempts, exponential backoff | Bounded retry around command dispatch |
-| `ResilienceNames.EventBundleDispatcher` | Up to four attempts, exponential backoff | Bounded retry around bundle dispatch |
+| `ResilienceNames.CommandDispatcher` | Up to four attempts, exponential backoff; never retries `CommittedEventsNotPublishedException` | Bounded retry around command dispatch |
+| `ResilienceNames.EventBundleDispatcher` | Up to four attempts, exponential backoff; never retries `CommittedEventsNotPublishedException` | Bounded retry around bundle dispatch |
 | `ResilienceNames.MessageBus` | Retries indefinitely, behind a circuit breaker | Broker traffic, where dropping the message is worse than waiting |
 | `ResilienceNames.PrecedingFact` | Retries **only** `PrecedingFactMissingException`, up to six attempts, from 100 ms doubling — about three seconds in all | The projection and saga workers run every bundle under it; a handler that finds the entity a fact refers to absent throws the exception and is retried with the aggregate lock released in between |
 | `ResilienceNames.ProjectionReplayBatch` | Five attempts in all, exponential backoff from one second with jitter, retries any exception except cancellation | The projection-replay worker runs each batch under it; a read-store timeout or a dropped connection mid-rebuild is retried, and a failure that outlasts every attempt ends the replay |

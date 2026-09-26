@@ -28,6 +28,10 @@ opposite (nothing was written).
 a cancelled operation is expected to surface as `OperationCanceledException`, and retry pipelines do
 not retry cancellation anyway.
 
+**The empty save still runs its (empty) transaction and only skips the bundle.** The bundle is what a
+reader sees. The empty transaction writes nothing, and keeping it leaves the save's shape unchanged for
+anything observing the write store.
+
 **The empty save still validates the session.** `A save … with no session context` is specified to
 fail; checking before short-circuiting keeps that true.
 

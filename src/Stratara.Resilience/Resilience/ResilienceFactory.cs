@@ -129,6 +129,9 @@ internal static class ResilienceFactory
     private static void AddDispatcherRetry(ResiliencePipelineBuilder pipelineBuilder) =>
         pipelineBuilder.AddRetry(new RetryStrategyOptions
         {
+            // A save that committed before failing must not run again: it would record its facts twice.
+            ShouldHandle = new PredicateBuilder().Handle<Exception>(ex =>
+                ex is not (OperationCanceledException or CommittedEventsNotPublishedException)),
             MaxRetryAttempts = DefaultDispatcherRetryAttempts,
             Delay = DefaultDispatcherRetryDelay,
             BackoffType = DelayBackoffType.Exponential,

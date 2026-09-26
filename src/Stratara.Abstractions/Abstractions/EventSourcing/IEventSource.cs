@@ -139,10 +139,15 @@ public interface IEventSource
     /// </summary>
     /// <remarks>
     /// A save clears what was staged whether it succeeds or fails. After a failure, append the events
-    /// again before saving again, as after a <see cref="ConcurrencyException"/>: a second save with
-    /// nothing appended writes nothing.
+    /// again before saving again, as after a <see cref="ConcurrencyException"/>: a save with nothing
+    /// staged writes and publishes nothing. The one exception is
+    /// <see cref="CommittedEventsNotPublishedException"/>: its events are already recorded, and
+    /// appending them again would record them twice.
     /// </remarks>
     /// <exception cref="ConcurrencyException">Another writer beat this one to the stream's head version.</exception>
+    /// <exception cref="CommittedEventsNotPublishedException">
+    /// The events were committed, but handing their bundle on failed afterwards. Do not append them again.
+    /// </exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -18,6 +18,19 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A save that committed but could not publish says so.** On a host without durable bundles,
+  `SaveChangesAsync` hands the committed events' bundle to the outbox after the commit. When both the
+  bus and the outbox's own table failed, the save threw the outbox's exception although the events
+  were recorded. A caller could not tell it from a save that wrote nothing, and a pipeline that
+  retries on any exception ran the work again and recorded the same facts twice. The save now throws
+  the new `CommittedEventsNotPublishedException`, naming the committed streams, with the outbox's
+  failure as the inner exception. `ResilienceNames.CommandDispatcher` and
+  `ResilienceNames.EventBundleDispatcher` do not retry it. A caller that caught the outbox's own
+  exception type after a save now finds it as the inner exception.
+
+- **A save with nothing staged no longer publishes an empty bundle.** It still requires a session, and
+  it stores and publishes nothing.
+
 - **An erasure finds every key that names the subject, not only the ones the directory names.** A
   key is named by level, tenant and user together, and the eraser computed those names from the
   current memberships. A key shared with someone outside the directory was found by neither erasure

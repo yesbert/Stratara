@@ -185,6 +185,16 @@ Each conflict is also counted, on `event_source.append.conflicts`, tagged with `
 `bucket.id` — the partition the stream fell in — so contention on one aggregate type or one hot
 partition shows up before it shows up as latency.
 
+## When a save committed but could not publish
+
+`SaveChangesAsync` commits the events and then hands their bundle on to the outbox. On a host without
+durable bundles, that handover can fail after the commit, when both the bus and the outbox's own table
+are unavailable. The save then throws `CommittedEventsNotPublishedException`, which names the committed
+streams. **The events are recorded; do not append them again.** Readers that consume bundles see them
+only once they are republished or replayed. The framework's retrying pipelines never retry this
+exception. A host that stores bundles with the commit does not raise it, because its bundle is recorded
+in the same transaction as the events.
+
 ## Mandatory hygiene
 
 - **Max 7 constructor parameters** (this counts as one). If you need more, group them in a `sealed record` parameter object.

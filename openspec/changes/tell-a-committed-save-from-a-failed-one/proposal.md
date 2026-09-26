@@ -30,8 +30,8 @@ nothing.
   Cancellation still propagates as cancellation.
 - The dispatcher retry pipelines (`ResilienceNames.CommandDispatcher`,
   `ResilienceNames.EventBundleDispatcher`) do not retry it.
-- A save with nothing staged returns without opening a transaction or publishing a bundle. It still
-  requires a session, so a save without one fails as before.
+- A save with nothing staged stores and publishes no bundle. It still requires a session, so a save
+  without one fails as before.
 
 ## Capabilities
 

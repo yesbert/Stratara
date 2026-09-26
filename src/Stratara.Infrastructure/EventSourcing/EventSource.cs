@@ -134,10 +134,14 @@ internal sealed class EventSource(
     /// registered it is misconfigured, which is not the same as a caller without an identity, so this
     /// is not a <see cref="SessionRequiredException"/>. Thrown before anything is written.
     /// </exception>
+    /// <exception cref="CommittedEventsNotPublishedException">
+    /// Thrown when the events were committed but handing their bundle on failed afterwards.
+    /// </exception>
     /// <remarks>
     /// A save that fails for any reason discards the staged batch, as a successful one clears it: a
     /// handler that runs again in the same scope then starts from what it appends anew, rather than
-    /// from a batch it has already staged once.
+    /// from a batch it has already staged once. A save with nothing staged still checks the session,
+    /// and stores and publishes no bundle.
     /// </remarks>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -154,12 +158,14 @@ internal sealed class EventSource(
     private async Task PersistAndPublishAsync(CancellationToken cancellationToken)
     {
         var eventBundle = PrepareEventBundle();
+        var anyStaged = _eventStreamEntries.Count > 0;
+
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
 
         await eventStreamRepository.AddRangeAsync(_eventStreamEntries, cancellationToken);
         await snapshotService.AddSnapshotIfNeededAsync(_eventStreamEntries, cancellationToken);
-        if (outboxDispatcher.StoresBundlesWithCommit)
+        if (anyStaged && outboxDispatcher.StoresBundlesWithCommit)
         {
             await outboxDispatcher.StoreEventBundleAsync(eventBundle, transaction, cancellationToken);
         }
@@ -180,7 +186,21 @@ internal sealed class EventSource(
             throw new ConcurrencyException(streamId, aggregateTypeName, ex);
         }
 
-        await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
+        if (!anyStaged)
+        {
+            return;
+        }
+
+        try
+        {
+            await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The events are committed. The caller must know that, so it does not append them again.
+            var streamIds = _eventStreamEntries.Select(entry => entry.StreamId).Distinct().ToList();
+            throw new CommittedEventsNotPublishedException(streamIds, _eventStreamEntries.Count, ex);
+        }
     }
 
     private void ClearBatchState()
