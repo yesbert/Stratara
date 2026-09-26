@@ -151,6 +151,22 @@ B's command fails with the refusal and A's command with B's failure. Nothing wai
 Where a handler has to reach back, dispatch through `ICommandOutboxDispatcher` instead: the command is
 recorded and handed over without waiting, in its own turn.
 
+## Failures that cross silos
+
+A command forwarded to an aggregate on another silo can fail there. Orleans carries an exception from
+one silo to another with its type only when it is told to, and a chain with one exception it refuses —
+a database or a broker exception inside the framework's own — does not cross at all. The execution
+model's registrations therefore let every exception type cross, so the framework's failures arrive as
+they were thrown, their inner exceptions included. A bus worker that forwarded a command still sees a
+`ConcurrencyException` as a conflict and a `CommittedEventsNotPublishedException` as a save not to run
+again. What crosses is the type, the message, the stack trace and the inner exceptions; the properties
+of the framework's exceptions read empty on the far side, and their messages carry the same facts. The
+setting only decides what a silo sends; what a silo accepts is Orleans' own type filter, which stays as
+it is. A host that sets its own `SupportedExceptionTypeFilter` on
+`Orleans.Serialization.ExceptionSerializationOptions` after these registrations replaces the
+framework's, and must keep letting exception chains through, or a framework failure from another silo
+arrives as a serialization failure again.
+
 ## Kept commands
 
 A recorded command is bounded as a bus message is, by the two bounds of `MessageRetryOptions`:

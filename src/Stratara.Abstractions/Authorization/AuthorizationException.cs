@@ -16,7 +16,7 @@ public class AuthorizationException : Exception
     public AuthorizationException(string role)
         : base($"Access denied. Required role: {role}")
     {
-        RequiredRole = role;
+        _requiredRole = role;
     }
 
     /// <summary>
@@ -27,13 +27,15 @@ public class AuthorizationException : Exception
     protected AuthorizationException(string requirement, string message)
         : base(message)
     {
-        RequiredRole = requirement;
+        _requiredRole = requirement;
     }
 
     /// <summary>
     /// The requirement the caller did not hold. For role denials this is the role name; derived
     /// denial types mirror their specific requirement here so role-era handlers keep logging
-    /// something meaningful.
+    /// something meaningful. Empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.
     /// </summary>
-    public string RequiredRole { get; }
+    public string RequiredRole => _requiredRole ?? string.Empty;
+
+    private readonly string? _requiredRole;
 }

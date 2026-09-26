@@ -15,12 +15,17 @@ public sealed class ConcurrencyException : Exception
         : base($"Concurrent write detected on stream {streamId} ({aggregateTypeName}).", innerException)
     {
         StreamId = streamId;
-        AggregateTypeName = aggregateTypeName;
+        _aggregateTypeName = aggregateTypeName;
     }
 
-    /// <summary>The stream id that experienced the concurrent write.</summary>
+    private readonly string? _aggregateTypeName;
+
+    /// <summary>
+    /// The stream id that experienced the concurrent write; <see cref="Guid.Empty"/> on an exception that crossed a
+    /// process boundary, where only its type, message and inner exception are carried.
+    /// </summary>
     public Guid StreamId { get; }
 
-    /// <summary>The aggregate type bound to the stream.</summary>
-    public string AggregateTypeName { get; }
+    /// <summary>The aggregate type bound to the stream; empty on an exception that crossed a process boundary.</summary>
+    public string AggregateTypeName => _aggregateTypeName ?? string.Empty;
 }

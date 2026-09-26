@@ -62,6 +62,7 @@ internal static class ResilienceFactory
         pipelineBuilder
             .AddRetry(new RetryStrategyOptions
             {
+                ShouldHandle = AnyFailureButCommittedOrCancelled,
                 BackoffType = DelayBackoffType.Exponential,
                 MaxRetryAttempts = int.MaxValue,
                 Delay = MessageBusBaseDelay,
@@ -120,15 +121,25 @@ internal static class ResilienceFactory
     public static void CreateProjectionReplayBatchPipeline(ResiliencePipelineBuilder pipelineBuilder) =>
         pipelineBuilder.AddRetry(new RetryStrategyOptions
         {
+            ShouldHandle = AnyFailureButCommittedOrCancelled,
             MaxRetryAttempts = ProjectionReplayBatchRetries,
             Delay = ProjectionReplayBatchRetryDelay,
             BackoffType = DelayBackoffType.Exponential,
             UseJitter = true
         });
 
+    /// <summary>
+    /// What every pipeline that retries any failure retries: anything but cancellation — Polly's own
+    /// default — and a save that committed before it failed, which would record its facts twice if the
+    /// work ran again.
+    /// </summary>
+    private static readonly PredicateBuilder<object> AnyFailureButCommittedOrCancelled = new PredicateBuilder()
+        .Handle<Exception>(ex => ex is not (OperationCanceledException or CommittedEventsNotPublishedException));
+
     private static void AddDispatcherRetry(ResiliencePipelineBuilder pipelineBuilder) =>
         pipelineBuilder.AddRetry(new RetryStrategyOptions
         {
+            ShouldHandle = AnyFailureButCommittedOrCancelled,
             MaxRetryAttempts = DefaultDispatcherRetryAttempts,
             Delay = DefaultDispatcherRetryDelay,
             BackoffType = DelayBackoffType.Exponential,

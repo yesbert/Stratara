@@ -49,6 +49,24 @@ internal static partial class OrleansLog
     public static partial void LogHandlerStoppedWithSilo(this ILogger logger, string handler, string identity);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentCommittedNotPublished,
+        Level = LogLevel.Error,
+        Message = "Recorded command {IntentId} ({CommandType}) committed its events but could not publish them; it is completed so it is not run twice. Replay the projections that consume those events.")]
+    public static partial void LogIntentCommittedNotPublished(this ILogger logger, Exception exception, Guid intentId, string commandType);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.EntryCommittedNotPublished,
+        Level = LogLevel.Error,
+        Message = "{Consumer} applied entry {EntryId} in partition {Partition} and committed its events but could not publish them; the entry counts as applied so it is not run twice. Replay the projections that consume those events.")]
+    public static partial void LogEntryCommittedNotPublished(this ILogger logger, Exception exception, string consumer, int partition, Guid entryId);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.TimerCommittedNotPublished,
+        Level = LogLevel.Error,
+        Message = "The timer {Purpose} of {Owner} committed its events but could not publish them; it counts as fired so it is not run twice. Replay the projections that consume those events.")]
+    public static partial void LogTimerCommittedNotPublished(this ILogger logger, Exception exception, string owner, string purpose);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.StoreReaderStopped,
         Level = LogLevel.Information,
         Message = "Store reader for {Consumer} stopped on partition {Partition}.")]

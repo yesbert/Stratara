@@ -1,4 +1,8 @@
 using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Stratara.Outbox.RabbitMQ.IntegrationTests.Fixtures;
@@ -92,6 +96,159 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
 
         await secondAttempt.Task.WaitAsync(cts.Token);
         Assert.True(attempts >= 2, $"Expected at least 2 delivery attempts, got {attempts}.");
+    }
+
+    /// <summary>
+    /// A handler whose save committed its events but could not publish them is not run again: a second
+    /// delivery would record the same facts twice. The message is completed, not abandoned or dead-lettered.
+    /// </summary>
+    [Fact]
+    public async Task SubscribeAsync_HandlerCommittedButCouldNotPublish_MessageIsCompleted()
+    {
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 3 }));
+
+        var attempts = 0;
+        var handled = new TaskCompletionSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        await bus.SubscribeAsync<TestMessage>("test-committed-not-published", "worker", _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            handled.TrySetResult();
+            throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("the outbox table is down"));
+        }, cts.Token);
+
+        await Task.Delay(500, cts.Token);
+        await bus.PublishAsync("test-committed-not-published", new TestMessage("committed"), cts.Token);
+        await handled.Task.WaitAsync(cts.Token);
+        await Task.Delay(3000, cts.Token);
+
+        Assert.Equal(1, attempts);
+        await using var dlqReceiver = _client.CreateReceiver("test-committed-not-published", "worker", new ServiceBusReceiverOptions
+        {
+            SubQueue = SubQueue.DeadLetter,
+        });
+        Assert.Null(await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), cts.Token));
+        await using var activeReceiver = _client.CreateReceiver("test-committed-not-published", "worker");
+        Assert.Null(await activeReceiver.PeekMessageAsync(cancellationToken: cts.Token));
+    }
+
+    /// <summary>
+    /// The subscription stops while its handler runs — the host is shutting down. The handler settles its message, and
+    /// the stopped processor takes no message published afterwards.
+    /// </summary>
+    [Fact]
+    public async Task SubscribeAsync_SubscriptionStopsDuringTheHandler_TheMessageIsCompletedAndNoMoreAreTaken()
+    {
+        await using var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 3 }));
+
+        var handled = 0;
+        var first = new TaskCompletionSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+        await bus.SubscribeAsync<TestMessage>("test-stopping-subscription", "worker", async _ =>
+        {
+            Interlocked.Increment(ref handled);
+            await subscribed.CancelAsync();
+            first.TrySetResult();
+        }, subscribed.Token);
+
+        await Task.Delay(500, cts.Token);
+        await bus.PublishAsync("test-stopping-subscription", new TestMessage("first"), cts.Token);
+        await first.Task.WaitAsync(cts.Token);
+        await bus.DisposeAsync();
+
+        await bus.PublishAsync("test-stopping-subscription", new TestMessage("after the stop"), cts.Token);
+        await Task.Delay(3000, cts.Token);
+
+        Assert.Equal(1, handled);
+        await using var receiver = _client.CreateReceiver("test-stopping-subscription", "worker");
+        var waiting = await receiver.PeekMessageAsync(cancellationToken: cts.Token);
+        Assert.NotNull(waiting);
+        Assert.Contains("after the stop", waiting.Body.ToString(), StringComparison.Ordinal);
+        Assert.Null(await receiver.PeekMessageAsync(waiting.SequenceNumber + 1, cts.Token));
+    }
+
+    /// <summary>
+    /// The host stops while a handler runs. It waits for the handler to settle before it counts as stopped — so before
+    /// the container that holds the handler's services is disposed — and the message is completed.
+    /// </summary>
+    [Fact]
+    public async Task HostStopsDuringTheHandler_TheHostWaitsForItAndTheMessageIsCompleted()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var subscribed = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddAzureServiceBus(fixture.ConnectionString);
+        // The emulator does not serve the administration endpoint; the bounds apply as configured.
+        builder.Services.RemoveAll<ServiceBusAdministrationClient>();
+        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), "test-host-stops", "worker", subscribed, async _ =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+        }));
+        using var host = builder.Build();
+        await host.StartAsync(cts.Token);
+        await subscribed.Task.WaitAsync(cts.Token);
+
+        await host.Services.GetRequiredService<IMessageBus>().PublishAsync("test-host-stops", new TestMessage("stopping"), cts.Token);
+        await entered.Task.WaitAsync(cts.Token);
+
+        var stopping = host.StopAsync(cts.Token);
+        await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+        Assert.False(stopping.IsCompleted);
+
+        release.TrySetResult();
+        await stopping.WaitAsync(cts.Token);
+        await using var receiver = _client.CreateReceiver("test-host-stops", "worker");
+        Assert.Null(await receiver.PeekMessageAsync(cancellationToken: cts.Token));
+    }
+
+    /// <summary>
+    /// A handler that never returns cannot hold a stopping subscription — and the host's stop and disposal after it —
+    /// up for longer than the bounded wait for the handler.
+    /// </summary>
+    [Fact]
+    public async Task HandlerNeverReturns_StoppingTheSubscriptionStillFinishes()
+    {
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 3 }));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        var entered = new TaskCompletionSource();
+        var never = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>("test-stuck-handler", "worker", async _ =>
+        {
+            entered.TrySetResult();
+            await never.Task;
+        }, subscribed.Token);
+
+        await Task.Delay(500, cts.Token);
+        await bus.PublishAsync("test-stuck-handler", new TestMessage("stuck"), cts.Token);
+        await entered.Task.WaitAsync(cts.Token);
+        await subscribed.CancelAsync();
+
+        try
+        {
+            await bus.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(40), cts.Token);
+        }
+        finally
+        {
+            never.TrySetResult();
+        }
+    }
+
+    /// <summary>Subscribes when the host starts, with the host's stopping token — the way a worker does.</summary>
+    private sealed class SubscribingWorker(IMessageBus bus, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler) : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            await bus.SubscribeAsync(topic, subscription, handler, stoppingToken);
+            subscribed.TrySetResult();
+        }
     }
 
     /// <summary>

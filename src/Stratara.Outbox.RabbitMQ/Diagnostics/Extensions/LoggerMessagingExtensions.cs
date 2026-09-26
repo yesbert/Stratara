@@ -20,6 +20,19 @@ public static partial class LoggerMessagingExtensions
         Message = "Error processing message from topic {Topic}")]
     public static partial void LogMessageProcessingFailed(this ILogger logger, string topic, Exception exception);
 
+    /// <summary>
+    /// Logs that a handler committed its events but could not publish them, so the message is
+    /// acknowledged instead of delivered again: running it twice would record the events twice.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="topic">The topic the message came from.</param>
+    /// <param name="exception">The save's failure, naming the committed streams.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Messaging.CommittedEventsNotPublished,
+        Level = LogLevel.Error,
+        Message = "A message from topic {Topic} committed its events but could not publish them; it is acknowledged so it is not run twice. Replay the projections that consume those events.")]
+    public static partial void LogCommittedEventsNotPublished(this ILogger logger, string topic, Exception exception);
+
     /// <summary>Logs that a message body could not be deserialized into the expected payload type.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="topic">The topic / queue / exchange the message originated from.</param>

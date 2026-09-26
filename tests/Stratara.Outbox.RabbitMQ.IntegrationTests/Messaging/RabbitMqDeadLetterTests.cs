@@ -1,5 +1,7 @@
 using System.Diagnostics.Metrics;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,6 +12,7 @@ using Stratara.Abstractions.Messaging;
 using Stratara.Diagnostics;
 using Stratara.Outbox.RabbitMQ.IntegrationTests.Fixtures;
 using Stratara.Outbox.RabbitMQ.Messaging;
+using Stratara.Shared.Messaging;
 
 namespace Stratara.Outbox.RabbitMQ.IntegrationTests.Messaging;
 
@@ -36,8 +39,9 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
 
     public sealed record TestMessage(string Payload);
 
-    private RabbitMqBus CreateBus(MessageRetryOptions retry) =>
-        new(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(retry));
+    private RabbitMqBus CreateBus(MessageRetryOptions retry, MessagingOptions? messaging = null) =>
+        new(NullLogger<RabbitMqBus>.Instance, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(retry),
+            Options.Create(messaging ?? new MessagingOptions()));
 
     [Fact]
     public async Task HandlerKeepsFailing_MessageIsDeadLetteredAfterTheAttemptBound_AndCounted()
@@ -92,6 +96,242 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         await Task.Delay(QuietPeriod, cts.Token);
         Assert.Equal(2, attempts);
         Assert.Null(await TryGetDeadLetterAsync(subscription, cts.Token));
+    }
+
+    /// <summary>
+    /// A handler whose save committed its events but could not publish them is not run again: a second
+    /// delivery would record the same facts twice. The message is acknowledged, not redelivered and not
+    /// dead-lettered.
+    /// </summary>
+    [Fact]
+    public async Task HandlerCommittedButCouldNotPublish_MessageIsAcknowledged_NotRedeliveredOrDeadLettered()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+        var attempts = 0;
+        var handled = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            handled.TrySetResult();
+            throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("the outbox table is down"));
+        }, subscribed.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("committed"), cts.Token);
+
+        await handled.Task.WaitAsync(cts.Token);
+        await Task.Delay(QuietPeriod, cts.Token);
+        Assert.Equal(1, attempts);
+        Assert.Null(await TryGetDeadLetterAsync(subscription, cts.Token));
+
+        // Closing the consumer returns a message it never settled to the queue; an acknowledged one is gone.
+        await subscribed.CancelAsync();
+        await Task.Delay(QuietPeriod, cts.Token);
+        await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token);
+        Assert.Equal(0u, await channel.MessageCountAsync(RabbitMqBus.WorkerQueueName(subscription), cts.Token));
+    }
+
+    /// <summary>
+    /// The subscription stops while its handler runs — the host is shutting down — and the handler still settles: a
+    /// handler that completed, or one whose save committed but could not publish, has done its work, and an
+    /// acknowledgement cancelled with the subscription would hand the message back to run it again.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SubscriptionStopsDuringTheHandler_TheMessageIsStillAcknowledged(bool committedButNotPublished)
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+        var runs = 0;
+        var handled = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, async _ =>
+        {
+            Interlocked.Increment(ref runs);
+            await subscribed.CancelAsync();
+            handled.TrySetResult();
+            if (committedButNotPublished)
+            {
+                throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("the outbox table is down"));
+            }
+        }, subscribed.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("stopping"), cts.Token);
+
+        await handled.Task.WaitAsync(cts.Token);
+        await bus.DisposeAsync();
+        Assert.Equal(0u, await ReadyCountAsync(subscription, cts.Token));
+
+        await PublishRawAsync(topic, new TestMessage("after the stop"), cts.Token);
+        Assert.Equal(1u, await WaitForReadyCountAsync(subscription, 1, cts.Token));
+        Assert.Equal(1, runs);
+    }
+
+    /// <summary>
+    /// The host stops while a handler runs. It waits for the handler to settle before it counts as stopped — so before
+    /// the container that holds the handler's services is disposed — and the message is acknowledged.
+    /// </summary>
+    [Fact]
+    public async Task HostStopsDuringTheHandler_TheHostWaitsForItAndTheMessageIsAcknowledged()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var subscribed = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
+        builder.Configuration.AddConfiguration(fixture.Configuration);
+        builder.AddMessaging();
+        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), topic, subscription, subscribed, async _ =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+        }));
+        using var host = builder.Build();
+        await host.StartAsync(cts.Token);
+        await subscribed.Task.WaitAsync(cts.Token);
+
+        await host.Services.GetRequiredService<IMessageBus>().PublishAsync(topic, new TestMessage("stopping"), cts.Token);
+        await entered.Task.WaitAsync(cts.Token);
+
+        var stopping = host.StopAsync(cts.Token);
+        await Task.Delay(QuietPeriod, cts.Token);
+        Assert.False(stopping.IsCompleted);
+
+        release.TrySetResult();
+        await stopping.WaitAsync(cts.Token);
+        Assert.Equal(0u, await ReadyCountAsync(subscription, cts.Token));
+    }
+
+    /// <summary>
+    /// A handler that never returns cannot hold a stopping subscription — and the host's stop and disposal after it —
+    /// up for longer than the bounded waits for the handler and for the channel to close.
+    /// </summary>
+    [Fact]
+    public async Task HandlerNeverReturns_StoppingTheSubscriptionStillFinishes()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        var entered = new TaskCompletionSource();
+        var never = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, async _ =>
+        {
+            entered.TrySetResult();
+            await never.Task;
+        }, subscribed.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("stuck"), cts.Token);
+        await entered.Task.WaitAsync(cts.Token);
+        await subscribed.CancelAsync();
+
+        try
+        {
+            await bus.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(40), cts.Token);
+        }
+        finally
+        {
+            never.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// A subscription holds no more messages than its prefetch bound while its handler runs; the rest stay on the queue
+    /// for another consumer, and a stop sends back no more than the bound.
+    /// </summary>
+    [Fact]
+    public async Task HandlerRuns_TheSubscriptionHoldsNoMoreThanItsPrefetchBound()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions(), new MessagingOptions { PrefetchCount = 2 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        for (var i = 0; i < 10; i++)
+        {
+            await bus.PublishAsync(topic, new TestMessage($"queued-{i}"), cts.Token);
+        }
+
+        Assert.Equal(10u, await WaitForReadyCountAsync(subscription, 10, cts.Token));
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, async _ =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+        }, subscribed.Token);
+
+        await entered.Task.WaitAsync(cts.Token);
+        Assert.Equal(8u, await WaitForReadyCountAsync(subscription, 8, cts.Token));
+        await Task.Delay(QuietPeriod, cts.Token);
+        Assert.Equal(8u, await ReadyCountAsync(subscription, cts.Token));
+
+        await subscribed.CancelAsync();
+        release.TrySetResult();
+        await bus.DisposeAsync();
+        Assert.Equal(9u, await WaitForReadyCountAsync(subscription, 9, cts.Token));
+    }
+
+    /// <summary>
+    /// Deliveries the client had already buffered when the subscription stopped are not run on a channel that can no
+    /// longer acknowledge them: they go back to the queue for the next consumer, marked as redelivered and counted by the
+    /// broker as delivered once.
+    /// </summary>
+    [Fact]
+    public async Task SubscriptionStops_BufferedDeliveriesGoBackToTheQueueUnhandled()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        for (var i = 0; i < 5; i++)
+        {
+            await bus.PublishAsync(topic, new TestMessage($"queued-{i}"), cts.Token);
+        }
+
+        Assert.Equal(5u, await WaitForReadyCountAsync(subscription, 5, cts.Token));
+        var handled = 0;
+        var first = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, async _ =>
+        {
+            if (Interlocked.Increment(ref handled) == 1)
+            {
+                await subscribed.CancelAsync();
+                first.TrySetResult();
+            }
+        }, subscribed.Token);
+
+        await first.Task.WaitAsync(cts.Token);
+        await bus.DisposeAsync();
+
+        Assert.Equal(1, handled);
+        Assert.Equal(4u, await WaitForReadyCountAsync(subscription, 4, cts.Token));
+        await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token);
+        var returned = await channel.BasicGetAsync(RabbitMqBus.WorkerQueueName(subscription), autoAck: false, cts.Token);
+        Assert.NotNull(returned);
+        Assert.True(returned.Redelivered);
+        Assert.Equal(1L, EarlierDeliveries(returned.BasicProperties));
+        await channel.BasicNackAsync(returned.DeliveryTag, false, true, cts.Token);
     }
 
     [Fact]
@@ -208,6 +448,52 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
 
     private sealed record DeadLettered(byte[] Body, IReadOnlyBasicProperties Properties);
 
+    /// <summary>Subscribes when the host starts, with the host's stopping token — the way a worker does.</summary>
+    private sealed class SubscribingWorker(IMessageBus bus, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler) : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            await bus.SubscribeAsync(topic, subscription, handler, stoppingToken);
+            subscribed.TrySetResult();
+        }
+    }
+
+    /// <summary>The broker's count of a message's earlier deliveries, read the way the bus reads it.</summary>
+    private static long EarlierDeliveries(IReadOnlyBasicProperties properties)
+    {
+        var headers = properties.Headers ?? throw new InvalidOperationException("The message carries no headers.");
+        var earlier = headers.TryGetValue("x-acquired-count", out var acquired) ? acquired : headers["x-delivery-count"];
+        return Convert.ToInt64(earlier, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private async Task<uint> ReadyCountAsync(string subscription, CancellationToken cancellationToken)
+    {
+        await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cancellationToken);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        return await channel.MessageCountAsync(RabbitMqBus.WorkerQueueName(subscription), cancellationToken);
+    }
+
+    /// <summary>Polls the worker queue's ready count until it reads <paramref name="expected"/>, and returns what it read last.</summary>
+    private async Task<uint> WaitForReadyCountAsync(string subscription, uint expected, CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow + DeadLetterWait;
+        var count = await ReadyCountAsync(subscription, cancellationToken);
+        while (count != expected && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(100, cancellationToken);
+            count = await ReadyCountAsync(subscription, cancellationToken);
+        }
+
+        return count;
+    }
+
+    private async Task PublishRawAsync(string topic, TestMessage message, CancellationToken cancellationToken)
+    {
+        await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cancellationToken);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        await channel.BasicPublishAsync(topic, string.Empty, JsonSerializer.SerializeToUtf8Bytes(message), cancellationToken);
+    }
+
     private async Task<TestMessage> WaitForDeadLetterAsync(string subscription, CancellationToken cancellationToken)
     {
         var raw = await WaitForDeadLetterRawAsync(subscription, cancellationToken);
@@ -260,9 +546,13 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
 
         private MeterCapture(string subscription)
         {
+            // Read before the listener starts: the first read initialises the metrics, and an initialisation
+            // that publishes its instruments into a running listener would call back into it half-built.
+            var meterName = ApplicationDiagnostics.Metrics.MeterName;
+            var instrumentName = ApplicationDiagnostics.Metrics.MessagesDeadLettered.Name;
             _listener.InstrumentPublished = (instrument, listener) =>
             {
-                if (instrument.Meter.Name == ApplicationDiagnostics.Metrics.MeterName && instrument.Name == ApplicationDiagnostics.Metrics.MessagesDeadLettered.Name)
+                if (instrument.Meter.Name == meterName && instrument.Name == instrumentName)
                 {
                     listener.EnableMeasurementEvents(instrument);
                 }

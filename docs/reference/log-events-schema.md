@@ -82,6 +82,9 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_124` | IntentHandOverDropped | Debug | A hand-over found its command already taken by another runner — a second resumption of the same claim — or completed or kept, and was dropped without running the handler |
 | `117_125` | SharedSagaReaderRetired | Information | The saga reader a 4.1.x deployment shared between all its sagas was brought back on a 4.2.0 silo and retired: it unregistered its keep-alive and reads nothing, because each saga reads with a checkpoint of its own; carries the partition |
 | `117_126` | UnregisteredSagaReaderRetired | Information | A saga's reader was brought back — by its keep-alive or a call — on a silo that registers no saga of its name, the saga having been removed or renamed; it unregistered its keep-alive, reads nothing and deactivates; carries the saga and the partition |
+| `117_127` | IntentCommittedNotPublished | Error | A recorded command's save committed its events but could not publish them; the command is completed rather than resumed, so it does not run twice; carries the intent and the command type |
+| `117_128` | EntryCommittedNotPublished | Error | A store reader's handler committed its events but could not publish them; the entry counts as applied rather than stalling the partition, so it does not run twice; carries the consumer, the partition and the entry |
+| `117_129` | TimerCommittedNotPublished | Error | A durable timer's handler committed its events but could not publish them; the timer counts as fired rather than staying registered, so it does not run twice; carries the owner and the purpose |
 
 ## Authoring a new log event
 

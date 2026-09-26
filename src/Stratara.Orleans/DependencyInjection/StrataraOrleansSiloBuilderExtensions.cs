@@ -37,6 +37,7 @@ public static class StrataraOrleansSiloBuilderExtensions
 
         addDurableDirectory(silo, GrainDirectories.Durable);
         DurableDirectoryCheck.Register(silo.Services);
+        FrameworkExceptionSerialization.Register(silo.Services);
         SiloStopSignal.Register(silo.Services);
         Stratara.Orleans.Singleton.SingletonWorkPlacement.Register(silo);
         return silo;

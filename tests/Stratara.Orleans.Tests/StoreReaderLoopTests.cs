@@ -151,6 +151,29 @@ public sealed class StoreReaderLoopTests
         Assert.Equal(2, checkpoints.Reads);
     }
 
+    /// <summary>
+    /// A saga step whose save committed but could not publish has done its work: the reader counts the entry as applied
+    /// and goes on, rather than stalling on it and running the step again.
+    /// </summary>
+    [Fact]
+    public async Task An_entry_whose_handler_committed_but_could_not_publish_counts_as_applied()
+    {
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), new MemoryCheckpoints(), batchSize: 10);
+        var entries = Entries(1, 3);
+        var attempts = new List<Guid>();
+
+        var applied = await loop.ApplyEachAsync(new CommittedBatch(entries, 3), (entry, _) =>
+        {
+            attempts.Add(entry.Id);
+            return entry.Id == entries[1].Entry.Id
+                ? throw new CommittedEventsNotPublishedException([entry.StreamId], 1, new InvalidOperationException("the bus is down"))
+                : Task.CompletedTask;
+        });
+
+        Assert.Equal(3, applied);
+        Assert.Equal(entries.Select(e => e.Entry.Id), attempts);
+    }
+
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)
     {
         var services = new ServiceCollection()

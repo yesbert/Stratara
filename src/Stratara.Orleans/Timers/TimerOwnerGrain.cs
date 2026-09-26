@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Timers;
 using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
@@ -183,12 +184,23 @@ internal sealed class TimerOwnerGrain(
         }
 
         var handler = TimerPorts.HandlerFor(scope.ServiceProvider, ownerId);
-        await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), _stopping.Token);
+        var gateToken = _stopping.Token;
+        try
+        {
+            await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), _stopping.Token);
+        }
+        catch (CommittedEventsNotPublishedException committed)
+        {
+            // The handler's events are recorded. Firing the timer again would record them a second time, so the
+            // unregister below goes ahead even if the silo is stopping — which may be what ended the handover.
+            logger.LogTimerCommittedNotPublished(committed, ownerId, purpose);
+            gateToken = CancellationToken.None;
+        }
 
         // Under the gate: a registration for the same purpose and due time that lands between the handler's return
         // and the unregister is a renewal, and its reminder must not be deleted by the tick it renewed. A silo that
         // stops while the gate is held leaves the reminder registered, which fires it again — the safe direction.
-        await _changes.WaitAsync(_stopping.Token);
+        await _changes.WaitAsync(gateToken);
         try
         {
             if (!_renewed.Contains(reminderName))

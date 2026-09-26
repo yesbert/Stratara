@@ -11,6 +11,7 @@ using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
 using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
+using Stratara.Shared.Messaging;
 
 namespace Stratara.Outbox.RabbitMQ.Messaging;
 
@@ -61,13 +62,20 @@ namespace Stratara.Outbox.RabbitMQ.Messaging;
 /// <c>durable=false + exclusive=false + autoDelete=true</c> combination is rejected by default
 /// (deprecated <c>transient_nonexcl_queues</c> feature).
 /// </para>
+/// <para>
+/// A subscription holds at most <see cref="MessagingOptions.PrefetchCount"/> unacknowledged messages, the one its
+/// handler is running included. When it stops it takes no further message, waits up to twenty seconds for its running
+/// handler to settle, and closes, waiting up to five seconds for that; what it held beyond the running handler's
+/// message goes back to the queue unhandled, and the broker counts it as delivered once more.
+/// </para>
 /// </remarks>
 internal sealed class RabbitMqBus(
     ILogger<RabbitMqBus> logger,
     IConfiguration configuration,
     IHostEnvironment hostEnvironment,
     IOptions<BusEnvelopeJsonOptions> envelopeOptions,
-    IOptions<MessageRetryOptions> retryOptions) : IMessageBus, IAsyncDisposable
+    IOptions<MessageRetryOptions> retryOptions,
+    IOptions<MessagingOptions>? messagingOptions = null) : IMessageBus, IAsyncDisposable
 {
     internal const string WorkerQueueSuffix = ".v2";
     internal const string DeadLetterSuffix = ".dead-letter";
@@ -77,6 +85,20 @@ internal sealed class RabbitMqBus(
     private const string DeliveryLimitArgument = "x-delivery-limit";
     private const int MaxOutstandingConfirms = 50_000;
     private static readonly TimeSpan NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long a stopping subscription waits for the handlers it is running to settle their messages before it
+    /// closes its channel. Within the host's default shutdown timeout, so a stuck handler cannot hold the host up.
+    /// </summary>
+    private static readonly TimeSpan HandlerSettleTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// How long a stopping subscription waits for its channel and connection to close. A channel closes only once the
+    /// handler its consumer is running has returned, so a handler that never returns would keep the close — and the
+    /// host's stop and disposal after it — waiting forever. Together with <see cref="HandlerSettleTimeout"/> within the
+    /// host's default shutdown timeout.
+    /// </summary>
+    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
 
     private static readonly CreateChannelOptions ChannelOpts = new(
         true,
@@ -96,6 +118,7 @@ internal sealed class RabbitMqBus(
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly System.Collections.Concurrent.ConcurrentBag<Task> _cleanupTasks = new();
+    private readonly ushort _prefetchCount = (ushort)(messagingOptions?.Value ?? new MessagingOptions()).PrefetchCount;
     private IConnection? _publishConnection;
     private IChannel? _publishChannel;
 
@@ -179,6 +202,12 @@ internal sealed class RabbitMqBus(
         }
     }
 
+    /// <summary>
+    /// Completes when every subscription that was stopped has finished stopping: its running handlers settled, or the
+    /// wait for them ran out, and its channel closed.
+    /// </summary>
+    internal Task WhenSubscriptionsStoppedAsync() => Task.WhenAll(_cleanupTasks);
+
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
@@ -186,9 +215,10 @@ internal sealed class RabbitMqBus(
         // before the publish channel goes away. Round-3-Audit Finding R3-Sec-010: previously the
         // cleanup tasks were fire-and-forget Task.Run, allowing host shutdown to race with an
         // in-flight ReceivedAsync handler and either drop messages or surface secondary exceptions.
+        // A host drains them earlier, when it stops (RabbitMqSubscriptionsDrain); this covers a bus used without one.
         try
         {
-            await Task.WhenAll(_cleanupTasks);
+            await WhenSubscriptionsStoppedAsync();
         }
         catch (Exception ex)
         {
@@ -414,13 +444,40 @@ internal sealed class RabbitMqBus(
         factory.AutomaticRecoveryEnabled = true;
         factory.NetworkRecoveryInterval = NetworkRecoveryInterval;
         var connection = await factory.CreateConnectionAsync(cancellationToken);
-        var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        IChannel? channel = null;
+        try
+        {
+            channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+            await ConsumeAsync(connection, channel, topic, subscription, handler, cancellationToken);
+        }
+        catch
+        {
+            // Nothing consumes yet, and nothing would close the connection later.
+            await CloseAsync(channel, connection, subscription);
+            throw;
+        }
+    }
 
+    private async Task ConsumeAsync<T>(IConnection connection, IChannel channel, string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken)
+    {
         await DeclareAndBindAsync(connection, channel, topic, subscription, cancellationToken);
 
+        // Bounds how many messages the broker hands this consumer ahead of the one its handler runs: whatever it holds
+        // when the subscription stops goes back to the queue unhandled, counted as delivered once more.
+        await channel.BasicQosAsync(0, _prefetchCount, false, cancellationToken);
+
         var consumer = new AsyncEventingBasicConsumer(channel);
+        var running = new RunningHandlers();
         consumer.ReceivedAsync += async (_, args) =>
         {
+            // A delivery the client had buffered before the subscription stopped is not handled: it stays unacked and
+            // goes back to the queue when the channel closes, instead of running on a channel that can no longer
+            // acknowledge it.
+            if (!running.TryEnter())
+            {
+                return;
+            }
+
             try
             {
                 var body = args.Body.ToArray();
@@ -431,41 +488,96 @@ internal sealed class RabbitMqBus(
                     await handler(message);
                 }
 
-                await channel.BasicAckAsync(args.DeliveryTag, false, cancellationToken);
+                // Settled whatever the subscription's token says: a handler that completed while the subscription
+                // stops has done its work, and an acknowledgement that throws would deliver the message again.
+                await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
+            }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                // Settled whatever the subscription's token says: a stopping subscription must not leave it unacked,
+                // which would deliver the message again.
+                logger.LogCommittedEventsNotPublished(topic, committed);
+                await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
             }
             catch (ConcurrencyException ce)
             {
-                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, ce, cancellationToken);
+                // Settled whatever the subscription's token says, like every outcome: a settlement that throws would
+                // leave the decision to the broker.
+                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, ce, CancellationToken.None);
             }
             catch (Exception e)
             {
                 logger.LogMessageProcessingFailed(topic, e);
-                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, e, cancellationToken);
+                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, e, CancellationToken.None);
+            }
+            finally
+            {
+                running.Exit();
             }
         };
 
-        await channel.BasicConsumeAsync(QueueName(subscription), false, consumer, cancellationToken);
+        var consumerTag = await channel.BasicConsumeAsync(QueueName(subscription), false, consumer, cancellationToken);
 
-        cancellationToken.Register(() =>
+        // The cleanup is tracked so DisposeAsync can await it during graceful host shutdown (Round-3-Audit Finding
+        // R3-Sec-010): letting it run untracked let the host tear down the bus while a subscription was mid-cleanup.
+        cancellationToken.Register(() => _cleanupTasks.Add(StopAsync()));
+
+        // The subscription stops taking messages first and lets the handlers it is running settle theirs before it
+        // closes the channel: a handler that completed — or whose save committed — while the host stops must be able to
+        // acknowledge, or its message is handed back and runs again.
+        async Task StopAsync()
         {
-            // Track the cleanup task so DisposeAsync can await it during graceful host shutdown
-            // (Round-3-Audit Finding R3-Sec-010) — fire-and-forget Task.Run let the host tear
-            // down the bus while a subscription was still mid-cleanup.
-            var cleanup = Task.Run(async () =>
+            // Refused from the moment the token is cancelled, before the first await, so no buffered delivery slips in
+            // while the rest of the stop is scheduled.
+            running.Stop();
+            await Task.Yield();
+            logger.LogSubscriptionCleanup(subscription);
+            try
             {
-                try
-                {
-                    logger.LogSubscriptionCleanup(subscription);
-                    await channel.DisposeAsync();
-                    await connection.DisposeAsync();
-                }
-                catch (Exception ex)
-                {
-                    logger.LogSubscriptionCleanupFailed(subscription, ex);
-                }
-            });
-            _cleanupTasks.Add(cleanup);
-        });
+                await channel.BasicCancelAsync(consumerTag, false, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+
+            try
+            {
+                await running.WhenSettledAsync().WaitAsync(HandlerSettleTimeout);
+            }
+            catch (TimeoutException ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+
+            try
+            {
+                // Bounded: a handler that never returns keeps the channel from closing. The close goes on in the
+                // background and finishes when the handler returns or the process ends; the broker then puts the
+                // message back.
+                await CloseAsync(channel, connection, subscription).WaitAsync(CloseTimeout);
+            }
+            catch (TimeoutException ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Closes a subscription's channel and its connection, each on its own, so a channel that fails to close does not
+    /// keep the connection open.
+    /// </summary>
+    private async Task CloseAsync(IChannel? channel, IConnection connection, string subscription)
+    {
+        if (channel is not null)
+        {
+            try { await channel.DisposeAsync(); }
+            catch (Exception ex) { logger.LogSubscriptionCleanupFailed(subscription, ex); }
+        }
+
+        try { await connection.DisposeAsync(); }
+        catch (Exception ex) { logger.LogSubscriptionCleanupFailed(subscription, ex); }
     }
 
     [SuppressMessage("Major Code Smell", "S2068:Hard-coded credentials are security-sensitive",
@@ -522,6 +634,67 @@ internal sealed class RabbitMqBus(
             // exception message that propagates to OTel exception-recorders and the host logger.
             throw new InvalidOperationException(
                 "RabbitMQ connection-string 'rabbitmq' is malformed. Expected an amqp:// URI; verify the configuration value.");
+        }
+    }
+
+    /// <summary>Counts the handlers a subscription is running, so a stopping subscription can wait for them to settle.</summary>
+    private sealed class RunningHandlers
+    {
+        private readonly Lock _gate = new();
+        private int _count;
+        private bool _stopping;
+        private TaskCompletionSource? _settled;
+
+        /// <summary>Takes a delivery on, or refuses it once the subscription is stopping.</summary>
+        public bool TryEnter()
+        {
+            lock (_gate)
+            {
+                if (_stopping)
+                {
+                    return false;
+                }
+
+                _count++;
+                return true;
+            }
+        }
+
+        public void Stop()
+        {
+            lock (_gate)
+            {
+                _stopping = true;
+            }
+        }
+
+        public void Exit()
+        {
+            TaskCompletionSource? settled = null;
+            lock (_gate)
+            {
+                if (--_count == 0)
+                {
+                    settled = _settled;
+                    _settled = null;
+                }
+            }
+
+            settled?.TrySetResult();
+        }
+
+        public Task WhenSettledAsync()
+        {
+            lock (_gate)
+            {
+                if (_count == 0)
+                {
+                    return Task.CompletedTask;
+                }
+
+                _settled ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                return _settled.Task;
+            }
         }
     }
 }

@@ -8,19 +8,22 @@ public static class ResilienceNames
 {
     /// <summary>
     /// Message-bus subscription / publish pipeline. Strategy: exponential retry up to
-    /// <c>int.MaxValue</c>, 10s → 60s, jitter. Used by message-bus consumers and publishers.
+    /// <c>int.MaxValue</c>, 10s → 60s, jitter. Used by message-bus consumers and publishers. Never retries
+    /// cancellation or <see cref="Stratara.Abstractions.EventSourcing.CommittedEventsNotPublishedException"/>.
     /// </summary>
     public const string MessageBus = "MessageBusPipeline";
 
     /// <summary>
     /// Command-dispatcher pipeline. Strategy: 3 retries, exponential, 200ms, jitter.
-    /// Used when dispatching command envelopes through the outbox.
+    /// Used when dispatching command envelopes through the outbox. Never retries cancellation or
+    /// <see cref="Stratara.Abstractions.EventSourcing.CommittedEventsNotPublishedException"/>.
     /// </summary>
     public const string CommandDispatcher = "CommandDispatcherPipeline";
 
     /// <summary>
     /// Event-bundle-dispatcher pipeline. Strategy: 3 retries, exponential, 200ms, jitter.
-    /// Used when dispatching event bundles through the outbox.
+    /// Used when dispatching event bundles through the outbox. Never retries cancellation or
+    /// <see cref="Stratara.Abstractions.EventSourcing.CommittedEventsNotPublishedException"/>.
     /// </summary>
     public const string EventBundleDispatcher = "EventBundleDispatcherPipeline";
 
@@ -43,7 +46,8 @@ public static class ResilienceNames
 
     /// <summary>
     /// Pipeline the projection-replay worker runs each batch under: five attempts in all, exponential backoff
-    /// from one second with jitter between them, retrying any exception except cancellation. A
+    /// from one second with jitter between them, retrying any exception except cancellation and
+    /// <see cref="Stratara.Abstractions.EventSourcing.CommittedEventsNotPublishedException"/>. A
     /// read-store timeout or a dropped connection mid-rebuild is retried; a failure that persists through
     /// every attempt ends the replay as an unretried one would.
     /// </summary>

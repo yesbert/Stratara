@@ -50,6 +50,11 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// are logged but otherwise swallowed — the Service Bus client owns the reconnect / retry policy
 /// for those.
 /// </para>
+/// <para>
+/// A subscription that stops closes its processor, which takes no further message and waits up to twenty seconds for
+/// the handler it is running to settle. A handler still running after that keeps its message locked until the lock
+/// expires, and the client closes the processor's links when it is disposed.
+/// </para>
 /// </remarks>
 /// <example>
 /// Register Azure Service Bus as the host's <see cref="IMessageBus"/>:
@@ -64,15 +69,35 @@ internal sealed class AzureServiceBusBus(
     ServiceBusClient client,
     IOptions<BusEnvelopeJsonOptions> envelopeOptions,
     IOptions<MessageRetryOptions> retryOptions,
-    ServiceBusAdministrationClient? administration = null) : IMessageBus
+    ServiceBusAdministrationClient? administration = null) : IMessageBus, IAsyncDisposable
 {
     private const int MaxDeadLetterDescriptionLength = 4096;
+
+    /// <summary>
+    /// How long a stopping subscription waits for the handler it is running to settle its message. Within the host's
+    /// default shutdown timeout, so a stuck handler cannot hold the host up.
+    /// </summary>
+    private static readonly TimeSpan HandlerSettleTimeout = TimeSpan.FromSeconds(20);
 
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly MessageRetryOptions _retryOptions = retryOptions.Value;
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MessageRetryPolicy> _subscriptionPolicies = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentBag<Task> _stops = new();
+
+    /// <summary>
+    /// Completes when every subscription that was stopped has finished stopping: its running handlers settled, or the
+    /// wait for them ran out.
+    /// </summary>
+    internal Task WhenSubscriptionsStoppedAsync() => Task.WhenAll(_stops);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Waits for every subscription that was stopped to finish stopping, so its running handlers could settle. A host
+    /// waits for them earlier, when it stops; this covers a bus used without one.
+    /// </remarks>
+    public async ValueTask DisposeAsync() => await WhenSubscriptionsStoppedAsync();
 
     /// <inheritdoc/>
     public async Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default)
@@ -113,16 +138,27 @@ internal sealed class AzureServiceBusBus(
                     await handler(message);
                 }
 
-                await args.CompleteMessageAsync(args.Message, cancellationToken);
+                // Settled whatever the subscription's token says: a handler that completed while the subscription
+                // stops has done its work, and a completion that throws would deliver the message again.
+                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
+            }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                // Settled whatever the subscription's token says: a stopping subscription must not abandon it, which
+                // would deliver the message again.
+                logger.LogCommittedEventsNotPublished(topic, committed);
+                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
             }
             catch (ConcurrencyException ce)
             {
-                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, cancellationToken);
+                // Settled whatever the subscription's token says, like every outcome: a settlement that throws would
+                // leave the decision to the broker.
+                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, CancellationToken.None);
             }
             catch (Exception ex)
             {
                 logger.LogMessageProcessingFailed(topic, ex);
-                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Failure, ex, cancellationToken);
+                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Failure, ex, CancellationToken.None);
             }
         };
 
@@ -132,7 +168,38 @@ internal sealed class AzureServiceBusBus(
             return Task.CompletedTask;
         };
 
-        await processor.StartProcessingAsync(cancellationToken);
+        try
+        {
+            await processor.StartProcessingAsync(cancellationToken);
+        }
+        catch
+        {
+            // Nothing processes yet, and nothing would close the processor later.
+            await processor.DisposeAsync();
+            throw;
+        }
+
+        // A stopping subscription closes its processor, which takes no further message and waits for the handlers it is
+        // running: a handler that completed — or whose save committed — while the host stops settles its message instead
+        // of having it delivered again.
+        cancellationToken.Register(() => _stops.Add(StopAsync()));
+
+        async Task StopAsync()
+        {
+            await Task.Yield();
+            using var settle = new CancellationTokenSource(HandlerSettleTimeout);
+            try
+            {
+                // Bounded: a handler that does not settle in time keeps its message locked until the lock expires, and the
+                // client closes the links when it is disposed. An unbounded wait here would hold the host's stop — and
+                // its disposal — up for as long as the handler runs.
+                await processor.CloseAsync(settle.Token).WaitAsync(settle.Token);
+            }
+            catch (Exception ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+        }
     }
 
     private async Task SettleFailedAsync(ProcessMessageEventArgs args, string topic, string subscription, MessageRetryPolicy retryPolicy, MessageFailureKind kind, Exception cause, CancellationToken cancellationToken)

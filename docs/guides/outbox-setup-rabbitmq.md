@@ -257,6 +257,32 @@ Quorum queues exist since RabbitMQ 3.8; the framework's floor is 3.13 (see
 listening right now; they have no dead-letter queue. A conflict is requeued, any other failure is
 dropped — there is nobody to return a message to.
 
+## When the host stops
+
+A subscription stops with the token it was opened with — for a worker, the host's stopping token. It
+takes no further message, waits up to twenty seconds for the handler it is running to settle, and then
+closes its channel. The host waits for that before it counts as stopped, within its shutdown timeout
+(`HostOptions.ShutdownTimeout`, 30 seconds by default), so a handler that is still running finishes
+while the services it uses exist, and its message is acknowledged rather than delivered again. A
+handler's outcome is settled whatever the subscription's token says. A handler that takes longer does
+not hold the stop up: after the twenty seconds, and at most five more for the channel to close, the
+subscription counts as stopped, and the broker puts the message back once the process has gone.
+
+What the subscription had fetched but not yet handed to its handler goes back to the queue unhandled.
+The broker counts that as a delivery, so each such stop brings those messages one delivery closer to
+their bound. The number a subscription holds at once, the running handler's message included, is
+therefore bounded:
+
+```jsonc
+{
+  "Messaging": {
+    "PrefetchCount": 16   // 1 to 65535; a value outside is refused at start-up
+  }
+}
+```
+
+The handler still runs one message at a time; a higher bound only hides more network latency.
+
 ## Backpressure
 
 The `OutboxWorker` polls the outbox table every `OutboxOptions.PollingIntervalSeconds` (default 30) and publishes pending rows. If the broker is unreachable, rows sit in the table — at-least-once delivery preserved. The next poll-cycle retries.
