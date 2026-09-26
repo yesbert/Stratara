@@ -16,13 +16,23 @@ public sealed class StrataraValidationException : Exception
     /// </summary>
     /// <param name="failures">The <see cref="ValidationSeverity.Error"/>-severity failures that blocked the request.</param>
     public StrataraValidationException(IReadOnlyList<ValidationFailure> failures)
-        : base("One or more validation failures occurred.")
+        : base(Describe(failures))
     {
         _failures = failures;
     }
 
-    /// <summary>The aggregated failures that caused the request to be rejected.; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
+    /// <summary>The aggregated failures that caused the request to be rejected; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
     public IReadOnlyList<ValidationFailure> Failures => _failures ?? [];
 
     private readonly IReadOnlyList<ValidationFailure>? _failures;
+
+    /// <summary>
+    /// Names each failure in the message, so it still says what failed where <see cref="Failures"/> did not cross —
+    /// the property and the message, never the attempted value.
+    /// </summary>
+    private static string Describe(IReadOnlyList<ValidationFailure>? failures) =>
+        failures is { Count: > 0 }
+            ? "One or more validation failures occurred: " +
+              string.Join("; ", failures.Select(failure => $"{failure.PropertyName}: {failure.ErrorMessage}")) + "."
+            : "One or more validation failures occurred.";
 }

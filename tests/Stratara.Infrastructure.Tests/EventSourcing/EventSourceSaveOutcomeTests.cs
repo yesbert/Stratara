@@ -106,10 +106,15 @@ public class EventSourceSaveOutcomeTests
     /// <summary>With durable bundles the bundle was recorded with the commit; a handover that fails afterwards loses nothing.</summary>
     private sealed class DurableFailingHandover : IEventBundleOutboxDispatcher
     {
+        public bool Stored { get; private set; }
+
         public bool StoresBundlesWithCommit => true;
 
-        public Task StoreEventBundleAsync(EventBundle eventBundle, ITransaction transaction, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+        public Task StoreEventBundleAsync(EventBundle eventBundle, ITransaction transaction, CancellationToken cancellationToken = default)
+        {
+            Stored = true;
+            return Task.CompletedTask;
+        }
 
         public Task EnqueueEventBundleAsync(EventBundle eventBundle, CancellationToken cancellationToken = default) =>
             throw new OperationCanceledException("the host is stopping");
@@ -123,13 +128,16 @@ public class EventSourceSaveOutcomeTests
     {
         await using var host = CreateHost();
         var streamId = Guid.CreateVersion7();
+        var handover = new DurableFailingHandover();
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), new DurableFailingHandover());
+            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), handover);
             await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
 
             await events.SaveChangesAsync();
         }
+
+        Assert.True(handover.Stored);
 
         await using var read = host.Services.CreateAsyncScope();
         var unitOfWork = read.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();

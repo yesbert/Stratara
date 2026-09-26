@@ -32,12 +32,19 @@ applies to the entire NuGet family.
   `PermissionAuthorizationException`, `StrataraValidationException` — read empty on the far side
   rather than null, which the problem-details handler relies on.
 
-- **A stopping RabbitMQ subscription lets its handlers finish.** It closed its channel the moment it
-  was cancelled, while a handler could still be running, so the handler's acknowledgement failed and
-  the message was delivered again — a handler that completed during a shutdown ran twice. The
-  subscription now stops taking messages, waits up to twenty seconds for the running handlers to settle,
-  and then closes. Both transports settle a handled message whatever the subscription's own
-  cancellation says.
+- **A stopping subscription lets its handlers finish.** A RabbitMQ subscription closed its channel the
+  moment it was cancelled, while a handler could still be running, so the handler's acknowledgement
+  failed and the message was delivered again — a handler that completed during a shutdown ran twice;
+  deliveries the client had already fetched then ran on the closing channel too. A Service Bus
+  subscription did not stop its processor at all. A stopping subscription now stops taking messages,
+  hands fetched but unhandled ones back to the queue, lets the running handlers settle (RabbitMQ waits
+  up to twenty seconds; the Service Bus processor waits for them), and then closes. Both transports
+  acknowledge a handled message whatever the subscription's own cancellation says. The Azure Service
+  Bus bus now awaits its stopping subscriptions when it is disposed.
+
+- **A validation failure's message names what failed.** `StrataraValidationException`'s message lists
+  each failure's property and message — never the attempted value — so it still says what failed where
+  `Failures` is not available.
 
 - **A save that committed but could not publish says so, and nothing runs it again.** On a host
   without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after

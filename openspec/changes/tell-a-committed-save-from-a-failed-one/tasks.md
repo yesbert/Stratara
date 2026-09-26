@@ -52,8 +52,17 @@
   host's own filter kept; the prefix is `Stratara.`; the framework exceptions' properties read empty after a
   crossing; a timer's unregister after committed work ignores the stopping token; a stopping RabbitMQ
   subscription cancels its consumer and waits for running handlers to settle before closing the channel, and
-  every settlement uses `CancellationToken.None` (`RabbitMqDeadLetterTests.SubscriptionStopsDuringTheHandler_…`,
+  every acknowledgement of a handled message uses `CancellationToken.None` (`RabbitMqDeadLetterTests.SubscriptionStopsDuringTheHandler_…`,
   which found the message back in the queue before); the durable-host test checks the events committed.
+
+- [x] 2b.9 Round 5 of the review: a stopping RabbitMQ subscription refuses deliveries it had buffered, from the
+  moment its token is cancelled (`SubscriptionStops_BufferedDeliveriesGoBackToTheQueueUnhandled`); the
+  cleanup runs without `Task.Run`; a stopping Service Bus subscription stops its processor, which waits for
+  its running handlers, and the bus awaits that on disposal
+  (`SubscribeAsync_SubscriptionStopsDuringTheHandler_TheMessageIsCompletedAndNoMoreAreTaken`); the
+  documentation no longer promises that a host's exception filter restricts anything; a validation
+  failure's message names its failures; `ErasureIncompleteException.Plane` says what it reads after a
+  crossing.
 
 ## 3. Documentation
 

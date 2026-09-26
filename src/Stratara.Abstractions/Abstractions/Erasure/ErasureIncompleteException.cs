@@ -23,9 +23,13 @@ public sealed class ErasureIncompleteException : Exception
     }
 
     /// <summary>The plane whose sweep failed.</summary>
+    /// <remarks>
+    /// On an exception that crossed a process boundary this reads as the first plane; the message names the plane
+    /// that failed.
+    /// </remarks>
     public ErasurePlane Plane { get; }
 
-    /// <summary>The planes swept before the failure. Running the erasure again repeats them harmlessly.; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
+    /// <summary>The planes swept before the failure. Running the erasure again repeats them harmlessly; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
     public ErasureReport Completed => _completed ?? new ErasureReport([]);
 
     private readonly ErasureReport? _completed;

@@ -164,10 +164,49 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         await bus.PublishAsync(topic, new TestMessage("stopping"), cts.Token);
 
         await handled.Task.WaitAsync(cts.Token);
-        await Task.Delay(QuietPeriod, cts.Token);
+        await bus.DisposeAsync();
         await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token);
         await using var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token);
         Assert.Equal(0u, await channel.MessageCountAsync(RabbitMqBus.WorkerQueueName(subscription), cts.Token));
+    }
+
+    /// <summary>
+    /// Deliveries the client had already buffered when the subscription stopped are not run on a channel that can no
+    /// longer acknowledge them: they go back to the queue, once, for the next consumer.
+    /// </summary>
+    [Fact]
+    public async Task SubscriptionStops_BufferedDeliveriesGoBackToTheQueueUnhandled()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        for (var i = 0; i < 5; i++)
+        {
+            await bus.PublishAsync(topic, new TestMessage($"queued-{i}"), cts.Token);
+        }
+
+        await Task.Delay(500, cts.Token);
+        var handled = 0;
+        var first = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, async _ =>
+        {
+            if (Interlocked.Increment(ref handled) == 1)
+            {
+                await subscribed.CancelAsync();
+                first.TrySetResult();
+            }
+        }, subscribed.Token);
+
+        await first.Task.WaitAsync(cts.Token);
+        await bus.DisposeAsync();
+
+        Assert.Equal(1, handled);
+        await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token);
+        Assert.Equal(4u, await channel.MessageCountAsync(RabbitMqBus.WorkerQueueName(subscription), cts.Token));
     }
 
     [Fact]

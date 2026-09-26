@@ -12,7 +12,9 @@ namespace Stratara.Orleans.Hosting;
 /// carries the provider's failure as its inner exception — a database or a broker exception — and a chain with one
 /// type Orleans refuses does not cross at all, so the caller would see a serialization failure instead. The type,
 /// the message, the stack trace and the inner exceptions cross; other properties do not, and the framework's own read
-/// as empty on the far side. A filter the host set itself keeps applying.
+/// as empty on the far side. The filter only decides what a silo sends: what a silo accepts is Orleans' own type
+/// filter, which this does not widen. A host that replaces the filter after this registration takes that decision
+/// over, and must let the framework's exception chains through.
 /// </summary>
 internal static class FrameworkExceptionSerialization
 {

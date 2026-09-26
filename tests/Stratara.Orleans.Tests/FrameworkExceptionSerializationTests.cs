@@ -73,15 +73,20 @@ public sealed class FrameworkExceptionSerializationTests
     }
 
     [Fact]
-    public void The_execution_models_registrations_register_it_and_keep_a_filter_of_the_hosts()
+    public void The_execution_models_registrations_register_it()
     {
-        var services = new ServiceCollection();
-        services.Configure<ExceptionSerializationOptions>(options => options.SupportedExceptionTypeFilter = type => type == typeof(Uri));
-        services.AddStrataraOrleansCommandDispatcher();
+        var services = new ServiceCollection().AddStrataraOrleansCommandDispatcher();
         var options = services.BuildServiceProvider().GetRequiredService<IOptions<ExceptionSerializationOptions>>().Value;
 
         Assert.Contains(FrameworkExceptionSerialization.NamespacePrefix, options.SupportedNamespacePrefixes);
-        Assert.True(options.SupportedExceptionTypeFilter(typeof(Uri)));
         Assert.True(options.SupportedExceptionTypeFilter(typeof(Npgsql.NpgsqlException)));
+    }
+
+    [Fact]
+    public void A_validation_failures_message_names_what_failed()
+    {
+        var back = Assert.IsType<StrataraValidationException>(RoundTrip(new StrataraValidationException([new ValidationFailure("Name", "is required")])));
+
+        Assert.Contains("Name: is required", back.Message, StringComparison.Ordinal);
     }
 }

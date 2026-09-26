@@ -18,7 +18,7 @@ public sealed class PermissionAuthorizationException : AuthorizationException
         _requiredPermission = permission;
     }
 
-    /// <summary>The permission the caller did not hold.; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
+    /// <summary>The permission the caller did not hold; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
     public string RequiredPermission => _requiredPermission ?? string.Empty;
 
     private readonly string? _requiredPermission;

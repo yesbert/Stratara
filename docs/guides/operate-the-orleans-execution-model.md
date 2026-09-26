@@ -160,8 +160,12 @@ model's registrations therefore let every exception type cross, so the framework
 they were thrown, their inner exceptions included. A bus worker that forwarded a command still sees a
 `ConcurrencyException` as a conflict and a `CommittedEventsNotPublishedException` as a save not to run
 again. What crosses is the type, the message, the stack trace and the inner exceptions; the properties
-of the framework's exceptions read empty on the far side, and their messages carry the same facts. A
-filter the host sets on `Orleans.Serialization.ExceptionSerializationOptions` keeps applying alongside.
+of the framework's exceptions read empty on the far side, and their messages carry the same facts. The
+setting only decides what a silo sends; what a silo accepts is Orleans' own type filter, which stays as
+it is. A host that sets its own `SupportedExceptionTypeFilter` on
+`Orleans.Serialization.ExceptionSerializationOptions` after these registrations replaces the
+framework's, and must keep letting exception chains through, or a framework failure from another silo
+arrives as a serialization failure again.
 
 ## Kept commands
 

@@ -64,7 +64,7 @@ internal sealed class AzureServiceBusBus(
     ServiceBusClient client,
     IOptions<BusEnvelopeJsonOptions> envelopeOptions,
     IOptions<MessageRetryOptions> retryOptions,
-    ServiceBusAdministrationClient? administration = null) : IMessageBus
+    ServiceBusAdministrationClient? administration = null) : IMessageBus, IAsyncDisposable
 {
     private const int MaxDeadLetterDescriptionLength = 4096;
 
@@ -73,6 +73,11 @@ internal sealed class AzureServiceBusBus(
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MessageRetryPolicy> _subscriptionPolicies = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentBag<Task> _stops = new();
+
+    /// <inheritdoc/>
+    /// <remarks>Waits for every subscription that was stopped to finish stopping, so its running handlers could settle.</remarks>
+    public async ValueTask DisposeAsync() => await Task.WhenAll(_stops);
 
     /// <inheritdoc/>
     public async Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default)
@@ -142,6 +147,28 @@ internal sealed class AzureServiceBusBus(
         };
 
         await processor.StartProcessingAsync(cancellationToken);
+
+        // A stopping subscription stops its processor, which takes no further message and waits for the handlers it is
+        // running: a handler that completed — or whose save committed — while the host stops settles its message instead
+        // of having it delivered again.
+        cancellationToken.Register(() => _stops.Add(StopAsync()));
+
+        async Task StopAsync()
+        {
+            await Task.Yield();
+            try
+            {
+                await processor.StopProcessingAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+            finally
+            {
+                await processor.DisposeAsync();
+            }
+        }
     }
 
     private async Task SettleFailedAsync(ProcessMessageEventArgs args, string topic, string subscription, MessageRetryPolicy retryPolicy, MessageFailureKind kind, Exception cause, CancellationToken cancellationToken)

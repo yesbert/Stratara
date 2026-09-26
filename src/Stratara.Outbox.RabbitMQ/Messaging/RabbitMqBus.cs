@@ -428,7 +428,14 @@ internal sealed class RabbitMqBus(
         var running = new RunningHandlers();
         consumer.ReceivedAsync += async (_, args) =>
         {
-            running.Enter();
+            // A delivery the client had buffered before the subscription stopped is not handled: it stays unacked and
+            // goes back to the queue when the channel closes, instead of running on a channel that can no longer
+            // acknowledge it.
+            if (!running.TryEnter())
+            {
+                return;
+            }
+
             try
             {
                 var body = args.Body.ToArray();
@@ -467,40 +474,48 @@ internal sealed class RabbitMqBus(
 
         var consumerTag = await channel.BasicConsumeAsync(QueueName(subscription), false, consumer, cancellationToken);
 
-        cancellationToken.Register(() =>
-        {
-            // Track the cleanup task so DisposeAsync can await it during graceful host shutdown
-            // (Round-3-Audit Finding R3-Sec-010) — fire-and-forget Task.Run let the host tear
-            // down the bus while a subscription was still mid-cleanup.
-            //
-            // The subscription stops taking messages first and lets the handlers it is running settle theirs before it
-            // closes the channel: a handler that completed — or whose save committed — while the host stops must be
-            // able to acknowledge, or its message is handed back and runs again.
-            var cleanup = Task.Run(async () =>
-            {
-                try
-                {
-                    logger.LogSubscriptionCleanup(subscription);
-                    await channel.BasicCancelAsync(consumerTag, false, CancellationToken.None);
-                    await running.WhenSettledAsync().WaitAsync(HandlerSettleTimeout);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogSubscriptionCleanupFailed(subscription, ex);
-                }
+        // The cleanup is tracked so DisposeAsync can await it during graceful host shutdown (Round-3-Audit Finding
+        // R3-Sec-010): letting it run untracked let the host tear down the bus while a subscription was mid-cleanup.
+        cancellationToken.Register(() => _cleanupTasks.Add(StopAsync()));
 
-                try
-                {
-                    await channel.DisposeAsync();
-                    await connection.DisposeAsync();
-                }
-                catch (Exception ex)
-                {
-                    logger.LogSubscriptionCleanupFailed(subscription, ex);
-                }
-            });
-            _cleanupTasks.Add(cleanup);
-        });
+        // The subscription stops taking messages first and lets the handlers it is running settle theirs before it
+        // closes the channel: a handler that completed — or whose save committed — while the host stops must be able to
+        // acknowledge, or its message is handed back and runs again.
+        async Task StopAsync()
+        {
+            // Refused from the moment the token is cancelled, before the first await, so no buffered delivery slips in
+            // while the rest of the stop is scheduled.
+            running.Stop();
+            await Task.Yield();
+            logger.LogSubscriptionCleanup(subscription);
+            try
+            {
+                await channel.BasicCancelAsync(consumerTag, false, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+
+            try
+            {
+                await running.WhenSettledAsync().WaitAsync(HandlerSettleTimeout);
+            }
+            catch (TimeoutException ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+
+            try
+            {
+                await channel.DisposeAsync();
+                await connection.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+            }
+        }
     }
 
     [SuppressMessage("Major Code Smell", "S2068:Hard-coded credentials are security-sensitive",
@@ -565,13 +580,29 @@ internal sealed class RabbitMqBus(
     {
         private readonly Lock _gate = new();
         private int _count;
+        private bool _stopping;
         private TaskCompletionSource? _settled;
 
-        public void Enter()
+        /// <summary>Takes a delivery on, or refuses it once the subscription is stopping.</summary>
+        public bool TryEnter()
         {
             lock (_gate)
             {
+                if (_stopping)
+                {
+                    return false;
+                }
+
                 _count++;
+                return true;
+            }
+        }
+
+        public void Stop()
+        {
+            lock (_gate)
+            {
+                _stopping = true;
             }
         }
 

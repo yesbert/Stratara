@@ -39,6 +39,16 @@ public static partial class LoggerAzureServiceBusExtensions
         Message = "A message from topic {Topic} committed its events but could not publish them; it is acknowledged so it is not run twice. Replay the projections that consume those events.")]
     public static partial void LogCommittedEventsNotPublished(this ILogger logger, string topic, Exception exception);
 
+    /// <summary>Logs that stopping a subscription's processor failed; the processor is disposed anyway.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="subscription">The subscription being stopped.</param>
+    /// <param name="exception">The failure.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Messaging.SubscriptionCleanupFailed,
+        Level = LogLevel.Warning,
+        Message = "Stopping subscription {Subscription} failed; its processor is disposed anyway.")]
+    public static partial void LogSubscriptionCleanupFailed(this ILogger logger, string subscription, Exception exception);
+
     /// <summary>Logs that a message exhausted its redelivery bound and was moved to the subscription's dead-letter queue.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="topic">The topic the message was published to.</param>

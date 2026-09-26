@@ -130,6 +130,43 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
     }
 
     /// <summary>
+    /// The subscription stops while its handler runs — the host is shutting down. The handler settles its message, and
+    /// the stopped processor takes no message published afterwards.
+    /// </summary>
+    [Fact]
+    public async Task SubscribeAsync_SubscriptionStopsDuringTheHandler_TheMessageIsCompletedAndNoMoreAreTaken()
+    {
+        await using var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 3 }));
+
+        var handled = 0;
+        var first = new TaskCompletionSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+        await bus.SubscribeAsync<TestMessage>("test-stopping-subscription", "worker", async _ =>
+        {
+            Interlocked.Increment(ref handled);
+            await subscribed.CancelAsync();
+            first.TrySetResult();
+        }, subscribed.Token);
+
+        await Task.Delay(500, cts.Token);
+        await bus.PublishAsync("test-stopping-subscription", new TestMessage("first"), cts.Token);
+        await first.Task.WaitAsync(cts.Token);
+        await bus.DisposeAsync();
+
+        await bus.PublishAsync("test-stopping-subscription", new TestMessage("after the stop"), cts.Token);
+        await Task.Delay(3000, cts.Token);
+
+        Assert.Equal(1, handled);
+        await using var receiver = _client.CreateReceiver("test-stopping-subscription", "worker");
+        var waiting = await receiver.PeekMessageAsync(cancellationToken: cts.Token);
+        Assert.NotNull(waiting);
+        Assert.Contains("after the stop", waiting.Body.ToString(), StringComparison.Ordinal);
+        Assert.Null(await receiver.PeekMessageAsync(waiting.SequenceNumber + 1, cts.Token));
+    }
+
+    /// <summary>
     /// <c>outbox-and-messaging</c> → <em>A handler keeps failing</em>, on the Service Bus emulator:
     /// the framework abandons the message until <c>MaxDeliveryAttempts</c> deliveries have failed
     /// and then dead-letters it itself, with the reason the operator filters on and the exception in

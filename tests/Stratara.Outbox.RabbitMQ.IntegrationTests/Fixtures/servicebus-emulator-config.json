@@ -42,6 +42,12 @@
             ]
           },
           {
+            "Name": "test-stopping-subscription",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
             "Name": "test-durable",
             "Subscriptions": [
               { "Name": "worker" }

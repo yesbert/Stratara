@@ -524,9 +524,10 @@ A failure the framework defines — a concurrency conflict, a save that committe
 thrown on one silo SHALL reach a caller on another silo, or a client, with its type, its message and
 its inner failures, whatever library those inner failures come from, so that the caller treats it as
 it would in process. The registrations of the execution model SHALL arrange this without the host
-having to, and a restriction the host placed on exception types SHALL keep applying. Properties of
-such a failure beyond those need not cross; where they do not, they SHALL read as empty rather than
-fail, and the message SHALL carry what they said.
+having to, and the documentation SHALL say that a host which replaces Orleans' exception filter
+afterwards must keep letting such chains through. Properties of such a failure beyond those need not
+cross; where they do not, they SHALL read as empty rather than fail, and the message SHALL carry what
+they said.
 
 #### Scenario: A handler on another silo reports a conflict
 

@@ -15,7 +15,8 @@ again or moving it to the dead-letter destination, whatever the subscription's o
 says, and SHALL log the failure with the topic at error level. A second delivery would record the
 same facts again. A subscription that stops SHALL stop taking messages and let the handlers it is
 running settle theirs before it closes, so that a handler that completed while the host stops — or
-whose save committed — is acknowledged rather than handed back to run again.
+whose save committed — is acknowledged rather than handed back to run again; a message the transport
+had already fetched but not yet handed to a handler SHALL go back to the queue unhandled.
 
 A concurrency conflict SHALL be treated as a retry, not a failure, but SHALL be bounded as well: a
 message that conflicts more often than the bound allows is moved to the same destination.
@@ -69,4 +70,10 @@ system behind with nothing to replay.
 
 - **WHEN** a subscription is stopped while its handler is running, and the handler then completes or
   fails because its save committed but could not publish
-- **THEN** the message is acknowledged and is not found on the queue afterwards — verified on RabbitMQ
+- **THEN** the message is acknowledged and is not found on the queue afterwards, and a message
+  published after the stop is not taken — verified on RabbitMQ and on the Service Bus emulator
+
+#### Scenario: Messages were fetched but not yet handled when the subscription stops
+
+- **WHEN** a subscription stops while messages it had fetched still wait for a handler
+- **THEN** those messages are not handled and go back to the queue once — verified on RabbitMQ
