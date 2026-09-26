@@ -16,7 +16,17 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.0`._
+### Fixed
+
+- **A Subject stated with `AppendOnBehalfOfAsync` no longer carries over to the next append in the
+  same batch.** Within one `SaveChangesAsync` batch the store remembers the owner it resolved for
+  each stream, and it remembered a stated one too. So after `AppendOnBehalfOfAsync`, an ordinary
+  `AppendAsync` to the same stream in the same batch recorded its event under the stated owner
+  instead of the stream's. That event was then encrypted under the wrong tenant's keys, was missed
+  by the stream owner's erasure, and was erased with a tenant it did not belong to. A stated Subject
+  now applies to its own event only, as specified. A later batch was never affected. On a stream's
+  first event the stated Subject is the owner the stream records, so the rest of that batch keeps
+  it, as every later batch does.
 
 ## [4.4.0] — 2026-09-26
 
