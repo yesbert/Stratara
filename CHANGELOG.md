@@ -64,7 +64,12 @@ applies to the entire NuGet family.
   began a transaction outside the strategy, which EF refuses. The framework's unit of work now runs a save
   on such a context as one retriable unit through the strategy — a transaction of its own, the changes
   accepted only after the commit — so the interceptor finds the transaction and a transient failure runs
-  the append again whole. A context whose strategy does not retry saves as before.
+  the append again whole. This applies to every framework save on a context whose strategy retries —
+  write, read or projection: an override of `SaveChangesAsync(CancellationToken)` alone is no longer
+  called there (override the `(bool, CancellationToken)` overload), `SavedChanges` handlers run before the
+  commit, and a single-statement save runs in a transaction. A host's own save on such a context with the
+  partition counter uses the same unit; the migration guide shows it. A context whose strategy does not
+  retry saves as before.
 
 - **A commit once begun runs to its end.** A database driver told to cancel while it waits for a commit to
   be acknowledged may report the cancellation after the database committed, so a stop that landed

@@ -31,10 +31,14 @@ caller's token where the context carries `CommitCompletionInterceptor`, and none
 **The unit of work runs the save as a retriable unit when the strategy retries.** When the context is
 relational, its execution strategy retries on failure, and no transaction is current or ambient, the
 transaction's save runs through `CreateExecutionStrategy().ExecuteAsync`: begin a transaction with the
-caller's token, `SaveChangesAsync(acceptAllChangesOnSuccess: false)` with the save's token, commit without
+save's token (the caller's where the context carries `CommitCompletionInterceptor`, none where it does not), `SaveChangesAsync(acceptAllChangesOnSuccess: false)` with the save's token, commit without
 the caller's token, then `AcceptAllChanges`. The partition counter's interceptor sees the transaction and
 stamps positions inside it; a retry finds the entries still added and stamps them again. Evidence: EF's
-documented pattern for a user transaction under a retrying strategy, and the new SQLite tests.
+documented pattern for a user transaction under a retrying strategy;
+`UnitOfWorkRetryingStrategyTests.Under_a_retrying_strategy_a_commit_that_fails_once_runs_the_whole_save_again`
+(the changes survive a failed commit) and
+`PartitionCounterRetryingStrategyTests.An_append_retried_after_a_failed_commit_is_positioned_afresh` (the counter
+is advanced again in the retried unit).
 - *Alternative:* the interceptor detects a retrying strategy and does not begin its own transaction, relying
   on EF's. Rejected: EF opens its transaction after `SavingChangesAsync`, so the counter update would run
   outside the transaction that inserts the entries, and a later transaction could commit first.
@@ -50,7 +54,10 @@ honour the save's token as they do today — the caller's where the context carr
 
 ## Risks / Trade-offs
 
-- A consumer override of `SaveChangesAsync(CancellationToken)` alone is not called on this path, because
-  the unit calls the `(bool, CancellationToken)` overload EF's pattern needs; an override of that overload
-  is. Only contexts with a retrying strategy take the path, and the guide says so.
-- `SavedChanges` runs before the commit on this path, as in any user transaction.
+- On every context with a retrying strategy — write, read or projection — a consumer override of
+  `SaveChangesAsync(CancellationToken)` alone is not called, because the unit calls the
+  `(bool, CancellationToken)` overload EF's pattern needs; `SavedChanges` handlers run before the commit, as in
+  any user transaction; and a single-statement save runs in a transaction. The CHANGELOG, the `UnitOfWork`
+  remarks and the migration guide say so.
+- A host that saves on such a context itself, with the partition counter, must run the same unit; wrapping
+  only `SaveChangesAsync` in the strategy loses an append whose commit fails once. The guide shows the unit.

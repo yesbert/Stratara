@@ -13,6 +13,7 @@ namespace Stratara.EventSourcing.EntityFrameworkCore;
 /// </summary>
 /// <typeparam name="TDbContext">The concrete DbContext type owned by this unit of work.</typeparam>
 /// <remarks>
+/// <para>
 /// A save the store committed is never reported as cancelled. On a context whose options carry
 /// <see cref="CommitCompletionInterceptor"/> — every context the framework registers — a transaction's save honours the
 /// caller's token while the changes are written and lets the commit run to its end. On any other — a context a host
@@ -20,6 +21,15 @@ namespace Stratara.EventSourcing.EntityFrameworkCore;
 /// <c>AutoTransactionBehavior</c> is <c>Never</c> — the save ignores the token and runs to its end whole, bounded by the
 /// connection's pool wait and command timeout rather than by the caller; a host that stops within a shorter shutdown
 /// timeout adds the interceptor to such a context.
+/// </para>
+/// <para>
+/// On a context whose execution strategy retries on failure, a transaction's save that does not already run inside a
+/// transaction runs as one retriable unit through that strategy: a transaction of its own, the changes written with
+/// <c>SaveChangesAsync(false, …)</c> and accepted only once the commit has run, so a transient failure — the commit's
+/// included — runs the whole save again. On such a context an override of <c>SaveChangesAsync(CancellationToken)</c>
+/// alone is not called, <c>SavedChanges</c> handlers run before the commit, and a single statement is saved in a
+/// transaction.
+/// </para>
 /// </remarks>
 /// <param name="contextFactory">Factory used to create a new DbContext per transaction.</param>
 public class UnitOfWork<TDbContext>(IDbContextFactory<TDbContext> contextFactory) : IUnitOfWork where TDbContext : DbContext, IDbContext

@@ -38,9 +38,10 @@ public sealed class UnitOfWorkRetryingStrategyTests : IAsyncLifetime
     }
 
     /// <summary>Counts the commits, and fails the first insert once with a transient failure when asked to.</summary>
-    private sealed class Observer(bool failFirstInsert) : DbCommandInterceptor, IDbTransactionInterceptor
+    private sealed class Observer(bool failFirstInsert, bool failFirstCommit = false) : DbCommandInterceptor, IDbTransactionInterceptor
     {
         private bool _failed;
+        private bool _commitFailed;
 
         public int Commits { get; private set; }
 
@@ -57,6 +58,12 @@ public sealed class UnitOfWorkRetryingStrategyTests : IAsyncLifetime
 
         public ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction, TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
         {
+            if (failFirstCommit && !_commitFailed)
+            {
+                _commitFailed = true;
+                throw new TransientProbeException();
+            }
+
             Commits++;
             return ValueTask.FromResult(result);
         }
@@ -121,6 +128,21 @@ public sealed class UnitOfWorkRetryingStrategyTests : IAsyncLifetime
     public async Task Under_a_retrying_strategy_a_transient_failure_runs_the_whole_save_again_once()
     {
         var observer = new Observer(failFirstInsert: true);
+
+        await SaveOneNoteAsync(UnitOfWork(observer, retrying: true));
+
+        Assert.Equal(1, observer.Commits);
+        Assert.Equal(1, await CountAsync());
+    }
+
+    /// <summary>
+    /// The commit fails once before it commits. The retried unit still finds the changes to write — they are accepted
+    /// only after a commit has run — and saves them once.
+    /// </summary>
+    [Fact]
+    public async Task Under_a_retrying_strategy_a_commit_that_fails_once_runs_the_whole_save_again()
+    {
+        var observer = new Observer(failFirstInsert: false, failFirstCommit: true);
 
         await SaveOneNoteAsync(UnitOfWork(observer, retrying: true));
 
