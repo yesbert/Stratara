@@ -16,11 +16,10 @@ namespace Stratara.Abstractions.EventSourcing;
 /// the session. If none of them names a tenant, the append fails.
 /// </para>
 /// <para>
-/// A stream therefore keeps the owner it was created with, whoever's session appends to it later,
-/// and a new stream's owner is stated on its first event by making that event an
-/// <see cref="IAggregateCreationEvent"/>. A first event that states none takes the tenant in the
-/// session — right when the caller creates the aggregate in its own tenant, wrong when an operator
-/// creates it for another one.
+/// A stream therefore keeps the owner it was created with, whatever session appends to it later.
+/// A first event that states no owner takes the tenant in the session, so an aggregate created for
+/// another tenant states that tenant on its first event by implementing
+/// <see cref="IAggregateCreationEvent"/>.
 /// </para>
 /// </remarks>
 /// <example>
@@ -49,8 +48,8 @@ public interface IEventSource
     /// <summary>Create a new stream with the first event. Fails if the stream already exists.</summary>
     /// <remarks>
     /// The new stream's owner is the tenant the event carries when it is an
-    /// <see cref="IAggregateCreationEvent"/>, otherwise the tenant in the session. Every later event
-    /// on the stream keeps that owner.
+    /// <see cref="IAggregateCreationEvent"/> with a non-empty tenant, otherwise the tenant in the
+    /// session. Every later event on the stream keeps that owner.
     /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type the stream represents.</typeparam>
     /// <param name="streamId">The stream id.</param>
@@ -78,8 +77,10 @@ public interface IEventSource
 
     /// <summary>Append an event to an existing stream.</summary>
     /// <remarks>
-    /// The event takes the owner recorded on the stream, not the tenant in the session. Use
-    /// <see cref="AppendOnBehalfOfAsync{TAggregate}"/> for an event that belongs to someone else.
+    /// The event takes the owner recorded on the stream, not the tenant in the session. On a stream
+    /// that does not exist yet, the owner is resolved as for the first event of
+    /// <see cref="CreateAsync{TAggregate}"/>. Use <see cref="AppendOnBehalfOfAsync{TAggregate}"/> for
+    /// an event whose owner differs from the stream's.
     /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type.</typeparam>
     /// <param name="streamId">The stream id.</param>
@@ -104,9 +105,17 @@ public interface IEventSource
     /// stream's recorded owner, a creation event's tenant and the session — for this one event.
     /// </summary>
     /// <remarks>
-    /// For an event that genuinely belongs to someone other than the stream's owner. The actor
-    /// recorded with the event stays the caller's session; only the owner changes. An event recorded
-    /// under another owner than its stream's is erased with that owner, not with the stream's.
+    /// <para>
+    /// Use this method for an event whose owner differs from the stream's. The actor recorded with
+    /// the event stays the caller's session; only the owner changes, and only for this event — the
+    /// next append to the stream takes the stream's owner again, in the same batch as in a later one.
+    /// On a stream's first event the stated owner is the one the stream records.
+    /// </para>
+    /// <para>
+    /// The event's protected fields are encrypted under the stated owner's keys, so an erasure of
+    /// the stream's owner does not reach them, and an erasure of the stated owner can leave the
+    /// stream unable to rehydrate.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type.</typeparam>
     /// <param name="streamId">The stream id.</param>
