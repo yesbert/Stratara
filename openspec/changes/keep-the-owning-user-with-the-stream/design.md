@@ -45,13 +45,16 @@ same row adds no query.
 
 - [Risk] A consumer that recorded a stream's first event under a user by accident, because its session
   sets the data-owner user for every request, now sees every later event on that stream under that
-  user as well. A user's erasure then destroys the protected fields of the whole aggregate instead of
-  a part of it. → This is the stable-owner rule the requirement already states. The session-context
+  user as well. A user's erasure then destroys the protected fields of all its events instead of a
+  part of them. → This is the stable-owner rule the requirement already states. The session-context
   capability leaves the data-owner user unset by default for exactly this reason. The changelog names
   the change.
-- [Risk] Events recorded since 4.0.0 without the stream's user stay under the tenant scope, so a user's
-  erasure does not reach them. → The changelog says so plainly. A consumer that needs those fields
-  gone can erase the tenant scope or re-record the aggregate.
+- [Risk] Events recorded without the stream's user stay encrypted under keys without that user, so a
+  user's erasure does not reach them; a tenant's erasure does. → The changelog says so plainly.
+- [Risk] A snapshot is encrypted under the stream's tenant with no user, and records no user of its
+  own. A user's erasure therefore does not reach a snapshot of a user-owned stream. This is
+  pre-existing and unchanged here: fixing it needs the snapshot to record its user, which is a
+  schema change and a separate decision.
 
 ## Migration Plan
 

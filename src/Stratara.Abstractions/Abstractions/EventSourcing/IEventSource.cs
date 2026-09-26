@@ -17,9 +17,11 @@ namespace Stratara.Abstractions.EventSourcing;
 /// </para>
 /// <para>
 /// A stream therefore keeps the owner it was created with, user included, whatever session appends
-/// to it later; a stream whose first event names no user is given none. A first event that states no owner takes the tenant in the session, so an aggregate created for
+/// to it later; a stream whose first event names no user is given none. A first event that states
+/// no owner takes the tenant and the data-owner user in the session, so an aggregate created for
 /// another tenant states that tenant on its first event by implementing
-/// <see cref="IAggregateCreationEvent"/>.
+/// <see cref="IAggregateCreationEvent"/>. A creation event names no user, so a stream it creates
+/// has none.
 /// </para>
 /// </remarks>
 /// <example>

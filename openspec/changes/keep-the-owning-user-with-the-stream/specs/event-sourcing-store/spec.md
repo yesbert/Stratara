@@ -10,9 +10,9 @@ candidate SHALL name a tenant to be used, including the explicitly supplied one.
 yields a tenant, the append SHALL fail rather than guess.
 
 The owner a stream contributes SHALL be the whole owner recorded on its first event: its tenant, and
-its user where one was recorded. A stream whose first event names a user SHALL give every later
-event that user, whatever user the session names; a stream whose first event names no user SHALL
-give later events none. This SHALL hold alike for events appended in the save that created the
+its user where one was recorded. A stream whose first event names a user SHALL give that user to
+every later event for which no subject is stated, whatever user the session names; a stream whose
+first event names no user SHALL give such events none. This SHALL hold alike for events appended in the save that created the
 stream and for events appended in any later save.
 
 An explicit subject that names no tenant SHALL fail the append rather than fall through to the
