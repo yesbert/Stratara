@@ -28,10 +28,14 @@ applies to the entire NuGet family.
   that subject. It now takes the owner from the stream's first event. A snapshot written before this
   change records no user and is still read under its tenant alone.
 
-  **The write context's snapshot table gains a column; generate an EF Core migration for it.** To let
-  a user's erasure reach snapshots written before the upgrade, delete the snapshots whose owner
-  differs from their stream's. They are a cache, rewritten at the next threshold. With the Npgsql
-  registration's snake_case names:
+  **The write context's snapshot table gains a column: generate an EF Core migration for it and apply
+  it before the new version runs.** Every read of a snapshot selects the column, so without it
+  rebuilding an aggregate fails.
+
+  Snapshots written before the upgrade keep serving rebuilds, including rebuilds bounded to an earlier
+  version, because snapshots are never pruned. To let a user's erasure reach them, delete the snapshots
+  whose owner differs from their stream's. They are a cache: a rebuild without one replays the events,
+  and the next threshold writes a new one. With the Npgsql registration's snake_case names:
 
   ```sql
   DELETE FROM snapshot s

@@ -31,7 +31,8 @@ internal sealed class SnapshotService(
     /// <inheritdoc/>
     public async Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default)
     {
-        var streamGroups = eventStreamEntries.GroupBy(x => (x.StreamId, TypeKey: x.AggregateTypeName.GetVersionIndependentTypeName()));
+        var batch = eventStreamEntries.ToList();
+        var streamGroups = batch.GroupBy(x => (x.StreamId, TypeKey: x.AggregateTypeName.GetVersionIndependentTypeName()));
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var snapshotRepository = unitOfWork.CreateSnapshotRepository(transaction);
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
@@ -45,7 +46,7 @@ internal sealed class SnapshotService(
                 continue;
             }
 
-            var owner = await ResolveStreamOwnerAsync(eventStreamRepository, streamId, streamEntries, cancellationToken);
+            var owner = await ResolveStreamOwnerAsync(eventStreamRepository, streamId, batch, cancellationToken);
             var aggregatedEvent = await CreateSnapshot(streamId, streamEntries, owner, cancellationToken);
             await snapshotRepository.AddAsync(aggregatedEvent, cancellationToken);
         }
@@ -79,18 +80,19 @@ internal sealed class SnapshotService(
 
     /// <remarks>
     /// The stream's owner is recorded on its first entry. When this batch creates the stream that entry
-    /// is in the batch and not committed yet; otherwise it is read. The batch's own first entry is not
-    /// used: it may carry a Subject stated for that one event, which is not the stream's owner.
+    /// is in the batch — possibly under another aggregate type than the one being snapshotted — and not
+    /// committed yet; otherwise it is read. The batch's own first entry for the stream is not used: it
+    /// may carry a Subject stated for that one event, which is not the stream's owner.
     /// </remarks>
     private static async Task<EventSubject> ResolveStreamOwnerAsync(
         IEventStreamRepository eventStreamRepository,
         Guid streamId,
-        List<EventStreamEntry> streamEntries,
+        List<EventStreamEntry> batch,
         CancellationToken cancellationToken)
     {
-        var firstEntry = streamEntries.Find(entry => entry.Version == 1)
+        var firstEntry = batch.Find(entry => entry.StreamId == streamId && entry.Version == 1)
                          ?? await eventStreamRepository.GetFirstOrDefaultAsync(streamId, cancellationToken)
-                         ?? streamEntries[0];
+                         ?? batch.First(entry => entry.StreamId == streamId);
         return new EventSubject(firstEntry.TenantId, firstEntry.UserId);
     }
 

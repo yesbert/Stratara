@@ -87,9 +87,10 @@ runs before or after `AddEventSourcing()` — you don't have to think about orde
 ## What a snapshot stores
 
 `VersionThresholdSnapshotStrategy` and any custom strategy only decide *whether* to snapshot. The
-snapshot itself is always the full aggregate state, serialised tenant-scoped through the same
-encrypting serializer used for events (`ISecureJsonSerializer`, tenant AAD), so a snapshot is no less
-protected than the events it summarises.
+snapshot itself is always the full aggregate state, serialised through the same encrypting serializer
+used for events (`ISecureJsonSerializer`) under the stream's recorded owner, its tenant and its user
+where one was recorded. A snapshot is therefore no less protected than the events it summarises, and
+an erasure that reaches the events reaches the snapshot too.
 
 ## What a rebuild applies, and what it skips
 

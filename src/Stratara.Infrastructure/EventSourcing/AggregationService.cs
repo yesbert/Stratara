@@ -11,8 +11,8 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// </summary>
 /// <remarks>
 /// When a snapshot exists for the stream, it is deserialized via the configured
-/// <see cref="ISecureJsonSerializer"/> (tenant-scoped AAD) and remaining events on top of the snapshot
-/// version are applied. Without a snapshot, the aggregate is built by replaying the full event stream.
+/// <see cref="ISecureJsonSerializer"/> under the owner it records — tenant and user — and the
+/// remaining events on top of the snapshot version are applied. Without a snapshot, the aggregate is built by replaying the full event stream.
 /// Only the entries <see cref="AggregateEventSelector"/> selects are mapped, so an event the aggregate
 /// has no <c>Apply</c> for is neither resolved nor decrypted.
 /// </remarks>

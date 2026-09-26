@@ -34,11 +34,12 @@ transaction that decides whether to snapshot.
 
 ## Risks / Trade-offs
 
-- [Risk] A host that skips the migration fails when it writes its first snapshot. → The changelog puts
-  the migration first under *Upgrading*, as it did for the read-context migration in the same release.
-- [Risk] Pre-upgrade snapshots of user-owned streams stay under the tenant. → The changelog gives the
-  one-off statement that removes them. Snapshots are rewritten at the next threshold, and a rebuild
-  without one replays the events.
+- [Risk] A host that skips the migration fails on every snapshot read, because the repository selects
+  the new column, and on every snapshot write. → The changelog marks the migration as required before
+  the new version runs, and the release's *Upgrading* list carries it.
+- [Risk] Pre-upgrade snapshots of user-owned streams stay under the tenant, and since snapshots are
+  never pruned they keep serving rebuilds bounded to their version. → The changelog gives the one-off
+  statement that removes them; a rebuild without one replays the events.
 
 ## Migration Plan
 

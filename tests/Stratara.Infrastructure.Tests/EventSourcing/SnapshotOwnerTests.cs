@@ -29,6 +29,15 @@ public class SnapshotOwnerTests
 
     public sealed record DiaryOpened(string Entry);
 
+    public sealed class Ledger
+    {
+        public int Lines { get; set; }
+
+        public void Apply(LedgerLineAdded e) => Lines++;
+    }
+
+    public sealed record LedgerLineAdded(int Line);
+
     public sealed record DiaryPageAdded(int Page);
 
     private sealed class SwitchableSnapshotStrategy : ISnapshotStrategy
@@ -45,15 +54,17 @@ public class SnapshotOwnerTests
             .AddTrustedType<Diary>()
             .AddTrustedType<DiaryOpened>()
             .AddTrustedType<DiaryPageAdded>()
+            .AddTrustedType<Ledger>()
+            .AddTrustedType<LedgerLineAdded>()
             .AddSingleton<ISnapshotStrategy>(strategy));
 
-    private static async Task<Snapshot?> LatestSnapshotAsync(EventStoreTestHost host, Guid streamId)
+    private static async Task<Snapshot?> LatestSnapshotAsync(EventStoreTestHost host, Guid streamId, Type? aggregateType = null)
     {
         await using var scope = host.Services.CreateAsyncScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
         await using var transaction = await unitOfWork.StartAsync();
         return await unitOfWork.CreateSnapshotRepository(transaction)
-            .GetAsync(streamId, typeof(Diary).AssemblyQualifiedName!);
+            .GetAsync(streamId, (aggregateType ?? typeof(Diary)).AssemblyQualifiedName!);
     }
 
     [Fact]
@@ -142,5 +153,52 @@ public class SnapshotOwnerTests
 
         var rebuilt = await host.AggregateAsync<Diary>(streamId);
         Assert.Equal(("from before", 7), (rebuilt?.Entry, rebuilt?.Pages ?? 0));
+    }
+
+    /// <summary>The usual case: the stream's first event was committed by an earlier save, and records a user.</summary>
+    [Fact]
+    public async Task A_snapshot_taken_in_a_later_save_records_the_user_of_the_streams_first_event()
+    {
+        var strategy = new SwitchableSnapshotStrategy { Enabled = false };
+        await using var host = CreateHost(strategy);
+        var streamId = Guid.CreateVersion7();
+        var owningUser = Guid.NewGuid();
+
+        host.Session.Set(TestSessionContext.ForTenant(Tenant, owningUser));
+        await host.ExecuteAsync(async events =>
+        {
+            await events.CreateAsync<Diary>(streamId, new DiaryOpened("secret"));
+            await events.SaveChangesAsync();
+        });
+
+        strategy.Enabled = true;
+        host.Session.Set(TestSessionContext.ForTenant(Tenant));
+        await host.ExecuteAsync(async events =>
+        {
+            await events.AppendAsync<Diary>(streamId, new DiaryPageAdded(1));
+            await events.SaveChangesAsync();
+        });
+
+        var snapshot = await LatestSnapshotAsync(host, streamId);
+        Assert.Equal((2L, Tenant, (Guid?)owningUser), (snapshot?.Version ?? 0, snapshot?.TenantId ?? Guid.Empty, snapshot?.UserId));
+    }
+
+    /// <summary>The stream's first event is in the batch, but under another aggregate type than the one snapshotted.</summary>
+    [Fact]
+    public async Task A_snapshot_of_a_second_aggregate_type_takes_the_owner_from_the_streams_first_event_in_the_batch()
+    {
+        await using var host = CreateHost(new SwitchableSnapshotStrategy());
+        var streamId = Guid.CreateVersion7();
+
+        await host.ExecuteAsync(async events =>
+        {
+            await events.CreateAsync<Diary>(streamId, new DiaryOpened("secret"));
+            await events.AppendOnBehalfOfAsync<Ledger>(streamId, new LedgerLineAdded(1), new EventSubject(Guid.NewGuid()));
+            await events.SaveChangesAsync();
+        });
+
+        var snapshot = await LatestSnapshotAsync(host, streamId, typeof(Ledger));
+        Assert.NotNull(snapshot);
+        Assert.Equal(Tenant, snapshot.TenantId);
     }
 }
