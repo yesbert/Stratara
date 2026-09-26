@@ -135,4 +135,45 @@ public class SubjectEraserKeyCoverageTests
         Assert.Null(await f.ReadAsync<DefaultLevelNote>(userLevel, Tenant, Member));
         Assert.Equal("kept", await f.ReadAsync<TenantLevelNote>(tenantLevel, Tenant, Member));
     }
+
+    /// <summary>A platform operator acting in a tenant is no member of it; the key it wrote under is still the tenant's.</summary>
+    [Fact]
+    public async Task A_tenants_erasure_reaches_a_value_written_for_a_user_who_is_no_member()
+    {
+        var f = new Fixture();
+        var outsider = Guid.CreateVersion7();
+        var json = await f.WriteAsync(new TenantLevelNote { Text = "secret" }, Tenant, outsider);
+        Assert.Equal("secret", await f.ReadAsync<TenantLevelNote>(json, Tenant, outsider));
+
+        await f.Eraser().EraseTenantAsync(Tenant);
+
+        Assert.Null(await f.ReadAsync<TenantLevelNote>(json, Tenant, outsider));
+    }
+
+    [Fact]
+    public async Task A_users_erasure_reaches_their_value_in_a_tenant_they_have_left()
+    {
+        var f = new Fixture();
+        await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
+        var json = await f.WriteAsync(new DefaultLevelNote { Text = "secret" }, OtherTenant, Member);
+        Assert.Equal("secret", await f.ReadAsync<DefaultLevelNote>(json, OtherTenant, Member));
+
+        await f.Eraser().EraseUserAsync(Member);
+
+        Assert.Null(await f.ReadAsync<DefaultLevelNote>(json, OtherTenant, Member));
+    }
+
+    /// <summary>An erasure before 4.4.0 removed the memberships and left keys it shared with members; running it again reaches them.</summary>
+    [Fact]
+    public async Task A_tenants_erasure_run_again_reaches_what_an_earlier_run_left()
+    {
+        var f = new Fixture();
+        await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
+        var json = await f.WriteAsync(new TenantLevelNote { Text = "secret" }, Tenant, Member);
+        await f.Memberships.RemoveAllMembersAsync(Tenant);
+
+        await f.Eraser().EraseTenantAsync(Tenant);
+
+        Assert.Null(await f.ReadAsync<TenantLevelNote>(json, Tenant, Member));
+    }
 }

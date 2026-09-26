@@ -76,11 +76,12 @@ public sealed class SubjectEraser : ISubjectEraser
                 }
             });
 
-        var keyScopes = UserLevels
+        var directoryScopes = UserLevels
             .SelectMany(level => tenantIds
                 .Select(t => new KeyScope(level, Format(t), Format(userId)))
-                .Prepend(new KeyScope(level, null, Format(userId))))
-            .ToList();
+                .Prepend(new KeyScope(level, null, Format(userId))));
+        var keyScopes = await WithListedScopesAsync(swept, directoryScopes,
+            scope => UserLevels.Contains(scope.Level) && Names(scope.UserId, userId), cancellationToken);
 
         await SweepAsync(swept, ErasurePlane.KeyMaterial, keyScopes.Select(Describe).ToList(),
             async () =>
@@ -122,11 +123,12 @@ public sealed class SubjectEraser : ISubjectEraser
                 }
             });
 
-        var keyScopes = TenantLevels
+        var directoryScopes = TenantLevels
             .SelectMany(level => userIds
                 .Select(u => new KeyScope(level, Format(tenantId), Format(u)))
-                .Prepend(new KeyScope(level, Format(tenantId))))
-            .ToList();
+                .Prepend(new KeyScope(level, Format(tenantId))));
+        var keyScopes = await WithListedScopesAsync(swept, directoryScopes,
+            scope => TenantLevels.Contains(scope.Level) && Names(scope.TenantId, tenantId), cancellationToken);
 
         await SweepAsync(swept, ErasurePlane.KeyMaterial, keyScopes.Select(Describe).ToList(),
             async () =>
@@ -160,6 +162,37 @@ public sealed class SubjectEraser : ISubjectEraser
 
         swept.Add(new ErasedPlane(plane, scopes));
     }
+
+    /// <summary>
+    /// The scopes the directory names, together with every scope the key store lists that names the
+    /// subject — which reaches a key the subject shares with someone no longer in the directory. A
+    /// store that cannot list its scopes leaves the directory's alone.
+    /// </summary>
+    private async Task<List<KeyScope>> WithListedScopesAsync(
+        List<ErasedPlane> swept,
+        IEnumerable<KeyScope> directoryScopes,
+        Func<KeyScope, bool> namesSubject,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<KeyScope> listed;
+        try
+        {
+            listed = await keys.ListScopesAsync(cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            listed = [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new ErasureIncompleteException(ErasurePlane.KeyMaterial, new ErasureReport(swept), ex);
+        }
+
+        return directoryScopes.Concat(listed.Where(namesSubject)).Distinct().ToList();
+    }
+
+    private static bool Names(string? scopeId, Guid id) =>
+        string.Equals(scopeId, Format(id), StringComparison.OrdinalIgnoreCase);
 
     private static string Format(Guid id) => id.ToString("D");
 
