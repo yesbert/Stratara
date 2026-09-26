@@ -89,11 +89,22 @@ the manager, the method invoker, and the hosted service that consumes the event-
 Most hosts take both from the `AddEventProjectionWorkerServices()` composite in
 `Stratara.EventSourcing.WorkerDefaults`.
 
+**Events no projection handles are not read.** A bundle, a replay or a store reader meets events
+that no projection in the host has a use for — types retired from an aggregate, framework events
+another host reads, facts of streams this host was never meant to understand. The worker, the replay
+and the Orleans reader decide from the event's type, after upcasting, whether any projection in the
+host handles it, and leave every other event unread: not resolved, not decrypted, and so not in need
+of a registration. The one exception keeps a moved type loud: an event whose type does not resolve,
+but whose name without namespace or assembly is the name of a type a projection handles, is read and
+fails as an unregistered type does. A handled type *renamed* without an upcaster cannot be told
+apart from an unrelated event, and is left unread — add the upcaster when you rename one. A host that
+replaces `IEventMapperFactory` with its own keeps reading every event, as before.
+
 ### Event-only hosts (no handler dependencies)
 
-If a host must deserialize events off the bus but should *not* wire the projection classes —
-a worker whose projections depend on runtime services it deliberately doesn't compose — register
-only the event types:
+A projection host does not need the whole domain registered to survive events it ignores; see above.
+If a host must deserialize events itself but should *not* wire the projection classes — a custom
+subscriber over `IEventMapperFactory`, say — register only the event types:
 
 ```csharp
 services.AddDomainEventTypesFromAssemblyContaining<AccountOpened>();

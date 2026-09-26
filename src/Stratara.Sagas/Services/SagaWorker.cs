@@ -59,6 +59,7 @@ internal sealed class SagaWorker(
     private readonly ResiliencePipeline _pipeline = pipelineProvider.GetPipeline(ResilienceNames.MessageBus);
     private readonly ResiliencePipeline _precedingFactPipeline = pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact);
     private readonly BucketLockPool _bucketLockPool = new();
+    private EventRelevance? _relevance;
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly BusEnvelopeIntegrityMode _integrityMode = integrityOptions.Value.Mode;
@@ -178,7 +179,8 @@ internal sealed class SagaWorker(
         sessionContextProvider.Set(sessionContext);
 
         var sagaManager = scope.ServiceProvider.GetRequiredService<ISagaManager>();
-        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
+        _relevance ??= SagaEventRelevance.Of(scope.ServiceProvider);
+        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, _relevance, cancellationToken);
         await sagaManager.HandleAsync(events, cancellationToken);
     }
 

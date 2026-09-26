@@ -1,6 +1,6 @@
 # Leave an irrelevant event unread
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 

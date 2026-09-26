@@ -202,6 +202,61 @@ public class ProjectionWorkerTests
 
     private static string Kind(IReadOnlyList<IEvent> events) => (string)events[0].Data;
 
+    public sealed record Deposited(decimal Amount);
+
+    private sealed class DepositProjection : IProjection
+    {
+        private Task HandleAsync(Deposited @event, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// <c>projections</c> → an event no projection in the host handles is not read: a bundle holding one whose type the
+    /// host never registered is applied, instead of failing on the unregistered type.
+    /// </summary>
+    [Fact]
+    public async Task A_bundle_with_an_unregistered_event_no_projection_handles_is_applied()
+    {
+        var resolver = new Stratara.Abstractions.Reflections.TrustedTypeResolver();
+        resolver.Register(typeof(Deposited));
+        var serializer = new Mock<Stratara.Abstractions.Security.ISecureJsonSerializer>();
+        serializer
+            .Setup(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string json, Type type, Guid? _, Guid? _, CancellationToken _) => JsonSerializer.Deserialize(json, type));
+        var mapper = new Stratara.Shared.EventSourcing.Mapping.EventMapperFactory(serializer.Object, resolver, new EventUpcasterPipeline([]));
+        IReadOnlyList<IEvent>? applied = null;
+        var harness = new Harness((events, _) =>
+            {
+                applied = events;
+                return Task.CompletedTask;
+            },
+            realMapper: mapper,
+            configure: services =>
+            {
+                services.AddScoped<IProjection, DepositProjection>();
+                services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker()));
+            });
+        var stream = Guid.NewGuid();
+
+        await harness.Sut.HandleEventBundleAsync(new EventBundle(
+            [Message(typeof(Deposited).AssemblyQualifiedName!, """{"Amount":5}""", stream), Message("Retired.Namespace.Archived, Retired.Assembly", "{}", stream)],
+            JsonSerializer.Serialize(SessionContext.Empty())), CancellationToken.None);
+
+        Assert.NotNull(applied);
+        Assert.Equal(new Deposited(5m), Assert.Single(applied).Data);
+    }
+
+    private static EventMessage Message(string eventTypeName, string dataJson, Guid stream) => new(
+        Id: Guid.CreateVersion7(),
+        Version: 1,
+        DataJson: dataJson,
+        StreamId: stream,
+        EventTypeName: eventTypeName,
+        AggregateTypeName: "TestAggregate",
+        ActorTenantId: Guid.Empty,
+        ActorUserId: Guid.Empty,
+        TenantId: Guid.Empty,
+        UserId: null);
+
     private static EventBundle Bundle(string kind, params Guid[] streams)
     {
         var events = streams.Select(stream => new EventMessage(
@@ -257,7 +312,8 @@ public class ProjectionWorkerTests
         public ScriptedProjectionManager Manager { get; }
         public ProjectionWorker Sut { get; }
 
-        public Harness(Func<IReadOnlyList<IEvent>, CancellationToken, Task> behaviour, ILogger<ProjectionWorker>? logger = null, int? degreeOfParallelism = null)
+        public Harness(Func<IReadOnlyList<IEvent>, CancellationToken, Task> behaviour, ILogger<ProjectionWorker>? logger = null, int? degreeOfParallelism = null,
+            IEventMapperFactory? realMapper = null, Action<IServiceCollection>? configure = null)
         {
             Manager = new ScriptedProjectionManager(behaviour);
 
@@ -266,8 +322,8 @@ public class ProjectionWorkerTests
             pipelineProvider.Setup(p => p.GetPipeline(ResilienceNames.PrecedingFact)).Returns(FastPrecedingFactPipeline());
 
             var mapper = new Mock<IEventMapperFactory>();
-            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IReadOnlyList<EventMessage> messages, CancellationToken _) => messages
+            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((IReadOnlyList<EventMessage> messages, EventRelevance _, CancellationToken _) => messages
                     .Select(m => (IEvent)new Event<string>(m.Id, m.Version, m.EventTypeName, m.StreamId, m.TenantId, m.UserId ?? Guid.Empty))
                     .ToList());
 
@@ -277,6 +333,7 @@ public class ProjectionWorkerTests
             var services = new ServiceCollection();
             services.AddSingleton(new Mock<ISessionContextProvider>().Object);
             services.AddSingleton<IProjectionManager>(Manager);
+            configure?.Invoke(services);
             var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
 
             Sut = new ProjectionWorker(
@@ -284,7 +341,7 @@ public class ProjectionWorkerTests
                 MessageBus.Object,
                 new Mock<IMessagingIdentifier>().Object,
                 scopeFactory,
-                mapper.Object,
+                realMapper ?? mapper.Object,
                 pipelineProvider.Object,
                 Options.Create(new BusEnvelopeJsonOptions()),
                 Options.Create(new BusEnvelopeIntegrityOptions { Mode = BusEnvelopeIntegrityMode.Off }),

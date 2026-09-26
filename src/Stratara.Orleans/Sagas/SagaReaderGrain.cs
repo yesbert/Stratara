@@ -91,9 +91,8 @@ internal sealed class SagaReaderGrain(
     /// <summary>What every saga's consumer name starts with, so that no saga shares a checkpoint with a projection.</summary>
     public const string ConsumerPrefix = "sagas:";
 
-    private readonly Dictionary<string, bool> _handledTypeNames = new(StringComparer.Ordinal);
     private Type? _sagaType;
-    private IReadOnlySet<string>? _relevant;
+    private EventRelevance? _relevance;
 
     /// <summary>The consumer a saga reads under: <see cref="ConsumerPrefix"/> and the name the saga handler gives it.</summary>
     public static string ConsumerOf(string sagaName) => ConsumerPrefix + sagaName;
@@ -115,9 +114,9 @@ internal sealed class SagaReaderGrain(
     /// <summary>
     /// One scope and one saga instance per session run, resolved after the run's session is set, so a saga's
     /// dependency that takes its tenant when it is constructed takes the entry's; per entry, the recorded session. A
-    /// fact a process handles travels to its grain with the session it was recorded under. Once the grain knows which
-    /// event types a stateless saga declares, an entry of another type is passed over before it is deserialised and
-    /// before a scope is built for it.
+    /// fact a process handles travels to its grain with the session it was recorded under. Once the grain knows its saga's
+    /// relevance — the event types a stateless saga declares, or any resolvable type for a process — the mapper leaves an
+    /// entry outside it unread, and no scope is built for it.
     /// </summary>
     protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
@@ -125,48 +124,34 @@ internal sealed class SagaReaderGrain(
         {
             var handler = services.GetRequiredService<ISagaHandler>();
             var run = new SagaReaderRun(handler, ResolveSaga(services), GrainFactory);
-            _relevant ??= run.IsProcess ? null : run.RelevantTypeNames;
+            _relevance ??= run.Relevance;
             return run;
         });
 
         return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
         {
-            if (_relevant is { } relevant && !Handles(relevant, entry))
+            IReadOnlyList<IEvent>? events = null;
+            if (_relevance is { } known)
             {
-                return;
+                events = await eventMapperFactory.MapToEventsAsync([entry], known, entryToken);
+                if (events.Count == 0)
+                {
+                    return;
+                }
             }
 
             var run = await runs.EnterAsync(entry);
-            var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
-            await run.ApplyAsync(entry, events, entryToken);
+            events ??= await eventMapperFactory.MapToEventsAsync([entry], run.Relevance, entryToken);
+            if (events.Count > 0)
+            {
+                await run.ApplyAsync(entry, events, entryToken);
+            }
         }, cancellationToken);
     }
 
     /// <summary>A saga without a checkpoint starts where the host's sagas read; see <see cref="SagaStart"/>.</summary>
     protected override Task StartAsync(IProjectionCheckpointStore checkpoints, string reader, CancellationToken cancellationToken) =>
         SagaStart.EnsureAsync(checkpoints, reader, Partition, Consumer, Registrations.Consumers, cancellationToken);
-
-    /// <summary>
-    /// Whether the stateless saga declares a handler for the entry's event type, as the mapped event would name it — after
-    /// the upcasters and the trusted-type resolution the mapping applies — decided once per stored type name.
-    /// </summary>
-    private bool Handles(IReadOnlySet<string> relevant, EventStreamEntry entry)
-    {
-        if (_handledTypeNames.TryGetValue(entry.EventTypeName, out var known))
-        {
-            return known;
-        }
-
-        var upcasters = ServiceProvider.GetService<IEventUpcasterPipeline>();
-        var types = ServiceProvider.GetService<ITrustedTypeResolver>();
-        if (upcasters is null || types is null)
-        {
-            return true;
-        }
-
-        var name = types.Resolve(upcasters.Upcast(entry.EventTypeName, entry.DataJson).EventTypeName).GetQualifiedTypeName();
-        return _handledTypeNames[entry.EventTypeName] = relevant.Contains(name);
-    }
 
     /// <summary>
     /// Resolves the saga of the grain's name, whose type the registrations name; the container builds it, so a factory
@@ -195,8 +180,13 @@ internal sealed class SagaReaderRun(ISagaHandler handler, ISaga saga, IGrainFact
     /// <summary>Whether the saga is a stateful process, whose facts are decided by the process rather than by the event types it declares.</summary>
     public bool IsProcess => saga is ISagaProcess;
 
-    /// <summary>The event types, by their qualified names, the saga declares a handler for.</summary>
-    public IReadOnlySet<string> RelevantTypeNames => _relevant;
+    /// <summary>
+    /// Which entries the saga has a use for: the event types a stateless saga declares a handler for, or any type that
+    /// resolves for a process, which decides from the event itself.
+    /// </summary>
+    public EventRelevance Relevance { get; } = saga is ISagaProcess
+        ? EventRelevance.AnyResolvable
+        : EventRelevance.ForTypes(handler.GetRelevantEventTypes(saga));
 
     public async Task ApplyAsync(EventStreamEntry entry, IReadOnlyList<IEvent> events, CancellationToken cancellationToken)
     {

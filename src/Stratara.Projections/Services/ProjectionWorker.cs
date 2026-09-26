@@ -60,6 +60,7 @@ internal sealed class ProjectionWorker(
     private readonly ResiliencePipeline _pipeline = pipelineProvider.GetPipeline(ResilienceNames.MessageBus);
     private readonly ResiliencePipeline _precedingFactPipeline = pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact);
     private readonly BucketLockPool _bucketLockPool = new();
+    private EventRelevance? _relevance;
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly BusEnvelopeIntegrityMode _integrityMode = integrityOptions.Value.Mode;
@@ -177,7 +178,8 @@ internal sealed class ProjectionWorker(
         sessionContextProvider.Set(sessionContext);
 
         var projectionManager = scope.ServiceProvider.GetRequiredService<IProjectionManager>();
-        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
+        _relevance ??= ProjectionEventRelevance.Of(scope.ServiceProvider);
+        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, _relevance, cancellationToken);
         await projectionManager.HandleAsync(events, cancellationToken);
     }
 

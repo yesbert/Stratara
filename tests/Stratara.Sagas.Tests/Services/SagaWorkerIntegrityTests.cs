@@ -171,7 +171,7 @@ public class SagaWorkerIntegrityTests
         public Harness(BusEnvelopeIntegrityMode integrityMode, IBusEnvelopeSigner? signer = null, int maxBodyBytes = 1_048_576)
         {
             PipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(ResiliencePipeline.Empty);
-            EventMapperFactory.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<CancellationToken>()))
+            EventMapperFactory.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(Array.Empty<IEvent>());
 
             var services = new ServiceCollection();

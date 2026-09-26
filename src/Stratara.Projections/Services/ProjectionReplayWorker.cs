@@ -192,6 +192,7 @@ internal sealed class ProjectionReplayWorker(
             return ReplayedBatch.Empty;
         }
 
+        var relevance = ProjectionEventRelevance.Of(scope.ServiceProvider);
         foreach (var entry in entries)
         {
             var sessionContext = new SessionContext(
@@ -204,7 +205,7 @@ internal sealed class ProjectionReplayWorker(
                 entry.UserId);
             sessionContextProvider.Set(sessionContext);
 
-            var events = await eventMapperFactory.MapToEventsAsync([entry], cancellationToken);
+            var events = await eventMapperFactory.MapToEventsAsync([entry], relevance, cancellationToken);
             await projectionManager.HandleAsync(events, cancellationToken);
         }
 

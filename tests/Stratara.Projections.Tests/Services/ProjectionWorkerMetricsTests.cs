@@ -134,7 +134,7 @@ public class ProjectionWorkerMetricsTests
             pipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(ResiliencePipeline.Empty);
 
             var mapper = new Mock<IEventMapperFactory>();
-            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<CancellationToken>()))
+            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(Array.Empty<IEvent>());
 
             var projectionManager = new Mock<IProjectionManager>();

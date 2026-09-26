@@ -116,8 +116,8 @@ public class ProjectionReplayWorkerTests
             });
         var applied = new List<long>();
         harness.EventMapperFactory
-            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, CancellationToken _) =>
+            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, EventRelevance _, CancellationToken _) =>
             {
                 applied.AddRange(entries.Select(e => e.SequenceNumber));
                 return new List<IEvent> { Mock.Of<IEvent>() };
@@ -366,8 +366,8 @@ public class ProjectionReplayWorkerTests
         harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(3);
         SetupBatchSequence(harness, [[created, cascade, indexed], []]);
         harness.EventMapperFactory
-            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, CancellationToken _) => entries.Select(e => events[e]).ToList());
+            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, EventRelevance _, CancellationToken _) => entries.Select(e => events[e]).ToList());
         var projection = new EntryProjection();
         var store = new InMemoryForgottenTenantStore();
         harness.Configure = services => services.AddScoped<IProjectionManager>(_ => new ProjectionManager(
@@ -378,6 +378,40 @@ public class ProjectionReplayWorkerTests
         harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
         Assert.Empty(projection.Rows);
         Assert.Contains((nameof(EntryProjection), tenant), store.Forgotten);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_ReplaysPastAnEventNoProjectionHandlesOfATypeNeverRegistered()
+    {
+        var harness = new Harness();
+        var resolver = new Stratara.Abstractions.Reflections.TrustedTypeResolver();
+        resolver.Register(typeof(EntryCreated));
+        var serializer = new Mock<Stratara.Abstractions.Security.ISecureJsonSerializer>();
+        serializer
+            .Setup(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string json, Type type, Guid? _, Guid? _, CancellationToken _) => System.Text.Json.JsonSerializer.Deserialize(json, type));
+        var mapper = new Stratara.Shared.EventSourcing.Mapping.EventMapperFactory(serializer.Object, resolver, new EventUpcasterPipeline([]));
+        var created = NewEntry(sequenceNumber: 1);
+        created.EventTypeName = typeof(EntryCreated).AssemblyQualifiedName!;
+        var retired = NewEntry(sequenceNumber: 2);
+        retired.EventTypeName = "Retired.Namespace.EntryArchived, Retired.Assembly";
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(2);
+        SetupBatchSequence(harness, [[created, retired], []]);
+        var projection = new EntryProjection();
+        harness.Configure = services =>
+        {
+            services.AddSingleton<IEventMapperFactory>(mapper);
+            services.AddScoped<IProjection>(_ => projection);
+            services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker(), null, new InMemoryForgottenTenantStore()));
+            services.AddScoped<IProjectionManager>(sp => new ProjectionManager(
+                Mock.Of<ILogger<ProjectionManager>>(), sp.GetRequiredService<IProjectionHandler>(), [projection]));
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+        Assert.Contains(created.StreamId, projection.Rows.Keys);
+        serializer.Verify(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private sealed record EntryCreated;
@@ -481,8 +515,8 @@ public class ProjectionReplayWorkerTests
                 .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
             EventMapperFactory
-                .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IEnumerable<EventStreamEntry> _, CancellationToken _) => new List<IEvent> { Mock.Of<IEvent>() });
+                .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((IEnumerable<EventStreamEntry> _, EventRelevance _, CancellationToken _) => new List<IEvent> { Mock.Of<IEvent>() });
         }
 
         public async Task RunAsync(bool triggerReplay)

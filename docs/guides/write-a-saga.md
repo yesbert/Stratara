@@ -82,6 +82,15 @@ builder.Services.AddSagasFromAssemblyContaining<TransferSaga>();
 `AddSagaWorkerServices()` (from `Stratara.EventSourcing.WorkerDefaults`) brings the hosted
 `SagaWorker` and its dependencies; `AddSagasFromAssemblyContaining<T>()` registers your sagas.
 
+**Events no saga handles are not read.** The saga worker and, on the Orleans execution model, the saga
+readers decide from an event's type, after upcasting, whether any saga in the host handles it, and
+leave every other event unread — not resolved, not decrypted, so its type need not be registered. An
+event whose type does not resolve but carries the name of a type a saga handles is still read, and
+fails as an unregistered type does. A stateful process decides from the event itself, so its reader
+reads every event whose type resolves; one whose type does not resolve cannot be one it handles, and
+is skipped with warning `102_005`, once per host and event type — register the type, or add an
+upcaster if the process should see it.
+
 ## Idempotency
 
 Sagas **must be idempotent** — at-least-once delivery means the bus can replay the same event after a broker reconnect, and it redelivers a bundle whose handler threw (up to `MessageRetry:MaxDeliveryAttempts` times, then it is dead-lettered). Because a redelivery re-runs `HandleAsync`, guard the enqueue:
