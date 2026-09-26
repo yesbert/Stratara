@@ -189,4 +189,46 @@ public class EnvelopeFileKeyStoreTests
         Assert.Equal(keyFromA.KeyId, keyFromB.KeyId);
         Assert.Equal(keyFromA.Key.ToArray(), keyFromB.Key.ToArray());
     }
+
+    [Fact]
+    public async Task ListScopes_ReturnsEveryScopeHoldingAKey_AndNoneErased()
+    {
+        var store = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
+        var tenant = Guid.NewGuid().ToString("D");
+        var user = Guid.NewGuid().ToString("D");
+        KeyScope[] kept =
+        [
+            new(DataSensitivityLevel.UserScoped, tenant, user),
+            new(DataSensitivityLevel.UserScoped, tenant),
+            new(DataSensitivityLevel.TenantScoped, tenant, user),
+            new(DataSensitivityLevel.UserScoped, null, user),
+        ];
+        var erased = new KeyScope(DataSensitivityLevel.Confidential, tenant);
+        foreach (var scope in kept.Append(erased))
+        {
+            await store.GetOrCreateCurrentKeyAsync(scope);
+        }
+
+        await store.EraseScopeAsync(erased);
+
+        Assert.Equal(kept.OrderBy(s => s.ToString()), (await store.ListScopesAsync()).OrderBy(s => s.ToString()));
+    }
+
+    [Fact]
+    public async Task ListScopes_ListsARotatedScopeOnce_AScopeWithNoTenant_AndWhatAnotherInstanceWrote()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var writer = TestSupport.NewKeyStore(options);
+        var rotated = new KeyScope(DataSensitivityLevel.UserScoped, Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D"));
+        var systemWide = new KeyScope(DataSensitivityLevel.Confidential);
+        await writer.GetOrCreateCurrentKeyAsync(rotated);
+        await writer.RotateAsync(rotated);
+        await writer.GetOrCreateCurrentKeyAsync(systemWide);
+
+        var reader = TestSupport.NewKeyStore(options);
+
+        Assert.Equal(
+            new[] { rotated, systemWide }.OrderBy(s => s.ToString()),
+            (await reader.ListScopesAsync()).OrderBy(s => s.ToString()));
+    }
 }

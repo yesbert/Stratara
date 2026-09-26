@@ -132,5 +132,35 @@ public sealed class InMemoryKeyStore : IKeyStore
         return keyId;
     }
 
+    /// <inheritdoc />
+    public ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            IReadOnlyList<KeyScope> scopes = _keysById.Keys
+                .Select(keyId => keyId[..keyId.LastIndexOf("::v", StringComparison.Ordinal)])
+                .Concat(_currentByScope.Keys)
+                .Distinct(StringComparer.Ordinal)
+                .Select(ParseScopeKey)
+                .OfType<KeyScope>()
+                .ToList();
+            return ValueTask.FromResult(scopes);
+        }
+    }
+
     private static string ScopeKey(KeyScope scope) => $"{scope.Level}:{scope.TenantId}:{scope.UserId}";
+
+    private static KeyScope? ParseScopeKey(string scopeKey)
+    {
+        var first = scopeKey.IndexOf(':', StringComparison.Ordinal);
+        var last = scopeKey.LastIndexOf(':');
+        if (first < 0 || last == first || !Enum.TryParse<DataSensitivityLevel>(scopeKey[..first], out var level))
+        {
+            return null;
+        }
+
+        var tenantId = scopeKey[(first + 1)..last];
+        var userId = scopeKey[(last + 1)..];
+        return new KeyScope(level, tenantId.Length == 0 ? null : tenantId, userId.Length == 0 ? null : userId);
+    }
 }

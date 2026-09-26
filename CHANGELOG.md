@@ -18,6 +18,21 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **An erasure finds every key that names the subject, not only the ones the directory names.** A
+  key is named by level, tenant and user together, and the eraser computed those names from the
+  current memberships. A key shared with someone outside the directory was found by neither erasure
+  and stayed readable. That is a user who had left the tenant, or an operator acting in a tenant from
+  outside it: commands and intents are encrypted under the acting user. A second run after an
+  earlier erasure had already removed the memberships missed these keys too. `IKeyStore` gains
+  `ListScopesAsync`, and the file-backed and in-memory key stores implement it. An erasure now also
+  shreds every listed key it covers: a key of any level naming the tenant, or a user-level key naming
+  the user. A key store of your own keeps compiling: the default implementation throws
+  `NotSupportedException`, and the erasure then falls back to the directory's keys as before,
+  logging a warning (`LogEvents.KeyManagement.KeyScopesNotListable`, `112_008`).
+  Implement it to close the gap; a decorator around a key store has to forward it. Both erasures now
+  also refuse an empty id: with the listing, erasing it would have shredded what the system actor and
+  data without a tenant are keyed by, in every tenant.
+
 - **A user's erasure reaches the snapshots of that user's aggregates.** A snapshot holds an aggregate's
   whole state, protected fields included. It was encrypted under the stream's tenant alone and
   recorded no user. After a user's erasure, rebuilding that user's aggregate therefore started from a
@@ -64,7 +79,8 @@ applies to the entire NuGet family.
   `KeyMaterial`, `Memberships`.
 
   `ISubjectEraser` and the membership guide state what remains out of reach:
-  - a key shared with a user who is not a member when the erasure runs;
+  - a key shared with a user who is not a member when the erasure runs, unless the key store lists
+    its keys (see the entry on listing keys above);
   - on a user's erasure, the snapshot of an aggregate that user owns.
 
 - **A stream keeps the user it was created for.** A later event takes its owner from the stream's

@@ -198,6 +198,41 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public async ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
+            ReloadStateUnlocked();
+            return _state.Scopes.Keys.Select(ParseScopeKey).OfType<KeyScope>().ToList();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reads a scope back from the name <see cref="BuildScopeKey"/> gave it: the level up to the first
+    /// colon, the user after the last, the tenant in between. Exact for every scope the framework
+    /// writes, whose parts are GUIDs; a name that does not parse is left out of the listing.
+    /// </summary>
+    private static KeyScope? ParseScopeKey(string scopeKey)
+    {
+        var first = scopeKey.IndexOf(':', StringComparison.Ordinal);
+        var last = scopeKey.LastIndexOf(':');
+        if (first < 0 || last == first || !Enum.TryParse<DataSensitivityLevel>(scopeKey[..first], out var level))
+        {
+            return null;
+        }
+
+        var tenantId = scopeKey[(first + 1)..last];
+        var userId = scopeKey[(last + 1)..];
+        return new KeyScope(level, tenantId.Length == 0 ? null : tenantId, userId.Length == 0 ? null : userId);
+    }
+
     private string? HighestNonRevokedKeyId(string scopeKey)
     {
         if (!_state.Scopes.TryGetValue(scopeKey, out var entry))

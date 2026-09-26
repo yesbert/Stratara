@@ -49,4 +49,19 @@ public interface IKeyStore
     /// <param name="scope">The key scope to erase.</param>
     /// <param name="cancellationToken">Propagated to the underlying store.</param>
     ValueTask EraseScopeAsync(KeyScope scope, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// List the scope of every key the store holds. An erasure uses it to find every key that names
+    /// a subject, including a key that also names a subject no longer in the directory.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation throws <see cref="NotSupportedException"/>, and an erasure then
+    /// shreds only the scopes the directory names. Those miss a key shared with a former member, or
+    /// with an operator acting in a tenant from outside it, so a key store should implement this.
+    /// </remarks>
+    /// <param name="cancellationToken">Propagated to the underlying store.</param>
+    /// <returns>Every scope that holds at least one key version; an erased scope is not listed.</returns>
+    /// <exception cref="NotSupportedException">The store cannot list its scopes.</exception>
+    ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException($"{GetType().Name} cannot list its key scopes.");
 }

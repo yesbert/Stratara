@@ -11,7 +11,10 @@ namespace Stratara.Abstractions.Erasure;
 /// the subject's keys unrecoverable. A key is named by level, tenant and user together, and the
 /// level decides whose erasure a value dies with. A tenant's erasure shreds every key naming the
 /// tenant, at every level, alone or together with each of its members. A user's erasure shreds the
-/// user-level keys naming the user, alone or together with each tenant it belongs to.
+/// user-level keys naming the user, alone or together with each tenant it belongs to. It also asks
+/// the key store for every such key naming the subject, which reaches keys shared with someone no
+/// longer in the directory; a key store that cannot list its keys leaves that to the directory, and
+/// the erasure logs a warning.
 /// </para>
 /// <para>
 /// <strong>What it does not cover, and why it matters.</strong> Read models a consumer's own
@@ -21,11 +24,11 @@ namespace Stratara.Abstractions.Erasure;
 /// context naming the subject and are deliberately left alone: the audit log is the evidence that
 /// the erasure happened, and retaining it is a decision only the consumer can take.
 /// Tenant-level and confidential values written for a user belong to the tenant and survive that
-/// user's erasure. A key naming a tenant together with a user who is not a member when the erasure
-/// runs is found by neither erasure, because the memberships are what name the other half. That
-/// user may have left the tenant, or may be an operator acting in it from outside. A snapshot written
-/// before 4.4.0 records no user and stays under its tenant alone, so a user's erasure does not reach it
-/// unless the host removed such snapshots on upgrading.
+/// user's erasure. A key store that cannot list its scopes leaves an erasure with the keys the
+/// directory names; a key shared with a former member, or with an operator acting in a tenant from
+/// outside it, is then not found. A snapshot written before 4.4.0 records no user and stays under its
+/// tenant alone, so a user's erasure does not reach it unless the host removed such snapshots on
+/// upgrading.
 /// </para>
 /// </remarks>
 public interface ISubjectEraser
@@ -35,6 +38,7 @@ public interface ISubjectEraser
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>What each plane covered, once every plane has succeeded.</returns>
     /// <exception cref="ErasureIncompleteException">Thrown when one plane's sweep fails; the erasure stops there.</exception>
+    /// <exception cref="ArgumentException"><paramref name="userId"/> is empty, which names no subject.</exception>
     Task<ErasureReport> EraseUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>Erases one tenant across every plane, including its members' tenant-scoped data.</summary>
@@ -42,5 +46,6 @@ public interface ISubjectEraser
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>What each plane covered, once every plane has succeeded.</returns>
     /// <exception cref="ErasureIncompleteException">Thrown when one plane's sweep fails; the erasure stops there.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is empty, which names no subject.</exception>
     Task<ErasureReport> EraseTenantAsync(Guid tenantId, CancellationToken cancellationToken = default);
 }

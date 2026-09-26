@@ -236,7 +236,9 @@ at the user, tenant and confidential levels alike. That includes the key a user-
 encrypted under when it is written with no user, which is the case for an event appended from an
 ordinary request. Only the user level is the user's. A user's erasure shreds the user-level keys
 naming the user, alone or together with each tenant it belongs to. A tenant-level or confidential
-value written for that user stays readable until its tenant is erased.
+value written for that user stays readable until its tenant is erased. Both erasures also ask the
+key store for every key naming the subject, which reaches a key shared with someone who is no
+longer in the directory.
 
 **If a plane fails, the erasure stops there** and raises `ErasureIncompleteException`, naming the
 plane and listing what was already swept. It does not continue, precisely so that a failed settings
@@ -252,10 +254,10 @@ Every sweep is safe to repeat, and the planes already swept simply find nothing 
 - **The command audit log and the outbox.** Both carry a session context naming the subject, and
   both are deliberately left alone — the audit log is the evidence that the erasure happened, and
   whether to retain it is a decision only you can take for your jurisdiction.
-- **Keys shared with someone who is not a member.** The memberships name the other half of a shared
-  key. A key naming a tenant together with a user who is not a member when the erasure runs is found
-  by neither the tenant's erasure nor the user's. That covers a user who left the tenant, and an
-  operator acting in the tenant from outside it.
+- **Keys a custom key store cannot list.** The framework's key stores list every key they hold. A key
+  store of your own that does not implement `IKeyStore.ListScopesAsync` leaves an erasure with the
+  keys the directory names: a key shared with a former member, or with an operator acting in the
+  tenant from outside it, is then not found.
 - **Snapshots written before 4.4.0, on a user's erasure.** They record no user and stay under their
   tenant alone. The 4.4.0 changelog gives the statement that removes them on upgrading.
 
