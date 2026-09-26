@@ -182,11 +182,14 @@ internal sealed class SagaReaderRun(ISagaHandler handler, ISaga saga, IGrainFact
 
     /// <summary>
     /// Which entries the saga has a use for: the event types a stateless saga declares a handler for, or any type that
-    /// resolves for a process, which decides from the event itself.
+    /// resolves for a process, which decides from the event itself — an unresolvable entry named like a type the process
+    /// declares a handler for is read too, so it fails as an unregistered type does. Built on first use.
     /// </summary>
-    public EventRelevance Relevance { get; } = saga is ISagaProcess
-        ? EventRelevance.AnyResolvable
+    public EventRelevance Relevance => _relevance ??= saga is ISagaProcess
+        ? EventRelevance.AnyResolvableWith(handler.GetRelevantEventTypes(saga))
         : EventRelevance.ForTypes(handler.GetRelevantEventTypes(saga));
+
+    private EventRelevance? _relevance;
 
     public async Task ApplyAsync(EventStreamEntry entry, IReadOnlyList<IEvent> events, CancellationToken cancellationToken)
     {

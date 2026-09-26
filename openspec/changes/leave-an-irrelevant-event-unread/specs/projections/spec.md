@@ -12,7 +12,9 @@ and its payload SHALL NOT be decrypted, so it SHALL NOT need to be registered in
 fail neither the bundle it arrives in, nor a replay, nor a store reader. Whether a projection is
 dispatched an event SHALL be decided on the event's type as it stands after upcasting. An event whose
 type does not resolve, but whose name without namespace or assembly is the name of a type a projection
-in the host is dispatched, SHALL be read, and SHALL fail as an unregistered type fails.
+in the host is dispatched, SHALL be read, and SHALL fail as an unregistered type fails. Where the host
+replaces how recorded events are mapped, every event SHALL be read as before; where it replaces the
+component that dispatches to projections, that component SHALL receive every event of the bundle.
 
 A host that runs projections receives events it has no use for: types retired from an aggregate,
 framework events another host's projections read, facts of streams it was never meant to understand.
@@ -66,6 +68,11 @@ as it always has.
 - **WHEN** a recorded event's type is handled by no projection, and an upcaster turns it into a type a
   projection handles
 - **THEN** the upcast event is dispatched to that projection
+
+#### Scenario: The host replaces the projection dispatch
+
+- **WHEN** a host registers its own component in place of the framework's projection dispatch
+- **THEN** it receives every event of the bundle, as before
 
 #### Scenario: An unreadable event carries the name of a handled type
 

@@ -156,6 +156,48 @@ public class EventMapperFactoryRelevanceTests
     }
 
     [Fact]
+    public async Task Any_resolvable_with_declared_types_keeps_an_unresolvable_event_named_like_one_loud()
+    {
+        const string moved = "Former.Namespace.Opened, Former.Assembly";
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CreateMapper().MapToEventsAsync([Entry(moved, "{}")], EventRelevance.AnyResolvableWith([typeof(Opened)])));
+
+        Assert.Contains(moved, failure.Message, StringComparison.Ordinal);
+        VerifySkipLogged(Times.Never());
+    }
+
+    private sealed class PayloadDependentPipeline : IEventUpcasterPipeline
+    {
+        public UpcastedEvent Upcast(string eventTypeName, string dataJson) =>
+            eventTypeName == "Legacy.Namespace.Fact, Legacy.Assembly"
+                ? new UpcastedEvent((dataJson.Contains("opened", StringComparison.Ordinal) ? typeof(Opened) : typeof(Ignored)).AssemblyQualifiedName!,
+                    dataJson.Contains("opened", StringComparison.Ordinal) ? """{"Name":"Ada"}""" : """{"Note":"x"}""")
+                : new UpcastedEvent(eventTypeName, dataJson);
+    }
+
+    [Fact]
+    public async Task A_pipeline_of_the_hosts_own_is_asked_for_every_entry()
+    {
+        _resolver.Register(typeof(Opened));
+        _resolver.Register(typeof(Ignored));
+        var mapper = new EventMapperFactory(_serializer.Object, _resolver, new PayloadDependentPipeline(), _logger.Object);
+        const string legacy = "Legacy.Namespace.Fact, Legacy.Assembly";
+
+        var events = await mapper.MapToEventsAsync(
+            [Entry(legacy, """{"kind":"closed"}"""), Entry(legacy, """{"kind":"opened"}""")], OpenedOnly);
+
+        Assert.Equal(new Opened("Ada"), Assert.Single(events).Data);
+    }
+
+    [Fact]
+    public void Relevant_types_must_not_contain_null()
+    {
+        Assert.Throws<ArgumentException>(() => EventRelevance.ForTypes([typeof(Opened), null!]));
+        Assert.Throws<ArgumentException>(() => EventRelevance.AnyResolvableWith([null!]));
+    }
+
+    [Fact]
     public async Task Messages_are_selected_like_entries()
     {
         _resolver.Register(typeof(Opened));

@@ -206,7 +206,13 @@ public class SagaWorkerTests
 
     private sealed class DepositSaga : ISaga
     {
-        private Task HandleAsync(Deposited @event, CancellationToken cancellationToken) => Task.CompletedTask;
+        public List<Deposited> Dispatched { get; } = [];
+
+        private Task HandleAsync(Deposited @event, CancellationToken cancellationToken)
+        {
+            Dispatched.Add(@event);
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>
@@ -223,17 +229,15 @@ public class SagaWorkerTests
             .Setup(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string json, Type type, Guid? _, Guid? _, CancellationToken _) => JsonSerializer.Deserialize(json, type));
         var mapper = new Stratara.Shared.EventSourcing.Mapping.EventMapperFactory(serializer.Object, resolver, new EventUpcasterPipeline([]));
-        IReadOnlyList<IEvent>? dispatched = null;
-        var harness = new Harness((events, _) =>
-            {
-                dispatched = events;
-                return Task.CompletedTask;
-            },
+        var saga = new DepositSaga();
+        var harness = new Harness((_, _) => Task.CompletedTask,
             realMapper: mapper,
             configure: services =>
             {
-                services.AddScoped<ISaga, DepositSaga>();
+                services.AddScoped<ISaga>(_ => saga);
                 services.AddScoped<ISagaHandler>(_ => new SagaHandler(new SagaMethodInvoker()));
+                services.AddScoped<ISagaManager>(sp => new SagaManager(
+                    NullLogger<SagaManager>.Instance, sp.GetRequiredService<ISagaHandler>(), [saga]));
             });
         var stream = Guid.NewGuid();
 
@@ -241,8 +245,7 @@ public class SagaWorkerTests
             [Message(typeof(Deposited).AssemblyQualifiedName!, """{"Amount":5}""", stream), Message("Retired.Namespace.Archived, Retired.Assembly", "{}", stream)],
             JsonSerializer.Serialize(SessionContext.Empty())), CancellationToken.None);
 
-        Assert.NotNull(dispatched);
-        Assert.Equal(new Deposited(5m), Assert.Single(dispatched).Data);
+        Assert.Equal([new Deposited(5m)], saga.Dispatched);
     }
 
     private static EventMessage Message(string eventTypeName, string dataJson, Guid stream) => new(
@@ -322,8 +325,8 @@ public class SagaWorkerTests
             pipelineProvider.Setup(p => p.GetPipeline(ResilienceNames.PrecedingFact)).Returns(FastPrecedingFactPipeline());
 
             var mapper = new Mock<IEventMapperFactory>();
-            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IReadOnlyList<EventMessage> messages, EventRelevance _, CancellationToken _) => messages
+            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((IReadOnlyList<EventMessage> messages, CancellationToken _) => messages
                     .Select(m => (IEvent)new Event<string>(m.Id, m.Version, m.EventTypeName, m.StreamId, m.TenantId, m.UserId ?? Guid.Empty))
                     .ToList());
 

@@ -39,7 +39,10 @@ a saga *reacts to nothing* it does not handle. Neither holds when the bundle can
   handled type moved without an upcaster has always shown up.
 - A stateful saga process decides what it handles at run time, from the event. Its reader therefore
   maps every event whose type resolves, as today. It skips one that does not resolve, with a warning
-  once per host and event type, instead of stalling the partition.
+  once per host and event type, instead of stalling the partition. The exception is one named like a
+  type the process declares a handler for, which stays loud.
+- A host that replaces the framework's projection or saga manager, or its event mapper, keeps reading
+  every event, as before.
 - `IEventMapperFactory` gains two overloads that take the host's relevance, one for stored entries and
   one for bus messages. Their default implementation maps everything and filters afterwards, which is
   today's behaviour, so a consumer's own mapper compiles and behaves as before. `EventRelevance`

@@ -116,8 +116,8 @@ public class ProjectionReplayWorkerTests
             });
         var applied = new List<long>();
         harness.EventMapperFactory
-            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, EventRelevance _, CancellationToken _) =>
+            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, CancellationToken _) =>
             {
                 applied.AddRange(entries.Select(e => e.SequenceNumber));
                 return new List<IEvent> { Mock.Of<IEvent>() };
@@ -515,8 +515,8 @@ public class ProjectionReplayWorkerTests
                 .Setup(r => r.GetManyAfterSequenceInStreamOrderAsync(It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
             EventMapperFactory
-                .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IEnumerable<EventStreamEntry> _, EventRelevance _, CancellationToken _) => new List<IEvent> { Mock.Of<IEvent>() });
+                .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((IEnumerable<EventStreamEntry> _, CancellationToken _) => new List<IEvent> { Mock.Of<IEvent>() });
         }
 
         public async Task RunAsync(bool triggerReplay)

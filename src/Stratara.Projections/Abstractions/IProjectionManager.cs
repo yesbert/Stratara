@@ -9,7 +9,10 @@ namespace Stratara.Projections.Abstractions;
 public interface IProjectionManager
 {
     /// <summary>Dispatch the given events to every registered projection. Projections that have no relevant handler are skipped.</summary>
-    /// <param name="events">The full event-bundle contents.</param>
+    /// <param name="events">
+    /// The bundle's events. The framework's workers hand the framework's manager only the events a registered projection
+    /// is dispatched, leaving the others unread; a manager registered in its place receives every event of the bundle.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token propagated to all projection invocations.</param>
     Task HandleAsync(IReadOnlyList<IEvent> events, CancellationToken cancellationToken);
 }

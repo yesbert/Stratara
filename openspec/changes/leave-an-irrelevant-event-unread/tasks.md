@@ -49,7 +49,30 @@
 - [x] 4.4 `CHANGELOG.md` under Unreleased: Fixed, Added (`EventRelevance` and the overloads), and an
   Upgrading note on renamed handled types.
 
-## 5. Gate
+## 5. Review follow-ups
 
-- [x] 5.1 `openspec validate leave-an-irrelevant-event-unread --strict`
-- [ ] 5.2 `./scripts/local-gauntlet.sh`
+Copilot could not review (the requester's quota was exhausted), so an independent review ran on the
+branch. What it found, and what was done:
+
+- [x] 5.1 A replaced `IProjectionManager` or `ISagaManager` received only the relevant subset, although
+  its contract promises the whole bundle. The workers now select only beside the framework's managers.
+  Both managers' parameter docs say so. The new worker tests therefore run the real managers.
+- [x] 5.2 The upcast-name cache assumed a name-only pipeline. It is now kept only with the framework's
+  `EventUpcasterPipeline`. Covered by `A_pipeline_of_the_hosts_own_is_asked_for_every_entry`.
+- [x] 5.3 The saga reader rewrite had no tests. Added a stateless saga and a process on the in-process
+  host (`IrrelevantEventOnTheExecutionModelTests`). Both stall with `main`'s reader (checked) and read
+  on with this one. The stateless case starts its partition with an entry the saga does not take, so
+  the first-entry path runs.
+- [x] 5.4 The compatibility claim was too broad for test doubles and decorators. The XML docs of the
+  overloads and the upgrade note now say what holds.
+- [x] 5.5 A process lost the loud failure for a declared type moved without an upcaster. Added
+  `EventRelevance.AnyResolvableWith`. Covered by
+  `Any_resolvable_with_declared_types_keeps_an_unresolvable_event_named_like_one_loud`.
+- [x] 5.6 The name caches are capped, `SagaReaderRun.Relevance` is built lazily, and `ForTypes` rejects a
+  null element (`Relevant_types_must_not_contain_null`). The design now says the replay builds
+  relevance per batch.
+
+## 6. Gate
+
+- [x] 6.1 `openspec validate leave-an-irrelevant-event-unread --strict`
+- [ ] 6.2 `./scripts/local-gauntlet.sh`

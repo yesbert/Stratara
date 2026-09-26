@@ -30,8 +30,10 @@ public sealed partial class EventMapperFactory(
     ILogger<EventMapperFactory>? logger) : IEventMapperFactory
 {
     private static readonly ConcurrentDictionary<Type, EventFactoryDelegate> s_factoryCache = new();
+    private const int MaxRememberedNames = 4096;
     private readonly ConcurrentDictionary<string, string> _effectiveNames = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _skippedUnresolvable = new(StringComparer.Ordinal);
+    private readonly bool _upcastsByNameOnly = upcasterPipeline is EventUpcasterPipeline;
 
     /// <summary>Initializes the mapper without a logger; a skip that would be logged is not.</summary>
     /// <param name="serializer">Decrypts and deserializes the payloads.</param>
@@ -68,7 +70,7 @@ public sealed partial class EventMapperFactory(
     /// <remarks>
     /// An entry is resolved and decrypted only when its type, after upcasting, is relevant — or when the type does not
     /// resolve but carries the name of a relevant type, so that it fails as an unregistered type does. See
-    /// <see cref="EventRelevance"/>. The upcast type name is cached per recorded name.
+    /// <see cref="EventRelevance"/>.
     /// </remarks>
     public async Task<IReadOnlyList<IEvent>> MapToEventsAsync(IEnumerable<EventStreamEntry> entries, EventRelevance relevance,
         CancellationToken cancellationToken = default)
@@ -90,7 +92,7 @@ public sealed partial class EventMapperFactory(
     /// <remarks>
     /// A message is resolved and decrypted only when its type, after upcasting, is relevant — or when the type does
     /// not resolve but carries the name of a relevant type, so that it fails as an unregistered type does. See
-    /// <see cref="EventRelevance"/>. The upcast type name is cached per recorded name.
+    /// <see cref="EventRelevance"/>.
     /// </remarks>
     public async Task<IReadOnlyList<IEvent>> MapToEventsAsync(IEnumerable<EventMessage> messages, EventRelevance relevance,
         CancellationToken cancellationToken = default)
@@ -110,24 +112,51 @@ public sealed partial class EventMapperFactory(
 
     private bool Reads(string recordedName, string dataJson, EventRelevance relevance)
     {
-        var effectiveName = _effectiveNames.GetOrAdd(recordedName,
-            static (name, state) => state.Pipeline.Upcast(name, state.Json).EventTypeName, (Pipeline: upcasterPipeline, Json: dataJson));
+        var effectiveName = EffectiveNameOf(recordedName, dataJson);
         if (typeResolver.TryResolve(effectiveName, out var eventType) && eventType is not null)
         {
             return relevance.Includes(eventType);
         }
 
-        if (!relevance.IsAnyResolvable)
+        if (relevance.MayName(SimpleNameOf(recordedName)) || relevance.MayName(SimpleNameOf(effectiveName)))
         {
-            return relevance.MayName(SimpleNameOf(recordedName)) || relevance.MayName(SimpleNameOf(effectiveName));
+            return true;
         }
 
-        if (_skippedUnresolvable.TryAdd(effectiveName, 0))
+        if (relevance.IsAnyResolvable
+            && _skippedUnresolvable.Count < MaxRememberedNames
+            && _skippedUnresolvable.TryAdd(effectiveName, 0))
         {
             LogUnresolvableEventSkipped(logger ?? NullLogger<EventMapperFactory>.Instance, effectiveName);
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The type name after upcasting. The framework's pipeline chains upcasters by type name alone, so its answer is
+    /// remembered per recorded name, up to a bound; a pipeline of the host's own may decide from the payload, so it is
+    /// asked for every entry.
+    /// </summary>
+    private string EffectiveNameOf(string recordedName, string dataJson)
+    {
+        if (!_upcastsByNameOnly)
+        {
+            return upcasterPipeline.Upcast(recordedName, dataJson).EventTypeName;
+        }
+
+        if (_effectiveNames.TryGetValue(recordedName, out var known))
+        {
+            return known;
+        }
+
+        var effectiveName = upcasterPipeline.Upcast(recordedName, dataJson).EventTypeName;
+        if (_effectiveNames.Count < MaxRememberedNames)
+        {
+            _effectiveNames.TryAdd(recordedName, effectiveName);
+        }
+
+        return effectiveName;
     }
 
     private static string SimpleNameOf(string recordedName)

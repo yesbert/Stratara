@@ -178,8 +178,9 @@ internal sealed class ProjectionWorker(
         sessionContextProvider.Set(sessionContext);
 
         var projectionManager = scope.ServiceProvider.GetRequiredService<IProjectionManager>();
-        _relevance ??= ProjectionEventRelevance.Of(scope.ServiceProvider);
-        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, _relevance, cancellationToken);
+        var events = projectionManager is ProjectionManager
+            ? await eventMapperFactory.MapToEventsAsync(eventBundle.Events, _relevance ??= ProjectionEventRelevance.Of(scope.ServiceProvider), cancellationToken)
+            : await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
         await projectionManager.HandleAsync(events, cancellationToken);
     }
 

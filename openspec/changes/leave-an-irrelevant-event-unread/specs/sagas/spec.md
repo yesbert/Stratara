@@ -11,8 +11,9 @@ resolved and its payload SHALL NOT be decrypted, so it SHALL NOT need to be regi
 it SHALL fail neither the bundle it arrives in nor a store reader. Whether a saga handles an event
 SHALL be decided on the event's type as it stands after upcasting. An event whose type does not
 resolve, but whose name without namespace or assembly is the name of a type a saga in the host
-handles, SHALL be read, and SHALL fail as an unregistered type fails. A stateful process is decided
-by its own requirement.
+handles, SHALL be read, and SHALL fail as an unregistered type fails. Where the host replaces how
+recorded events are mapped, every event SHALL be read as before; where it replaces the component
+that dispatches to sagas, that component SHALL receive every event of the bundle. A stateful process is decided by its own requirement.
 
 #### Scenario: A bundle contains a mix of events
 
@@ -71,7 +72,9 @@ consumer routing per tenant knows the timeout path reads the state stream under 
 A process decides from the event itself whether it handles it, so its reader SHALL read every event
 whose type resolves, after upcasting. An event whose type does not resolve cannot be one a process
 handles. The reader SHALL skip it rather than stall, and SHALL log a warning naming the event's type,
-once per host for each type.
+once per host for each type — unless its name, without namespace or assembly, is the name of a type
+the process declares a handler for, in which case it SHALL be read and fail as an unregistered type
+fails.
 
 #### Scenario: A process times out after a restart
 
@@ -101,4 +104,5 @@ once per host for each type.
 
 - **WHEN** a process reads the store and its partition holds an event whose type the host never
   registered
-- **THEN** the reader reads past it, and a warning names the type once
+- **THEN** the reader reads past it, and a warning names the type once — verified on the in-process
+  execution-model host over SQLite

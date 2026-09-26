@@ -27,7 +27,8 @@ public interface IEventMapperFactory
     /// <remarks>
     /// The default implementation maps every entry and keeps the relevant events, so an entry whose type is not
     /// registered still fails. The framework's mapper overrides it and resolves and decrypts only what
-    /// <paramref name="relevance"/> accepts.
+    /// <paramref name="relevance"/> accepts. A decorator that forwards only the older overloads inherits the default and
+    /// with it the older behaviour; a test double of this interface must set this overload up, or call its base.
     /// </remarks>
     async Task<IReadOnlyList<IEvent>> MapToEventsAsync(IEnumerable<EventStreamEntry> entries, EventRelevance relevance,
         CancellationToken cancellationToken = default)
@@ -45,7 +46,8 @@ public interface IEventMapperFactory
     /// <remarks>
     /// The default implementation maps every message and keeps the relevant events, so a message whose type is not
     /// registered still fails. The framework's mapper overrides it and resolves and decrypts only what
-    /// <paramref name="relevance"/> accepts.
+    /// <paramref name="relevance"/> accepts. A decorator that forwards only the older overloads inherits the default and
+    /// with it the older behaviour; a test double of this interface must set this overload up, or call its base.
     /// </remarks>
     async Task<IReadOnlyList<IEvent>> MapToEventsAsync(IEnumerable<EventMessage> messages, EventRelevance relevance,
         CancellationToken cancellationToken = default)

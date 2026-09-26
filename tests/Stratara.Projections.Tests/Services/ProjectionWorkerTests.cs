@@ -206,7 +206,13 @@ public class ProjectionWorkerTests
 
     private sealed class DepositProjection : IProjection
     {
-        private Task HandleAsync(Deposited @event, CancellationToken cancellationToken) => Task.CompletedTask;
+        public List<Deposited> Applied { get; } = [];
+
+        private Task HandleAsync(Deposited @event, CancellationToken cancellationToken)
+        {
+            Applied.Add(@event);
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>
@@ -223,17 +229,15 @@ public class ProjectionWorkerTests
             .Setup(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string json, Type type, Guid? _, Guid? _, CancellationToken _) => JsonSerializer.Deserialize(json, type));
         var mapper = new Stratara.Shared.EventSourcing.Mapping.EventMapperFactory(serializer.Object, resolver, new EventUpcasterPipeline([]));
-        IReadOnlyList<IEvent>? applied = null;
-        var harness = new Harness((events, _) =>
-            {
-                applied = events;
-                return Task.CompletedTask;
-            },
+        var projection = new DepositProjection();
+        var harness = new Harness((_, _) => Task.CompletedTask,
             realMapper: mapper,
             configure: services =>
             {
-                services.AddScoped<IProjection, DepositProjection>();
+                services.AddScoped<IProjection>(_ => projection);
                 services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker()));
+                services.AddScoped<IProjectionManager>(sp => new ProjectionManager(
+                    NullLogger<ProjectionManager>.Instance, sp.GetRequiredService<IProjectionHandler>(), [projection]));
             });
         var stream = Guid.NewGuid();
 
@@ -241,8 +245,7 @@ public class ProjectionWorkerTests
             [Message(typeof(Deposited).AssemblyQualifiedName!, """{"Amount":5}""", stream), Message("Retired.Namespace.Archived, Retired.Assembly", "{}", stream)],
             JsonSerializer.Serialize(SessionContext.Empty())), CancellationToken.None);
 
-        Assert.NotNull(applied);
-        Assert.Equal(new Deposited(5m), Assert.Single(applied).Data);
+        Assert.Equal([new Deposited(5m)], projection.Applied);
     }
 
     private static EventMessage Message(string eventTypeName, string dataJson, Guid stream) => new(
@@ -322,8 +325,8 @@ public class ProjectionWorkerTests
             pipelineProvider.Setup(p => p.GetPipeline(ResilienceNames.PrecedingFact)).Returns(FastPrecedingFactPipeline());
 
             var mapper = new Mock<IEventMapperFactory>();
-            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IReadOnlyList<EventMessage> messages, EventRelevance _, CancellationToken _) => messages
+            mapper.Setup(m => m.MapToEventsAsync(It.IsAny<IReadOnlyList<EventMessage>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((IReadOnlyList<EventMessage> messages, CancellationToken _) => messages
                     .Select(m => (IEvent)new Event<string>(m.Id, m.Version, m.EventTypeName, m.StreamId, m.TenantId, m.UserId ?? Guid.Empty))
                     .ToList());
 

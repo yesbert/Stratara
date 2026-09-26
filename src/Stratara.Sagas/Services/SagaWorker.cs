@@ -179,8 +179,9 @@ internal sealed class SagaWorker(
         sessionContextProvider.Set(sessionContext);
 
         var sagaManager = scope.ServiceProvider.GetRequiredService<ISagaManager>();
-        _relevance ??= SagaEventRelevance.Of(scope.ServiceProvider);
-        var events = await eventMapperFactory.MapToEventsAsync(eventBundle.Events, _relevance, cancellationToken);
+        var events = sagaManager is SagaManager
+            ? await eventMapperFactory.MapToEventsAsync(eventBundle.Events, _relevance ??= SagaEventRelevance.Of(scope.ServiceProvider), cancellationToken)
+            : await eventMapperFactory.MapToEventsAsync(eventBundle.Events, cancellationToken);
         await sagaManager.HandleAsync(events, cancellationToken);
     }
 

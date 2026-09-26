@@ -15,8 +15,8 @@ namespace Stratara.Abstractions.EventSourcing;
 /// </para>
 /// <para>
 /// A stateful saga process decides from the event itself whether it handles it, so its reader uses
-/// <see cref="AnyResolvable"/>: every event whose type resolves is mapped, and one whose type does not is
-/// skipped.
+/// <see cref="AnyResolvableWith"/>: every event whose type resolves is mapped, and one whose type does not is
+/// skipped — unless it carries the name of a type the process declares a handler for.
 /// </para>
 /// </remarks>
 public sealed class EventRelevance
@@ -24,16 +24,24 @@ public sealed class EventRelevance
     private readonly HashSet<Type>? _types;
     private readonly HashSet<string> _typeNames;
 
-    private EventRelevance(HashSet<Type>? types)
+    private EventRelevance(HashSet<Type>? types, IEnumerable<Type> namedTypes)
     {
         _types = types;
-        _typeNames = types is null
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : new HashSet<string>(types.Select(t => t.Name), StringComparer.Ordinal);
+        _typeNames = new HashSet<string>(namedTypes.Select(t => t.Name), StringComparer.Ordinal);
     }
 
     /// <summary>Every event whose type resolves is relevant; none whose type does not.</summary>
-    public static EventRelevance AnyResolvable { get; } = new(null);
+    public static EventRelevance AnyResolvable { get; } = new(null, []);
+
+    /// <summary>
+    /// Every event whose type resolves is relevant; one whose type does not is relevant only when it carries the name of
+    /// one of <paramref name="declaredTypes"/>, so that it fails as an unregistered type does.
+    /// </summary>
+    /// <param name="declaredTypes">The types a reader declares handlers for, beside deciding the rest at run time.</param>
+    /// <returns>The relevance.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="declaredTypes"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="declaredTypes"/> contains <see langword="null"/>.</exception>
+    public static EventRelevance AnyResolvableWith(IEnumerable<Type> declaredTypes) => new(null, Checked(declaredTypes));
 
     /// <summary>Whether this relevance takes every resolvable type rather than a set of them.</summary>
     public bool IsAnyResolvable => _types is null;
@@ -42,10 +50,23 @@ public sealed class EventRelevance
     /// <param name="types">The event payload types a reader's handlers take.</param>
     /// <returns>The relevance of those types.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="types"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="types"/> contains <see langword="null"/>.</exception>
     public static EventRelevance ForTypes(IEnumerable<Type> types)
     {
+        var checkedTypes = Checked(types);
+        return new EventRelevance([.. checkedTypes], checkedTypes);
+    }
+
+    private static List<Type> Checked(IEnumerable<Type> types)
+    {
         ArgumentNullException.ThrowIfNull(types);
-        return new EventRelevance([.. types]);
+        var list = types.ToList();
+        if (list.Any(t => t is null))
+        {
+            throw new ArgumentException("The relevant types must not contain null.", nameof(types));
+        }
+
+        return list;
     }
 
     /// <summary>Whether an event of <paramref name="eventType"/> is relevant.</summary>

@@ -31,6 +31,11 @@ applies to the entire NuGet family.
   existed only for that can go. One trade: a handled type *renamed* without an upcaster used to fail the
   bundle or replay loudly and is now left unread — a type moved to another namespace or assembly still
   fails, because it keeps its name. Add the upcaster when you rename a handled event.
+- **If you replaced a framework piece on the read path,** it keeps today's behaviour: a projection or saga
+  manager of your own still receives every event of a bundle, and a mapper of your own — or a decorator
+  that forwards only the older `MapToEventsAsync` overloads — still maps everything through the new
+  overloads' default implementations. A test double of `IEventMapperFactory` must set up the new
+  overloads (with Moq: or `CallBase = true`).
 - **Generate an EF Core migration for your read context.** The framework's read context declares a new
   table, `projection_forgotten_tenant`, for projections that declare `IForgetsDeletedTenants`. A host
   without such a projection never touches it. A projection that declares it knows deletions applied
@@ -43,8 +48,9 @@ applies to the entire NuGet family.
 - **`EventRelevance` and two `IEventMapperFactory` overloads that take it**, one for stored entries and one
   for bus messages. The framework's mapper resolves and decrypts only the events the relevance accepts;
   the overloads' default implementations map everything and filter afterwards, so a consumer's own
-  mapper compiles and behaves as before. Warning `102_005` names an event a stateful saga process's reader
-  skipped because its type does not resolve, once per host and event type.
+  mapper compiles and behaves as before. `EventRelevance.ForTypes`, `AnyResolvable` and `AnyResolvableWith`
+  describe what a reader takes. Warning `102_005` names an event a stateful saga process's reader skipped
+  because its type does not resolve, once per host and event type.
 - **A projection can forget a deleted tenant.** A projection that removes a deleted tenant's rows met
   facts recorded for that tenant after its deletion — work queued before it ran to its end — with
   nothing to apply them to, and its `PrecedingFactMissingException` made the live bundle dead-letter and
