@@ -29,4 +29,4 @@
 ## 4. Verify
 
 - [x] 4.1 `openspec validate keep-a-snapshot-with-its-owning-user --strict`.
-- [ ] 4.2 Local gauntlet green.
+- [x] 4.2 Local gauntlet green.
