@@ -643,6 +643,27 @@ public class EventSourceTests
     }
 
     /// <summary>
+    /// The case the stream lookup cannot repair: the stream is not in the store yet, so the owner
+    /// the batch established on the first event is the only record of it.
+    /// </summary>
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_AfterTheFirstEventOfANewStream_LeavesTheOwnerItEstablished()
+    {
+        var streamId = Guid.NewGuid();
+        var onBehalfOf = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Created"));
+        await _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+            streamId, new TestRenamed("Stated"), new EventSubject(onBehalfOf));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Ordinary"));
+        await _eventSource.SaveChangesAsync();
+
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.Equal([_tenantId, onBehalfOf, _tenantId], entries.Select(e => e.TenantId));
+    }
+
+    /// <summary>
     /// The lookup now runs for every aggregate, so it also runs for a stream that does not exist yet.
     /// A first append must still resolve from the creation event, and from the session where the
     /// event carries no tenant.
