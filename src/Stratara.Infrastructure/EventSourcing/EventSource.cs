@@ -265,8 +265,14 @@ internal sealed class EventSource(
 
         _eventStreamEntries.Add(eventStreamEntry);
         _streamVersions[streamId] = streamVersion;
-        _streamSubjects[streamId] = subject;
-        _explicitSubjectOverrides.Remove(@event);
+
+        // A stated Subject is for its one event. Only on a stream's first event is it also the
+        // owner the stream records, and so the one the rest of the batch keeps.
+        var stated = _explicitSubjectOverrides.Remove(@event);
+        if (!stated || streamVersion == 1)
+        {
+            _streamSubjects[streamId] = subject;
+        }
 
         ApplicationDiagnostics.Metrics.EventsAppended.Add(
             1,
@@ -278,7 +284,8 @@ internal sealed class EventSource(
     /// Resolve Subject (data owner) for an event in this priority order:
     /// 1. Explicit override (set by AppendOnBehalfOfAsync, which has already rejected an empty
     ///    tenant id — that is why this stage needs no emptiness check of its own)
-    /// 2. Per-batch cache (previous event in the same SaveChanges resolved Subject for this stream)
+    /// 2. Per-batch cache (the owner an earlier event in the same SaveChanges resolved for this
+    ///    stream — never a Subject stated for another event, except on the stream's first event)
     /// 3. The owner recorded on the stream's first entry, for any aggregate type — a stream keeps
     ///    the owner it was created with, whatever session appends to it later
     /// 4. Event payload's IAggregateCreationEvent.TenantId

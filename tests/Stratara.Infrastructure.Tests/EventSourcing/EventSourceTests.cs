@@ -584,6 +584,86 @@ public class EventSourceTests
     }
 
     /// <summary>
+    /// A stated Subject is for its one event, inside the batch as much as across batches: the next
+    /// ordinary append to the same stream in the same batch returns to the stream's owner.
+    /// </summary>
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_DoesNotCarryOverToTheNextAppendInTheSameBatch()
+    {
+        var streamId = Guid.NewGuid();
+        var firstOwner = Guid.NewGuid();
+        var onBehalfOf = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, firstOwner);
+
+        await _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+            streamId, new TestRenamed("Stated"), new EventSubject(onBehalfOf));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Ordinary"));
+        await _eventSource.SaveChangesAsync();
+
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.Equal([onBehalfOf, firstOwner], entries.Select(e => e.TenantId));
+    }
+
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_BetweenTwoAppends_LeavesTheStreamsOwnerToTheOthers()
+    {
+        var streamId = Guid.NewGuid();
+        var firstOwner = Guid.NewGuid();
+        var onBehalfOf = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, firstOwner);
+
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Before"));
+        await _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+            streamId, new TestRenamed("Stated"), new EventSubject(onBehalfOf));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("After"));
+        await _eventSource.SaveChangesAsync();
+
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.Equal([firstOwner, onBehalfOf, firstOwner], entries.Select(e => e.TenantId));
+    }
+
+    /// <summary>
+    /// On a stream's first event the stated Subject is the owner the stream records, so the rest of
+    /// the batch keeps it — as every later batch does, reading it from the stream.
+    /// </summary>
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_OnTheFirstEventOfANewStream_IsTheOwnerTheRestOfTheBatchKeeps()
+    {
+        var streamId = Guid.NewGuid();
+        var onBehalfOf = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+            streamId, new TestCreated("Stated"), new EventSubject(onBehalfOf));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Ordinary"));
+        await _eventSource.SaveChangesAsync();
+
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.Equal([onBehalfOf, onBehalfOf], entries.Select(e => e.TenantId));
+    }
+
+    /// <summary>
+    /// The case the stream lookup cannot repair: the stream is not in the store yet, so the owner
+    /// the batch established on the first event is the only record of it.
+    /// </summary>
+    [Fact]
+    public async Task AppendOnBehalfOfAsync_AfterTheFirstEventOfANewStream_LeavesTheOwnerItEstablished()
+    {
+        var streamId = Guid.NewGuid();
+        var onBehalfOf = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Created"));
+        await _eventSource.AppendOnBehalfOfAsync<TestAggregate>(
+            streamId, new TestRenamed("Stated"), new EventSubject(onBehalfOf));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Ordinary"));
+        await _eventSource.SaveChangesAsync();
+
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.Equal([_tenantId, onBehalfOf, _tenantId], entries.Select(e => e.TenantId));
+    }
+
+    /// <summary>
     /// The lookup now runs for every aggregate, so it also runs for a stream that does not exist yet.
     /// A first append must still resolve from the creation event, and from the session where the
     /// event carries no tenant.
