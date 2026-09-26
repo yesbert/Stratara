@@ -19,8 +19,9 @@ namespace Stratara.Orleans.Timers;
 /// unregisters itself afterwards — or at once, if the owner is gone. The grain is reentrant: its only state
 /// is the reminder table, and registering or cancelling by name is idempotent, so a handler that cancels or
 /// reschedules its owner's timers, or a fact that reaches the owner while a tick runs, does not wait on the
-/// tick's own turn. A tick whose handler outlasts the deactivation budget of a stopping silo has its token cancelled;
-/// the reminder stays, so the timer fires again on the next silo.
+/// tick's own turn. A tick whose handler outlasts the deactivation budget of a stopping silo has its token cancelled: a
+/// handler that stops on it leaves the reminder, so the timer fires again on the next silo, and one that returns — its
+/// work committed — has the reminder unregistered all the same.
 /// </summary>
 [GrainDirectory(GrainDirectories.Durable)]
 [TimersRolePlacementFilter]

@@ -192,6 +192,16 @@
   and the lease's disposal waits for it; the CHANGELOG no longer claims the interceptor covers checkpoint updates,
   and the interceptor's documentation says what `Never` leaves uncovered.
 
+- [x] 2b.21 Round 17 of the review: Orleans completes a grain call whose token is cancelled at once, whatever the callee
+  does, so a saga step called by a stopping timer tick (`SagaProcessTimerHost.OnDueAsync`) or saga reader
+  (`SagaReaderRun.ApplyAsync`) that committed looked cancelled and ran again. The execution model's registrations now
+  set `MessagingOptions.WaitForCancellationAcknowledgement` for silo and client (`FrameworkCallCancellation`), so the
+  cancellation still reaches the callee and the caller gets its answer
+  (`FrameworkCallCancellationTests.The_execution_models_registrations_wait_for_the_callees_answer`;
+  `CancelledCallOutcomeTests` on a localhost silo — a call cancelled while its callee commits reports the commit, and
+  without the registration a cancellation); documented in the operate guide and the CHANGELOG; `TimerOwnerGrain`'s and
+  `StoreReaderLoop`'s summaries say what round 16 changed.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

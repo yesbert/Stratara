@@ -151,6 +151,18 @@ B's command fails with the refusal and A's command with B's failure. Nothing wai
 Where a handler has to reach back, dispatch through `ICommandOutboxDispatcher` instead: the command is
 recorded and handed over without waiting, in its own turn.
 
+## Cancelled calls report what the callee did
+
+Orleans completes a grain call whose token is cancelled with a cancellation the moment the token fires,
+whatever the grain it called does. A saga step, a timer's handler or a forwarded command that committed
+as its caller's silo stopped would then look cancelled, and the caller would run it again. The execution
+model's registrations (`AddStrataraOrleans`, `AddStrataraOrleansCommandDispatcher`,
+`AddStrataraAggregateGrains`) set `MessagingOptions.WaitForCancellationAcknowledgement` for the silo and the
+client, so a cancelled call waits for the callee's answer: the cancellation still reaches the callee, and a
+callee that stops before it commits answers with it, while one that has committed answers with its outcome.
+The setting is the host's for every grain call, the host's own grains included; a host that sets it back
+after these registrations gives that guarantee up.
+
 ## Failures that cross silos
 
 A command forwarded to an aggregate on another silo can fail there. Orleans carries an exception from

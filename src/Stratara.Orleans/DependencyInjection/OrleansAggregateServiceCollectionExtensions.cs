@@ -32,6 +32,7 @@ public static class OrleansAggregateServiceCollectionExtensions
     public static IServiceCollection AddStrataraAggregateGrains(this IServiceCollection services)
     {
         FrameworkExceptionSerialization.Register(services);
+        FrameworkCallCancellation.Register(services);
         services.TryAddScoped<AggregateSendLane>();
         if (!services.Any(d => d.ImplementationType == typeof(AggregateGrainBehavior<>)))
         {
@@ -111,6 +112,7 @@ public static class OrleansAggregateServiceCollectionExtensions
 
         MessageRetryOptionsBinding.Register(services);
         FrameworkExceptionSerialization.Register(services);
+        FrameworkCallCancellation.Register(services);
         services.TryAddScoped<AggregateSendLane>();
         services.TryAddScoped<IntentRecorder>();
         services.TryAddScoped<IntentHandOver>();
