@@ -51,8 +51,8 @@ _None._
   and a handover that fails, or is cancelled, after the commit.
 - `outbox-and-messaging`: a new requirement — a message whose handler committed its events is not
   delivered again.
-- `orleans-execution`: a new requirement — a recorded command whose events were committed is not run
-  again.
+- `orleans-execution`: two new requirements — a recorded command whose events were committed is not
+  run again, and a framework failure keeps its type between silos.
 
 ## Impact
 

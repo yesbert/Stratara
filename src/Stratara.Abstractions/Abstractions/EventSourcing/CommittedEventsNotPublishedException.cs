@@ -26,13 +26,18 @@ public sealed class CommittedEventsNotPublishedException : Exception
             "them only once they are republished or replayed.",
             innerException)
     {
-        StreamIds = streamIds;
+        _streamIds = streamIds;
         EventCount = eventCount;
     }
 
-    /// <summary>The streams whose events the save committed.</summary>
-    public IReadOnlyList<Guid> StreamIds { get; }
+    private readonly IReadOnlyList<Guid>? _streamIds;
 
-    /// <summary>How many events the save committed.</summary>
+    /// <summary>
+    /// The streams whose events the save committed; empty on an exception that crossed a process boundary, where
+    /// only its type, message and inner exception are carried — the message names the streams too.
+    /// </summary>
+    public IReadOnlyList<Guid> StreamIds => _streamIds ?? [];
+
+    /// <summary>How many events the save committed; zero on an exception that crossed a process boundary.</summary>
     public int EventCount { get; }
 }

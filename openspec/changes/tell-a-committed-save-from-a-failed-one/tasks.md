@@ -33,6 +33,11 @@
 - [x] 2b.5 `RabbitMqDeadLetterTests.MeterCapture` reads the metric names before its listener starts, so
   the metrics' first initialisation does not call back into a half-built listener.
 
+- [x] 2b.6 A framework exception crosses silos with its type: the execution model's registrations add
+  `Stratara` to Orleans' `ExceptionSerializationOptions.SupportedNamespacePrefixes`, and the properties of
+  `ConcurrencyException` and `CommittedEventsNotPublishedException` read empty rather than null after a
+  crossing (`FrameworkExceptionSerializationTests`; without the registration the round trip fails).
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

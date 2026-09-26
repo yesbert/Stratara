@@ -18,6 +18,17 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A framework exception keeps its type between silos.** Orleans carries an exception from one silo
+  to another with its type only when the type's namespace is one it supports, and `Stratara` was not.
+  A command forwarded to an aggregate on another silo that failed with a `ConcurrencyException` did not
+  reach the caller as one. A bus worker running the forwarding handler then counted a concurrency
+  conflict against the delivery bound instead of the conflict bound. A
+  `CommittedEventsNotPublishedException` would have been delivered again. The execution model's
+  registrations (`AddStrataraOrleans`, `AddStrataraOrleansCommandDispatcher`,
+  `AddStrataraAggregateGrains`) now add `Stratara` to `ExceptionSerializationOptions`. The type,
+  message and inner exception cross; the properties of `ConcurrencyException` and
+  `CommittedEventsNotPublishedException` read empty on the far side rather than null.
+
 - **A save that committed but could not publish says so, and nothing runs it again.** On a host
   without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after
   the commit. When both the bus and the outbox's own table failed, the save threw the outbox's
