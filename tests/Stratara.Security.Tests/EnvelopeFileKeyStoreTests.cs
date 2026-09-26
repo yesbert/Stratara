@@ -213,4 +213,22 @@ public class EnvelopeFileKeyStoreTests
 
         Assert.Equal(kept.OrderBy(s => s.ToString()), (await store.ListScopesAsync()).OrderBy(s => s.ToString()));
     }
+
+    [Fact]
+    public async Task ListScopes_ListsARotatedScopeOnce_AScopeWithNoTenant_AndWhatAnotherInstanceWrote()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var writer = TestSupport.NewKeyStore(options);
+        var rotated = new KeyScope(DataSensitivityLevel.UserScoped, Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D"));
+        var systemWide = new KeyScope(DataSensitivityLevel.Confidential);
+        await writer.GetOrCreateCurrentKeyAsync(rotated);
+        await writer.RotateAsync(rotated);
+        await writer.GetOrCreateCurrentKeyAsync(systemWide);
+
+        var reader = TestSupport.NewKeyStore(options);
+
+        Assert.Equal(
+            new[] { rotated, systemWide }.OrderBy(s => s.ToString()),
+            (await reader.ListScopesAsync()).OrderBy(s => s.ToString()));
+    }
 }

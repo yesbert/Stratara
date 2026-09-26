@@ -200,6 +200,9 @@ public class SubjectEraserTests
         public ValueTask RevokeAsync(string keyId, CancellationToken cancellationToken = default)
             => inner.RevokeAsync(keyId, cancellationToken);
 
+        public ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default)
+            => inner.ListScopesAsync(cancellationToken);
+
         public ValueTask EraseScopeAsync(KeyScope scope, CancellationToken cancellationToken = default)
         {
             if (_failed)

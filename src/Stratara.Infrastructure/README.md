@@ -40,7 +40,9 @@ else
 
 Stratara ships one production `IKeyStore` — `EnvelopeFileKeyStore`, via `AddStrataraFileKeyStore`.
 There is no built-in Azure Key Vault / AWS KMS / HSM store; if you need one, implement `IKeyStore`
-against your provider and register it in place of the file store.
+against your provider and register it in place of the file store. Implement `ListScopesAsync` as
+well: an erasure asks the key store for every key naming the subject, and a store that cannot list
+leaves it with only the keys the directory names.
 
 `KeyStoreStartupProbe` logs a `Warning` (event id `LogEvents.KeyManagement.DummyKeyStoreActive` = `112_001`) at host start when the resolved `IKeyStore` is `DummyKeyStore` — even in Development — so an accidental dependency on the dummy is loud rather than silent.
 

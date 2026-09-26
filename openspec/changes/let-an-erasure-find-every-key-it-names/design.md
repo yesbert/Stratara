@@ -37,6 +37,15 @@ today's coverage for it.
 - *Alternative:* add the parts to the file format. Rejected for now. A file shared with an older
   process would lose them on its next write, so parsing would still be needed.
 
+**A list, not a stream or a filter.** Erasure is rare, and a key store holds wrapped keys, not data.
+Listing everything keeps the member simple to implement for any store.
+
+**Warn on the fallback, and reject an empty id.** A decorator around a key store that does not forward
+the new member inherits the default and falls back silently. The eraser therefore logs a warning
+(`LogEvents.KeyManagement.KeyScopesNotListable`) naming the store. An empty id keys the system actor
+and data written with no tenant; with the listing, erasing it would shred those for every tenant, so
+it is refused.
+
 ## Risks / Trade-offs
 
 - [Risk] A custom key store that does not implement the listing keeps today's gap. → The erasure

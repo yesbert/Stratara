@@ -259,6 +259,8 @@ public static class LogEvents
         public const int KeyStoreReloaded = 112_006;
         /// <summary>A value was encrypted at a level naming a dimension that was absent, so its scope cannot isolate (warning, development only).</summary>
         public const int ScopeCannotIsolate = 112_007;
+        /// <summary>An erasure's key store cannot list its scopes, so only the keys the directory names are shredded (warning).</summary>
+        public const int KeyScopesNotListable = 112_008;
     }
 
     /// <summary>External-login provisioning event-IDs (115_000s) — emitted by the JIT external-login provisioning service.</summary>

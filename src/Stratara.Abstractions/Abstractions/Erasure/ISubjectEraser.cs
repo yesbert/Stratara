@@ -11,9 +11,10 @@ namespace Stratara.Abstractions.Erasure;
 /// the subject's keys unrecoverable. A key is named by level, tenant and user together, and the
 /// level decides whose erasure a value dies with. A tenant's erasure shreds every key naming the
 /// tenant, at every level, alone or together with each of its members. A user's erasure shreds the
-/// user-level keys naming the user, alone or together with each tenant it belongs to. It asks the key
-/// store for every key naming the subject as well, which reaches keys shared with someone no longer
-/// in the directory.
+/// user-level keys naming the user, alone or together with each tenant it belongs to. It also asks
+/// the key store for every such key naming the subject, which reaches keys shared with someone no
+/// longer in the directory; a key store that cannot list its keys leaves that to the directory, and
+/// the erasure logs a warning.
 /// </para>
 /// <para>
 /// <strong>What it does not cover, and why it matters.</strong> Read models a consumer's own
@@ -37,6 +38,7 @@ public interface ISubjectEraser
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>What each plane covered, once every plane has succeeded.</returns>
     /// <exception cref="ErasureIncompleteException">Thrown when one plane's sweep fails; the erasure stops there.</exception>
+    /// <exception cref="ArgumentException"><paramref name="userId"/> is empty, which names no subject.</exception>
     Task<ErasureReport> EraseUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>Erases one tenant across every plane, including its members' tenant-scoped data.</summary>
@@ -44,5 +46,6 @@ public interface ISubjectEraser
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>What each plane covered, once every plane has succeeded.</returns>
     /// <exception cref="ErasureIncompleteException">Thrown when one plane's sweep fails; the erasure stops there.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is empty, which names no subject.</exception>
     Task<ErasureReport> EraseTenantAsync(Guid tenantId, CancellationToken cancellationToken = default);
 }

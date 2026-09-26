@@ -6,9 +6,13 @@ The framework SHALL offer a single operation that erases a subject across every 
 in — membership, key material, settings and API keys — in an order that leaves nothing unreachable
 before it has been removed.
 
-A subject's key material SHALL include every key that names the subject, whoever else the key names
-and whether or not that other subject is still in the directory, wherever the key store can list the
-keys it holds. The framework's own key stores SHALL be able to.
+A subject's key material SHALL include every key its erasure covers — for a tenant, a key of any
+level that names the tenant; for a user, a user-level key that names the user — whoever else the key
+names and whether or not that other subject is still in the directory, wherever the key store can
+list the keys it holds. The framework's file-backed key store and its test key store SHALL be able to.
+Where a key store cannot list its keys, the erasure SHALL still shred the keys the directory names and
+SHALL warn that it could not reach the rest. An erasure SHALL refuse an empty id, which names no
+subject.
 
 The operation SHALL report what it covered, and the framework SHALL state what it does not cover, so
 a consumer can tell what remains their own responsibility.
@@ -35,6 +39,17 @@ a consumer can tell what remains their own responsibility.
 
 - **WHEN** an erasure is performed for a subject whose memberships an earlier erasure already removed
 - **THEN** it still shreds every key naming the subject that the earlier run left behind
+
+#### Scenario: The key store cannot list its keys
+
+- **WHEN** a subject is erased through a key store that cannot list the keys it holds
+- **THEN** the keys the directory names are shredded, and a warning says that keys shared with
+  someone no longer in the directory were not reached
+
+#### Scenario: An empty id is given
+
+- **WHEN** an erasure is requested for an empty tenant or user id
+- **THEN** it is refused before anything is swept
 
 #### Scenario: A consumer asks what erasure covers
 
