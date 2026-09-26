@@ -254,6 +254,9 @@ Every sweep is safe to repeat, and the planes already swept simply find nothing 
 - **The command audit log and the outbox.** Both carry a session context naming the subject, and
   both are deliberately left alone — the audit log is the evidence that the erasure happened, and
   whether to retain it is a decision only you can take for your jurisdiction.
+- **System-wide `Confidential` key material.** A confidential value written with an empty tenant uses
+  one key for everybody, and no erasure shreds it. Written for a tenant, it is shredded with the
+  tenant.
 - **Keys a custom key store cannot list.** The framework's key stores list every key they hold. A key
   store of your own that does not implement `IKeyStore.ListScopesAsync` leaves an erasure with the
   keys the directory names: a key shared with a former member, or with an operator acting in the
