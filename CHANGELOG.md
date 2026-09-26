@@ -18,6 +18,29 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A tenant's erasure shreds every key naming the tenant.** A key is named by level, tenant and user
+  together, and the serializer binds every value to a tenant. `ISubjectEraser.EraseTenantAsync`
+  shredded only the tenant-level key with no user and its members' user-level keys. It left three
+  kinds of value readable after the tenant was erased:
+  - a value at the default `[EncryptData]` level, which is user-level, written for the tenant with no
+    user. That is every such field of an event appended from an ordinary request, where the session's
+    data-owner user is not set;
+  - a tenant-level value written for a member;
+  - every `Confidential` value, which is bound to its tenant like any other.
+
+  A tenant's erasure now shreds every key naming the tenant, at every level, alone or with each of
+  its members. A user's erasure is unchanged: it shreds the user's user-level keys, and tenant-level
+  and confidential values written for the user stay the tenant's.
+
+  Memberships are now swept after the key material, so an erasure run again after its key sweep
+  failed still finds the tenants and members whose keys it has to shred. Before, they were already
+  gone and the second run shredded less. `ErasureReport.Planes` now reads `ApiKeys`, `Settings`,
+  `KeyMaterial`, `Memberships`.
+
+  `ISubjectEraser` and the membership guide state what remains out of reach:
+  - a key shared with a user who is not a member when the erasure runs;
+  - on a user's erasure, the snapshot of an aggregate that user owns.
+
 - **A stream keeps the user it was created for.** A later event takes its owner from the stream's
   first event rather than from the session: since 4.0.0 for every aggregate, and before that for
   aggregates implementing `ITenantAggregate`. But only the tenant was taken over. A stream whose

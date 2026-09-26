@@ -14,8 +14,8 @@ public sealed class ErasureIncompleteException : Exception
     public ErasureIncompleteException(ErasurePlane plane, ErasureReport completed, Exception innerException)
         : base(
             $"Erasure stopped at the {plane} plane. {completed.Planes.Count} plane(s) were swept before it. " +
-            "Resume from the failed plane rather than restarting: the planes already swept are gone, and " +
-            "key material is deliberately shredded last so nothing swept earlier has become unreadable.",
+            "Run the erasure again once the cause is fixed: every sweep is safe to repeat, the planes already " +
+            "swept find nothing left, and the memberships that name the other planes' scopes are removed last.",
             innerException)
     {
         Plane = plane;
@@ -25,6 +25,6 @@ public sealed class ErasureIncompleteException : Exception
     /// <summary>The plane whose sweep failed.</summary>
     public ErasurePlane Plane { get; }
 
-    /// <summary>The planes swept before the failure. Resume from <see cref="Plane"/>.</summary>
+    /// <summary>The planes swept before the failure. Running the erasure again repeats them harmlessly.</summary>
     public ErasureReport Completed { get; }
 }

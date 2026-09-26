@@ -64,7 +64,7 @@ public class SubjectEraserTests
         var report = await f.Build().EraseUserAsync(User);
 
         Assert.Equal(
-            [ErasurePlane.ApiKeys, ErasurePlane.Settings, ErasurePlane.Memberships, ErasurePlane.KeyMaterial],
+            [ErasurePlane.ApiKeys, ErasurePlane.Settings, ErasurePlane.KeyMaterial, ErasurePlane.Memberships],
             report.Planes.Select(p => p.Plane));
 
         Assert.Empty(await f.Memberships.GetMembershipsAsync(User));
@@ -101,7 +101,13 @@ public class SubjectEraserTests
         Assert.Equal(3, settingScopes.Count);
 
         var keyScopes = report.Planes.Single(p => p.Plane == ErasurePlane.KeyMaterial).Scopes;
-        Assert.Equal(3, keyScopes.Count);
+        string[] expected =
+        [
+            $"key scope UserScoped - / {User:D}",
+            $"key scope UserScoped {TenantA:D} / {User:D}",
+            $"key scope UserScoped {TenantB:D} / {User:D}",
+        ];
+        Assert.Equal(expected.Order(), keyScopes.Order());
     }
 
     [Fact]
@@ -113,7 +119,7 @@ public class SubjectEraserTests
         var report = await f.Build().EraseTenantAsync(TenantA);
 
         Assert.Equal(
-            [ErasurePlane.ApiKeys, ErasurePlane.Settings, ErasurePlane.Memberships, ErasurePlane.KeyMaterial],
+            [ErasurePlane.ApiKeys, ErasurePlane.Settings, ErasurePlane.KeyMaterial, ErasurePlane.Memberships],
             report.Planes.Select(p => p.Plane));
 
         Assert.Empty(await f.Memberships.GetMembersAsync(TenantA));
@@ -151,6 +157,59 @@ public class SubjectEraserTests
 
         Assert.NotNull(await f.Keys.GetDataEncryptionKeyAsync(keyId));
         Assert.NotEmpty(await f.Memberships.GetMembershipsAsync(User));
+    }
+
+    /// <summary>
+    /// Memberships are what name the tenants whose keys a user's erasure shreds, so they go after the
+    /// key material: a run repeated after the key sweep failed still finds them and still shreds the
+    /// keys the first run did not reach.
+    /// </summary>
+    [Fact]
+    public async Task AKeySweepFailing_LeavesTheMembershipsASecondRunNeeds()
+    {
+        var f = new Fixture();
+        await SeedAsync(f);
+        var tenantScope = new KeyScope(DataSensitivityLevel.UserScoped, TenantA.ToString("D"), User.ToString("D"));
+        var keyId = (await f.Keys.GetOrCreateCurrentKeyAsync(tenantScope)).KeyId;
+        var failingOnce = new FailingOnceKeyStore(f.Keys);
+
+        var ex = await Assert.ThrowsAsync<ErasureIncompleteException>(() =>
+            new SubjectEraser(f.Memberships, f.ApiKeys, f.Settings, failingOnce).EraseUserAsync(User));
+        Assert.Equal(ErasurePlane.KeyMaterial, ex.Plane);
+        Assert.NotEmpty(await f.Memberships.GetMembershipsAsync(User));
+
+        await new SubjectEraser(f.Memberships, f.ApiKeys, f.Settings, failingOnce).EraseUserAsync(User);
+
+        Assert.Null(await f.Keys.GetDataEncryptionKeyAsync(keyId));
+        Assert.Empty(await f.Memberships.GetMembershipsAsync(User));
+    }
+
+    private sealed class FailingOnceKeyStore(IKeyStore inner) : IKeyStore
+    {
+        private bool _failed;
+
+        public ValueTask<KeyMaterial> GetOrCreateCurrentKeyAsync(KeyScope scope, CancellationToken cancellationToken = default)
+            => inner.GetOrCreateCurrentKeyAsync(scope, cancellationToken);
+
+        public ValueTask<byte[]?> GetDataEncryptionKeyAsync(string keyId, CancellationToken cancellationToken = default)
+            => inner.GetDataEncryptionKeyAsync(keyId, cancellationToken);
+
+        public ValueTask<string> RotateAsync(KeyScope scope, CancellationToken cancellationToken = default)
+            => inner.RotateAsync(scope, cancellationToken);
+
+        public ValueTask RevokeAsync(string keyId, CancellationToken cancellationToken = default)
+            => inner.RevokeAsync(keyId, cancellationToken);
+
+        public ValueTask EraseScopeAsync(KeyScope scope, CancellationToken cancellationToken = default)
+        {
+            if (_failed)
+            {
+                return inner.EraseScopeAsync(scope, cancellationToken);
+            }
+
+            _failed = true;
+            throw new InvalidOperationException("the key store is down");
+        }
     }
 
     private sealed class ThrowingSettingStore(ISettingStore inner) : ISettingStore

@@ -12,6 +12,18 @@ namespace Stratara.Infrastructure.Security;
 /// </summary>
 public sealed class SubjectEraser : ISubjectEraser
 {
+    /// <summary>
+    /// A key is named by level, tenant and user together, whatever the level: a tenant-level value
+    /// written for a user has a key naming both, a user-level value written with no user has one
+    /// naming only the tenant. The level decides whose erasure a value dies with. Every level is
+    /// the tenant's, so a tenant's erasure shreds each of them wherever it names the tenant; only
+    /// the user level is the user's.
+    /// </summary>
+    private static readonly DataSensitivityLevel[] TenantLevels =
+        [DataSensitivityLevel.UserScoped, DataSensitivityLevel.TenantScoped, DataSensitivityLevel.Confidential];
+
+    private static readonly DataSensitivityLevel[] UserLevels = [DataSensitivityLevel.UserScoped];
+
     private readonly ITenantMembershipStore memberships;
     private readonly IApiKeyStore apiKeys;
     private readonly ISettingStore settings;
@@ -21,7 +33,7 @@ public sealed class SubjectEraser : ISubjectEraser
     /// <param name="memberships">The directory holding memberships and active-tenant selections.</param>
     /// <param name="apiKeys">The API-key store.</param>
     /// <param name="settings">The scoped-setting store.</param>
-    /// <param name="keys">The key store whose scopes are shredded last.</param>
+    /// <param name="keys">The key store whose scopes are shredded.</param>
     public SubjectEraser(
         ITenantMembershipStore memberships,
         IApiKeyStore apiKeys,
@@ -64,12 +76,11 @@ public sealed class SubjectEraser : ISubjectEraser
                 }
             });
 
-        await SweepAsync(swept, ErasurePlane.Memberships, [Describe(userId: userId)],
-            () => memberships.RemoveAllMembershipsAsync(userId, cancellationToken));
-
-        var keyScopes = new List<KeyScope> { new(DataSensitivityLevel.UserScoped, null, Format(userId)) };
-        keyScopes.AddRange(tenantIds.Select(t =>
-            new KeyScope(DataSensitivityLevel.UserScoped, Format(t), Format(userId))));
+        var keyScopes = UserLevels
+            .SelectMany(level => tenantIds
+                .Select(t => new KeyScope(level, Format(t), Format(userId)))
+                .Prepend(new KeyScope(level, null, Format(userId))))
+            .ToList();
 
         await SweepAsync(swept, ErasurePlane.KeyMaterial, keyScopes.Select(Describe).ToList(),
             async () =>
@@ -79,6 +90,9 @@ public sealed class SubjectEraser : ISubjectEraser
                     await keys.EraseScopeAsync(scope, cancellationToken);
                 }
             });
+
+        await SweepAsync(swept, ErasurePlane.Memberships, [Describe(userId: userId)],
+            () => memberships.RemoveAllMembershipsAsync(userId, cancellationToken));
 
         return new ErasureReport(swept);
     }
@@ -108,12 +122,11 @@ public sealed class SubjectEraser : ISubjectEraser
                 }
             });
 
-        await SweepAsync(swept, ErasurePlane.Memberships, [Describe(tenantId: tenantId)],
-            () => memberships.RemoveAllMembersAsync(tenantId, cancellationToken));
-
-        var keyScopes = new List<KeyScope> { new(DataSensitivityLevel.TenantScoped, Format(tenantId)) };
-        keyScopes.AddRange(userIds.Select(u =>
-            new KeyScope(DataSensitivityLevel.UserScoped, Format(tenantId), Format(u))));
+        var keyScopes = TenantLevels
+            .SelectMany(level => userIds
+                .Select(u => new KeyScope(level, Format(tenantId), Format(u)))
+                .Prepend(new KeyScope(level, Format(tenantId))))
+            .ToList();
 
         await SweepAsync(swept, ErasurePlane.KeyMaterial, keyScopes.Select(Describe).ToList(),
             async () =>
@@ -123,6 +136,9 @@ public sealed class SubjectEraser : ISubjectEraser
                     await keys.EraseScopeAsync(scope, cancellationToken);
                 }
             });
+
+        await SweepAsync(swept, ErasurePlane.Memberships, [Describe(tenantId: tenantId)],
+            () => memberships.RemoveAllMembersAsync(tenantId, cancellationToken));
 
         return new ErasureReport(swept);
     }

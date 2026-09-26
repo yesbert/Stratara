@@ -220,18 +220,28 @@ has been removed:
 services.AddStrataraErasure();   // the four stores it sweeps are registered separately
 
 var report = await eraser.EraseUserAsync(alice);
-// report.Planes: ApiKeys -> Settings -> Memberships -> KeyMaterial
+// report.Planes: ApiKeys -> Settings -> KeyMaterial -> Memberships
 ```
 
 **Why that order.** API keys go first, so nothing can act on the subject's behalf while the erasure
-runs. Key material goes last, because shredding it makes every other plane unreadable — sweep it
-first and a later failure leaves rows nobody can identify. The memberships are *read* before they
-are removed, because they are what tells the eraser which tenants the subject has settings and keys
-in.
+runs. Key material comes after the settings, because shredding it makes them unreadable. Sweep it
+first and a later failure leaves rows nobody can identify. Memberships go last, because they are
+what tells the eraser which tenants the subject has settings and keys in. An erasure run again after
+a failure therefore still finds them.
+
+**Which keys it shreds.** A key is named by its sensitivity level, its tenant and its user together,
+and the level decides whose erasure a value dies with. Every level is the tenant's. A tenant's
+erasure therefore shreds every key naming the tenant, alone or together with each of its members,
+at the user, tenant and confidential levels alike. That includes the key a user-level value is
+encrypted under when it is written with no user, which is the case for an event appended from an
+ordinary request. Only the user level is the user's. A user's erasure shreds the user-level keys
+naming the user, alone or together with each tenant it belongs to. A tenant-level or confidential
+value written for that user stays readable until its tenant is erased.
 
 **If a plane fails, the erasure stops there** and raises `ErasureIncompleteException`, naming the
 plane and listing what was already swept. It does not continue, precisely so that a failed settings
-sweep never leads to the key being shredded anyway. Resume from the named plane.
+sweep never leads to the key being shredded anyway. Run the erasure again once the cause is fixed.
+Every sweep is safe to repeat, and the planes already swept simply find nothing left.
 
 **What it does not cover, and this matters as much as what it does:**
 
@@ -242,7 +252,12 @@ sweep never leads to the key being shredded anyway. Resume from the named plane.
 - **The command audit log and the outbox.** Both carry a session context naming the subject, and
   both are deliberately left alone — the audit log is the evidence that the erasure happened, and
   whether to retain it is a decision only you can take for your jurisdiction.
-- **System-wide (`Confidential`) key material**, which is not subject-scoped and is never erased.
+- **Keys shared with someone who is not a member.** The memberships name the other half of a shared
+  key. A key naming a tenant together with a user who is not a member when the erasure runs is found
+  by neither the tenant's erasure nor the user's. That covers a user who left the tenant, and an
+  operator acting in the tenant from outside it.
+- **Snapshots of an aggregate a user owns, on that user's erasure.** A snapshot is encrypted under
+  its stream's tenant alone, so the tenant's erasure reaches it and the user's does not.
 
 ## Tenants themselves are event-sourced
 
