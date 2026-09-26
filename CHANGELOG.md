@@ -26,9 +26,9 @@ applies to the entire NuGet family.
   earlier erasure had already removed the memberships missed these keys too. `IKeyStore` gains
   `ListScopesAsync`, and the file-backed and in-memory key stores implement it. An erasure now also
   shreds every listed key it covers: a key of any level naming the tenant, or a user-level key naming
-  the user. A key store of your own keeps compiling: the default
-  implementation throws `NotSupportedException`, and the erasure then falls back to the directory's
-  keys as before, logging a warning (`LogEvents.KeyManagement.KeyScopesNotListable`, `112_008`).
+  the user. A key store of your own keeps compiling: the default implementation throws
+  `NotSupportedException`, and the erasure then falls back to the directory's keys as before,
+  logging a warning (`LogEvents.KeyManagement.KeyScopesNotListable`, `112_008`).
   Implement it to close the gap; a decorator around a key store has to forward it. Both erasures now
   also refuse an empty id: with the listing, erasing it would have shredded what the system actor and
   data without a tenant are keyed by, in every tenant.
@@ -80,7 +80,7 @@ applies to the entire NuGet family.
 
   `ISubjectEraser` and the membership guide state what remains out of reach:
   - a key shared with a user who is not a member when the erasure runs, unless the key store lists
-    its keys (see below);
+    its keys (see the entry on listing keys above);
   - on a user's erasure, the snapshot of an aggregate that user owns.
 
 - **A stream keeps the user it was created for.** A later event takes its owner from the stream's
