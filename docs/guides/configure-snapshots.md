@@ -137,7 +137,7 @@ and fails, naming the type — where it could still be one the aggregate applies
 - an `Apply` takes an interface, an abstract class, `object` or a generic type.
 
 Every other unresolvable event is skipped, and the host logs a warning once for each aggregate type
-and event type (event id 102 004). If the aggregate should apply it — a type renamed without an
+and event type (event id `102_004`). If the aggregate should apply it — a type renamed without an
 upcaster, say — register the type or add an upcaster. If it is meant to be ignored, register it with
 `AddTrustedType<T>()`: it then resolves, and is skipped without a word.
 

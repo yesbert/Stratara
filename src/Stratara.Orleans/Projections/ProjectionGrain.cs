@@ -114,6 +114,7 @@ internal sealed class ProjectionGrain(
         IProjectionGrain
 {
     private HashSet<string>? _relevant;
+    private EventRelevance? _relevance;
     private Type? _projectionType;
 
     /// <summary>
@@ -134,8 +135,9 @@ internal sealed class ProjectionGrain(
         {
             var (handler, projection) = await runs.EnterAsync(entry);
             _relevant ??= new HashSet<string>(handler.GetRelevantEventTypeNames(projection), StringComparer.Ordinal);
+            _relevance ??= EventRelevance.ForTypes(handler.GetRelevantEventTypes(projection));
 
-            var events = await eventMapperFactory.MapToEventsAsync([entry], entryToken);
+            var events = await eventMapperFactory.MapToEventsAsync([entry], _relevance, entryToken);
             var relevantEvents = events.Where(e => _relevant.Contains(e.EventTypeName)).ToList();
             if (relevantEvents.Count == 0)
             {

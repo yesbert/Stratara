@@ -22,10 +22,20 @@ applies to the entire NuGet family.
   explicit `AddTrustedType<T>()` — keeps working. A no-op `Apply` can go; an `AddTrustedType<T>()`
   keeps the new warning quiet and is still needed wherever a projection, a saga or the bus reads the
   type.
-- **Watch for the new warning 102 004** (*Rebuilding … skipped events of type …*). It names an event
+- **Watch for the new warning `102_004`** (*Rebuilding … skipped events of type …*). It names an event
   whose type does not resolve in the host and that no `Apply` of the aggregate could take. Usually
   that is an event the aggregate ignores; if it is a handled type renamed without an upcaster, add the
   upcaster.
+- **A projection or saga host no longer needs every domain event type registered.** An event no
+  handler in the host takes is left unread. `AddDomainEventTypesFromAssemblyContaining<T>()` calls that
+  existed only for that can go. One trade: a handled type *renamed* without an upcaster used to fail the
+  bundle or replay loudly and is now left unread — a type moved to another namespace or assembly still
+  fails, because it keeps its name. Add the upcaster when you rename a handled event.
+- **If you replaced a framework piece on the read path,** it keeps today's behaviour: a projection or saga
+  manager of your own still receives every event of a bundle, and a mapper of your own — or a decorator
+  that forwards only the older `MapToEventsAsync` overloads — still maps everything through the new
+  overloads' default implementations. A test double of `IEventMapperFactory` must set up the new
+  overloads (with Moq: or `CallBase = true`).
 - **Generate an EF Core migration for your read context.** The framework's read context declares a new
   table, `projection_forgotten_tenant`, for projections that declare `IForgetsDeletedTenants`. A host
   without such a projection never touches it. A projection that declares it knows deletions applied
@@ -35,6 +45,12 @@ applies to the entire NuGet family.
 
 ### Added
 
+- **`EventRelevance` and two `IEventMapperFactory` overloads that take it**, one for stored entries and one
+  for bus messages. The framework's mapper resolves and decrypts only the events the relevance accepts;
+  the overloads' default implementations map everything and filter afterwards, so a consumer's own
+  mapper compiles and behaves as before. `EventRelevance.ForTypes`, `AnyResolvable` and `AnyResolvableWith`
+  describe what a reader takes. Warning `102_005` names an event a stateful saga process's reader skipped
+  because its type does not resolve, once per host and event type.
 - **A projection can forget a deleted tenant.** A projection that removes a deleted tenant's rows met
   facts recorded for that tenant after its deletion — work queued before it ran to its end — with
   nothing to apply them to, and its `PrecedingFactMissingException` made the live bundle dead-letter and
@@ -54,6 +70,15 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **An event no projection or saga in the host handles no longer fails the host.** The projection worker,
+  the projection replay, the saga worker and the Orleans projection and saga readers mapped every event of
+  a bundle or entry before filtering, so an event of a type the host never registered — one retired from an
+  aggregate, a framework event only another host handles — dead-lettered the bundle with the events that
+  mattered in it, failed every replay after the read models were emptied, or stalled an Orleans partition,
+  with *Type '…' is not registered in the trusted-type resolver*. Now only events a handler in the host takes
+  are resolved and decrypted. An unresolvable event carrying the name of a handled type still fails loudly.
+  A stateful process's reader reads every resolvable event and skips an unresolvable one with warning
+  `102_005`.
 - **Rebuilding an aggregate skips an event it has no `Apply` for without reading it.** The rebuild used
   to resolve and decrypt every event in the stream before looking for a handler, so an unhandled event
   whose type the host never registered failed it with *Type '…' is not registered in the trusted-type
@@ -70,7 +95,7 @@ applies to the entire NuGet family.
   decrypted. An event whose type does not resolve is still read — and still fails loudly — where the
   aggregate could apply it: when it has the name of a handled type in another namespace or assembly,
   or when an `Apply` takes an interface, an abstract class, `object` or a generic type. Any other
-  unresolvable event is skipped with warning 102 004, once per host, aggregate type and event type. A
+  unresolvable event is skipped with warning `102_004`, once per host, aggregate type and event type. A
   host that replaces `IEventMapperFactory` keeps reading every event.
 - **Discovery trusts the payload of an `Apply(IEvent<TEvent>)`.** `AddAggregatesFromAssemblyContaining<T>()`
   and `AddDomainEventTypesFromAssemblyContaining<T>()` registered `IEvent<TEvent>`, a type no recorded

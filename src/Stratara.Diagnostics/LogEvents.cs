@@ -48,6 +48,11 @@ public static class LogEvents
         /// <c>Apply</c> of the aggregate could take; logged once per aggregate type and event type (warning).
         /// </summary>
         public const int UnresolvableEventSkipped = 102_004;
+        /// <summary>
+        /// A reader that takes any resolvable event — a stateful saga process — skipped an event whose type does not
+        /// resolve in the host; logged once per host and event type (warning).
+        /// </summary>
+        public const int UnresolvableEventSkippedForAnyResolvable = 102_005;
     }
 
     /// <summary>Validation event-IDs (103_000s).</summary>

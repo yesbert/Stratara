@@ -202,6 +202,64 @@ public class SagaWorkerTests
 
     private static string Kind(IReadOnlyList<IEvent> events) => (string)events[0].Data;
 
+    public sealed record Deposited(decimal Amount);
+
+    private sealed class DepositSaga : ISaga
+    {
+        public List<Deposited> Dispatched { get; } = [];
+
+        private Task HandleAsync(Deposited @event, CancellationToken cancellationToken)
+        {
+            Dispatched.Add(@event);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// <c>sagas</c> → an event no saga in the host handles is not read: a bundle holding one whose type the host never
+    /// registered is dispatched, instead of failing on the unregistered type.
+    /// </summary>
+    [Fact]
+    public async Task A_bundle_with_an_unregistered_event_no_saga_handles_is_dispatched()
+    {
+        var resolver = new Stratara.Abstractions.Reflections.TrustedTypeResolver();
+        resolver.Register(typeof(Deposited));
+        var serializer = new Mock<Stratara.Abstractions.Security.ISecureJsonSerializer>();
+        serializer
+            .Setup(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string json, Type type, Guid? _, Guid? _, CancellationToken _) => JsonSerializer.Deserialize(json, type));
+        var mapper = new Stratara.Shared.EventSourcing.Mapping.EventMapperFactory(serializer.Object, resolver, new EventUpcasterPipeline([]));
+        var saga = new DepositSaga();
+        var harness = new Harness((_, _) => Task.CompletedTask,
+            realMapper: mapper,
+            configure: services =>
+            {
+                services.AddScoped<ISaga>(_ => saga);
+                services.AddScoped<ISagaHandler>(_ => new SagaHandler(new SagaMethodInvoker()));
+                services.AddScoped<ISagaManager>(sp => new SagaManager(
+                    NullLogger<SagaManager>.Instance, sp.GetRequiredService<ISagaHandler>(), [saga]));
+            });
+        var stream = Guid.NewGuid();
+
+        await harness.Sut.HandleEventBundleAsync(new EventBundle(
+            [Message(typeof(Deposited).AssemblyQualifiedName!, """{"Amount":5}""", stream), Message("Retired.Namespace.Archived, Retired.Assembly", "{}", stream)],
+            JsonSerializer.Serialize(SessionContext.Empty())), CancellationToken.None);
+
+        Assert.Equal([new Deposited(5m)], saga.Dispatched);
+    }
+
+    private static EventMessage Message(string eventTypeName, string dataJson, Guid stream) => new(
+        Id: Guid.CreateVersion7(),
+        Version: 1,
+        DataJson: dataJson,
+        StreamId: stream,
+        EventTypeName: eventTypeName,
+        AggregateTypeName: "TestAggregate",
+        ActorTenantId: Guid.Empty,
+        ActorUserId: Guid.Empty,
+        TenantId: Guid.Empty,
+        UserId: null);
+
     private static EventBundle Bundle(string kind, params Guid[] streams)
     {
         var events = streams.Select(stream => new EventMessage(
@@ -257,7 +315,8 @@ public class SagaWorkerTests
         public ScriptedSagaManager Manager { get; }
         public SagaWorker Sut { get; }
 
-        public Harness(Func<IReadOnlyList<IEvent>, CancellationToken, Task> behaviour, ILogger<SagaWorker>? logger = null, int? degreeOfParallelism = null)
+        public Harness(Func<IReadOnlyList<IEvent>, CancellationToken, Task> behaviour, ILogger<SagaWorker>? logger = null, int? degreeOfParallelism = null,
+            IEventMapperFactory? realMapper = null, Action<IServiceCollection>? configure = null)
         {
             Manager = new ScriptedSagaManager(behaviour);
 
@@ -277,6 +336,7 @@ public class SagaWorkerTests
             var services = new ServiceCollection();
             services.AddSingleton(new Mock<ISessionContextProvider>().Object);
             services.AddSingleton<ISagaManager>(Manager);
+            configure?.Invoke(services);
             var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
 
             Sut = new SagaWorker(
@@ -284,7 +344,7 @@ public class SagaWorkerTests
                 MessageBus.Object,
                 new Mock<IMessagingIdentifier>().Object,
                 scopeFactory,
-                mapper.Object,
+                realMapper ?? mapper.Object,
                 pipelineProvider.Object,
                 Options.Create(new BusEnvelopeJsonOptions()),
                 Options.Create(new BusEnvelopeIntegrityOptions { Mode = BusEnvelopeIntegrityMode.Off }),

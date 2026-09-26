@@ -79,7 +79,7 @@ These tell Stratara *what* to dispatch / project / saga. Call once per assembly 
 | `services.AddProjectionsFromAssemblyContaining<T>()` | `IProjection` impls + their `HandleAsync(SomeEvent)` overloads | Per-projection `AddScoped<IProjection>` — a fresh instance per bundle scope — + event-allowlist registration |
 | `services.AddSagasFromAssemblyContaining<T>()` | `ISaga` impls + their `HandleAsync(SomeEvent)` overloads | Per-saga `AddScoped<ISaga>` — a fresh instance per bundle scope — + event-allowlist registration |
 | `services.AddAggregatesFromAssemblyContaining<T>()` | `IAggregate` impls + their `Apply(SomeEvent)` methods | Adds each aggregate **and** each apply-target event type to `ITrustedTypeResolver` |
-| `services.AddDomainEventTypesFromAssemblyContaining<T>()` | The `Apply(SomeEvent)` parameter types of the assembly's aggregates | Adds **only** those event types to `ITrustedTypeResolver` — no aggregate types, no handler classes. For event-only hosts (projection/saga workers) that must deserialize bus/stream payloads without wiring handler dependencies |
+| `services.AddDomainEventTypesFromAssemblyContaining<T>()` | The `Apply(SomeEvent)` parameter types of the assembly's aggregates | Adds **only** those event types to `ITrustedTypeResolver` — no aggregate types, no handler classes. For a host that deserializes payloads itself without wiring handler dependencies. Projection and saga workers do not need it for events no handler of theirs takes: those are left unread |
 
 ## Security + integrity
 
