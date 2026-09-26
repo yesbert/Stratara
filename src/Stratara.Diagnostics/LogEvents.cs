@@ -55,7 +55,7 @@ public static class LogEvents
         public const int UnresolvableEventSkippedForAnyResolvable = 102_005;
         /// <summary>
         /// Writing a snapshot after its events were committed failed; the save still succeeds, because a
-        /// snapshot is a cache and a later save writes one (warning).
+        /// snapshot is a cache and a later save writes one (warning; information when it was cancelled).
         /// </summary>
         public const int SnapshotFailed = 102_006;
     }

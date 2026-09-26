@@ -1,6 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
+using Stratara.Diagnostics;
+using Stratara.Infrastructure.EventSourcing;
 using Stratara.Testing.EntityFrameworkCore;
 using Xunit;
 
@@ -92,5 +95,37 @@ public class SnapshotCommitTests
 
         Assert.Equal(1, (await host.AggregateAsync<Counter>(streamId))?.Value);
         Assert.Single(host.Outbox.Bundles);
+    }
+
+    private sealed class CapturingLogger : ILogger<EventSource>
+    {
+        public List<(int Id, LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add((eventId.Id, logLevel, formatter(state, exception)));
+    }
+
+    [Fact]
+    public async Task A_snapshot_that_cannot_be_written_is_logged_naming_the_stream()
+    {
+        await using var host = CreateHost(_ => { });
+        var streamId = Guid.CreateVersion7();
+        var logger = new CapturingLogger();
+
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var events = (IEventSource)ActivatorUtilities.CreateInstance(
+                scope.ServiceProvider, typeof(EventSource), new FailingSnapshotService(), logger);
+            await events.CreateAsync<Counter>(streamId, new CounterAdded(1));
+            await events.SaveChangesAsync();
+        }
+
+        var entry = Assert.Single(logger.Entries, e => e.Id == LogEvents.EventStore.SnapshotFailed);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains(streamId.ToString(), entry.Message, StringComparison.Ordinal);
     }
 }
