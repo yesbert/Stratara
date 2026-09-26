@@ -32,10 +32,10 @@ public class SnapshotCommitTests
         public bool ShouldSnapshot(Type aggregateType, long currentVersion, long lastSnapshotVersion) => Enabled;
     }
 
-    private sealed class FailingSnapshotService : ISnapshotService
+    private sealed class FailingSnapshotService(Exception? failure = null) : ISnapshotService
     {
         public Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("the snapshot table is unavailable");
+            throw failure ?? new InvalidOperationException("the snapshot table is unavailable");
     }
 
     private static EventStoreTestHost CreateHost(Action<IServiceCollection> configure) =>
@@ -127,5 +127,23 @@ public class SnapshotCommitTests
         var entry = Assert.Single(logger.Entries, e => e.Id == LogEvents.EventStore.SnapshotFailed);
         Assert.Equal(LogLevel.Warning, entry.Level);
         Assert.Contains(streamId.ToString(), entry.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A timeout the caller did not ask for is a failure, logged as a warning — not as a cancellation.</summary>
+    [Fact]
+    public async Task A_snapshot_that_times_out_on_its_own_is_logged_as_a_warning()
+    {
+        await using var host = CreateHost(_ => { });
+        var logger = new CapturingLogger();
+
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var events = (IEventSource)ActivatorUtilities.CreateInstance(
+                scope.ServiceProvider, typeof(EventSource), new FailingSnapshotService(new TaskCanceledException("the key provider timed out")), logger);
+            await events.CreateAsync<Counter>(Guid.CreateVersion7(), new CounterAdded(1));
+            await events.SaveChangesAsync();
+        }
+
+        Assert.Equal(LogLevel.Warning, Assert.Single(logger.Entries, e => e.Id == LogEvents.EventStore.SnapshotFailed).Level);
     }
 }

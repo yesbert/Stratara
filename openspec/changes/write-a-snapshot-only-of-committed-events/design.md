@@ -26,8 +26,15 @@ apply those events twice.
 - *Alternative:* one transaction for events and snapshot. Rejected for now, see Non-Goals.
 
 **A snapshot failure after the commit is logged, not thrown.** The events are recorded; throwing would
-tell the caller the save failed and invite a retry that records them twice. The next threshold writes
-a snapshot, and a rebuild without one replays the events.
+tell the caller the save failed and invite a retry that records them twice. A later save that the snapshot
+strategy approves writes the snapshot — with the version threshold, the very next one — and a rebuild without
+one replays the events.
+
+**Each stream is built on its own.** One stream that cannot be snapshotted — an unreadable earlier snapshot,
+a type the host does not trust, a timeout the caller did not ask for — does not keep the other streams of the
+save from being written; the failures are thrown together once the others are stored, and logged by the event
+source. The inserts share one save, so a failure of the insert itself writes none. Evidence:
+`SnapshotServiceTests.AddSnapshotIfNeeded_AStreamThatFails_DoesNotKeepTheOthersFromBeingWritten`.
 
 **The snapshot runs after the bundle is handed on.** Publication is what readers wait for; a snapshot is
 a cache. Taking it last means a slow or failing snapshot never delays or blocks publication, and a

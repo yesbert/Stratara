@@ -304,4 +304,27 @@ public class SnapshotServiceTests
         _transactionMock.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
         Assert.Contains(failing.ToString(), Assert.Single(failure.InnerExceptions).Message, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A stream whose build times out — a cancellation the caller did not ask for, such as a key provider's timeout —
+    /// is a failure of that stream, not the caller's cancellation: the others are still written.
+    /// </summary>
+    [Fact]
+    public async Task AddSnapshotIfNeeded_AStreamWhoseBuildTimesOut_DoesNotKeepTheOthersFromBeingWritten()
+    {
+        var failing = Guid.NewGuid();
+        var working = Guid.NewGuid();
+        var entries = Enumerable.Range(1, 50).Select(i => CreateEntry(failing, i))
+            .Concat(Enumerable.Range(1, 50).Select(i => CreateEntry(working, i))).ToList();
+        _snapshotRepoMock.Setup(r => r.GetLatestVersionOrDefaultAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(0L);
+        _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), failing, null, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("the key provider timed out"));
+        _aggregationServiceMock.Setup(a => a.AggregateAsync(typeof(TestAggregate), working, null, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TestAggregate { Name = "Snapshotted" });
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(() => _service.AddSnapshotIfNeededAsync(entries));
+
+        _snapshotRepoMock.Verify(r => r.AddAsync(It.Is<Snapshot>(s => s.StreamId == working), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.IsType<TaskCanceledException>(Assert.Single(failure.InnerExceptions).InnerException);
+    }
 }

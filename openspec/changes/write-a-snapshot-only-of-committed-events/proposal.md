@@ -22,7 +22,7 @@ committed.
   batch.
 - A failure to write the snapshot after the commit is logged
   (`LogEvents.EventStore.SnapshotFailed`, `102_006`) and does not fail the save. A snapshot is a
-  cache; the next threshold writes one.
+  cache; a later save the snapshot strategy approves writes one.
 - A save that fails, a concurrency conflict included, writes no snapshot.
 
 ## Capabilities

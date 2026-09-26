@@ -58,7 +58,7 @@ internal sealed class SnapshotService(
                 var aggregatedEvent = await CreateSnapshot(streamId, streamEntries, owner, cancellationToken);
                 await snapshotRepository.AddAsync(aggregatedEvent, cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 (failures ??= []).Add(new InvalidOperationException(
                     $"No snapshot of stream {streamId} ({streamGroup.Key.TypeKey}) could be written.", ex));

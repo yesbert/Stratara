@@ -9,12 +9,19 @@
 
 ## 2. The fix
 
-- [x] 2.1 `EventSource` calls the snapshot service after the commit, logs a failure as
-  `LogEvents.EventStore.SnapshotFailed` through an optional `ILogger<EventSource>`, and hands the bundle
-  on afterwards.
+- [x] 2.1 `EventSource` commits, hands the bundle on, then calls the snapshot service, and logs a failure as
+  `LogEvents.EventStore.SnapshotFailed` through an optional `ILogger<EventSource>` — at information only when the
+  caller cancelled, as a warning otherwise (`SnapshotCommitTests.A_snapshot_that_times_out_on_its_own_is_logged_as_a_warning`).
 - [x] 2.2 `SnapshotService` rebuilds the aggregate up to the batch's highest version and no longer
   applies the batch on top; `SnapshotServiceTests` follow.
 - [x] 2.3 `ISnapshotService` documents that it is called after the commit.
+
+- [x] 2.4 `SnapshotService` builds each stream's snapshot on its own: a stream that fails while being built —
+  an unreadable earlier snapshot, a type the host does not trust, a timeout the caller did not ask for — does not
+  keep the others from being written, and the failures are thrown together afterwards
+  (`SnapshotServiceTests.AddSnapshotIfNeeded_AStreamThatFails_DoesNotKeepTheOthersFromBeingWritten`,
+  `…AStreamWhoseBuildTimesOut_DoesNotKeepTheOthersFromBeingWritten`). All streams' snapshots are inserted in one
+  save, so a failure of the insert itself writes none of them.
 
 ## 3. Documentation
 

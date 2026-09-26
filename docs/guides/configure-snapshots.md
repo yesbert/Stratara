@@ -93,8 +93,9 @@ snapshot behind. Writing the snapshot can fail on its own — the store is brief
 operation is cancelled — and that does not fail the save: its events are recorded and published, the
 failure is logged as a warning naming the streams (`LogEvents.EventStore.SnapshotFailed`, `102_006`;
 information when it was cancelled), and a later save that the snapshot strategy approves writes the
-snapshot. One stream that cannot be snapshotted does not keep the others in the same save from being
-written.
+snapshot. One stream that fails while its snapshot is built does not keep the others in the same save
+from being written; the snapshots are inserted together, so a failure of the insert itself writes none of
+them.
 
 ## What a snapshot stores
 

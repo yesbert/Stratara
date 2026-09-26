@@ -229,7 +229,7 @@ internal sealed partial class EventSource(
             var streams = string.Join(", ", _eventStreamEntries
                 .Select(entry => $"{entry.StreamId} ({entry.AggregateTypeName.GetVersionIndependentTypeName()})")
                 .Distinct());
-            var level = ex is OperationCanceledException ? LogLevel.Information : LogLevel.Warning;
+            var level = ex is OperationCanceledException && cancellationToken.IsCancellationRequested ? LogLevel.Information : LogLevel.Warning;
             LogSnapshotFailed(logger ?? NullLogger<EventSource>.Instance, level, ex, streams);
         }
     }
