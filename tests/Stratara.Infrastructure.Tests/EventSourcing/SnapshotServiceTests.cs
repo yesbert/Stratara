@@ -36,7 +36,7 @@ public class SnapshotServiceTests
             _unitOfWorkMock.Object,
             _typeResolver,
             new VersionThresholdSnapshotStrategy(),
-            new AggregateEventSelector(_typeResolver, new EventUpcasterPipeline([])));
+            AggregateEventSelectorTests.PassThrough());
     }
 
     private SnapshotService CreateService(ISnapshotStrategy strategy) =>
@@ -47,7 +47,7 @@ public class SnapshotServiceTests
             _unitOfWorkMock.Object,
             _typeResolver,
             strategy,
-            new AggregateEventSelector(_typeResolver, new EventUpcasterPipeline([])));
+            AggregateEventSelectorTests.PassThrough());
 
     private sealed class TestAggregate
     {

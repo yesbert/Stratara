@@ -24,7 +24,7 @@ public class AggregationServiceTests
         _unitOfWorkMock.Setup(u => u.CreateEventStreamRepository(_transactionMock.Object)).Returns(_eventStreamRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.CreateSnapshotRepository(_transactionMock.Object)).Returns(_snapshotRepoMock.Object);
         _service = new AggregationService(_unitOfWorkMock.Object, _eventMapperFactoryMock.Object, _serializerMock.Object,
-            new AggregateEventSelector(_typeResolver, new EventUpcasterPipeline([])));
+            AggregateEventSelectorTests.PassThrough());
     }
 
     private sealed class TestAggregate
@@ -244,6 +244,8 @@ public class AggregationServiceTests
     {
         var streamId = Guid.NewGuid();
         _typeResolver.Register(typeof(TestCreated));
+        var service = new AggregationService(_unitOfWorkMock.Object, _eventMapperFactoryMock.Object, _serializerMock.Object,
+            AggregateEventSelectorTests.Selecting(_typeResolver));
         _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Snapshot?)null);
@@ -258,7 +260,7 @@ public class AggregationServiceTests
             .Callback<IEnumerable<EventStreamEntry>, CancellationToken>((entries, _) => mapped = entries.ToList())
             .ReturnsAsync(new List<IEvent>());
 
-        await _service.AggregateAsync<TestAggregate>(streamId);
+        await service.AggregateAsync<TestAggregate>(streamId);
 
         Assert.NotNull(mapped);
         Assert.Equal([handled], mapped);

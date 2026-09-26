@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.Domain;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Reflections;
 
 // ReSharper disable once CheckNamespace
@@ -71,7 +72,8 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
     /// <remarks>
     /// For each discovered aggregate, every public instance method named <c>Apply</c> that takes
-    /// a single parameter contributes its parameter type to the allowlist. This mirrors the
+    /// a single parameter contributes its parameter type to the allowlist — the payload type for an
+    /// <c>Apply(IEvent&lt;TEvent&gt;)</c>, which is what a recorded event names. This mirrors the
     /// event-sourcing convention used throughout the framework (see
     /// <see cref="Stratara.Abstractions.Domain.IAggregate"/>).
     /// </remarks>
@@ -114,7 +116,8 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <para>
     /// Discovery follows the same convention as <see cref="AddAggregatesFromAssemblyContaining{T}"/>:
     /// every public, single-parameter instance method named <c>Apply</c> on a concrete
-    /// <see cref="IAggregate"/> contributes its parameter type to the allowlist.
+    /// <see cref="IAggregate"/> contributes its parameter type to the allowlist, unwrapped from
+    /// <c>IEvent&lt;TEvent&gt;</c> to its payload type.
     /// </para>
     /// </remarks>
     /// <example>
@@ -148,7 +151,12 @@ public static class TrustedTypeResolverServiceCollectionExtensions
             {
                 continue;
             }
-            resolver.Register(parameters[0].ParameterType);
+            var eventType = parameters[0].ParameterType;
+            if (eventType.IsGenericType && eventType.GetGenericTypeDefinition() == typeof(IEvent<>))
+            {
+                eventType = eventType.GetGenericArguments()[0];
+            }
+            resolver.Register(eventType);
         }
     }
 

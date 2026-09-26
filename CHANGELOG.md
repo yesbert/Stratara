@@ -19,8 +19,13 @@ applies to the entire NuGet family.
 **Upgrading:**
 - **If an aggregate's stream holds an event the aggregate has no `Apply` for, upgrade.** Rebuilding
   it no longer requires that event's type to be registered. A workaround — a no-op `Apply` or an
-  explicit `AddTrustedType<T>()` — keeps working, and can be dropped where it served only the rebuild:
-  projections, sagas and the bus still resolve only registered types.
+  explicit `AddTrustedType<T>()` — keeps working. A no-op `Apply` can go; an `AddTrustedType<T>()`
+  keeps the new warning quiet and is still needed wherever a projection, a saga or the bus reads the
+  type.
+- **Watch for the new warning 102 004** (*Rebuilding … skipped events of type …*). It names an event
+  whose type does not resolve in the host and that no `Apply` of the aggregate could take. Usually
+  that is an event the aggregate ignores; if it is a handled type renamed without an upcaster, add the
+  upcaster.
 - No public signature changes, no schema change.
 
 ### Fixed
@@ -36,11 +41,17 @@ applies to the entire NuGet family.
   failure came after the fact: the append committed, and only the next rebuild refused the stream. If
   a snapshot was due at the append, the save itself failed. An unhandled event encrypted as a whole
   under a key that had since been erased failed the rebuild with *Event data could not be
-  deserialized*. Now the decision is made on the recorded type name after upcasting, and an event no
-  `Apply` takes is neither resolved nor decrypted. An event that might be one the aggregate applies is
-  still read and still fails loudly when its type does not resolve: one carrying the full name of a
-  handled type, and every event of an aggregate with an `Apply` taking an interface, an abstract or
-  unsealed class, or a type that is not registered.
+  deserialized*. Now whether an `Apply` takes an event is decided on its type after upcasting, by the
+  same binding the rebuild applies it with, and an event no `Apply` takes is neither resolved nor
+  decrypted. An event whose type does not resolve is still read — and still fails loudly — where the
+  aggregate could apply it: when it has the name of a handled type in another namespace or assembly,
+  or when an `Apply` takes an interface, an abstract class, `object` or a generic type. Any other
+  unresolvable event is skipped with warning 102 004, once per host, aggregate type and event type. A
+  host that replaces `IEventMapperFactory` keeps reading every event.
+- **Discovery trusts the payload of an `Apply(IEvent<TEvent>)`.** `AddAggregatesFromAssemblyContaining<T>()`
+  and `AddDomainEventTypesFromAssemblyContaining<T>()` registered `IEvent<TEvent>`, a type no recorded
+  event names, so an aggregate whose only handler for an event took the envelope could not rebuild a
+  stream holding it unless something else registered `TEvent`. They now register `TEvent`.
 
 ## [4.3.1] — 2026-09-25
 

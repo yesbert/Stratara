@@ -30,27 +30,27 @@ has since been erased therefore stops the rebuild of an aggregate that never loo
 
 ## What Changes
 
-- Rebuilding an aggregate skips an event the aggregate declares no handler for **without reading
-  its payload**. It does not resolve the event's type, does not decrypt it, and does not require the
-  type to be registered. The decision is made on the event's recorded type name, after upcasting, so
-  an event upcast into a type the aggregate handles is still applied.
+- Rebuilding an aggregate skips an event the aggregate declares no handler for **without resolving
+  its type or decrypting its payload**. It does not require the type to be registered. Whether the
+  aggregate handles an event is decided on its type after upcasting, and by the same binding the
+  aggregate's handlers are applied with. An event upcast into a handled type is applied, and so is a
+  registered event a handler takes through a base type or an interface.
 - This holds for every rebuild: loading an aggregate, with or without a snapshot, and the rebuild
   that takes a snapshot while events are being saved.
-- An event the aggregate **might** handle is never skipped because it cannot be read; it fails as it
-  does today. That covers three cases:
-  - The recorded name matches a handled type's name but does not resolve, for example because the
-    type moved to another assembly.
-  - The aggregate has a handler for a type other types can derive from.
-  - The aggregate's handled types are not all registered, because the aggregate was registered by a
-    route other than discovery.
+- An event whose type does not resolve, but which the aggregate might handle, is never skipped. It
+  fails as it does today. That is the case when:
+  - its name, without namespace or assembly, is the name of a type a handler takes, as for a type
+    moved to another namespace or assembly;
+  - a handler takes an interface, an abstract class, any object or a generic type.
 
-  In all three, rebuilding reads every event exactly as it does today.
-- An event the aggregate handles is read, resolved and applied as before. Nothing about registration
-  changes. An unregistered type still fails on every other read path: projections, sagas, the bus.
+  Every other unresolvable event is skipped with a warning, once per host, aggregate type and event
+  type. The warning names both and says how to register or upcast the type.
+- A host that replaces how recorded events are mapped keeps reading every event.
+- Discovery of aggregates trusts the payload type of a handler that takes the enveloped event. It
+  used to register the envelope type, which no recorded event names.
 - The tenant package's documentation stops calling the cascade event something rehydration "skips
-  silently" as though that already held. It says what does hold: a consumer's aggregate needs no
-  handler and no registration for it. The snapshot guide's paragraph on retiring an event becomes
-  true as written.
+  silently" as though that already held. It says what does hold. The snapshot guide's paragraph on
+  retiring an event becomes true as written.
 
 A host whose streams contain only events that are registered, or only events its aggregates handle,
 sees no difference except that unhandled events are no longer decrypted. No public signature
@@ -64,10 +64,14 @@ None.
 
 ### Modified Capabilities
 
-- `aggregate-rehydration`: *An unhandled event is skipped rather than rejected* gains what "skipped"
-  has to mean for the promise to hold. The event is not read, so neither its registration nor its key
-  decides whether the stream can be rebuilt. It also states the boundary: an event the aggregate
-  might apply is never skipped for being unreadable.
+- `aggregate-rehydration`: two requirements change.
+  - *An unhandled event is skipped rather than rejected* gains what "skipped" has to mean for the
+    promise to hold. The event's type is not resolved and its payload is not decrypted, so neither its
+    registration nor its key decides whether the stream can be rebuilt. It also states the boundary:
+    an event the aggregate might apply is never skipped for being unreadable, and an unresolvable skip
+    is logged.
+  - *Events are dispatched to the aggregate by their own type* gains that discovery trusts the payload
+    of an enveloped handler.
 
 ## Impact
 
@@ -76,9 +80,11 @@ None.
   aggregate reads before mapping them.
 - `src/Stratara.Infrastructure/EventSourcing/`: a new internal component that knows, per aggregate
   type, which recorded events the aggregate reads. It is registered by `AddEventSourcing()`.
-- `tests/Stratara.Infrastructure.Tests`, `tests/Stratara.Testing.EntityFrameworkCore.Tests`: the
-  selection rules, and store-backed rebuilds over a stream that holds an unregistered, unhandled
-  event, with and without a snapshot.
+- `src/Stratara.Abstractions/Abstractions/Reflections/TrustedTypeResolverServiceCollectionExtensions.cs`:
+  discovery unwraps `IEvent<TEvent>`. `src/Stratara.Diagnostics/LogEvents.cs`: one new event id.
+- `tests/Stratara.Infrastructure.Tests`: the selection rules, and store-backed rebuilds over a stream
+  that holds an unregistered unhandled event, an event whose key is gone, an upcast event and a moved
+  handled type, with and without a snapshot.
 - `src/Stratara.Domain/README.md`, `docs/guides/configure-snapshots.md`,
   `docs/guides/tenant-membership.md`.
 - `CHANGELOG.md`. A patch release: a bug fix with no new public surface.

@@ -1,8 +1,10 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Abstractions.Domain;
 using Stratara.Abstractions.EventSourcing;
+using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Domain;
 using Stratara.Testing.EntityFrameworkCore;
@@ -33,10 +35,25 @@ public class UnhandledEventRehydrationTests
             Name = @event.Name;
         }
 
-        public void Apply(CustomerClosed @event) => Closed = true;
+        public void Apply(CustomerRenamed @event) => Name = @event.Name;
+
+        public void Apply(IEvent<CustomerClosed> @event) => Closed = true;
     }
 
-    private sealed record CustomerOpened(Guid CustomerId, Guid TenantId, string Name) : IAggregateCreationEvent;
+    private record CustomerOpened(Guid CustomerId, Guid TenantId, string Name) : IAggregateCreationEvent;
+
+    private sealed record CustomerRenamed(string Name);
+
+    private sealed record CustomerRetitled(string Title);
+
+    private sealed class RetitledUpcaster : IEventUpcaster
+    {
+        public string SourceEventTypeName => typeof(CustomerRetitled).AssemblyQualifiedName!;
+
+        public string TargetEventTypeName => typeof(CustomerRenamed).AssemblyQualifiedName!;
+
+        public JsonNode Upcast(JsonNode payload) => new JsonObject { ["Name"] = payload["Title"]?.GetValue<string>() };
+    }
 
     private sealed record CustomerClosed(DateTimeOffset ClosedAt);
 
@@ -145,6 +162,73 @@ public class UnhandledEventRehydrationTests
         Assert.NotNull(customer);
         Assert.Equal("Ada", customer!.Name);
         Assert.True(customer.Closed);
+    }
+
+    [Fact]
+    public async Task An_event_upcast_into_a_handled_type_is_applied()
+    {
+        var id = Guid.CreateVersion7();
+        await using var host = CreateHost(s => s.AddEventUpcaster(new RetitledUpcaster()));
+
+        await host.ExecuteAsync(async events =>
+        {
+            await events.CreateAsync<Customer>(id, new CustomerOpened(id, Tenant, "Ada"));
+            await events.AppendAsync<Customer>(id, new CustomerRetitled("Ada Lovelace"));
+            await events.SaveChangesAsync();
+        });
+
+        var customer = await host.AggregateAsync<Customer>(id);
+
+        Assert.NotNull(customer);
+        Assert.Equal("Ada Lovelace", customer!.Name);
+    }
+
+    [Fact]
+    public async Task A_handled_event_recorded_under_another_namespace_fails_the_rebuild_naming_it()
+    {
+        var id = Guid.CreateVersion7();
+        await using var host = CreateHost();
+
+        await host.ExecuteAsync(async events =>
+        {
+            await events.CreateAsync<Customer>(id, new CustomerOpened(id, Tenant, "Ada"));
+            await events.AppendAsync<Customer>(id, new CustomerClosed(DateTimeOffset.UtcNow));
+            await events.SaveChangesAsync();
+        });
+
+        const string movedName = "Former.Namespace.CustomerClosed, Former.Assembly";
+        await RenameRecordedTypeAsync(host, id, nameof(CustomerClosed), movedName);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => host.AggregateAsync<Customer>(id));
+
+        Assert.Contains(movedName, failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Discovery_trusts_the_payload_of_a_handler_taking_the_enveloped_event()
+    {
+        var services = new ServiceCollection();
+        services.AddAggregatesFromAssemblyContaining<UnhandledEventRehydrationTests>();
+        using var provider = services.BuildServiceProvider();
+
+        var resolver = provider.GetRequiredService<ITrustedTypeResolver>();
+
+        Assert.True(resolver.TryResolve(typeof(CustomerClosed).AssemblyQualifiedName!, out var resolved));
+        Assert.Equal(typeof(CustomerClosed), resolved);
+    }
+
+    private static async Task RenameRecordedTypeAsync(EventStoreTestHost host, Guid streamId, string typeName, string recordedName)
+    {
+        await using var scope = host.Services.CreateAsyncScope();
+        await using var context = await scope.ServiceProvider
+            .GetRequiredService<IDbContextFactory<StrataraTestWriteDbContext>>()
+            .CreateDbContextAsync();
+
+        var entries = await context.Set<EventStreamEntry>()
+            .Where(e => e.StreamId == streamId)
+            .ToListAsync();
+        entries.Single(e => e.EventTypeName.Contains(typeName, StringComparison.Ordinal)).EventTypeName = recordedName;
+        await context.SaveChangesAsync();
     }
 
     private static async Task<List<EventStreamEntry>> EntriesAsync(EventStoreTestHost host, Guid streamId)

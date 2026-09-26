@@ -1,32 +1,47 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Reflections;
+using Stratara.Diagnostics;
+using Stratara.Shared.EventSourcing.Mapping;
 
 namespace Stratara.Infrastructure.EventSourcing;
 
 /// <summary>
 /// Decides which recorded entries an aggregate reads when it is rebuilt, so an event the aggregate
-/// declares no <c>Apply</c> for is skipped before it is resolved, deserialized or decrypted.
+/// declares no <c>Apply</c> for is skipped before its type is resolved or its payload decrypted.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The handler profile of each aggregate type is built once and cached. It holds the payload types
-/// the aggregate's public <c>Apply</c> methods take, with <see cref="IEvent{TEvent}"/> unwrapped to its
-/// payload. An entry is read when its recorded type resolves to a handled type, when its type after
-/// upcasting does, or when that type does not resolve but carries the full name of a handled type,
-/// so a moved or unregistered handled type still fails in the mapper rather than being skipped.
+/// An entry whose type resolves, after upcasting, is read exactly when the dispatcher would bind an
+/// <c>Apply</c> to it: the selector asks <see cref="Type.GetMethod(string, Type[])"/> the question
+/// <see cref="EventStream"/> asks, for the payload type and for <see cref="IEvent{TEvent}"/> of it.
 /// </para>
 /// <para>
-/// Where the profile cannot rule out that the dispatcher binds an event of some other type, it reads
-/// every entry: a handler taking an unsealed class, an interface, a primitive, an array or a generic
-/// type, a generic <c>Apply</c>, or a handled type the trusted-type resolver does not resolve to itself.
-/// Registrations are only ever added, so a cached profile never becomes wrong.
+/// An entry whose type does not resolve cannot be asked about, so it is read — and fails in the mapper
+/// as an unregistered type does — when it could still be one the aggregate applies: when its type name,
+/// without namespace or assembly, is the name of a type an <c>Apply</c> takes, or when an <c>Apply</c>
+/// takes an interface, an abstract class, <see cref="object"/> or a generic type, or is itself generic.
+/// Every other unresolvable entry is skipped, and the skip is logged once per aggregate type and
+/// recorded name.
+/// </para>
+/// <para>
+/// The upcasters chain by type name, so every decision depends on the recorded name alone and is made
+/// once per recorded name and aggregate type. Selection applies only while the registered
+/// <see cref="IEventMapperFactory"/> is the framework's; a replaced mapper may resolve names this
+/// selector cannot, so every entry is read.
 /// </para>
 /// </remarks>
-internal sealed class AggregateEventSelector(ITrustedTypeResolver typeResolver, IEventUpcasterPipeline upcasterPipeline)
+internal sealed partial class AggregateEventSelector(
+    ITrustedTypeResolver typeResolver,
+    IEventUpcasterPipeline upcasterPipeline,
+    IEventMapperFactory eventMapperFactory,
+    ILogger<AggregateEventSelector>? logger = null)
 {
     private const string ApplyMethodName = "Apply";
+    private readonly bool _selects = eventMapperFactory is EventMapperFactory;
     private readonly ConcurrentDictionary<Type, HandlerProfile> _profiles = new();
 
     /// <summary>Returns the entries the aggregate reads, in their original order.</summary>
@@ -38,17 +53,17 @@ internal sealed class AggregateEventSelector(ITrustedTypeResolver typeResolver, 
         ArgumentNullException.ThrowIfNull(aggregateType);
         ArgumentNullException.ThrowIfNull(entries);
 
-        var profile = _profiles.GetOrAdd(aggregateType, static (type, resolver) => HandlerProfile.Of(type, resolver), typeResolver);
-        if (profile.ReadsEverything)
+        if (!_selects || entries.Count == 0)
         {
             return entries;
         }
 
+        var profile = _profiles.GetOrAdd(aggregateType, static type => HandlerProfile.Of(type));
         List<EventStreamEntry>? selected = null;
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
-            if (Reads(profile, entry))
+            if (Reads(aggregateType, profile, entry))
             {
                 selected?.Add(entry);
                 continue;
@@ -60,51 +75,84 @@ internal sealed class AggregateEventSelector(ITrustedTypeResolver typeResolver, 
         return selected ?? entries;
     }
 
-    private bool Reads(HandlerProfile profile, EventStreamEntry entry)
+    private bool Reads(Type aggregateType, HandlerProfile profile, EventStreamEntry entry)
     {
-        if (typeResolver.TryResolve(entry.EventTypeName, out var recordedType) && recordedType is not null && profile.Handles(recordedType))
+        if (profile.TryGetDecision(entry.EventTypeName, out var known))
+        {
+            return known;
+        }
+
+        var reads = Decide(aggregateType, profile, entry);
+        profile.RememberDecision(entry.EventTypeName, reads);
+        return reads;
+    }
+
+    private bool Decide(Type aggregateType, HandlerProfile profile, EventStreamEntry entry)
+    {
+        if (typeResolver.TryResolve(entry.EventTypeName, out var recordedType) && recordedType is not null && profile.Binds(recordedType))
         {
             return true;
         }
 
         var effectiveName = upcasterPipeline.Upcast(entry.EventTypeName, entry.DataJson).EventTypeName;
-        if (typeResolver.TryResolve(effectiveName, out var effectiveType))
+        if (typeResolver.TryResolve(effectiveName, out var effectiveType) && effectiveType is not null)
         {
-            return effectiveType is not null && profile.Handles(effectiveType);
+            return profile.Binds(effectiveType);
         }
 
-        return profile.HandlesTypeNamed(TypeNameOf(effectiveName));
+        if (profile.IsOpen || profile.MayName(entry.EventTypeName) || profile.MayName(effectiveName))
+        {
+            return true;
+        }
+
+        LogUnresolvableEventSkipped(logger ?? NullLogger<AggregateEventSelector>.Instance, effectiveName, aggregateType.FullName ?? aggregateType.Name);
+        return false;
     }
 
-    private static string TypeNameOf(string recordedName)
-    {
-        var separator = recordedName.IndexOf(',');
-        return (separator < 0 ? recordedName : recordedName[..separator]).Trim();
-    }
+    [LoggerMessage(
+        EventId = LogEvents.EventStore.UnresolvableEventSkipped,
+        Level = LogLevel.Warning,
+        Message = "Rebuilding {AggregateType} skipped events of type {EventTypeName}, which does not resolve in this host and has the name of no type an Apply of the aggregate takes. If the aggregate should apply them, register the type or add an upcaster; to acknowledge the skip, register the type with AddTrustedType. Logged once per aggregate type and event type.")]
+    private static partial void LogUnresolvableEventSkipped(ILogger logger, string eventTypeName, string aggregateType);
 
     private sealed class HandlerProfile
     {
-        private static readonly HandlerProfile Everything = new([], readsEverything: true);
+        private readonly Type _aggregateType;
+        private readonly HashSet<string> _handledNames;
+        private readonly ConcurrentDictionary<Type, bool> _bindings = new();
+        private readonly ConcurrentDictionary<string, bool> _decisions = new(StringComparer.Ordinal);
 
-        private readonly HashSet<Type> _types;
-        private readonly HashSet<string> _typeNames;
-
-        private HandlerProfile(HashSet<Type> types, bool readsEverything)
+        private HandlerProfile(Type aggregateType, HashSet<string> handledNames, bool isOpen)
         {
-            _types = types;
-            _typeNames = new HashSet<string>(types.Select(t => t.FullName ?? t.Name), StringComparer.Ordinal);
-            ReadsEverything = readsEverything;
+            _aggregateType = aggregateType;
+            _handledNames = handledNames;
+            IsOpen = isOpen;
         }
 
-        public bool ReadsEverything { get; }
+        public bool IsOpen { get; }
 
-        public bool Handles(Type type) => _types.Contains(type);
+        public bool TryGetDecision(string recordedName, out bool reads) => _decisions.TryGetValue(recordedName, out reads);
 
-        public bool HandlesTypeNamed(string fullName) => _typeNames.Contains(fullName);
+        public void RememberDecision(string recordedName, bool reads) => _decisions.TryAdd(recordedName, reads);
 
-        public static HandlerProfile Of(Type aggregateType, ITrustedTypeResolver resolver)
+        public bool Binds(Type eventType) => _bindings.GetOrAdd(eventType, static (type, aggregate) => BindsApply(aggregate, type), _aggregateType);
+
+        public bool MayName(string recordedName)
         {
-            var types = new HashSet<Type>();
+            var typeName = TypeNameOf(recordedName);
+            if (typeName.Contains('[', StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var separator = typeName.LastIndexOfAny(['.', '+']);
+            return _handledNames.Contains(separator < 0 ? typeName : typeName[(separator + 1)..]);
+        }
+
+        public static HandlerProfile Of(Type aggregateType)
+        {
+            var handledNames = new HashSet<string>(StringComparer.Ordinal);
+            var isOpen = false;
             foreach (var method in aggregateType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
             {
                 if (method.Name != ApplyMethodName)
@@ -119,15 +167,24 @@ internal sealed class AggregateEventSelector(ITrustedTypeResolver typeResolver, 
                 }
 
                 var handledType = PayloadTypeOf(parameters[0].ParameterType);
-                if (method.IsGenericMethodDefinition || !BindsOnlyItself(handledType) || !IsRegistered(handledType, resolver))
-                {
-                    return Everything;
-                }
-
-                types.Add(handledType);
+                isOpen |= method.IsGenericMethodDefinition || TakesOtherTypes(handledType);
+                handledNames.Add(handledType.Name);
             }
 
-            return new HandlerProfile(types, readsEverything: false);
+            return new HandlerProfile(aggregateType, handledNames, isOpen);
+        }
+
+        private static bool BindsApply(Type aggregateType, Type eventType)
+        {
+            try
+            {
+                return aggregateType.GetMethod(ApplyMethodName, [eventType]) is not null
+                       || aggregateType.GetMethod(ApplyMethodName, [typeof(IEvent<>).MakeGenericType(eventType)]) is not null;
+            }
+            catch (AmbiguousMatchException)
+            {
+                return true;
+            }
         }
 
         private static Type PayloadTypeOf(Type parameterType) =>
@@ -135,13 +192,17 @@ internal sealed class AggregateEventSelector(ITrustedTypeResolver typeResolver, 
                 ? parameterType.GetGenericArguments()[0]
                 : parameterType;
 
-        private static bool BindsOnlyItself(Type type) =>
-            type is { IsGenericType: false, IsGenericParameter: false, IsByRef: false, IsPointer: false, IsArray: false, IsPrimitive: false }
-            && (type.IsValueType || type is { IsClass: true, IsSealed: true });
+        private static bool TakesOtherTypes(Type handledType) =>
+            handledType.IsInterface
+            || handledType.IsAbstract
+            || handledType.IsGenericType
+            || handledType.IsGenericParameter
+            || handledType == typeof(object);
 
-        private static bool IsRegistered(Type type, ITrustedTypeResolver resolver) =>
-            type.AssemblyQualifiedName is { } name
-            && resolver.TryResolve(name, out var resolved)
-            && resolved == type;
+        private static string TypeNameOf(string recordedName)
+        {
+            var separator = recordedName.IndexOf(',');
+            return (separator < 0 ? recordedName : recordedName[..separator]).Trim();
+        }
     }
 }

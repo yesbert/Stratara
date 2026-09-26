@@ -14,7 +14,8 @@ public static class EventSourcingServiceCollectionExtensions
     /// Registers the core event-sourcing services as scoped: <see cref="IEventSource"/>,
     /// <see cref="IAggregationService"/>, <see cref="IChangeSetHandler"/>, <see cref="IEventTypeResolver"/>,
     /// and <see cref="ISnapshotService"/>. Also contributes the default
-    /// <see cref="VersionThresholdSnapshotStrategy"/> via <c>TryAddSingleton</c>.
+    /// <see cref="VersionThresholdSnapshotStrategy"/> via <c>TryAddSingleton</c>, and the default
+    /// event-upcaster pipeline and trusted-type resolver where none is registered.
     /// </summary>
     /// <remarks>
     /// To control the snapshot cadence — vary it per aggregate type, change the threshold, or
@@ -45,6 +46,8 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IEventTypeResolver, EventTypeResolver>();
         services.AddScoped<ISnapshotService, SnapshotService>();
         services.TryAddSingleton<AggregateEventSelector>();
+        services.AddEventUpcasterPipeline();
+        services.AddTrustedTypeResolver();
         services.TryAddSingleton<ISnapshotStrategy, VersionThresholdSnapshotStrategy>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AggregateSnapshotShapeGuard>());
         return services;

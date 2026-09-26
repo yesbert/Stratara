@@ -31,8 +31,9 @@ See `proposal.md`, section Why. The relevant code, as of 4.3.1:
 
 - Rebuilding an aggregate never resolves, deserializes or decrypts an event the aggregate does not
   handle.
-- No event the aggregate might apply is ever skipped without a trace. Where that cannot be decided,
-  rebuilding reads everything, exactly as today.
+- No event the aggregate might apply is skipped without a trace. For a type that resolves, the
+  decision is the dispatcher's own. For one that does not, it is read where it could be handled, and
+  otherwise the skip is logged.
 - No public surface changes, so the fix can ship as a patch.
 
 **Non-Goals:**
@@ -46,9 +47,11 @@ See `proposal.md`, section Why. The relevant code, as of 4.3.1:
   failure before the commit. With this change reading no longer depends on registration for an
   unhandled event, and the check would turn every append of a type the host never reads into a
   failure.
-- Logging a skipped event. Skipping is the normal case for every aggregate that ignores a fact. The
-  dispatcher skips silently today, and a log line per skipped event would be noise.
-- Changing what `AddAggregatesFromAssemblyContaining<T>` registers.
+- Logging the skip of an event whose type resolves. Skipping is the normal case for every aggregate
+  that ignores a fact, and the dispatcher skips such events silently today. Only an unresolvable skip
+  is logged, once per host, aggregate type and name.
+- Registering more than the payload types of the handlers. Discovery changes only in unwrapping
+  `IEvent<TEvent>`.
 
 ## Decisions
 
@@ -67,8 +70,8 @@ owner chose the general fix on 2026-09-26, when asked between the two.
 read path. Skipping there would turn the allowlist's loud failure into silence for projections, sagas
 and the bus, and the mapper does not know which aggregate is reading.
 
-*Alternative rejected: a new `IEventMapperFactory` overload that takes a predicate.* It would upcast
-once instead of twice (see Risks). But it is new public surface on an interface consumers can
+*Alternative rejected: a new `IEventMapperFactory` overload that takes a predicate.* It would save
+the one extra upcast per recorded name (see Risks). But it is new public surface on an interface consumers can
 implement, which makes this a minor release, and a patch should carry the fix. It remains the natural
 shape if the projection follow-up needs the same selection.
 
@@ -80,80 +83,96 @@ Evidence: the implementation (`AggregationService.cs:48`, `EventMapperFactory.cs
 reported stack trace, which runs from `AggregationService.AggregateAsync` through
 `EventMapperFactory.MapToEventAsync` to `TrustedTypeResolver.Resolve`.
 
-### A handler index per aggregate type, and a read-everything fallback
+### For a type that resolves, ask the dispatcher's question
 
-For each aggregate type, the selector builds a profile once and caches it in the singleton. It
-collects every public method named `Apply` with one parameter, instance or static, which is what the
-dispatcher binds. Each parameter type is unwrapped from `IEvent<T>` to `T`. The resulting set is the
-aggregate's handled types.
+For an entry whose type resolves after upcasting, the selector asks exactly what `EventStream` asks
+when it applies an event. That is `aggregateType.GetMethod("Apply", [T])`, then the same call for
+`IEvent<T>`, and the entry is read when either binds. No approximation of the binder is involved:
+assignability, covariance of `IEvent<out T>`, interfaces, base classes and static handlers bind in
+the selector exactly as they do in the dispatcher. An `AmbiguousMatchException` counts as binding, so
+the dispatcher fails as it did before. The answer is cached per aggregate type and event type.
 
-The profile falls back to **read everything**, which is today's behaviour, when any of these holds:
+*Alternative rejected, and the first version of this change: a set of handled types, with a
+read-everything fallback for any handler that is not a sealed class or a struct.* An independent
+review pointed out that a plain `public record` is unsealed. For a consumer following common C# style
+rather than this repository's convention, the fallback applied and the reported failure stayed.
+Asking the dispatcher's question is both exact and simpler.
 
-- a handled type is not a sealed class or a struct: an interface, an abstract or unsealed class,
-  `object`, or the non-generic `IEvent`. The dispatcher's assignable binding would hand such a
-  handler events of other types.
-- a handled type is generic, or an `Apply` is a generic method definition.
-- a handled type does not resolve through `ITrustedTypeResolver` to itself. This means the aggregate
-  was registered by some route other than discovery. An unresolvable recorded name could then be a
-  type it handles.
+Evidence: the dispatcher (`EventStream.cs`, `CreateApplyDelegate`), and the unit tests that pin an
+interface handler, an unsealed record with a registered subtype, an enveloped handler and a static
+handler.
 
-The cache is safe to keep for the host's life. Registrations are only ever added, so a profile that
-falls back cannot later become wrong, and a profile that selects can only have been built after its
-handled types were registered.
+### For a type that does not resolve, keep what could be handled, and warn about the rest
 
-*Alternative rejected: select on the recorded name alone, with no fallback.* An aggregate handling
-an interface would silently lose every event whose type is registered under another name. The
-convention is sealed records (`openspec/config.yaml`), but the framework must not corrupt state for a
-consumer that departs from it.
+An unresolvable entry cannot be asked about. It is read, and therefore fails in the mapper as an
+unregistered type does, when:
 
-Evidence: the implementation of the dispatcher (`EventStream.cs`, `CreateApplyDelegate`), and the
-convention in `openspec/config.yaml`: *Events are immutable sealed records*.
+1. its type name, without namespace or assembly, is the `Name` of a type an `Apply` takes, after
+   unwrapping `IEvent<T>`. This covers a handled type moved to another namespace, nested differently,
+   or moved to another assembly, which are the refactorings that most often forget an upcaster. It
+   also covers a handled type that is not registered at all, because the aggregate was registered some
+   other way than by discovery.
+2. the aggregate is open: an `Apply` takes an interface, an abstract class, `object` or a generic type,
+   or is itself generic. Any unregistered type could then be one it applies.
 
-### The decision for one entry
+A recorded name with a generic argument list is always kept. Every other unresolvable entry is
+skipped, and the first skip per aggregate type and recorded name is logged at Warning
+(`LogEvents.EventStore.UnresolvableEventSkipped`, 102_004), naming both and saying how to register or
+upcast the type, or how to acknowledge the skip by registering it.
 
-For an aggregate whose profile selects, an entry is read when:
+*Why a warning and not silence:* the review showed that the first version dropped a renamed handled
+event silently where the old code failed loudly, and that a due snapshot would then persist the
+wrong state. The name rule restores the loud failure for namespace and assembly moves. For a type
+renamed without an upcaster no rule can tell, so the warning leaves the trace. A legitimately
+unhandled event is acknowledged by registering its type, after which it resolves and is skipped
+without a word.
 
-1. its recorded name resolves to a handled type. It is kept without running the upcasters here,
-   because the mapper upcasts it as before.
-2. Otherwise the upcaster pipeline gives its effective name. If that resolves, the entry is kept
-   exactly when the resolved type is handled.
-3. If the effective name does not resolve, the entry is kept, and therefore fails in the mapper as
-   today, when its type part (the name before the first comma) equals the full name of a handled
-   type. That is the moved-assembly case. Every other unresolvable entry is skipped.
+### Decisions are made once per recorded name
 
-Step 3's plain split at the first comma is enough. Handled types in a selecting profile are never
-generic, so a generic recorded name can equal no handled full name however it is split. The
-version-independent normalisation in `Stratara.Abstractions` is internal, and none of it is needed
-here.
+The upcasters chain by type name, so everything above depends on the recorded name alone. The
+profile caches the decision per recorded name, as the Orleans saga reader already caches its
+relevance check. Registrations are only ever added, so a cached decision cannot become unsafe. It can
+at worst stay a "read" after a later registration would have allowed a skip.
 
-Evidence: `EventUpcasterPipeline.Upcast` returns its inputs unchanged, without parsing, when no
-upcaster matches (`src/Stratara.Abstractions/Abstractions/EventSourcing/EventUpcasterPipeline.cs`).
+### Only beside the framework's mapper
+
+The selector selects only when the registered `IEventMapperFactory` is `EventMapperFactory`. A
+replaced mapper may resolve names through rules the selector does not know, such as an alias map, so
+beside one every entry is read, as before.
 
 ### Wiring
 
-`AddEventSourcing()` registers the selector with `TryAddSingleton`. Its dependencies,
-`ITrustedTypeResolver` and `IEventUpcasterPipeline`, are already required wherever the rehydration
-paths resolve: `SnapshotService` takes the resolver, and `EventMapperFactory` takes the pipeline.
+`AddEventSourcing()` registers the selector with `TryAddSingleton`. It also calls
+`AddEventUpcasterPipeline()` and `AddTrustedTypeResolver()`, both idempotent, so a host that brings its
+own mapper and never calls `AddMapping` still resolves `IAggregationService`. The logger is optional,
+as it is for `SecureJsonSerializer`, because a bare composition without logging must keep working.
 `AggregationService` and `SnapshotService` gain the selector as a constructor parameter. Both are
 internal, so no public signature changes.
 
+### Discovery trusts the payload of an enveloped handler
+
+`AddAggregatesFromAssemblyContaining<T>` and `AddDomainEventTypesFromAssemblyContaining<T>` used to
+register the parameter type of `Apply(IEvent<TEvent>)`, which is `IEvent<TEvent>`. No recorded event
+names that type. They now register `TEvent`. The review found this while checking the name rule. It
+is a separate, pre-existing gap: an aggregate whose only handler for an event took the envelope could
+not rebuild its stream unless something else registered the payload.
+
 ## Risks / Trade-offs
 
-- [An upcast entry the aggregate does not handle directly is upcast twice: once to decide, once in
-  the mapper.] → Only entries with a matching upcaster pay, and those are old events, which snapshots
-  keep out of most rebuilds. With no upcaster registered the pipeline returns at once. The predicate
-  overload that would remove the cost is the rejected public-surface alternative above.
+- [A handled type renamed without an upcaster is skipped with a warning instead of failing the
+  rebuild, and a due snapshot keeps the resulting state.] → Namespace, nesting and assembly moves keep
+  the name and still fail loudly. A pure rename leaves a Warning per host, aggregate and name. The
+  upgrade note says so.
+- [A legitimately unhandled, unregistered event logs one Warning per host, aggregate type and event
+  type.] → Registering the type acknowledges it, and the message says how.
+- [An upcast entry is upcast once more to decide than it would be to map.] → Once per recorded name
+  and aggregate type, not per entry. With no upcaster registered, the pipeline returns at once.
+- [A throwing upcaster on an unhandled event still fails the rebuild.] → As it did before. The
+  requirement promises that the skipped event's type is not resolved and its payload not decrypted;
+  running the upcasters to learn its type is neither.
 - [A consumer relies on the rebuild failing as a check that every type in a stream is registered.] →
-  That was never a documented guarantee, and it held only for unhandled events. Handled types stay
-  registered by discovery, and every other read path still enforces the allowlist.
-- [The profile misjudges what the dispatcher binds, and an event the aggregate would apply is
-  skipped.] → The profile collects a superset of what `GetMethod` can bind. Any doubt about
-  assignability falls back to reading everything. Unit tests pin one case each: an interface handler,
-  an unsealed record, `IEvent<T>` unwrapping, a static `Apply`, and an aggregate registered without
-  discovery.
-- [A type registered after the host started.] → Registrations only grow, and a profile built before a
-  registration falls back to reading everything. This is safe, and at worst it is today's behaviour
-  until restart.
+  That was never a documented guarantee, and it held only for unhandled events. Every other read path
+  still enforces the allowlist.
 
 ## Migration Plan
 

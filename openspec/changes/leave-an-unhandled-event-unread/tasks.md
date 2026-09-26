@@ -13,9 +13,9 @@
   as `SnapshotTypeIsolationTests` does. Save a handled event together with an unregistered, unhandled
   one. Assert that the save succeeds, that a snapshot exists, and that the aggregate rebuilds from it.
 - [x] 1.4 In the same file, the erased-key case: an unhandled event declared `[EncryptData]` at class
-  level, whose tenant scope is erased through the test key store's `EraseScopeAsync` after the save,
-  while the handled events carry no encrypted data. Assert the stream rebuilds. Confirm it fails
-  against the unchanged code.
+  level, whose key is destroyed through the test key store after the save (`RevokeAsync` on the key id
+  in its payload), while the handled events carry no encrypted data. Assert the stream rebuilds.
+  Confirm it fails against the unchanged code.
 
 ## 2. The selector
 
@@ -65,7 +65,33 @@
 - [x] 4.4 Add the entry to `CHANGELOG.md` under Unreleased as a fix. Name the failure message a
   consumer may have seen.
 
-## 5. Gate
+## 5. Review follow-ups
 
-- [x] 5.1 `openspec validate leave-an-unhandled-event-unread --strict`
-- [x] 5.2 `./scripts/local-gauntlet.sh`
+Copilot could not review the pull request (the requester's quota was exhausted), so an independent
+review ran instead. What it found, and what was done:
+
+- [x] 5.1 A handled type moved to another namespace was skipped silently where it used to fail. Keep
+  an unresolvable entry whose name, without namespace or assembly, is the name of a handled type. Log
+  every other unresolvable skip once per aggregate type and name (`LogEvents.EventStore.UnresolvableEventSkipped`).
+  Covered by `AggregateEventSelectorTests` (moved and nested names kept, warning once) and
+  `UnhandledEventRehydrationTests.A_handled_event_recorded_under_another_namespace_fails_the_rebuild_naming_it`.
+- [x] 5.2 The first version read every event for any handler of an unsealed type, so a consumer with
+  plain `public record` events kept the reported failure. For a resolvable type, ask the dispatcher's
+  own `GetMethod` question. Only open aggregates (interface, abstract, `object`, generic) keep every
+  unresolvable entry. Covered by `A_handler_taking_an_unsealed_record_takes_its_registered_subtypes_only`,
+  `A_handler_taking_an_interface_takes_its_implementations_and_keeps_every_unresolvable_entry`, and the
+  unsealed `CustomerOpened` in the store-backed tests.
+- [x] 5.3 A replaced `IEventMapperFactory` may resolve names the selector cannot. Select only beside
+  `EventMapperFactory`. Covered by `Beside_a_replaced_mapper_every_entry_is_read`.
+- [x] 5.4 `AddEventSourcing()` also calls `AddEventUpcasterPipeline()` and `AddTrustedTypeResolver()`,
+  and the selector's logger is optional, as `SecureJsonSerializer`'s is.
+- [x] 5.5 Discovery registered `IEvent<TEvent>` instead of `TEvent` for an enveloped handler. Unwrap it
+  in `TrustedTypeResolverServiceCollectionExtensions`. Covered by
+  `Discovery_trusts_the_payload_of_a_handler_taking_the_enveloped_event`.
+- [x] 5.6 Decide once per recorded name and aggregate type. Covered by `A_recorded_name_is_decided_once`.
+- [x] 5.7 Align the spec delta, design, proposal and documentation with 5.1–5.6.
+
+## 6. Gate
+
+- [x] 6.1 `openspec validate leave-an-unhandled-event-unread --strict`
+- [x] 6.2 `./scripts/local-gauntlet.sh`
