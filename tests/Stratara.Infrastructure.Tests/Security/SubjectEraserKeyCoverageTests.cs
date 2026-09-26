@@ -12,9 +12,9 @@ namespace Stratara.Infrastructure.Tests.Security;
 
 /// <summary>
 /// <c>tenant-directory</c> → a subject's erasure removes its key material, so data encrypted under its keys becomes
-/// unrecoverable. The serializer names a key by level, tenant and user together, so a subject's key material is every
-/// scope that names it — at either isolating level, with or without the other dimension. Each test encrypts a value
-/// the way an event's payload is encrypted, erases a subject, and reads the value back.
+/// unrecoverable. The serializer names a key by level, tenant and user together, and the level decides whose erasure
+/// a value dies with: every level is the tenant's, the user level alone is the user's. Each test encrypts a value the
+/// way an event's payload is encrypted, reads it back once as a control, erases a subject, and reads it again.
 /// </summary>
 public class SubjectEraserKeyCoverageTests
 {
@@ -31,6 +31,12 @@ public class SubjectEraserKeyCoverageTests
     private sealed class TenantLevelNote
     {
         [EncryptData(DataSensitivityLevel.TenantScoped)]
+        public string? Text { get; set; }
+    }
+
+    private sealed class ConfidentialNote
+    {
+        [EncryptData(DataSensitivityLevel.Confidential)]
         public string? Text { get; set; }
     }
 
@@ -59,6 +65,7 @@ public class SubjectEraserKeyCoverageTests
             {
                 DefaultLevelNote n => n.Text,
                 TenantLevelNote n => n.Text,
+                ConfidentialNote n => n.Text,
                 _ => null
             };
     }
@@ -78,6 +85,7 @@ public class SubjectEraserKeyCoverageTests
         var f = new Fixture();
         var json = await f.WriteAsync(new DefaultLevelNote { Text = "secret" }, Tenant, null);
         var elsewhere = await f.WriteAsync(new DefaultLevelNote { Text = "kept" }, OtherTenant, null);
+        Assert.Equal("secret", await f.ReadAsync<DefaultLevelNote>(json, Tenant, null));
 
         await f.Eraser().EraseTenantAsync(Tenant);
 
@@ -91,23 +99,40 @@ public class SubjectEraserKeyCoverageTests
         var f = new Fixture();
         await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
         var json = await f.WriteAsync(new TenantLevelNote { Text = "secret" }, Tenant, Member);
+        Assert.Equal("secret", await f.ReadAsync<TenantLevelNote>(json, Tenant, Member));
 
         await f.Eraser().EraseTenantAsync(Tenant);
 
         Assert.Null(await f.ReadAsync<TenantLevelNote>(json, Tenant, Member));
     }
 
+    /// <summary>The serializer binds every value to a tenant, the confidential level included.</summary>
     [Fact]
-    public async Task A_users_erasure_reaches_a_tenant_level_value_written_for_that_user()
+    public async Task A_tenants_erasure_reaches_a_confidential_value_written_for_it()
+    {
+        var f = new Fixture();
+        var json = await f.WriteAsync(new ConfidentialNote { Text = "secret" }, Tenant, null);
+        var elsewhere = await f.WriteAsync(new ConfidentialNote { Text = "kept" }, OtherTenant, null);
+        Assert.Equal("secret", await f.ReadAsync<ConfidentialNote>(json, Tenant, null));
+
+        await f.Eraser().EraseTenantAsync(Tenant);
+
+        Assert.Null(await f.ReadAsync<ConfidentialNote>(json, Tenant, null));
+        Assert.Equal("kept", await f.ReadAsync<ConfidentialNote>(elsewhere, OtherTenant, null));
+    }
+
+    [Fact]
+    public async Task A_users_erasure_reaches_their_user_level_values_and_leaves_tenant_level_ones_to_the_tenant()
     {
         var f = new Fixture();
         await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
-        var json = await f.WriteAsync(new TenantLevelNote { Text = "secret" }, Tenant, Member);
-        var tenantWide = await f.WriteAsync(new TenantLevelNote { Text = "kept" }, Tenant, null);
+        var userLevel = await f.WriteAsync(new DefaultLevelNote { Text = "secret" }, Tenant, Member);
+        var tenantLevel = await f.WriteAsync(new TenantLevelNote { Text = "kept" }, Tenant, Member);
+        Assert.Equal("secret", await f.ReadAsync<DefaultLevelNote>(userLevel, Tenant, Member));
 
         await f.Eraser().EraseUserAsync(Member);
 
-        Assert.Null(await f.ReadAsync<TenantLevelNote>(json, Tenant, Member));
-        Assert.Equal("kept", await f.ReadAsync<TenantLevelNote>(tenantWide, Tenant, null));
+        Assert.Null(await f.ReadAsync<DefaultLevelNote>(userLevel, Tenant, Member));
+        Assert.Equal("kept", await f.ReadAsync<TenantLevelNote>(tenantLevel, Tenant, Member));
     }
 }
