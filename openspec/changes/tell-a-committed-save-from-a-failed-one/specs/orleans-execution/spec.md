@@ -532,18 +532,6 @@ its field, its message as the validator wrote it and its code, so that a caller 
 field to correct; the value a field was given SHALL NOT cross, and the exception's own message SHALL
 NOT repeat the failures, because exception messages are logged.
 
-A call to a grain that its caller cancels SHALL report what the grain did — its outcome where it
-committed, the cancellation where it stopped before — and SHALL end at the response timeout where the
-grain does not answer, so that a step that committed is not run again because its caller stopped. The
-registrations of the execution model SHALL arrange this for every grain call of the host that carries a
-cancellation, and the documentation SHALL say so.
-
-#### Scenario: A call is cancelled while its grain commits
-
-- **WHEN** a grain call is cancelled by its caller while the grain it called is committing
-- **THEN** the caller receives the grain's outcome rather than a cancellation — verified on a silo with
-  localhost clustering, where the same call without the registrations reports a cancellation
-
 #### Scenario: A handler on another silo reports a conflict
 
 - **WHEN** a command forwarded to an aggregate on another silo fails with a concurrency conflict
@@ -563,3 +551,19 @@ cancellation, and the documentation SHALL say so.
 - **WHEN** a command forwarded to another silo fails because its save committed but could not
   publish
 - **THEN** the caller receives that failure with its type, so nothing runs the command again
+
+### Requirement: A cancelled grain call reports what the grain did
+
+A call to a grain that its caller cancels SHALL report what the grain did — its outcome where it
+committed, the cancellation where it stopped before — so that a step that committed is not run again
+because its caller stopped; where the grain does not answer, the call SHALL end at the latest at the
+response timeout. The registrations of the execution model SHALL arrange this for every grain call of
+the host that carries a cancellation, and the documentation SHALL say so.
+
+#### Scenario: A call is cancelled while its grain commits
+
+- **WHEN** a grain call is cancelled by its caller while the grain it called is committing
+- **THEN** the caller receives the grain's outcome rather than a cancellation — verified from within
+  one silo on localhost clustering, where the same call without the registrations reports a
+  cancellation; calls between silos and from a client take the same path in the runtime and are not
+  exercised separately

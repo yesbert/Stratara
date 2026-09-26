@@ -29,7 +29,7 @@ public sealed class CommittingGrain : Grain, ICommittingGrain
 /// <summary>
 /// A grain call cancelled while its callee commits reports what the callee did — the framework's registrations have
 /// the caller wait for the callee's answer — where Orleans on its own would report a cancellation at once, and a saga
-/// step, command or timer handler that committed would look cancelled and run again. On a silo of its own, on
+/// step called by a stopping timer tick or saga reader that committed would look cancelled and run again. On a silo of its own, on
 /// localhost clustering.
 /// </summary>
 public sealed class CancelledCallOutcomeTests

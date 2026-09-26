@@ -159,9 +159,9 @@ stopped would then look cancelled, and would run again. The execution model's re
 (`AddStrataraOrleans`, `AddStrataraOrleansCommandDispatcher`, `AddStrataraAggregateGrains`) set
 `MessagingOptions.WaitForCancellationAcknowledgement` for the silo and the client, so a cancelled call waits
 for the callee's answer: the cancellation still reaches the callee, a callee that stops before it commits
-answers with it, one that has committed answers with its outcome, and one that does not answer — blocked,
-or on a silo that went away — ends the call with a `TimeoutException` at the response timeout rather than
-at once. The setting is the host's for every grain call that carries a token, the host's own included — a
+answers with it, one that has committed answers with its outcome, and one that does not answer ends the
+call with a `TimeoutException` at the response timeout — or with a `SiloUnavailableException` once its silo
+is declared dead, whichever comes first — rather than at once. The setting is the host's for every grain call that carries a token, the host's own included — a
 call made with a web request's abort token, for instance, now waits for its grain's answer; calls without
 a token are unaffected. A host that sets it back after these registrations gives that guarantee up.
 

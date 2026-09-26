@@ -19,7 +19,7 @@ public static class StrataraOrleansSiloBuilderExtensions
     /// <remarks>
     /// <para>
     /// Sets <c>MessagingOptions.WaitForCancellationAcknowledgement</c> for the silo and the client: a grain call of the
-    /// host whose token is cancelled waits for its grain's answer — or for the response timeout — instead of ending at
+    /// host whose token is cancelled waits for its grain's answer — at the latest until the response timeout — instead of ending at
     /// once, so a step that committed is not reported as cancelled.
     /// </para>
     /// </remarks>

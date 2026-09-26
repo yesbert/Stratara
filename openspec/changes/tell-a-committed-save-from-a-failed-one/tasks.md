@@ -207,8 +207,10 @@
   `SagaProcessGrain` passes the step's token to that call again, swallowing its cancellation (the owner check drops
   the timers of a completed process). The documentation no longer claims forwarded commands or timer handlers are
   affected — their calls carry no token — and says a callee that does not answer ends the call at the response
-  timeout; the three registrations' XML remarks, the cheatsheet and the `orleans-execution` delta (a requirement
-  paragraph and the scenario `CancelledCallOutcomeTests` verifies) state the host-wide change.
+  timeout; the three registrations' XML remarks, the cheatsheet and the `orleans-execution` delta (the requirement
+  *A cancelled grain call reports what the grain did*, with the scenario `CancelledCallOutcomeTests` verifies)
+  state the host-wide change. The last review of the round found no code defect; the wording now says a call to an
+  unanswering grain ends at the latest at the response timeout, sooner once its silo is declared dead.
 
 ## 3. Documentation
 
