@@ -9,7 +9,7 @@ with nothing staged SHALL write and publish nothing.
 Where the events were committed but their bundle could not be handed on, the save SHALL fail with a
 failure of its own that says the events are committed and names their streams — whatever ended the
 handover, a cancellation included. On the stores the framework provides, a cancellation SHALL be
-honoured while the save's changes are written, which leaves nothing behind, and a commit once begun
+honoured while the save's events are written, which leaves none of them behind, and a commit once begun
 SHALL run to its end, so that a save the store committed is never reported as cancelled. A
 cancellation requested after the commit SHALL NOT keep the bundle from being published: where the bus
 does not take it before the cancellation, the framework's outbox SHALL record it for later

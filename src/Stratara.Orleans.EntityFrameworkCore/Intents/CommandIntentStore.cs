@@ -11,7 +11,9 @@ namespace Stratara.Orleans.EntityFrameworkCore.Intents;
 /// <summary>
 /// The command-intent bookkeeping in the write store's outbox table: a recorded command is an outbox
 /// entry of the execution model's own record type, and its resume bookkeeping is the entry's attempt and conflict counts,
-/// hand-over time, last failure and kept state. Every operation is one statement on a context of its own.
+/// hand-over time, last failure and kept state. Every operation is one statement on a context of its own. A statement that
+/// changes a record runs to its end whatever the caller's cancellation says: one the store committed but reported as
+/// cancelled would record a command twice, or spend an attempt on a hand-over that never happened.
 /// </summary>
 /// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> contextFactory, TimeProvider timeProvider) : ICommandIntentStore
@@ -42,7 +44,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             AggregateId = aggregateId,
             Heavy = heavy,
         });
-        await context.SaveChangesAsync(cancellationToken);
+        await context.SaveChangesAsync(CancellationToken.None);
     }
 
     public async Task<IReadOnlyList<RecordedIntent>> GetDueAsync(DateTimeOffset handedOverBefore, int batchSize, CancellationToken cancellationToken)
@@ -85,7 +87,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             set => set
                 .SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now)
                 .SetProperty(e => e.AttemptCount, e => e.AttemptCount + 1),
-            cancellationToken);
+            CancellationToken.None);
         return claimed == 1;
     }
 
@@ -122,12 +124,12 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             set => set
                 .SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)stamp)
                 .SetProperty(e => e.AttemptCount, e => e.AttemptCount + 1),
-            cancellationToken);
+            CancellationToken.None);
 
         return await context.Set<OutboxEntry>().AsNoTracking()
             .Where(e => ids.Contains(e.Id) && e.LastHandedOverAt == stamp)
             .Select(e => e.Id)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(CancellationToken.None);
     }
 
     public async Task RenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken)
@@ -135,7 +137,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.KeptAt == null)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), CancellationToken.None);
     }
 
     /// <summary>
@@ -149,7 +151,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var renewed = await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.KeptAt == null && e.LastHandedOverAt == claimedAt)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)renewal), cancellationToken);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)renewal), CancellationToken.None);
         return renewed == 1;
     }
 
@@ -158,7 +160,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var renewed = await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.KeptAt == null)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), CancellationToken.None);
         return renewed == 1;
     }
 
@@ -168,7 +170,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastFailure, recorded), cancellationToken);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastFailure, recorded), CancellationToken.None);
     }
 
     public async Task RecordConflictAsync(Guid intentId, string failure, CancellationToken cancellationToken)
@@ -182,7 +184,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
                     .SetProperty(e => e.LastFailure, recorded)
                     .SetProperty(e => e.ConflictCount, e => e.ConflictCount + 1)
                     .SetProperty(e => e.AttemptCount, e => e.AttemptCount > 0 ? e.AttemptCount - 1 : 0),
-                cancellationToken);
+                CancellationToken.None);
     }
 
     public async Task ReturnAttemptAsync(Guid intentId, CancellationToken cancellationToken)
@@ -190,7 +192,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.AttemptCount > 0)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.AttemptCount, e => e.AttemptCount - 1), cancellationToken);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.AttemptCount, e => e.AttemptCount - 1), CancellationToken.None);
     }
 
     private static string Truncate(string failure)
@@ -204,7 +206,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.KeptAt == null)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.KeptAt, (DateTimeOffset?)now), cancellationToken);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.KeptAt, (DateTimeOffset?)now), CancellationToken.None);
     }
 }
 

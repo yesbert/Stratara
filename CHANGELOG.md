@@ -62,15 +62,18 @@ applies to the entire NuGet family.
   be acknowledged may report the cancellation after the database committed, so a stop that landed
   there had a committed save look cancelled — and a transport, a store reader or a resumed command then
   ran it again and recorded the same facts twice. The new `CommitCompletionInterceptor` lets a commit
-  run to its end whatever the cancellation says, while a cancellation during the writes still leaves
-  nothing behind, and gives a single-statement save a transaction so it has a commit to protect. The
-  framework adds it to every context it registers. On a write context a host registered itself without
-  it, the framework's unit of work saves without the caller's token, so the save runs to its end whole;
-  such a host adds the interceptor — the Orleans execution model on a store other than PostgreSQL,
-  beside `PartitionCounterInterceptor`, last among its transaction interceptors — to keep the writes
-  cancellable. The Orleans commit-order interceptor commits without the token and releases its
-  transaction when a save is cancelled or fails as a concurrency conflict (either left it open, and the
-  context's next save ran inside it); a saga step no longer fails after its save committed — a failure to reread its state or
+  run to its end whatever the cancellation says, while a cancellation during the writes still leaves none
+  of them committed, and gives a single-statement save a transaction so it has a commit to protect. The
+  framework adds it to every context it registers. On a context a host registered itself without it —
+  write or read — the framework's unit of work saves without the caller's token, so the save runs to its
+  end whole, bounded by the connection's pool wait and command timeout rather than the caller. Such a
+  host adds the interceptor — the Orleans execution model on a store other than PostgreSQL, to its write
+  and read contexts, beside `PartitionCounterInterceptor`, last among the transaction interceptors — which
+  also covers the execution model's own checkpoint saves on those contexts. The recorded-command store
+  runs every statement that changes a record to its end, so a recorded command is never recorded twice and
+  a claim never spends an attempt on a hand-over that did not happen. The Orleans commit-order interceptor
+  commits without the token and releases its transaction when a save is cancelled (a cancelled append left
+  it open, and the context's next save ran inside it); a saga step no longer fails after its save committed — a failure to reread its state or
   cancel its timers is logged (`LogEvents.Orleans.SagaStepAftermathFailed`, `117_130`); and the
   event-bundle dispatcher records a bundle whose publication a cancellation cut short instead of losing
   it.

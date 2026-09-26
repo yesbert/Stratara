@@ -166,11 +166,21 @@
   and, where it does not, saves without the caller's token, so that save runs to its end whole
   (`CommitCompletionInterceptorTests.The_unit_of_work_saves_whole_on_a_context_without_the_interceptor`,
   `…honours_a_cancellation_during_the_writes_on_a_context_with_the_interceptor`); `PartitionCounterInterceptor`
-  also releases its transaction on a concurrency conflict, which EF reports to `ThrowingConcurrencyExceptionAsync`
-  only (`PartitionCounterCancelledSaveTests.An_append_that_fails_as_a_concurrency_conflict_leaves_no_transaction_open`,
-  red without the override); `SagaProcessGrain` swallows a failure to cancel its timers only when its step
+  released its transaction on a concurrency conflict too (reverted in round 15, 2b.19); `SagaProcessGrain` swallows a failure to cancel its timers only when its step
   committed; the interceptor's documentation names what a retrying execution strategy does to a commit whose
   acknowledgement was lost.
+
+- [x] 2b.19 Round 15 of the review: releasing the partition counter's transaction on a concurrency conflict rolled it
+  back while Npgsql's reader was still open, which turned a conflict into a plain store failure — reverted; the
+  framework's appends are inserts and cannot raise that conflict. `CommandIntentStore` runs every statement that
+  changes a record — the record, the claims, the renewals, the returned attempt, the kept mark — to its end, so a
+  committed record reported as cancelled no longer has the caller dispatch the command again, nor a claim spend an
+  attempt (`CommandIntentStore`, `CancellationToken.None` at each such statement; the window is a single statement's
+  acknowledgement and not reproducible on SQLite). `UnitOfWork<TDbContext>` treats a context whose
+  `AutoTransactionBehavior` is `Never` as not covered, and documents the fallback and what bounds it; the guide
+  adds the interceptor to the read context as well; the spec and the CHANGELOG say a cancelled save leaves none of
+  its events behind — a snapshot written before them is change `write-a-snapshot-only-of-committed-events`' to
+  move, and `design.md` says so.
 
 ## 3. Documentation
 

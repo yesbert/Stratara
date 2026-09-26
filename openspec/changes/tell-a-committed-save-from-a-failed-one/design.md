@@ -1,7 +1,9 @@
 ## Context
 
-`EventSource.SaveChangesAsync` prepares the bundle, commits entries, snapshots and (durable mode) the
-bundle row in one transaction, then calls `IEventBundleOutboxDispatcher.EnqueueEventBundleAsync`. In
+`EventSource.SaveChangesAsync` prepares the bundle, commits the entries and (durable mode) the bundle row in one
+transaction — a snapshot is written in a transaction of its own before them, which change
+`write-a-snapshot-only-of-committed-events` moves after the commit — then calls
+`IEventBundleOutboxDispatcher.EnqueueEventBundleAsync`. In
 non-durable mode the outbox dispatcher tries the bus and falls back to an
 outbox row in a separate transaction; a failure of that write propagates. The transports redeliver
 any handler failure except a concurrency conflict, and the Orleans drain resumes a recorded command

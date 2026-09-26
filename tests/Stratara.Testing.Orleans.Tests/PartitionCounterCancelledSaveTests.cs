@@ -68,30 +68,6 @@ public sealed class PartitionCounterCancelledSaveTests
         Assert.Equal(1, await context.Set<EventStreamEntry>().CountAsync(TestContext.Current.CancellationToken));
     }
 
-    /// <summary>
-    /// An append that fails as a concurrency conflict — it also updates a row that is not there — leaves no transaction
-    /// of the partition counter open either.
-    /// </summary>
-    [Fact]
-    public async Task An_append_that_fails_as_a_concurrency_conflict_leaves_no_transaction_open()
-    {
-        await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
-        await SeedAsync(connection);
-        var options = new DbContextOptionsBuilder<StrataraTestWriteDbContext>()
-            .UseSqlite(connection)
-            .ReplaceService<IModelCustomizer, SqliteTimeModelCustomizer>()
-            .AddInterceptors(new PartitionCounterInterceptor(Options.Create(new CommitOrderOptions { PartitionCount = PartitionCount })))
-            .Options;
-        await using var context = new StrataraTestWriteDbContext(options);
-
-        context.Set<EventStreamEntry>().Add(Entry());
-        context.Set<PartitionPosition>().Update(new PartitionPosition { Partition = PartitionCount + 1, Position = 1 });
-        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => context.SaveChangesAsync(TestContext.Current.CancellationToken));
-
-        Assert.Null(context.Database.CurrentTransaction);
-    }
-
     private static async Task SeedAsync(SqliteConnection connection)
     {
         await using var seeding = new StrataraTestWriteDbContext(new DbContextOptionsBuilder<StrataraTestWriteDbContext>()
