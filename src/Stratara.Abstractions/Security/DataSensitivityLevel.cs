@@ -8,10 +8,20 @@ public enum DataSensitivityLevel
 {
     /// <summary>Field is not encrypted at all.</summary>
     None,
-    /// <summary>Key is scoped to a specific user — DSGVO Art. 17 crypto-shred via user-key revocation.</summary>
+    /// <summary>
+    /// Key is scoped to the data owner's user within its tenant, or to the tenant alone when no user
+    /// is set. Shredded by the user's erasure and by the tenant's.
+    /// </summary>
     UserScoped,
-    /// <summary>Key is scoped to a tenant — all data of a tenant uses the same key.</summary>
+    /// <summary>
+    /// Key is scoped to the tenant, together with the data owner's user where one is set. Shredded by
+    /// the tenant's erasure; a user's erasure leaves it.
+    /// </summary>
     TenantScoped,
-    /// <summary>Key is scoped to a single Confidential tier — system-wide key, treated as the highest sensitivity.</summary>
+    /// <summary>
+    /// Highest sensitivity, claiming no per-subject isolation. Written with an empty tenant, it uses
+    /// one system-wide key that no erasure shreds; written for a tenant, it uses a key of that tenant,
+    /// shredded by the tenant's erasure.
+    /// </summary>
     Confidential
 }

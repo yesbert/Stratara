@@ -106,7 +106,7 @@ public class SubjectEraserKeyCoverageTests
         Assert.Null(await f.ReadAsync<TenantLevelNote>(json, Tenant, Member));
     }
 
-    /// <summary>The serializer binds every value to a tenant, the confidential level included.</summary>
+    /// <summary>A confidential value written for a tenant has a key naming that tenant, like any other level.</summary>
     [Fact]
     public async Task A_tenants_erasure_reaches_a_confidential_value_written_for_it()
     {

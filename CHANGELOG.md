@@ -105,7 +105,7 @@ write a second time.
     user. That is every such field of an event appended from an ordinary request, where the session's
     data-owner user is not set;
   - a tenant-level value written for a member;
-  - every `Confidential` value, which is bound to its tenant like any other.
+  - a `Confidential` value written for the tenant, whose key names the tenant like any other.
 
   A tenant's erasure now shreds every key naming the tenant, at every level, alone or with each of
   its members. A user's erasure is unchanged: it shreds the user's user-level keys, and tenant-level
