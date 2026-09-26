@@ -55,12 +55,6 @@ internal sealed class EventSource(
     /// </remarks>
     private readonly Dictionary<Guid, EventSubject> _streamSubjects = new();
 
-    /// <remarks>
-    /// Per-event explicit Subject override (set by AppendOnBehalfOfAsync), keyed by the event object
-    /// identity. Cleared after the entry is materialized.
-    /// </remarks>
-    private readonly Dictionary<object, EventSubject> _explicitSubjectOverrides = new(ReferenceEqualityComparer.Instance);
-
     /// <inheritdoc/>
     public async Task<bool> ExistsAsync(Guid streamId, CancellationToken cancellationToken = default)
     {
@@ -97,7 +91,7 @@ internal sealed class EventSource(
         }
 
         _streamVersions[streamId] = 0;
-        await AddEventsToStreamAsync<TAggregate>(streamId, events, cancellationToken);
+        await AddEventsToStreamAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -105,18 +99,9 @@ internal sealed class EventSource(
         where TAggregate : notnull, new() => AppendRangeAsync<TAggregate>(streamId, [@event], cancellationToken);
 
     /// <inheritdoc/>
-    public async Task AppendRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
-        CancellationToken cancellationToken = default) where TAggregate : notnull, new()
-    {
-        if (!_streamVersions.ContainsKey(streamId))
-        {
-            await using var transaction = await unitOfWork.StartAsync(cancellationToken);
-            var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
-            _streamVersions[streamId] = await eventStreamRepository.GetVersionOrDefaultAsync(streamId, cancellationToken);
-        }
-
-        await AddEventsToStreamAsync<TAggregate>(streamId, events, cancellationToken);
-    }
+    public Task AppendRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new() =>
+        AppendRangeCoreAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentException">
@@ -134,8 +119,7 @@ internal sealed class EventSource(
                 nameof(subject));
         }
 
-        _explicitSubjectOverrides[@event] = subject;
-        return AppendAsync<TAggregate>(streamId, @event, cancellationToken);
+        return AppendRangeCoreAsync<TAggregate>(streamId, [@event], subject, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -150,7 +134,24 @@ internal sealed class EventSource(
     /// registered it is misconfigured, which is not the same as a caller without an identity, so this
     /// is not a <see cref="SessionRequiredException"/>. Thrown before anything is written.
     /// </exception>
+    /// <remarks>
+    /// A save that fails for any reason discards the staged batch, as a successful one clears it: a
+    /// handler that runs again in the same scope then starts from what it appends anew, rather than
+    /// from a batch it has already staged once.
+    /// </remarks>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await PersistAndPublishAsync(cancellationToken);
+        }
+        finally
+        {
+            ClearBatchState();
+        }
+    }
+
+    private async Task PersistAndPublishAsync(CancellationToken cancellationToken)
     {
         var eventBundle = PrepareEventBundle();
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
@@ -173,7 +174,6 @@ internal sealed class EventSource(
             var streamId = firstEntry?.StreamId ?? Guid.Empty;
             var aggregateTypeName = firstEntry?.AggregateTypeName ?? string.Empty;
             var bucketId = firstEntry?.BucketId ?? 0;
-            ClearBatchState();
             ApplicationDiagnostics.Metrics.EventSourceAppendConflicts.Add(1,
                 new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.AggregateType, ApplicationDiagnostics.MetricTags.TypeNameValue(aggregateTypeName)),
                 new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.BucketId, bucketId));
@@ -181,7 +181,6 @@ internal sealed class EventSource(
         }
 
         await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
-        ClearBatchState();
     }
 
     private void ClearBatchState()
@@ -189,7 +188,6 @@ internal sealed class EventSource(
         _eventStreamEntries.Clear();
         _streamVersions.Clear();
         _streamSubjects.Clear();
-        _explicitSubjectOverrides.Clear();
     }
 
     /// <summary>
@@ -223,17 +221,30 @@ internal sealed class EventSource(
         return signer is null ? eventBundle : eventBundle with { Signature = signer.Sign(BusEnvelopeCanonical.Of(eventBundle)) };
     }
 
-    private async Task AddEventsToStreamAsync<TAggregate>(Guid streamId, IEnumerable<object> events, CancellationToken cancellationToken)
-        where TAggregate : notnull, new()
+    private async Task AppendRangeCoreAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
+        EventSubject? statedSubject, CancellationToken cancellationToken) where TAggregate : notnull, new()
+    {
+        if (!_streamVersions.ContainsKey(streamId))
+        {
+            await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+            var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
+            _streamVersions[streamId] = await eventStreamRepository.GetVersionOrDefaultAsync(streamId, cancellationToken);
+        }
+
+        await AddEventsToStreamAsync<TAggregate>(streamId, events, statedSubject, cancellationToken);
+    }
+
+    private async Task AddEventsToStreamAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
+        EventSubject? statedSubject, CancellationToken cancellationToken) where TAggregate : notnull, new()
     {
         foreach (var @event in events)
         {
-            await AppendEventToStreamAsync<TAggregate>(streamId, @event, cancellationToken);
+            await AppendEventToStreamAsync<TAggregate>(streamId, @event, statedSubject, cancellationToken);
         }
     }
 
-    private async Task AppendEventToStreamAsync<TAggregate>(Guid streamId, object @event, CancellationToken cancellationToken)
-        where TAggregate : notnull, new()
+    private async Task AppendEventToStreamAsync<TAggregate>(Guid streamId, object @event, EventSubject? statedSubject,
+        CancellationToken cancellationToken) where TAggregate : notnull, new()
     {
         var session = sessionContextProvider.Current
                       ?? throw new SessionRequiredException("Session context is not set");
@@ -242,7 +253,7 @@ internal sealed class EventSource(
 
         var streamVersion = _streamVersions[streamId] + 1;
 
-        var subject = await ResolveSubjectAsync(streamId, @event, session, cancellationToken);
+        var subject = statedSubject ?? await ResolveSubjectAsync(streamId, @event, session, cancellationToken);
         var dataJson = await serializer.SerializeAsync(@event, subject.TenantId, subject.UserId, cancellationToken);
 
         var eventStreamEntry = new EventStreamEntry
@@ -268,8 +279,7 @@ internal sealed class EventSource(
 
         // A stated Subject is for its one event. Only on a stream's first event is it also the
         // owner the stream records, and so the one the rest of the batch keeps.
-        var stated = _explicitSubjectOverrides.Remove(@event);
-        if (!stated || streamVersion == 1)
+        if (statedSubject is null || streamVersion == 1)
         {
             _streamSubjects[streamId] = subject;
         }
@@ -281,25 +291,19 @@ internal sealed class EventSource(
     }
 
     /// <summary>
-    /// Resolve Subject (data owner) for an event in this priority order:
-    /// 1. Explicit override (set by AppendOnBehalfOfAsync, which has already rejected an empty
-    ///    tenant id — that is why this stage needs no emptiness check of its own)
-    /// 2. Per-batch cache (the owner an earlier event in the same SaveChanges resolved for this
+    /// Resolve the Subject (data owner) of an event that has none stated, in this priority order —
+    /// a Subject stated with AppendOnBehalfOfAsync outranks all of them and is never resolved here:
+    /// 1. Per-batch cache (the owner an earlier event in the same SaveChanges resolved for this
     ///    stream — never a Subject stated for another event, except on the stream's first event)
-    /// 3. The owner recorded on the stream's first entry, for any aggregate type — a stream keeps
+    /// 2. The owner recorded on the stream's first entry, for any aggregate type — a stream keeps
     ///    the owner it was created with, whatever session appends to it later
-    /// 4. Event payload's IAggregateCreationEvent.TenantId
-    /// 5. SessionContext.TenantId fallback
-    /// 6. Hard failure if Subject still unresolved (all candidates empty)
+    /// 3. Event payload's IAggregateCreationEvent.TenantId
+    /// 4. SessionContext.TenantId fallback
+    /// 5. Hard failure if Subject still unresolved (all candidates empty)
     /// </summary>
     private async Task<EventSubject> ResolveSubjectAsync(
         Guid streamId, object @event, SessionContext session, CancellationToken cancellationToken)
     {
-        if (_explicitSubjectOverrides.TryGetValue(@event, out var explicitSubject))
-        {
-            return explicitSubject;
-        }
-
         if (_streamSubjects.TryGetValue(streamId, out var cachedSubject))
         {
             return cachedSubject;

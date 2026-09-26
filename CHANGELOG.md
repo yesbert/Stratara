@@ -18,6 +18,22 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A save that fails discards what it staged.** A failed save is specified to discard the whole
+  staged batch, but only a successful save and a concurrency conflict did so. A save that failed for
+  any other reason kept its events staged, whether the store was briefly unavailable or the save was
+  refused for a missing causation id. If the handler ran again in the same scope, it staged its
+  events a second time on top of them. A pipeline that retries on any exception does exactly that,
+  such as `ResilienceNames.CommandDispatcher`, and so does a consumer's own retry. The next
+  successful save then wrote both, putting the same facts in the stream twice. After a refused save,
+  every later save in that scope was refused again. **Behaviour change:** calling `SaveChangesAsync`
+  again after a failure, without appending again, used to retry the staged events and now writes
+  nothing. Append the events again, as after a `ConcurrencyException`.
+
+- **A failed `AppendOnBehalfOfAsync` no longer leaves its Subject behind.** When the append failed
+  before its event was staged, for example with no session or a failing serializer, the stated owner
+  stayed attached to the event object. Appending the same instance again without a stated owner then
+  recorded it under that owner anyway.
+
 - **A Subject stated with `AppendOnBehalfOfAsync` no longer carries over to the next append in the
   same batch.** Within one `SaveChangesAsync` batch the store remembers the owner it resolved for
   each stream, and it remembered a stated one too. So after `AppendOnBehalfOfAsync`, an ordinary
