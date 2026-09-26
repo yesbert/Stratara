@@ -6,6 +6,7 @@ using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
+using Stratara.EventSourcing.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 using Stratara.Testing;
@@ -60,7 +61,7 @@ public static class TestEventStoreServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(sharedConnection);
 
-        return AddCore<TWriteDbContext>(services, options => options.UseSqlite(sharedConnection), defaultTenantId);
+        return AddCore<TWriteDbContext>(services, options => options.UseSqlite(sharedConnection).AddInterceptors(CommitCompletionInterceptor.Instance), defaultTenantId);
     }
 
     /// <summary>
@@ -110,7 +111,7 @@ public static class TestEventStoreServiceCollectionExtensions
             services,
             options =>
             {
-                options.UseSqlite(connectionString);
+                options.UseSqlite(connectionString).AddInterceptors(CommitCompletionInterceptor.Instance);
                 configureContext?.Invoke(options);
             },
             defaultTenantId);

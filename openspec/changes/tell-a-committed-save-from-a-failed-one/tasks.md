@@ -126,14 +126,27 @@
   `ApplicationStopsWhileAHandlerRuns_ASubscriptionTiedToItWaitsUnderTheHostsTimeout`) check at twenty-two seconds
   that the message is still the handler's, which the old twenty-second wait fails.
 
-- [x] 2b.15 Round 11 of the review: a save honours its cancellation only until its changes go to the store — a stop
-  that arrived while the store committed reported a committed save as cancelled, and a transport then put the
-  message back and ran it again (`EventSourceSaveOutcomeTests.A_save_cancelled_while_the_store_commits_is_not_reported_as_cancelled`,
-  red with the token passed to the commit; `A_save_cancelled_before_its_changes_go_to_the_store_writes_nothing`);
+- [x] 2b.15 Round 11 of the review: a stop that arrived while the store committed reported a committed save as
+  cancelled, and a transport then put the message back and ran it again — first fixed in `EventSource`, then moved
+  to the store in round 12 (2b.16);
   the trackers keep real time whatever `TimeProvider` a host registers — a frozen test clock had frozen the bus's
   disposal — through a constructor the container never chooses
   (`TransportSelectionTests.The_stopping_subscriptions_keep_real_time_whatever_clock_the_host_registers`); the
   documents say the host waits for the subscriptions its hosted services stopped.
+
+- [x] 2b.16 Round 12 of the review: making the whole save uncancellable (round 11) let a stop mid-save commit and then
+  lose the bundle to a cancelled handover, and the pattern was not the event source's alone — every commit under a
+  caller's token had it. Reverted in `EventSource`; instead the new public `CommitCompletionInterceptor`
+  (`src/Stratara.EventSourcing.EntityFrameworkCore/EntityFrameworkCore/`) commits with no token and suppresses the
+  original call, and gives single-statement saves a transaction; the framework's Npgsql registration and both test
+  hosts add it (`CommitCompletionInterceptorTests`, five facts on SQLite, one showing SQLite abandons the commit
+  without it; `EventSourceSaveOutcomeTests.A_save_cancelled_while_the_store_commits_is_not_reported_as_cancelled`,
+  red without the interceptor; `A_save_cancelled_before_it_commits_writes_no_events`); `PartitionCounterInterceptor`
+  commits with no token; `SagaProcessGrain` reads its state and cancels its timers with no token once its step is
+  saved; `EventBundleOutboxDispatcher` records a bundle whose publication the caller's cancellation cut short, with
+  no warning for the cancellation
+  (`EventBundleOutboxDispatcherTests.EnqueueEventBundleAsync_PublishCancelledByTheCaller_StillRecordsTheBundle`);
+  documented in `IEventSource.SaveChangesAsync`, the migration guide and the CHANGELOG.
 
 ## 3. Documentation
 

@@ -1,3 +1,6 @@
+using System.Data.Common;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Outbox;
@@ -38,40 +41,13 @@ public class EventSourceSaveOutcomeTests
             Task.CompletedTask;
     }
 
-    /// <summary>
-    /// A store that commits a save and then reports that the save was cancelled — what a database driver may do when
-    /// the cancellation arrives while it waits for the commit to be acknowledged.
-    /// </summary>
-    private sealed class CommitsThenReportsCancellation(IWriteUnitOfWork inner, CancellationTokenSource stop) : IWriteUnitOfWork
+    /// <summary>Requests the save's cancellation the moment the store begins to commit, as a stopping host would.</summary>
+    private sealed class CancelsWhenTheCommitBegins(CancellationTokenSource stop) : DbTransactionInterceptor
     {
-        public async Task<ITransaction> StartAsync(CancellationToken cancellationToken = default) =>
-            new Transaction(await inner.StartAsync(cancellationToken), stop);
-
-        public IEventStreamRepository CreateEventStreamRepository(ITransaction transaction) => inner.CreateEventStreamRepository(Inner(transaction));
-
-        public IEventChainRepository CreateEventChainRepository(ITransaction transaction) => inner.CreateEventChainRepository(Inner(transaction));
-
-        public ISnapshotRepository CreateSnapshotRepository(ITransaction transaction) => inner.CreateSnapshotRepository(Inner(transaction));
-
-        public ICommandAuditRepository CreateCommandAuditRepository(ITransaction transaction) => inner.CreateCommandAuditRepository(Inner(transaction));
-
-        public IOutboxRepository CreateOutboxRepository(ITransaction transaction) => inner.CreateOutboxRepository(Inner(transaction));
-
-        private static ITransaction Inner(ITransaction transaction) => ((Transaction)transaction).Inner;
-
-        private sealed class Transaction(ITransaction inner, CancellationTokenSource stop) : ITransaction
+        public override async ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction, TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
         {
-            public ITransaction Inner => inner;
-
-            public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-            {
-                var written = await inner.SaveChangesAsync(CancellationToken.None);
-                await stop.CancelAsync();
-                cancellationToken.ThrowIfCancellationRequested();
-                return written;
-            }
-
-            public ValueTask DisposeAsync() => inner.DisposeAsync();
+            await stop.CancelAsync();
+            return result;
         }
     }
 
@@ -117,23 +93,26 @@ public class EventSourceSaveOutcomeTests
     /// <summary>
     /// The save's cancellation is requested while the store commits — the host stops at that moment. The save is not
     /// reported as cancelled, which would have a transport run the committed work again: it completes, or says its
-    /// events are committed.
+    /// events are committed. On the SQLite test store, which would otherwise abandon the commit.
     /// </summary>
     [Fact]
     public async Task A_save_cancelled_while_the_store_commits_is_not_reported_as_cancelled()
     {
-        await using var host = CreateHost();
-        var streamId = Guid.CreateVersion7();
         using var stop = new CancellationTokenSource();
+        await using var host = EventStoreTestHost.Create(services => services
+            .AddTrustedType<OutcomeProbe>()
+            .AddTrustedType<OutcomeProbeTouched>()
+            .ConfigureDbContext<StrataraTestWriteDbContext>(options => options.AddInterceptors(new CancelsWhenTheCommitBegins(stop))));
+        var streamId = Guid.CreateVersion7();
 
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var unitOfWork = new CommitsThenReportsCancellation(scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>(), stop);
-            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), unitOfWork);
+            var events = scope.ServiceProvider.GetRequiredService<IEventSource>();
             await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
 
             var failure = await Record.ExceptionAsync(() => events.SaveChangesAsync(stop.Token));
 
+            Assert.True(stop.IsCancellationRequested);
             Assert.True(failure is null or CommittedEventsNotPublishedException, $"The save reported {failure?.GetType().Name}.");
         }
 
@@ -143,9 +122,9 @@ public class EventSourceSaveOutcomeTests
         Assert.Single(await store.CreateEventStreamRepository(transaction).GetManyAsync(streamId));
     }
 
-    /// <summary>A save cancelled before its changes go to the store is cancelled, and writes nothing.</summary>
+    /// <summary>A save cancelled before it commits is cancelled, and writes no events.</summary>
     [Fact]
-    public async Task A_save_cancelled_before_its_changes_go_to_the_store_writes_nothing()
+    public async Task A_save_cancelled_before_it_commits_writes_no_events()
     {
         await using var host = CreateHost();
         var streamId = Guid.CreateVersion7();

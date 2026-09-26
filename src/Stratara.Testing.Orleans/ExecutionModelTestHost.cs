@@ -16,6 +16,7 @@ using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
 using Stratara.Abstractions.Timers;
+using Stratara.EventSourcing.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Stratara.Orleans.Aggregates;
 using Stratara.Orleans.CommitOrder;
@@ -332,7 +333,7 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
             connectionString,
             DefaultTenantId,
             context => context.AddInterceptors(new PartitionCounterInterceptor(commitOrder)).ReplaceService<IModelCustomizer, SqliteTimeModelCustomizer>());
-        services.AddDbContextFactory<StrataraTestReadDbContext>((_, context) => context.UseSqlite(connectionString), ServiceLifetime.Scoped);
+        services.AddDbContextFactory<StrataraTestReadDbContext>((_, context) => context.UseSqlite(connectionString).AddInterceptors(CommitCompletionInterceptor.Instance), ServiceLifetime.Scoped);
 
         services.AddMediator();
         services.AddResiliencePipelines();

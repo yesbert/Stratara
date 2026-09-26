@@ -62,6 +62,31 @@ public class EventBundleOutboxDispatcherTests
         harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>
+    /// The save committed, and its caller is cancelled — the host is stopping — before the bus took the bundle. The
+    /// bundle is recorded for the drain regardless of that cancellation, so no reader misses the committed events.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueEventBundleAsync_PublishCancelledByTheCaller_StillRecordsTheBundle()
+    {
+        var harness = new Harness();
+        using var stop = new CancellationTokenSource();
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .Returns<string, EventBundle, CancellationToken>(async (_, _, ct) =>
+            {
+                await stop.CancelAsync();
+                ct.ThrowIfCancellationRequested();
+            });
+        var bundle = NewEventBundle();
+
+        await harness.Sut.EnqueueEventBundleAsync(bundle, stop.Token);
+
+        harness.UnitOfWork.Verify(u => u.StartAsync(CancellationToken.None), Times.Once);
+        harness.OutboxRepository.Verify(r => r.AddAsync(bundle, CancellationToken.None), Times.Once);
+        harness.Transaction.Verify(t => t.SaveChangesAsync(CancellationToken.None), Times.Once);
+    }
+
     [Fact]
     public async Task EnqueueOutboxEntriesAsync_ReplayActive_ShortCircuits()
     {

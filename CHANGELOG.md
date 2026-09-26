@@ -58,6 +58,18 @@ applies to the entire NuGet family.
   During a rolling upgrade, silos of the two versions cannot read each other's validation failures; such
   a call fails with a serialization failure until every silo is upgraded.
 
+- **A commit once begun runs to its end.** A database driver told to cancel while it waits for a commit to
+  be acknowledged may report the cancellation after the database committed, so a stop that landed
+  there had a committed save look cancelled — and a transport, a store reader or a resumed command then
+  ran it again and recorded the same facts twice. The new `CommitCompletionInterceptor` lets a commit
+  run to its end whatever the cancellation says, while a cancellation during the writes still leaves
+  nothing behind, and gives a single-statement save a transaction so it has a commit to protect. The
+  framework adds it to every context it registers; a host that registers its own write context — the
+  Orleans execution model on a store other than PostgreSQL — adds it beside `PartitionCounterInterceptor`.
+  The Orleans commit-order interceptor and the saga step after its save no longer pass a cancellation
+  on either, and the event-bundle dispatcher records a bundle whose publication a cancellation cut short
+  instead of losing it.
+
 - **A save that committed but could not publish says so, and nothing runs it again.** On a host
   without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after
   the commit. When both the bus and the outbox's own table failed, the save threw the outbox's
@@ -66,9 +78,8 @@ applies to the entire NuGet family.
   Orleans execution model resumed a recorded command, a store reader retried the entry, a durable timer
   fired again, and a pipeline that retries on any exception retried. The save now throws the new
   `CommittedEventsNotPublishedException`, naming the committed streams, with the handover's failure as
-  the inner exception, a cancellation after the commit included. A cancellation is honoured only until
-  the save's changes go to the store: a stop that arrived while the store committed could otherwise
-  report a committed save as cancelled. Each of those places treats it as done and logs an error:
+  the inner exception, a cancellation after the commit included. Each of those places treats it as
+  done and logs an error:
   - the RabbitMQ and Azure Service Bus transports acknowledge the message, whatever their own
     cancellation says (`LogEvents.Messaging.CommittedEventsNotPublished`, `108_113`);
   - on the Orleans execution model a recorded command is completed

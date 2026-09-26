@@ -117,7 +117,9 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
         {
             if (commit)
             {
-                await transaction.CommitAsync(cancellationToken);
+                // A commit once begun runs to its end: a cancellation reported after the database committed would have
+                // the caller take a committed save for a failed one and run it again.
+                await transaction.CommitAsync(CancellationToken.None);
             }
             else
             {

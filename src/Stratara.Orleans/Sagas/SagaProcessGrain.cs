@@ -136,13 +136,16 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
             }
 
             await events.SaveChangesAsync(cancellationToken);
-            state = await loader.LoadAsync(services, stateStream, cancellationToken) ?? state;
+
+            // The step is committed from here on and is not reported as cancelled: a step that were would be applied
+            // again, and emit and dispatch again.
+            state = await loader.LoadAsync(services, stateStream, CancellationToken.None) ?? state;
         }
 
         // After the append: a kill before this leaves timers of a completed process, which the owner check drops.
         if (state.Completed)
         {
-            await timers.CancelAllAsync(owner, cancellationToken);
+            await timers.CancelAllAsync(owner, CancellationToken.None);
         }
     }
 
