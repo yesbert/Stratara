@@ -22,7 +22,7 @@ public static class ForgottenTenantServiceCollectionExtensions
     /// <example>
     /// <code>
     /// builder.Services
-    ///     .AddDbContextFactory&lt;AppReadDbContext&gt;(options => options.UseSqlite(connectionString), ServiceLifetime.Scoped)
+    ///     .AddDbContextFactory&lt;AppReadDbContext&gt;(options => options.UseSqlite("Data Source=read.db"), ServiceLifetime.Scoped)
     ///     .AddStrataraForgottenTenants&lt;AppReadDbContext&gt;();
     /// </code>
     /// </example>
