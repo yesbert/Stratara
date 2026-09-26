@@ -27,4 +27,4 @@
 ## 4. Verify
 
 - [x] 4.1 `openspec validate let-an-append-run-under-a-retrying-execution-strategy --strict`.
-- [ ] 4.2 Local gauntlet green; the Orleans and transport integration suites green.
+- [x] 4.2 Local gauntlet green; the Orleans and transport integration suites green.
