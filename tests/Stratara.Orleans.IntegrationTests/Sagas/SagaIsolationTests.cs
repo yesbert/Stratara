@@ -120,11 +120,13 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
                 StartAt = DateTime.UtcNow.AddSeconds(1),
                 Period = TimeSpan.FromSeconds(5),
             });
+            // The retirement is logged after the keep-alive is unregistered, so the log is waited for as well rather
+            // than read the moment the reminder is gone.
             await WaitForAsync(
-                async () => (await reminders.ReadRows(removed.GetGrainId())).Reminders.Count == 0,
-                "the removed saga's keep-alive was not unregistered");
-            Assert.Contains(logs.Entries, entry =>
-                entry.EventId == LogEvents.Orleans.UnregisteredSagaReaderRetired && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
+                async () => (await reminders.ReadRows(removed.GetGrainId())).Reminders.Count == 0
+                            && logs.Entries.Any(entry => entry.EventId == LogEvents.Orleans.UnregisteredSagaReaderRetired
+                                                         && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal)),
+                "the removed saga's keep-alive was not unregistered and its retirement logged");
             Assert.DoesNotContain(logs.Entries, entry =>
                 entry.EventId is LogEvents.Orleans.PartitionStalled or LogEvents.Orleans.CatchUpFaulted && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
             await StopAsync(app);
