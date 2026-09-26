@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.EventSourcing;
+using Stratara.Domain;
 using Stratara.Projections.Abstractions;
 using Stratara.Projections.Services;
 
@@ -75,6 +76,11 @@ public static class ProjectionServiceCollectionExtensions
     /// Scans the assembly containing <typeparamref name="T"/> and registers every concrete
     /// <see cref="IProjection"/> implementation it finds as a scoped service.
     /// </summary>
+    /// <remarks>
+    /// Every payload type a <c>HandleAsync</c> takes is added to the trusted types. For a projection that
+    /// declares <see cref="IForgetsDeletedTenants"/>, <c>TenantDeleted</c> and <c>CustomerTenantsDeleted</c>
+    /// are added as well, because the projection is handed them whether or not it handles them.
+    /// </remarks>
     /// <typeparam name="T">A marker type that lives in the assembly to scan (typically a per-project <c>IMarker</c> interface).</typeparam>
     /// <param name="services">The service collection to register against.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -105,8 +111,14 @@ public static class ProjectionServiceCollectionExtensions
     [SuppressMessage("Major Code Smell", "S3011:Reflection should not be used to increase accessibility of classes, methods, or fields",
         Justification = "Projection handlers may declare HandleAsync as a non-public member; the DI scan must reflect over both " +
                         "to populate the trusted-type allowlist with declared event types at startup.")]
-    private static void RegisterHandledEventTypes(Type projectionType, Stratara.Abstractions.Reflections.TrustedTypeResolver resolver)
+    internal static void RegisterHandledEventTypes(Type projectionType, Stratara.Abstractions.Reflections.TrustedTypeResolver resolver)
     {
+        if (typeof(IForgetsDeletedTenants).IsAssignableFrom(projectionType))
+        {
+            resolver.Register(typeof(TenantDeleted));
+            resolver.Register(typeof(CustomerTenantsDeleted));
+        }
+
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         foreach (var method in projectionType.GetMethods(flags)
                      .Where(m => m.Name == "HandleAsync" && m.ReturnType == typeof(Task)))

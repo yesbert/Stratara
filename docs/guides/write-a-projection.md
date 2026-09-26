@@ -195,6 +195,63 @@ there means a second writer changed a live row — a real conflict, rethrown, an
 it must. Catching `ConcurrencyConflictException` broadly instead would turn "a failing projection
 stops the bundle" into a guarantee that holds only where nobody used the helper.
 
+## A deleted tenant's late facts
+
+A projection that removes a tenant's rows when the tenant is deleted — on `TenantDeleted`, or on the
+`CustomerTenantsDeleted` cascade — will sooner or later meet a fact about that tenant's data that was
+recorded *after* the deletion: work queued before it ran to its end. The row is gone, the handler
+throws `PrecedingFactMissingException`, and the framework cannot tell "not applied yet" from "removed
+on purpose". Live, the bundle is retried and dead-lettered; in a replay the batch fails on every
+attempt, and the read models the replay emptied stay empty.
+
+Declare `IForgetsDeletedTenants` on such a projection:
+
+<!-- stratara-snippet-ignore: narrative fragment - the repository is the consumer's own -->
+```csharp
+public sealed class KnowledgeEntryProjection(IKnowledgeEntryRepository entries) : IForgetsDeletedTenants
+{
+    private async Task HandleAsync(IEvent<EntryIndexed> @event, CancellationToken cancellationToken)
+    {
+        var entry = await entries.FindAsync(@event.StreamId, cancellationToken)
+                    ?? throw new PrecedingFactMissingException(@event.StreamId, nameof(EntryIndexed));
+        await entries.MarkIndexedAsync(entry, cancellationToken);
+    }
+
+    private Task HandleAsync(CustomerTenantsDeleted @event, CancellationToken cancellationToken) =>
+        entries.DeleteForTenantsAsync(@event.TenantIds, cancellationToken);
+}
+```
+
+The framework then does three things for this projection, and nothing else:
+
+- It hands the projection `TenantDeleted` and `CustomerTenantsDeleted` whether or not it handles them,
+  and after applying one records the tenants it deleted — for this projection alone, in the order the
+  projection applies facts, so projections running in parallel or at their own pace on the Orleans
+  execution model cannot race each other.
+- When the projection throws `PrecedingFactMissingException` for a fact whose owning tenant it has
+  recorded, the fact is passed over: treated as applied, not retried, and logged at Information
+  (`104_014`) with the projection, the stream, the fact's type and the tenant.
+- A replay empties the record together with the read models; rebuilding one projection empties its
+  own record with its read model. The record is rebuilt from the history, in order.
+
+A fact of a deleted tenant that the projection applies without complaint — a late creation, say —
+is applied as usual; if you want those dropped too, inject `IForgottenTenantStore` and ask it. A
+missing prerequisite for any tenant not recorded is retried and fails as before, and a projection
+that does not declare the interface is not affected at all.
+
+**The record lives in the read store.** The framework's read context declares the table
+`projection_forgotten_tenant`, so upgrading needs a migration of your read context.
+`AddNpgsqlReadDbContextFactory<TContext>()` registers the store; for a read context registered another
+way, call `AddStrataraForgottenTenants<TReadContext>()`. A declaring projection in a host without the
+store fails on the first fact it is handed, naming both. Deletions applied before the upgrade are not
+in the record until a replay — or a rebuild of the projection — records them from the history.
+
+**Discovery trusts the deletion facts for you.** `AddProjectionsFromAssemblyContaining<T>()` adds
+`TenantDeleted` and `CustomerTenantsDeleted` to the trusted types for a declaring projection; a
+projection registered by hand needs `AddTrustedType<TenantDeleted>()` and
+`AddTrustedType<CustomerTenantsDeleted>()`. A host that replaces `IProjectionHandler` gives the
+behaviour up with the rest of the default handler.
+
 ## What the framework does not do
 
 On the bus path there is **no checkpoint store**. Projections are driven push-wise off the event bus;

@@ -17,7 +17,9 @@ namespace Stratara.Projections.Services;
 
 /// <summary>
 /// Background service that replays the full event stream against all projections on demand. Triggered via
-/// <see cref="IProjectionReplayState"/>; truncates all projection views and re-applies every event, batched
+/// <see cref="IProjectionReplayState"/>; truncates all projection views — and, where an
+/// <see cref="IForgottenTenantStore"/> is registered, every projection's record of deleted tenants with them —
+/// and re-applies every event, batched
 /// by <see cref="ProjectionOptions.BatchSize"/>, each stream in version order and the streams interleaved as
 /// their sequence numbers interleave them.
 /// </summary>
@@ -81,6 +83,11 @@ internal sealed class ProjectionReplayWorker(
             using var truncateScope = scopeFactory.CreateScope();
             var viewTruncator = truncateScope.ServiceProvider.GetRequiredService<IProjectionViewTruncator>();
             await viewTruncator.TruncateAllAsync(cancellationToken);
+            if (truncateScope.ServiceProvider.GetService<IForgottenTenantStore>() is { } forgottenTenants)
+            {
+                await forgottenTenants.ClearAllAsync(cancellationToken);
+            }
+
             logger.LogProjectionViewsTruncated();
 
             var totalEvents = await GetTotalEventCountAsync(cancellationToken);

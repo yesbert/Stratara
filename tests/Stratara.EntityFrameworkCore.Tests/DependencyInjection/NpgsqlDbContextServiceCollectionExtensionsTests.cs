@@ -8,6 +8,8 @@ using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
+using Stratara.Projections.Abstractions;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 using Stratara.Projections;
 using Stratara.Testing;
@@ -105,6 +107,31 @@ public class NpgsqlDbContextServiceCollectionExtensionsTests
         Assert.Same(projections, read);
         Assert.Equal(ServiceLifetime.Scoped, services.Single(d => d.ServiceType == typeof(IProjectionsUnitOfWork)).Lifetime);
         Assert.Equal(ServiceLifetime.Scoped, services.Single(d => d.ServiceType == typeof(IReadUnitOfWork)).Lifetime);
+    }
+
+    [Fact]
+    public void AddNpgsqlReadDbContextFactory_ProvidesTheForgottenTenantStore()
+    {
+        var services = CreateServices();
+        services.AddNpgsqlReadDbContextFactory<TestReadDbContext>();
+        var sp = services.BuildServiceProvider();
+
+        using var scope = sp.CreateScope();
+
+        Assert.IsType<ForgottenTenantStore<TestReadDbContext>>(scope.ServiceProvider.GetRequiredService<IForgottenTenantStore>());
+        Assert.Equal(ServiceLifetime.Scoped, services.Single(d => d.ServiceType == typeof(IForgottenTenantStore)).Lifetime);
+    }
+
+    [Fact]
+    public void AddStrataraForgottenTenants_KeepsAStoreRegisteredBefore()
+    {
+        var services = new ServiceCollection();
+        var own = Mock.Of<IForgottenTenantStore>();
+        services.AddScoped(_ => own);
+
+        services.AddStrataraForgottenTenants<TestReadDbContext>();
+
+        Assert.Single(services, d => d.ServiceType == typeof(IForgottenTenantStore));
     }
 
     [Fact]

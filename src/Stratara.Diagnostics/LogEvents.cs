@@ -88,6 +88,8 @@ public static class LogEvents
         public const int ProjectionReplayCoordinationInProcess = 104_012;
         /// <summary>A subscriber to the in-process replay-request channel failed; the other subscribers were still notified (warning).</summary>
         public const int ProjectionReplayRequestSubscriberFailed = 104_013;
+        /// <summary>A projection that forgets deleted tenants passed over a fact of a tenant it has seen deleted.</summary>
+        public const int ProjectionForgottenTenantFactPassedOver = 104_014;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>

@@ -12,6 +12,7 @@ Projection runtime for the Stratara event-sourced stack. Discovers `IProjection`
 | Folder | Contents |
 |---|---|
 | `Services/` | The runtime, all `internal`: `ProjectionManager` (event-bundle → matching projection-handlers fan-out), `ProjectionHandler` (invokes a projection's matching methods), `ProjectionMethodInvoker` (reflection-cached method-pointer dispatch into consumer projections). You implement `IProjection`; these drive it |
+| `Abstractions/` | `IProjection` and its refinements: `IRebuildableProjection` (can be rebuilt alone on the Orleans execution model) and `IForgetsDeletedTenants` (a fact recorded for a tenant after its deletion is passed over instead of failing the projection; the record is kept by `IForgottenTenantStore`, which the read store provides) |
 | `Multitenancy/` | `TenantProjection` — the framework's own opinionated tenant aggregate projection. Skip the registration if your application has its own tenancy model |
 | `Diagnostics/Extensions/` | Source-generated `LoggerProjectionExtensions`, `LoggerChangeSetExtensions`, `LoggerUpdateExtensions` — typed `[LoggerMessage]` surfaces under the `Stratara.Projection.*` / `Stratara.ChangeSet.*` / `Stratara.Update.*` event-ID bands |
 

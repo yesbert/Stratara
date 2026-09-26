@@ -1,6 +1,6 @@
 # Let a projection forget a deleted tenant
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 
