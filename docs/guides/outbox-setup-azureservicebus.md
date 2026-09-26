@@ -80,7 +80,16 @@ The subscription processor runs with the Azure SDK's default `ServiceBusProcesso
 Stratara does not currently surface `MaxConcurrentCalls`, `PrefetchCount`, or the lock-renewal
 duration as configuration. If you need to tune those, they live on the `ServiceBusClient` /
 processor from `Azure.Messaging.ServiceBus`; treat this as an integration point you own rather than
-a knob Stratara exposes.
+a knob Stratara exposes. With those defaults the processor runs one handler at a time and fetches no
+message ahead of it.
+
+**When the host stops**, a subscription stops with the token it was opened with — for a worker, the
+host's stopping token — and closes its processor, which takes no further message and waits up to
+twenty seconds for the handler it is running. The host waits for that before it counts as stopped,
+within its shutdown timeout, so a handler that is still running finishes while the services it uses
+exist and its message is completed rather than delivered again. A handler that takes longer keeps its
+message locked until the lock expires. A handler's outcome is settled whatever the subscription's
+token says.
 
 ## DLQ + retries
 

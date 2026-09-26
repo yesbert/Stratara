@@ -29,22 +29,30 @@ applies to the entire NuGet family.
   itself. The type, message, stack trace and inner exceptions cross; the properties of the framework's
   exceptions — `ConcurrencyException`, `CommittedEventsNotPublishedException`,
   `PrecedingFactMissingException`, `ErasureIncompleteException`, `AuthorizationException`,
-  `PermissionAuthorizationException`, `StrataraValidationException` — read empty on the far side
-  rather than null, which the problem-details handler relies on.
+  `PermissionAuthorizationException` — read empty on the far side rather than null.
 
-- **A stopping subscription lets its handlers finish.** A RabbitMQ subscription closed its channel the
-  moment it was cancelled, while a handler could still be running, so the handler's acknowledgement
-  failed and the message was delivered again — a handler that completed during a shutdown ran twice;
-  deliveries the client had already fetched then ran on the closing channel too. A Service Bus
-  subscription did not stop its processor at all. A stopping subscription now stops taking messages,
-  hands fetched but unhandled ones back to the queue, lets the running handlers settle (RabbitMQ waits
-  up to twenty seconds; the Service Bus processor waits for them), and then closes. Both transports
-  acknowledge a handled message whatever the subscription's own cancellation says. The Azure Service
-  Bus bus now awaits its stopping subscriptions when it is disposed.
+- **A stopping subscription lets its handlers finish, and the host waits for it.** A RabbitMQ
+  subscription closed its channel the moment it was cancelled, while a handler could still be running,
+  so the handler's acknowledgement failed and the message was delivered again — a handler that completed
+  during a shutdown ran twice; deliveries the client had already fetched then ran on the closing channel
+  too. A Service Bus subscription did not stop its processor at all. A stopping subscription now stops
+  taking messages, hands fetched but unhandled ones back to the queue, lets the running handler settle
+  for up to twenty seconds, and then closes; the host waits for that when it stops, within its shutdown
+  timeout, before anything is disposed. A RabbitMQ handler that never returned kept its channel from
+  closing, and the bus's disposal — and with it the process — waited forever; the close is now bounded
+  too. Both transports settle a handler's outcome whatever the
+  subscription's own cancellation says.
 
-- **A validation failure's message names what failed.** `StrataraValidationException`'s message lists
-  each failure's property and message — never the attempted value — so it still says what failed where
-  `Failures` is not available.
+- **A RabbitMQ subscription holds at most `Messaging:PrefetchCount` messages** (default 16, 1 to 65535,
+  validated at start-up). It held every message the broker would push: on a stop they all went back to
+  the queue, and the broker counted each as a delivery — enough restarts could dead-letter a message
+  whose handler never ran. What a subscription holds beyond the running handler's message still goes
+  back counted.
+
+- **A validation failure keeps its fields between silos.** A `StrataraValidationException` thrown by a
+  handler on another silo reaches the caller with its `Failures` — each field, message and code, never
+  the attempted value — so the problem-details handler still answers with the fields to correct. Its
+  message stays generic: a failure's message may quote the input, and exception messages are logged.
 
 - **A save that committed but could not publish says so, and nothing runs it again.** On a host
   without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after

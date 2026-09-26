@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Messaging;
+using Stratara.Outbox.AzureServiceBus.Messaging;
 using Stratara.Outbox.RabbitMQ.Messaging;
 
 namespace Stratara.Outbox.RabbitMQ.Tests.DependencyInjection;
@@ -46,5 +47,33 @@ public class TransportSelectionTests
 
         var descriptor = Assert.Single(builder.Services, d => d.ServiceType == typeof(IMessageBus));
         Assert.Equal(AzureServiceBusBusTypeName, descriptor.ImplementationType?.FullName);
+    }
+
+    [Fact]
+    public void AddAzureServiceBus_RegistersTheDrainOfStoppingSubscriptionsOnce()
+    {
+        var services = new ServiceCollection();
+
+        services.AddAzureServiceBus(SampleConnectionString);
+        services.AddAzureServiceBusWithManagedIdentity("example.servicebus.windows.net");
+
+        Assert.Single(services, d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(AzureServiceBusSubscriptionsDrain));
+    }
+
+    [Fact]
+    public async Task TheDrainOfATransportThatDoesNotHoldTheBus_HasNothingToWaitFor()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.AddMessaging();
+        builder.Services.AddAzureServiceBus(SampleConnectionString);
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        var drains = provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>().ToList();
+
+        Assert.Equal(2, drains.Count);
+        foreach (var drain in drains)
+        {
+            await drain.StoppedAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        }
     }
 }

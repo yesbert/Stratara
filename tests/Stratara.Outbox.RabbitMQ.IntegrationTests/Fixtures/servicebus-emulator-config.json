@@ -48,6 +48,18 @@
             ]
           },
           {
+            "Name": "test-host-stops",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
+            "Name": "test-stuck-handler",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
             "Name": "test-durable",
             "Subscriptions": [
               { "Name": "worker" }

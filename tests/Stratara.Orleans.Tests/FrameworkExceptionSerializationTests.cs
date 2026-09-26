@@ -58,7 +58,6 @@ public sealed class FrameworkExceptionSerializationTests
     [Fact]
     public void The_framework_exceptions_properties_read_empty_rather_than_null_after_a_crossing()
     {
-        Assert.Empty(Assert.IsType<StrataraValidationException>(RoundTrip(new StrataraValidationException([new ValidationFailure("Name", "is required")]))).Failures);
         Assert.Equal(string.Empty, Assert.IsType<PermissionAuthorizationException>(RoundTrip(new PermissionAuthorizationException("orders.write"))).RequiredPermission);
         Assert.Equal(string.Empty, Assert.IsType<AuthorizationException>(RoundTrip(new AuthorizationException("admin"))).RequiredRole);
         Assert.Empty(Assert.IsType<ErasureIncompleteException>(RoundTrip(
@@ -83,10 +82,42 @@ public sealed class FrameworkExceptionSerializationTests
     }
 
     [Fact]
-    public void A_validation_failures_message_names_what_failed()
+    public void A_validation_failure_keeps_which_field_failed_and_how_but_not_the_value_it_was_given()
     {
-        var back = Assert.IsType<StrataraValidationException>(RoundTrip(new StrataraValidationException([new ValidationFailure("Name", "is required")])));
+        var thrown = Throw(new StrataraValidationException(
+        [
+            new ValidationFailure("Email", "must be an address", "email.format", "jane@", ValidationSeverity.Error),
+            new ValidationFailure("Name", "is required"),
+        ]));
 
-        Assert.Contains("Name: is required", back.Message, StringComparison.Ordinal);
+        var back = Assert.IsType<StrataraValidationException>(RoundTrip(thrown));
+
+        Assert.Collection(back.Failures,
+            failure => Assert.Equal(new ValidationFailure("Email", "must be an address", "email.format"), failure),
+            failure => Assert.Equal(new ValidationFailure("Name", "is required"), failure));
+        Assert.Equal(thrown.Message, back.Message);
+        Assert.DoesNotContain("jane@", back.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(Throw), back.StackTrace, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_validation_failure_crosses_as_the_inner_exception_of_another()
+    {
+        var back = Assert.IsType<InvalidOperationException>(RoundTrip(
+            new InvalidOperationException("the handler failed", new StrataraValidationException([new ValidationFailure("Name", "is required")]))));
+
+        Assert.Equal("Name", Assert.Single(Assert.IsType<StrataraValidationException>(back.InnerException).Failures).PropertyName);
+    }
+
+    private static T Throw<T>(T exception) where T : Exception
+    {
+        try
+        {
+            throw exception;
+        }
+        catch (T thrown)
+        {
+            return thrown;
+        }
     }
 }

@@ -14,6 +14,15 @@ public sealed class MessagingOptions
     public TopicOptions[] Topics { get; set; } = [];
 
     /// <summary>
+    /// How many unacknowledged messages a RabbitMQ subscription holds at most, the one its handler is running included
+    /// (<c>Messaging:PrefetchCount</c>, 1 to 65535, default 16). What a subscription holds beyond the running handler's
+    /// message goes back to the queue when it stops, and the broker counts that as a delivery — a message sent back by
+    /// enough stops reaches its retry bound sooner — so the bound limits how many messages a stop affects. A higher bound
+    /// hides more network latency; the handler still runs one message at a time.
+    /// </summary>
+    public int PrefetchCount { get; set; } = 16;
+
+    /// <summary>
     /// Returns the <see cref="TopicOptions"/> entry whose <see cref="TopicOptions.Name"/> matches
     /// <paramref name="name"/> case-insensitively, or <see langword="null"/> if absent.
     /// </summary>

@@ -60,9 +60,23 @@
   cleanup runs without `Task.Run`; a stopping Service Bus subscription stops its processor, which waits for
   its running handlers, and the bus awaits that on disposal
   (`SubscribeAsync_SubscriptionStopsDuringTheHandler_TheMessageIsCompletedAndNoMoreAreTaken`); the
-  documentation no longer promises that a host's exception filter restricts anything; a validation
-  failure's message names its failures; `ErasureIncompleteException.Plane` says what it reads after a
-  crossing.
+  documentation no longer promises that a host's exception filter restricts anything;
+  `ErasureIncompleteException.Plane` says what it reads after a crossing.
+
+- [x] 2b.10 Round 6 of the review: the host waits for its stopping subscriptions when it stops, not when its
+  container is disposed — a hosted lifecycle service per transport awaits them in `StoppedAsync`
+  (`HostStopsDuringTheHandler_TheHostWaitsForIt…` on both transports); a stopping Service Bus subscription
+  closes its processor within twenty seconds instead of waiting without bound; a RabbitMQ subscription holds
+  at most `Messaging:PrefetchCount` messages (default 16), because what it holds goes back counted
+  (`HandlerRuns_TheSubscriptionHoldsNoMoreThanItsPrefetchBound`, and the buffered test checks the redelivered
+  flag and the count); every settlement uses `CancellationToken.None`; a channel that fails to close no
+  longer keeps its connection open, and a subscription that fails to open closes its connection; a handler
+  that never returns no longer keeps a RabbitMQ channel's close — and the bus's disposal — waiting forever
+  (`HandlerNeverReturns_StoppingTheSubscriptionStillFinishes` on both transports; found by running the host
+  test without the drain); a
+  validation failure's message no longer lists its failures — a failure's message may quote the input —
+  and its failures cross silos through a surrogate instead, without the attempted value
+  (`FrameworkExceptionSerializationTests.A_validation_failure_keeps_which_field_failed_…`).
 
 ## 3. Documentation
 
