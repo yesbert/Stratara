@@ -55,7 +55,7 @@ internal sealed class AggregationService(
             return EventStream.Aggregate(aggregateType, events);
         }
 
-        var aggregate = await serializer.DeserializeAsync(snapshot.DataJson, aggregateType, snapshot.TenantId, cancellationToken: cancellationToken) ??
+        var aggregate = await serializer.DeserializeAsync(snapshot.DataJson, aggregateType, snapshot.TenantId, snapshot.UserId, cancellationToken) ??
                         throw new InvalidOperationException($"Could not deserialize snapshot of type {aggregateType.Name} with ID {streamId}");
 
         aggregate.ApplyEvents(events);

@@ -16,6 +16,7 @@ public class SnapshotServiceTests
     private readonly Mock<IWriteUnitOfWork> _unitOfWorkMock = new();
     private readonly Mock<ITransaction> _transactionMock = new();
     private readonly Mock<ISnapshotRepository> _snapshotRepoMock = new();
+    private readonly Mock<IEventStreamRepository> _eventStreamRepoMock = new();
     private readonly TrustedTypeResolver _typeResolver = new();
     private readonly SnapshotService _service;
 
@@ -27,6 +28,9 @@ public class SnapshotServiceTests
 
         _unitOfWorkMock.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(_transactionMock.Object);
         _unitOfWorkMock.Setup(u => u.CreateSnapshotRepository(_transactionMock.Object)).Returns(_snapshotRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.CreateEventStreamRepository(_transactionMock.Object)).Returns(_eventStreamRepoMock.Object);
+        _eventStreamRepoMock.Setup(r => r.GetFirstOrDefaultAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid streamId, CancellationToken _) => CreateEntry(streamId, 1));
         _serializerMock.Setup(s => s.SerializeAsync(It.IsAny<object>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync("{}");
 
         _service = new SnapshotService(

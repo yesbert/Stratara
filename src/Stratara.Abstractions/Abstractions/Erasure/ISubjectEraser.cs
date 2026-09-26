@@ -23,9 +23,7 @@ namespace Stratara.Abstractions.Erasure;
 /// Tenant-level and confidential values written for a user belong to the tenant and survive that
 /// user's erasure. A key naming a tenant together with a user who is not a member when the erasure
 /// runs is found by neither erasure, because the memberships are what name the other half. That
-/// user may have left the tenant, or may be an operator acting in it from outside. A snapshot is
-/// encrypted under its stream's tenant alone, so a user's erasure does not reach the snapshot of an
-/// aggregate that user owns.
+/// user may have left the tenant, or may be an operator acting in it from outside.
 /// </para>
 /// </remarks>
 public interface ISubjectEraser
