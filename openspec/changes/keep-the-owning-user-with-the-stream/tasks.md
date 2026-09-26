@@ -34,4 +34,4 @@
 ## 4. Verify
 
 - [x] 4.1 `openspec validate keep-the-owning-user-with-the-stream --strict` passes.
-- [ ] 4.2 Local gauntlet green (`./scripts/local-gauntlet.sh`).
+- [x] 4.2 Local gauntlet green (`./scripts/local-gauntlet.sh`).
