@@ -15,18 +15,18 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// <remarks>
 /// Snapshots are protected under the stream's recorded owner — the tenant and user of its first
 /// entry — and persisted through <see cref="ISecureJsonSerializer"/>, so an erasure that reaches the
-/// stream's events reaches its snapshots too. The cadence (and whether snapshots run at all) is owned entirely by the injected
-/// <see cref="ISnapshotStrategy"/>; the default <see cref="VersionThresholdSnapshotStrategy"/>
+/// stream's events reaches its snapshots too. It is called once the batch is committed, and builds the
+/// snapshot from the committed stream up to the batch's highest version, so it never captures an event
+/// that was not recorded. The cadence (and whether snapshots run at all) is owned entirely by the
+/// injected <see cref="ISnapshotStrategy"/>; the default <see cref="VersionThresholdSnapshotStrategy"/>
 /// snapshots every 50 versions, and <see cref="NoSnapshotStrategy"/> turns snapshotting off.
 /// </remarks>
 internal sealed class SnapshotService(
     IAggregationService aggregationService,
-    IEventMapperFactory eventMapperFactory,
     ISecureJsonSerializer serializer,
     IWriteUnitOfWork unitOfWork,
     ITrustedTypeResolver typeResolver,
-    ISnapshotStrategy snapshotStrategy,
-    AggregateEventSelector eventSelector) : ISnapshotService
+    ISnapshotStrategy snapshotStrategy) : ISnapshotService
 {
     /// <inheritdoc/>
     public async Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default)
@@ -102,10 +102,8 @@ internal sealed class SnapshotService(
         var currentVersion = streamEntries.Max(x => x.Version);
         var aggregateTypeName = streamEntries[0].AggregateTypeName;
         var type = typeResolver.Resolve(aggregateTypeName);
-        var aggregate = await aggregationService.AggregateAsync(type, streamId, cancellationToken: cancellationToken)
+        var aggregate = await aggregationService.AggregateAsync(type, streamId, toVersion: currentVersion, cancellationToken: cancellationToken)
                         ?? ObjectFactory.CreateInstance(type);
-        var events = await eventMapperFactory.MapToEventsAsync(eventSelector.Select(type, streamEntries), cancellationToken);
-        aggregate.ApplyEvents(events);
 
         var dataJson = await serializer.SerializeAsync(aggregate, owner.TenantId, owner.UserId, cancellationToken);
         return new Snapshot

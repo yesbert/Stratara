@@ -17,8 +17,9 @@ The consumer-visible effect: a snapshot captures only committed events. A save t
 snapshot behind, and a snapshot that cannot be written does not fail a save whose events are
 committed.
 
-- The event source writes the snapshot after the events are committed, from the committed stream up
-  to the batch's highest version, instead of before the commit from the batch.
+- The event source writes the snapshot after the events are committed and their bundle handed on,
+  from the committed stream up to the batch's highest version, instead of before the commit from the
+  batch.
 - A failure to write the snapshot after the commit is logged
   (`LogEvents.EventStore.SnapshotFailed`, `102_006`) and does not fail the save. A snapshot is a
   cache; the next threshold writes one.
