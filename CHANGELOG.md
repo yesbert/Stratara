@@ -18,6 +18,19 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A save that fails discards what it staged.** A failed save is specified to discard the whole
+  staged batch, but only a successful save and a concurrency conflict did so. A save that failed for
+  any other reason kept its events staged, whether the store was briefly unavailable or the save was
+  refused for a missing causation id. A handler run again in the same scope, as a retrying pipeline
+  does, then staged its events a second time on top of them, and the next successful save wrote
+  both: the same facts twice in the stream. After a refused save, every later save in that scope was
+  refused again.
+
+- **A failed `AppendOnBehalfOfAsync` no longer leaves its Subject behind.** When the append failed
+  before its event was staged, for example with no session or a failing serializer, the stated owner
+  stayed attached to the event object. Appending the same instance again without a stated owner then
+  recorded it under that owner anyway.
+
 - **A Subject stated with `AppendOnBehalfOfAsync` no longer carries over to the next append in the
   same batch.** Within one `SaveChangesAsync` batch the store remembers the owner it resolved for
   each stream, and it remembered a stated one too. So after `AppendOnBehalfOfAsync`, an ordinary
