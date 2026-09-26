@@ -262,7 +262,9 @@ distinct fact in the tenant's stream:
 
 `Stratara.Projections` ships the read model: `TenantProjection` keeps a `TenantView` per tenant up to
 date from those events, and `ITenantRepository` reads it. It also handles `CustomerTenantsDeleted`,
-which removes every tenant of a customer from the read model in one go. Register the aggregate and
+which removes every tenant of a customer from the read model in one go. That event goes on your own
+customer aggregate's stream, and the aggregate needs neither an `Apply` for it nor a registration: a
+rebuild skips an event the aggregate has no `Apply` for without reading it. Register the aggregate and
 the projection like your own:
 
 ```csharp

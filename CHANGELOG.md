@@ -16,7 +16,31 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.3.1`._
+**Upgrading:**
+- **If an aggregate's stream holds an event the aggregate has no `Apply` for, upgrade.** Rebuilding
+  it no longer requires that event's type to be registered. A workaround — a no-op `Apply` or an
+  explicit `AddTrustedType<T>()` — keeps working, and can be dropped where it served only the rebuild:
+  projections, sagas and the bus still resolve only registered types.
+- No public signature changes, no schema change.
+
+### Fixed
+
+- **Rebuilding an aggregate skips an event it has no `Apply` for without reading it.** The rebuild used
+  to resolve and decrypt every event in the stream before looking for a handler, so an unhandled event
+  whose type the host never registered failed it with *Type '…' is not registered in the trusted-type
+  resolver*. `AddAggregatesFromAssemblyContaining<T>()` registers only the types an `Apply` takes, so
+  the event an aggregate ignores was the one most likely to be unregistered: `CustomerTenantsDeleted` on
+  a consumer's own customer stream, or an event type retired from the aggregate by deleting its
+  `Apply` — the case the snapshot guide describes as simply passed over. A host that also ran a
+  projection over the same event did not fail, because the projection's registration covered it. The
+  failure came after the fact: the append committed, and only the next rebuild refused the stream. If
+  a snapshot was due at the append, the save itself failed. An unhandled event encrypted as a whole
+  under a key that had since been erased failed the rebuild with *Event data could not be
+  deserialized*. Now the decision is made on the recorded type name after upcasting, and an event no
+  `Apply` takes is neither resolved nor decrypted. An event that might be one the aggregate applies is
+  still read and still fails loudly when its type does not resolve: one carrying the full name of a
+  handled type, and every event of an aggregate with an `Apply` taking an interface, an abstract or
+  unsealed class, or a type that is not registered.
 
 ## [4.3.1] — 2026-09-25
 

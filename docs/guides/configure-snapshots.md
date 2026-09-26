@@ -123,6 +123,19 @@ events already recorded are simply passed over. The same rule is why a mistyped 
 `Apply` that is not public goes unnoticed: nothing fails, the event just has no effect. A test that
 rebuilds from a recorded stream is what catches it.
 
+A skipped event is not read at all. Its type is not resolved and its payload is not decrypted, so the
+type does not have to be registered in the host — `AddAggregatesFromAssemblyContaining<T>()`
+registers only the types an `Apply` takes — and a key erased since the event was written does not
+stop the rebuild. Where skipping unread could lose an event the aggregate would apply, the rebuild
+reads instead, and an event whose type is not registered fails it, naming the type:
+
+- a recorded event that carries the full name of a type the aggregate handles but does not resolve,
+  such as a type moved to another assembly, is read rather than skipped;
+- an aggregate with an `Apply` taking a type other types can derive from — an interface, an abstract
+  or unsealed class — or a generic `Apply`, has every event read;
+- so does an aggregate whose `Apply` types are not registered, because it was registered some other
+  way than by `AddAggregatesFromAssemblyContaining<T>()`.
+
 ## Rebuild an aggregate as it stood
 
 `IAggregationService.AggregateAsync<TAggregate>` takes an optional `toVersion`, inclusive. Bound it,

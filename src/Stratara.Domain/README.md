@@ -11,7 +11,7 @@ The Stratara framework's concrete multitenancy domain — the `Tenant` aggregate
 
 - `Stratara.Domain.Multitenancy.Tenant` — the aggregate. Implements `IAggregate` (from `Stratara.Abstractions`).
 - `Stratara.Domain.TenantCreated` / `TenantRenamed` / `TenantActivated` / `TenantDeactivated` / `TenantDefaultLocaleChanged` / `TenantAssignedToCustomer` / `TenantDeleted` — the event records consumed by the aggregate's `Apply()` methods + persisted to the event stream.
-- `Stratara.Domain.CustomerTenantsDeleted` — a **read-side** event: it carries a customer's deleted tenant ids for `TenantProjection` and has no `Apply()` overload on the aggregate. Rehydration skips unmapped events silently, so don't expect it to move aggregate state.
+- `Stratara.Domain.CustomerTenantsDeleted` — the cascade event that deletes all of a customer's tenants at once. You append it to your own customer aggregate's stream; `TenantProjection` removes the listed tenants from the read model. No framework aggregate applies it, and your customer aggregate needs neither an `Apply()` for it nor a registration: a rebuild skips an event the aggregate has no `Apply()` for without reading it. It does not touch the tenants' own streams, so a `Tenant` rehydrated afterwards reads as deleted only if `TenantDeleted` was appended to its stream as well.
 
 `TenantCreated` implements `IAggregateCreationEvent`, declaring the tenant it creates as the event's
 own data owner. A tenant therefore belongs to itself no matter which session performed the creation —

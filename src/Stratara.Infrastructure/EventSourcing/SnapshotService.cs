@@ -24,7 +24,8 @@ internal sealed class SnapshotService(
     ISecureJsonSerializer serializer,
     IWriteUnitOfWork unitOfWork,
     ITrustedTypeResolver typeResolver,
-    ISnapshotStrategy snapshotStrategy) : ISnapshotService
+    ISnapshotStrategy snapshotStrategy,
+    AggregateEventSelector eventSelector) : ISnapshotService
 {
     /// <inheritdoc/>
     public async Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default)
@@ -82,7 +83,7 @@ internal sealed class SnapshotService(
         var type = typeResolver.Resolve(aggregateTypeName);
         var aggregate = await aggregationService.AggregateAsync(type, streamId, cancellationToken: cancellationToken)
                         ?? ObjectFactory.CreateInstance(type);
-        var events = await eventMapperFactory.MapToEventsAsync(streamEntries, cancellationToken);
+        var events = await eventMapperFactory.MapToEventsAsync(eventSelector.Select(type, streamEntries), cancellationToken);
         aggregate.ApplyEvents(events);
 
         var dataJson = await serializer.SerializeAsync(aggregate, subjectTenantId, cancellationToken: cancellationToken);

@@ -44,6 +44,7 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IChangeSetHandler, ChangeSetHandler>();
         services.AddScoped<IEventTypeResolver, EventTypeResolver>();
         services.AddScoped<ISnapshotService, SnapshotService>();
+        services.TryAddSingleton<AggregateEventSelector>();
         services.TryAddSingleton<ISnapshotStrategy, VersionThresholdSnapshotStrategy>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AggregateSnapshotShapeGuard>());
         return services;

@@ -1,6 +1,7 @@
 using Stratara.Infrastructure.EventSourcing;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
+using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Shared.EventSourcing;
 
@@ -14,6 +15,7 @@ public class AggregationServiceTests
     private readonly Mock<ITransaction> _transactionMock = new();
     private readonly Mock<IEventStreamRepository> _eventStreamRepoMock = new();
     private readonly Mock<ISnapshotRepository> _snapshotRepoMock = new();
+    private readonly TrustedTypeResolver _typeResolver = new();
     private readonly AggregationService _service;
 
     public AggregationServiceTests()
@@ -21,7 +23,8 @@ public class AggregationServiceTests
         _unitOfWorkMock.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(_transactionMock.Object);
         _unitOfWorkMock.Setup(u => u.CreateEventStreamRepository(_transactionMock.Object)).Returns(_eventStreamRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.CreateSnapshotRepository(_transactionMock.Object)).Returns(_snapshotRepoMock.Object);
-        _service = new AggregationService(_unitOfWorkMock.Object, _eventMapperFactoryMock.Object, _serializerMock.Object);
+        _service = new AggregationService(_unitOfWorkMock.Object, _eventMapperFactoryMock.Object, _serializerMock.Object,
+            new AggregateEventSelector(_typeResolver, new EventUpcasterPipeline([])));
     }
 
     private sealed class TestAggregate
@@ -235,6 +238,44 @@ public class AggregationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _service.AggregateAsync<TestAggregate>(streamId));
     }
+
+    [Fact]
+    public async Task AggregateAsync_MapsOnlyTheEntriesTheAggregateHandles()
+    {
+        var streamId = Guid.NewGuid();
+        _typeResolver.Register(typeof(TestCreated));
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Snapshot?)null);
+
+        var handled = Entry(streamId, 0, typeof(TestCreated).AssemblyQualifiedName!);
+        var unhandled = Entry(streamId, 1, "Retired.Namespace.GoneEvent, Retired.Assembly");
+        _eventStreamRepoMock.Setup(r => r.GetManyAsync(streamId, 0L, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EventStreamEntry> { handled, unhandled });
+
+        IEnumerable<EventStreamEntry>? mapped = null;
+        _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<EventStreamEntry>, CancellationToken>((entries, _) => mapped = entries.ToList())
+            .ReturnsAsync(new List<IEvent>());
+
+        await _service.AggregateAsync<TestAggregate>(streamId);
+
+        Assert.NotNull(mapped);
+        Assert.Equal([handled], mapped);
+    }
+
+    private static EventStreamEntry Entry(Guid streamId, long version, string eventTypeName) => new()
+    {
+        StreamId = streamId,
+        Version = version,
+        EventTypeName = eventTypeName,
+        AggregateTypeName = typeof(TestAggregate).AssemblyQualifiedName!,
+        DataJson = "{}",
+        BucketId = 0,
+        TenantId = Guid.Empty,
+        ActorTenantId = Guid.Empty,
+        ActorUserId = Guid.Empty
+    };
 
     [Fact]
     public async Task AggregateAsync_QueriesEventsFromSnapshotVersionPlusOne()
