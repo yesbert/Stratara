@@ -84,6 +84,18 @@ builder.Services.AddSingleton<ISnapshotStrategy, NoSnapshotStrategy>();
 resolves the **last-registered** `ISnapshotStrategy`. A custom registration therefore wins whether it
 runs before or after `AddEventSourcing()` — you don't have to think about ordering.
 
+## When a snapshot is written
+
+A snapshot is written after the save that reaches the threshold has committed its events and handed
+their bundle on. It is built from the committed stream up to that save's highest version, so it never
+captures an event that was not recorded: a save that fails, a concurrency conflict included, leaves no
+snapshot behind. Writing the snapshot can fail on its own — the store is briefly unavailable, the
+operation is cancelled — and that does not fail the save: its events are recorded and published, the
+failure is logged as a warning naming the streams (`LogEvents.EventStore.SnapshotFailed`, `102_006`;
+information when it was cancelled), and a later save that the snapshot strategy approves writes the
+snapshot. One stream that cannot be snapshotted does not keep the others in the same save from being
+written.
+
 ## What a snapshot stores
 
 `VersionThresholdSnapshotStrategy` and any custom strategy only decide *whether* to snapshot. The

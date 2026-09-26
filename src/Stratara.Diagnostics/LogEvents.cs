@@ -53,6 +53,11 @@ public static class LogEvents
         /// resolve in the host; logged once per host and event type (warning).
         /// </summary>
         public const int UnresolvableEventSkippedForAnyResolvable = 102_005;
+        /// <summary>
+        /// Writing a snapshot after its events were committed failed; the save still succeeds, because a
+        /// snapshot is a cache and a later save writes one (warning; information when it was cancelled).
+        /// </summary>
+        public const int SnapshotFailed = 102_006;
     }
 
     /// <summary>Validation event-IDs (103_000s).</summary>
