@@ -63,6 +63,11 @@ public sealed class ForgottenTenantOnTheExecutionModelTests
         }
     }
 
+    /// <summary>
+    /// The account and the cascade live in different streams, and so perhaps in different partitions, each read at its
+    /// own pace; the test lets the readers catch up after each step so the history is applied in the order it was
+    /// written, as a replay would apply it.
+    /// </summary>
     [Fact]
     public async Task A_store_reading_projection_reads_past_a_fact_recorded_after_its_tenants_deletion()
     {
@@ -82,11 +87,13 @@ public sealed class ForgottenTenantOnTheExecutionModelTests
             await events.CreateAsync<Account>(account, new AccountOpened(account, Tenant, 10m));
             await events.SaveChangesAsync();
         });
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
         await AppendAsync(host, async events =>
         {
             await events.CreateAsync<Account>(customer, new CustomerTenantsDeleted(customer, [Tenant], DateTimeOffset.UtcNow));
             await events.SaveChangesAsync();
         });
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
         await AppendAsync(host, async events =>
         {
             await events.AppendAsync<Account>(account, new AmountDeposited(account, 5m));
