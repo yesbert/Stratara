@@ -23,4 +23,4 @@
 ## 4. Verify
 
 - [x] 4.1 `openspec validate write-a-snapshot-only-of-committed-events --strict`.
-- [ ] 4.2 Local gauntlet green.
+- [x] 4.2 Local gauntlet green.
