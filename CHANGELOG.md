@@ -18,6 +18,18 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A tenant's erasure shreds all of its key material.** A key is named by level, tenant and user
+  together. `ISubjectEraser.EraseTenantAsync` shredded only the tenant-level key with no user and
+  its members' user-level keys. A value at the default `[EncryptData]` level, which is user-level,
+  written for the tenant with no user was left readable after the tenant was erased. That is every
+  such field of an event appended from an ordinary request, where the session's data-owner user is
+  not set. A tenant-level value written for a member was left readable too. A tenant's erasure now
+  shreds every user-level and tenant-level key naming the tenant, alone or with each member.
+  `EraseUserAsync` likewise shreds every such key naming the user, alone or with each tenant it
+  belongs to; before, it left tenant-level values written for that user. `ISubjectEraser` and the
+  membership guide now also state what remains out of reach: a key shared with a user who had
+  already left the tenant, and, on a user's erasure, the snapshot of an aggregate that user owns.
+
 - **A stream keeps the user it was created for.** A later event takes its owner from the stream's
   first event rather than from the session: since 4.0.0 for every aggregate, and before that for
   aggregates implementing `ITenantAggregate`. But only the tenant was taken over. A stream whose

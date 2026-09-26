@@ -12,6 +12,15 @@ namespace Stratara.Infrastructure.Security;
 /// </summary>
 public sealed class SubjectEraser : ISubjectEraser
 {
+    /// <summary>
+    /// The levels whose keys are named after a subject. A key is named by level, tenant and user
+    /// together — a tenant-level value written for a user has a key naming both, and a user-level
+    /// value written with no user has one naming only the tenant — so a subject's key material is
+    /// every scope that names it, at either level, with or without the other dimension.
+    /// </summary>
+    private static readonly DataSensitivityLevel[] IsolatingLevels =
+        [DataSensitivityLevel.UserScoped, DataSensitivityLevel.TenantScoped];
+
     private readonly ITenantMembershipStore memberships;
     private readonly IApiKeyStore apiKeys;
     private readonly ISettingStore settings;
@@ -67,9 +76,11 @@ public sealed class SubjectEraser : ISubjectEraser
         await SweepAsync(swept, ErasurePlane.Memberships, [Describe(userId: userId)],
             () => memberships.RemoveAllMembershipsAsync(userId, cancellationToken));
 
-        var keyScopes = new List<KeyScope> { new(DataSensitivityLevel.UserScoped, null, Format(userId)) };
-        keyScopes.AddRange(tenantIds.Select(t =>
-            new KeyScope(DataSensitivityLevel.UserScoped, Format(t), Format(userId))));
+        var keyScopes = IsolatingLevels
+            .SelectMany(level => tenantIds
+                .Select(t => new KeyScope(level, Format(t), Format(userId)))
+                .Prepend(new KeyScope(level, null, Format(userId))))
+            .ToList();
 
         await SweepAsync(swept, ErasurePlane.KeyMaterial, keyScopes.Select(Describe).ToList(),
             async () =>
@@ -111,9 +122,11 @@ public sealed class SubjectEraser : ISubjectEraser
         await SweepAsync(swept, ErasurePlane.Memberships, [Describe(tenantId: tenantId)],
             () => memberships.RemoveAllMembersAsync(tenantId, cancellationToken));
 
-        var keyScopes = new List<KeyScope> { new(DataSensitivityLevel.TenantScoped, Format(tenantId)) };
-        keyScopes.AddRange(userIds.Select(u =>
-            new KeyScope(DataSensitivityLevel.UserScoped, Format(tenantId), Format(u))));
+        var keyScopes = IsolatingLevels
+            .SelectMany(level => userIds
+                .Select(u => new KeyScope(level, Format(tenantId), Format(u)))
+                .Prepend(new KeyScope(level, Format(tenantId))))
+            .ToList();
 
         await SweepAsync(swept, ErasurePlane.KeyMaterial, keyScopes.Select(Describe).ToList(),
             async () =>

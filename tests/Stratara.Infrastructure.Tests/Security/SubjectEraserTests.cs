@@ -101,7 +101,16 @@ public class SubjectEraserTests
         Assert.Equal(3, settingScopes.Count);
 
         var keyScopes = report.Planes.Single(p => p.Plane == ErasurePlane.KeyMaterial).Scopes;
-        Assert.Equal(3, keyScopes.Count);
+        string[] expected =
+        [
+            $"key scope UserScoped - / {User:D}",
+            $"key scope UserScoped {TenantA:D} / {User:D}",
+            $"key scope UserScoped {TenantB:D} / {User:D}",
+            $"key scope TenantScoped - / {User:D}",
+            $"key scope TenantScoped {TenantA:D} / {User:D}",
+            $"key scope TenantScoped {TenantB:D} / {User:D}",
+        ];
+        Assert.Equal(expected.Order(), keyScopes.Order());
     }
 
     [Fact]

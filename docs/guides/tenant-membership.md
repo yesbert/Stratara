@@ -229,6 +229,13 @@ first and a later failure leaves rows nobody can identify. The memberships are *
 are removed, because they are what tells the eraser which tenants the subject has settings and keys
 in.
 
+**Which keys it shreds.** A key is named by its sensitivity level, its tenant and its user together,
+so a subject's key material is every user-level or tenant-level key that names it. A tenant's erasure
+shreds the keys naming the tenant alone and those naming it together with each of its members. That
+includes the key a user-level value is encrypted under when it is written with no user, which is the
+case for an event appended from an ordinary request. A user's erasure shreds the keys naming the user
+alone and those naming it together with each tenant it belongs to.
+
 **If a plane fails, the erasure stops there** and raises `ErasureIncompleteException`, naming the
 plane and listing what was already swept. It does not continue, precisely so that a failed settings
 sweep never leads to the key being shredded anyway. Resume from the named plane.
@@ -243,6 +250,11 @@ sweep never leads to the key being shredded anyway. Resume from the named plane.
   both are deliberately left alone — the audit log is the evidence that the erasure happened, and
   whether to retain it is a decision only you can take for your jurisdiction.
 - **System-wide (`Confidential`) key material**, which is not subject-scoped and is never erased.
+- **Keys shared with someone who has already left.** The memberships name the other half of a shared
+  key. A key naming a tenant together with a user who left that tenant before the erasure is found by
+  neither the tenant's erasure nor the user's.
+- **Snapshots of an aggregate a user owns, on that user's erasure.** A snapshot is encrypted under
+  its stream's tenant alone, so the tenant's erasure reaches it and the user's does not.
 
 ## Tenants themselves are event-sourced
 
