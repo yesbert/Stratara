@@ -16,6 +16,13 @@ public static class StrataraOrleansSiloBuilderExtensions
     /// receives the silo and the name and registers any directory under it. A silo that runs the model's
     /// grains without a directory under the name fails to start with a message naming this registration.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Sets <c>MessagingOptions.WaitForCancellationAcknowledgement</c> for the silo and the client: a grain call of the
+    /// host whose token is cancelled waits for its grain's answer — or for the response timeout — instead of ending at
+    /// once, so a step that committed is not reported as cancelled.
+    /// </para>
+    /// </remarks>
     /// <param name="silo">The silo builder.</param>
     /// <param name="addDurableDirectory">Registers a storage-backed grain directory under the name it is given.</param>
     /// <returns>The same silo builder for chaining.</returns>

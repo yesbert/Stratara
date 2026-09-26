@@ -202,6 +202,14 @@
   without the registration a cancellation); documented in the operate guide and the CHANGELOG; `TimerOwnerGrain`'s and
   `StoreReaderLoop`'s summaries say what round 16 changed.
 
+- [x] 2b.22 Round 18 of the review: with calls waiting for their callee, a completed saga step's post-commit call to a
+  timer owner deactivating with the silo waited for its response timeout instead of ending with the step's budget;
+  `SagaProcessGrain` passes the step's token to that call again, swallowing its cancellation (the owner check drops
+  the timers of a completed process). The documentation no longer claims forwarded commands or timer handlers are
+  affected — their calls carry no token — and says a callee that does not answer ends the call at the response
+  timeout; the three registrations' XML remarks, the cheatsheet and the `orleans-execution` delta (a requirement
+  paragraph and the scenario `CancelledCallOutcomeTests` verifies) state the host-wide change.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

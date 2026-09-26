@@ -163,9 +163,14 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
         }
         else if (state.Completed)
         {
+            // With the step's token: the timer owner may be deactivating with the silo, and a call to it without one
+            // would wait for its response timeout instead of ending with the step's budget.
             try
             {
-                await timers.CancelAllAsync(owner, CancellationToken.None);
+                await timers.CancelAllAsync(owner, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
