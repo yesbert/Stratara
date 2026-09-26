@@ -8,8 +8,10 @@ namespace Stratara.Abstractions.EventSourcing;
 /// replaying every event from the start of a stream.
 /// </summary>
 /// <remarks>
-/// <see cref="TenantId"/> is the Subject (data owner) of the aggregate — same value as
-/// <see cref="EventStreamEntry.TenantId"/> for the underlying stream.
+/// <see cref="TenantId"/> and <see cref="UserId"/> are the Subject (data owner) of the aggregate —
+/// the owner recorded on the stream's first <see cref="EventStreamEntry"/>. The snapshot is encrypted
+/// under them and read back under them, so an erasure that reaches the stream's events reaches its
+/// snapshots too.
 /// </remarks>
 [ExcludeFromCodeCoverage]
 public sealed class Snapshot : IEntity, IMultiTenant, IBucket, IHasRowVersion
@@ -44,4 +46,11 @@ public sealed class Snapshot : IEntity, IMultiTenant, IBucket, IHasRowVersion
 
     /// <inheritdoc/>
     public required Guid TenantId { get; set; }
+
+    /// <summary>
+    /// The owning user recorded on the stream, or <see langword="null"/> when the stream names none —
+    /// and on every snapshot written before the owning user was recorded, which is read under
+    /// <see cref="TenantId"/> alone, as it was written.
+    /// </summary>
+    public Guid? UserId { get; set; }
 }

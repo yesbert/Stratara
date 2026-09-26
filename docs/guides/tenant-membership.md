@@ -256,8 +256,8 @@ Every sweep is safe to repeat, and the planes already swept simply find nothing 
   key. A key naming a tenant together with a user who is not a member when the erasure runs is found
   by neither the tenant's erasure nor the user's. That covers a user who left the tenant, and an
   operator acting in the tenant from outside it.
-- **Snapshots of an aggregate a user owns, on that user's erasure.** A snapshot is encrypted under
-  its stream's tenant alone, so the tenant's erasure reaches it and the user's does not.
+- **Snapshots written before 4.4.0, on a user's erasure.** They record no user and stay under their
+  tenant alone. The 4.4.0 changelog gives the statement that removes them on upgrading.
 
 ## Tenants themselves are event-sourced
 

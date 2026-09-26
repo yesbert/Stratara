@@ -18,6 +18,32 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A user's erasure reaches the snapshots of that user's aggregates.** A snapshot holds an aggregate's
+  whole state, protected fields included. It was encrypted under the stream's tenant alone and
+  recorded no user. After a user's erasure, rebuilding that user's aggregate therefore started from a
+  snapshot that still read their data, although every event behind it had become unreadable. A
+  snapshot is now protected under the stream's recorded owner, tenant and user, and records the user
+  in a new nullable `Snapshot.UserId`. It also took its tenant from the first event of the batch that
+  triggered it. When that event was appended on behalf of another subject, the snapshot landed under
+  that subject. It now takes the owner from the stream's first event. A snapshot written before this
+  change records no user and is still read under its tenant alone.
+
+  **The write context's snapshot table gains a column: generate an EF Core migration for it and apply
+  it before the new version runs.** Every read of a snapshot selects the column, so without it
+  rebuilding an aggregate fails.
+
+  Snapshots written before the upgrade keep serving rebuilds, including rebuilds bounded to an earlier
+  version, because snapshots are never pruned. To let a user's erasure reach them, delete the snapshots
+  whose owner differs from their stream's. They are a cache: a rebuild without one replays the events,
+  and the next threshold writes a new one. With the Npgsql registration's snake_case names:
+
+  ```sql
+  DELETE FROM snapshot s
+  USING event_stream_entry e
+  WHERE e.stream_id = s.stream_id AND e.version = 1
+    AND (s.tenant_id <> e.tenant_id OR s.user_id IS DISTINCT FROM e.user_id);
+  ```
+
 - **A tenant's erasure shreds every key naming the tenant.** A key is named by level, tenant and user
   together, and the serializer binds every value to a tenant. `ISubjectEraser.EraseTenantAsync`
   shredded only the tenant-level key with no user and its members' user-level keys. It left three
