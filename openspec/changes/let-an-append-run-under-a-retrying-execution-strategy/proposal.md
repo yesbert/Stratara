@@ -1,6 +1,6 @@
 # Let an append run under a retrying execution strategy
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 
