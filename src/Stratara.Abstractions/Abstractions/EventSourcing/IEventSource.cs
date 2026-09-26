@@ -144,6 +144,12 @@ public interface IEventSource
     /// <see cref="CommittedEventsNotPublishedException"/>: its events are already recorded, and
     /// appending them again would record them twice.
     /// </remarks>
+    /// <param name="cancellationToken">
+    /// Honoured until the changes are sent to the write store; from then on the save runs to its end, so a save the
+    /// store committed is never reported as cancelled. A cancellation of the handover after the commit surfaces as
+    /// <see cref="CommittedEventsNotPublishedException"/>.
+    /// </param>
+    /// <exception cref="OperationCanceledException">The save was cancelled before its changes were sent; nothing was written.</exception>
     /// <exception cref="ConcurrencyException">Another writer beat this one to the stream's head version.</exception>
     /// <exception cref="CommittedEventsNotPublishedException">
     /// The events were committed, but handing their bundle on failed afterwards. Do not append them again.

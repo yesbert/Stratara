@@ -19,7 +19,7 @@ the handlers it is running settle theirs before it closes — from the moment th
 stopping until the host has stopped, for as long as the host's shutdown timeout allows; otherwise for a
 bounded time — so that a handler that completed while the host stops, or whose save committed, is
 acknowledged rather than handed back to run again. A host that stops SHALL count as stopped only once
-its stopping subscriptions have closed, within its shutdown timeout, so their handlers settle while the
+the subscriptions its hosted services stopped have closed, within its shutdown timeout, so their handlers settle while the
 services they use still exist, and a handler that never returns SHALL hold up neither the host's stop
 nor its disposal beyond that. A subscription whose wait has run out SHALL still stop taking messages.
 A handler that stops because its subscription stops has not failed: the framework SHALL put its

@@ -66,8 +66,9 @@ applies to the entire NuGet family.
   Orleans execution model resumed a recorded command, a store reader retried the entry, a durable timer
   fired again, and a pipeline that retries on any exception retried. The save now throws the new
   `CommittedEventsNotPublishedException`, naming the committed streams, with the handover's failure as
-  the inner exception, a cancellation after the commit included. Each of those places treats it as
-  done and logs an error:
+  the inner exception, a cancellation after the commit included. A cancellation is honoured only until
+  the save's changes go to the store: a stop that arrived while the store committed could otherwise
+  report a committed save as cancelled. Each of those places treats it as done and logs an error:
   - the RabbitMQ and Azure Service Bus transports acknowledge the message, whatever their own
     cancellation says (`LogEvents.Messaging.CommittedEventsNotPublished`, `108_113`);
   - on the Orleans execution model a recorded command is completed

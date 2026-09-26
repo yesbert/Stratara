@@ -24,11 +24,11 @@ public sealed class SubscriptionStopsTests
     {
         if (transport == "RabbitMQ")
         {
-            var rabbit = new RabbitMqSubscriptionStops(NullLogger<RabbitMqSubscriptionStops>.Instance, lifetime, time);
+            var rabbit = new RabbitMqSubscriptionStops(NullLogger<RabbitMqSubscriptionStops>.Instance, lifetime, time ?? TimeProvider.System);
             return new Stops(rabbit, rabbit.Deadline, rabbit.Add, rabbit.BusDisposing);
         }
 
-        var serviceBus = new AzureServiceBusSubscriptionStops(NullLogger<AzureServiceBusSubscriptionStops>.Instance, lifetime, time);
+        var serviceBus = new AzureServiceBusSubscriptionStops(NullLogger<AzureServiceBusSubscriptionStops>.Instance, lifetime, time ?? TimeProvider.System);
         return new Stops(serviceBus, serviceBus.Deadline, serviceBus.Add, serviceBus.BusDisposing);
     }
 

@@ -26,10 +26,7 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// one that stops afterwards waits that long as well.
 /// </para>
 /// </remarks>
-internal sealed class AzureServiceBusSubscriptionStops(
-    ILogger<AzureServiceBusSubscriptionStops> logger,
-    IHostApplicationLifetime? lifetime = null,
-    TimeProvider? timeProvider = null) : IHostedLifecycleService
+internal sealed class AzureServiceBusSubscriptionStops : IHostedLifecycleService
 {
     /// <summary>
     /// How long a subscription that stops outside a host's stop — its own token was cancelled — waits for the handlers
@@ -37,7 +34,9 @@ internal sealed class AzureServiceBusSubscriptionStops(
     /// </summary>
     internal static readonly TimeSpan StandaloneSettleTimeout = TimeSpan.FromSeconds(20);
 
-    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    private readonly ILogger<AzureServiceBusSubscriptionStops> _logger;
+    private readonly IHostApplicationLifetime? _lifetime;
+    private readonly TimeProvider _time;
     private readonly ConcurrentBag<Task> _stops = new();
     private readonly Lock _gate = new();
 
@@ -46,6 +45,20 @@ internal sealed class AzureServiceBusSubscriptionStops(
     private CancellationTokenSource? _hostStop;
     private bool _hostStopEnded;
     private CancellationTokenRegistration _shutdownElapsed;
+
+    /// <summary>The bounds run on real time, like the host's own shutdown timeout, whatever clock the application registers.</summary>
+    public AzureServiceBusSubscriptionStops(ILogger<AzureServiceBusSubscriptionStops> logger, IHostApplicationLifetime? lifetime = null)
+        : this(logger, lifetime, TimeProvider.System)
+    {
+    }
+
+    /// <summary>With the clock the bounds run on, for tests; the container never chooses this constructor.</summary>
+    internal AzureServiceBusSubscriptionStops(ILogger<AzureServiceBusSubscriptionStops> logger, IHostApplicationLifetime? lifetime, TimeProvider timeProvider)
+    {
+        _logger = logger;
+        _lifetime = lifetime;
+        _time = timeProvider;
+    }
 
     /// <summary>Records a subscription's stop, so the host and the bus's disposal can wait for it.</summary>
     public void Add(Task stop) => _stops.Add(stop);
@@ -100,7 +113,7 @@ internal sealed class AzureServiceBusSubscriptionStops(
             }
 
             hostStop?.Cancel();
-            logger.LogSubscriptionCleanupFailed("subscriptions", ex);
+            _logger.LogSubscriptionCleanupFailed("subscriptions", ex);
         }
         finally
         {
@@ -123,7 +136,7 @@ internal sealed class AzureServiceBusSubscriptionStops(
                 return _hostStop;
             }
 
-            if (_hostStopEnded || (!starting && lifetime is not { ApplicationStopping.IsCancellationRequested: true }))
+            if (_hostStopEnded || (!starting && _lifetime is not { ApplicationStopping.IsCancellationRequested: true }))
             {
                 return null;
             }

@@ -8,7 +8,9 @@ with nothing staged SHALL write and publish nothing.
 
 Where the events were committed but their bundle could not be handed on, the save SHALL fail with a
 failure of its own that says the events are committed and names their streams — whatever ended the
-handover, a cancellation included. It SHALL be distinguishable from a save that wrote nothing, and
+handover, a cancellation included. A cancellation SHALL be honoured only until the save's changes are
+sent to the store; from then on the save SHALL run to its end, so that a save the store committed is
+never reported as cancelled. It SHALL be distinguishable from a save that wrote nothing, and
 neither the framework's retrying pipelines nor its transports nor its recorded-command resumption
 SHALL run the work again because of it, since that would record the same facts a second time. On a
 host with durable bundles the bundle is already recorded when the handover fails, so the save SHALL
@@ -56,6 +58,13 @@ SHALL NOT fail after the commit because the bundle could not be recorded.
 - **WHEN** a save commits its events and handing their bundle on is then cancelled
 - **THEN** the save fails with the same failure, carrying the cancellation, rather than surfacing as a
   plain cancellation
+
+#### Scenario: The save is cancelled while the store commits
+
+- **WHEN** a save's changes have been sent to the store and the save's cancellation is requested while
+  the store commits them
+- **THEN** the save is not reported as cancelled: it completes, or fails with the failure that says
+  its events are committed, and its events are in the store
 
 #### Scenario: The handover fails after the commit on a host with durable bundles
 

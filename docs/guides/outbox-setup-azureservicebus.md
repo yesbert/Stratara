@@ -88,8 +88,8 @@ host's stopping token — and closes its processor, which takes no further messa
 handler it is running: from the moment the application starts stopping until the host has stopped, as
 long as the host's shutdown timeout allows (`HostOptions.ShutdownTimeout`, 30 seconds by default; an
 infinite timeout waits as long as the handler runs); a subscription whose own token was cancelled at
-any other time waits twenty seconds. The host counts as stopped only after its subscriptions have
-closed, so a handler that is still running finishes while the services it uses exist and its message
+any other time waits twenty seconds. The host counts as stopped only after the subscriptions its
+hosted services stopped have closed, so a handler that is still running finishes while the services it uses exist and its message
 is completed rather than delivered again. A handler's outcome is settled whatever the subscription's
 token says; a handler that gives up on that token has its message abandoned rather than dead-lettered
 by the framework, and a message the processor took after the subscription started stopping is

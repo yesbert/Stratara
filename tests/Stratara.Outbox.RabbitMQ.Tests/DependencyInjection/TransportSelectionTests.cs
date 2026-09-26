@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using Stratara.Abstractions.Messaging;
 using Stratara.Outbox.AzureServiceBus.Messaging;
 using Stratara.Outbox.RabbitMQ.Messaging;
@@ -106,5 +107,27 @@ public class TransportSelectionTests
         public Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The bound a stopping subscription waits under runs on real time, like the host's own shutdown timeout — not on a
+    /// clock the application registered, which a test host may have frozen.
+    /// </summary>
+    [Fact]
+    public async Task The_stopping_subscriptions_keep_real_time_whatever_clock_the_host_registers()
+    {
+        var frozen = new FakeTimeProvider();
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddSingleton<TimeProvider>(frozen);
+        builder.AddMessaging();
+        builder.Services.AddAzureServiceBus(SampleConnectionString);
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        using var rabbit = provider.GetRequiredService<RabbitMqSubscriptionStops>().Deadline();
+        using var serviceBus = provider.GetRequiredService<AzureServiceBusSubscriptionStops>().Deadline();
+        frozen.Advance(TimeSpan.FromMinutes(5));
+
+        Assert.False(rabbit.IsCancellationRequested);
+        Assert.False(serviceBus.IsCancellationRequested);
     }
 }

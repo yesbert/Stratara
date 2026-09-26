@@ -264,9 +264,9 @@ takes no further message, waits for the handler it is running to settle, and the
 From the moment the application starts stopping — `ApplicationStopping` included — until the host has
 stopped, it waits as long as the host's shutdown timeout allows (`HostOptions.ShutdownTimeout`, 30
 seconds by default; an infinite timeout waits as long as the handler runs); a subscription whose own
-token was cancelled at any other time waits twenty seconds. The host counts as stopped only after its
-subscriptions have closed, so a handler that is still running finishes while the services it uses
-exist, and its message is acknowledged rather than delivered again. A handler's outcome is settled
+token was cancelled at any other time waits twenty seconds. The host counts as stopped only after the
+subscriptions its hosted services stopped have closed, so a handler that is still running finishes
+while the services it uses exist, and its message is acknowledged rather than delivered again. A handler's outcome is settled
 whatever the subscription's token says, and a handler that gives up on that token — an
 `OperationCanceledException` while the subscription stops — has its message requeued rather than
 dead-lettered by the framework. The broker counts that delivery like any other: it uses up one of

@@ -115,14 +115,25 @@
   against the emulator); the stop with no time left is verified on RabbitMQ too
   (`HostStopsWithNoTimeLeft_TheSubscriptionStillStopsTakingMessages`), and the spec names both new scenarios.
 
-- [x] 2b.14 Round 10 of the review: the host's stop in the trackers is guarded by one lock and ends — with the host
-  stopping or the bus being disposed — for good, so a deadline taken late can no longer install a host stop that
+- [x] 2b.14 Round 10 of the review: the host's stop in the trackers is guarded by one lock and ends — once the host
+  has stopped, or when the bus is disposed — for good, so a deadline taken late can no longer install a host stop that
   never runs out, and a stop that begins after the bus's disposal keeps the standalone bound; the trackers take a
   `TimeProvider`, and `SubscriptionStopsTests` now pins both bounds with a fake clock
   (`Once_the_host_has_stopped_…_runs_out_with_the_standalone_bound`,
   `A_host_disposed_without_being_stopped_leaves_no_stop_without_a_bound`,
   `A_bus_disposed_before_its_application_was_told_to_stop_leaves_no_stop_without_a_bound`); the RabbitMQ host tests
-  check at twenty-two seconds that the message is still the handler's, which the old twenty-second wait fails.
+  (`HostStopsDuringTheHandler_TheHostWaitsForItAndTheMessageIsAcknowledged`,
+  `ApplicationStopsWhileAHandlerRuns_ASubscriptionTiedToItWaitsUnderTheHostsTimeout`) check at twenty-two seconds
+  that the message is still the handler's, which the old twenty-second wait fails.
+
+- [x] 2b.15 Round 11 of the review: a save honours its cancellation only until its changes go to the store — a stop
+  that arrived while the store committed reported a committed save as cancelled, and a transport then put the
+  message back and ran it again (`EventSourceSaveOutcomeTests.A_save_cancelled_while_the_store_commits_is_not_reported_as_cancelled`,
+  red with the token passed to the commit; `A_save_cancelled_before_its_changes_go_to_the_store_writes_nothing`);
+  the trackers keep real time whatever `TimeProvider` a host registers — a frozen test clock had frozen the bus's
+  disposal — through a constructor the container never chooses
+  (`TransportSelectionTests.The_stopping_subscriptions_keep_real_time_whatever_clock_the_host_registers`); the
+  documents say the host waits for the subscriptions its hosted services stopped.
 
 ## 3. Documentation
 

@@ -170,9 +170,13 @@ internal sealed class EventSource(
             await outboxDispatcher.StoreEventBundleAsync(eventBundle, transaction, cancellationToken);
         }
 
+        // The last point a cancellation is honoured. Once the changes are on their way to the store the save runs to its
+        // end, so that what the caller is told is what happened: a store that commits and then reports the cancellation
+        // would turn a committed save into what looks like a failed one, and whatever runs it would run it again.
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await transaction.SaveChangesAsync(cancellationToken);
+            await transaction.SaveChangesAsync(CancellationToken.None);
         }
         catch (Exception ex) when (IsConcurrencyOrUniqueViolation(ex))
         {

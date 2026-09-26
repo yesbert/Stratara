@@ -54,10 +54,10 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// <para>
 /// A subscription that stops closes its processor, which takes no further message and waits for the handler it is
 /// running to settle — as long as the host's shutdown timeout allows from the moment the application starts stopping
-/// until the host has stopped, twenty seconds otherwise. A handler still running after that keeps its message locked until the lock expires, and the client
-/// closes the processor's links when it is disposed. A message taken after the subscription started stopping is
-/// abandoned unhandled, and a handler that stops on the subscription's token has its message abandoned rather than
-/// dead-lettered by the framework; the broker counts that delivery too.
+/// until the host has stopped, twenty seconds otherwise. A handler still running after that keeps its message locked
+/// until the lock expires, and the client closes the processor's links when it is disposed. A message taken after the
+/// subscription started stopping is abandoned unhandled, and a handler that stops on the subscription's token has its
+/// message abandoned rather than dead-lettered by the framework; the broker counts that delivery too.
 /// </para>
 /// </remarks>
 /// <example>

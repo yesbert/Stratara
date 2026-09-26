@@ -38,6 +38,43 @@ public class EventSourceSaveOutcomeTests
             Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A store that commits a save and then reports that the save was cancelled — what a database driver may do when
+    /// the cancellation arrives while it waits for the commit to be acknowledged.
+    /// </summary>
+    private sealed class CommitsThenReportsCancellation(IWriteUnitOfWork inner, CancellationTokenSource stop) : IWriteUnitOfWork
+    {
+        public async Task<ITransaction> StartAsync(CancellationToken cancellationToken = default) =>
+            new Transaction(await inner.StartAsync(cancellationToken), stop);
+
+        public IEventStreamRepository CreateEventStreamRepository(ITransaction transaction) => inner.CreateEventStreamRepository(Inner(transaction));
+
+        public IEventChainRepository CreateEventChainRepository(ITransaction transaction) => inner.CreateEventChainRepository(Inner(transaction));
+
+        public ISnapshotRepository CreateSnapshotRepository(ITransaction transaction) => inner.CreateSnapshotRepository(Inner(transaction));
+
+        public ICommandAuditRepository CreateCommandAuditRepository(ITransaction transaction) => inner.CreateCommandAuditRepository(Inner(transaction));
+
+        public IOutboxRepository CreateOutboxRepository(ITransaction transaction) => inner.CreateOutboxRepository(Inner(transaction));
+
+        private static ITransaction Inner(ITransaction transaction) => ((Transaction)transaction).Inner;
+
+        private sealed class Transaction(ITransaction inner, CancellationTokenSource stop) : ITransaction
+        {
+            public ITransaction Inner => inner;
+
+            public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+            {
+                var written = await inner.SaveChangesAsync(CancellationToken.None);
+                await stop.CancelAsync();
+                cancellationToken.ThrowIfCancellationRequested();
+                return written;
+            }
+
+            public ValueTask DisposeAsync() => inner.DisposeAsync();
+        }
+    }
+
     private static EventStoreTestHost CreateHost() =>
         EventStoreTestHost.Create(services => services
             .AddTrustedType<OutcomeProbe>()
@@ -75,6 +112,58 @@ public class EventSourceSaveOutcomeTests
         var unitOfWork = read.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
         await using var transaction = await unitOfWork.StartAsync();
         Assert.Single(await unitOfWork.CreateEventStreamRepository(transaction).GetManyAsync(streamId));
+    }
+
+    /// <summary>
+    /// The save's cancellation is requested while the store commits — the host stops at that moment. The save is not
+    /// reported as cancelled, which would have a transport run the committed work again: it completes, or says its
+    /// events are committed.
+    /// </summary>
+    [Fact]
+    public async Task A_save_cancelled_while_the_store_commits_is_not_reported_as_cancelled()
+    {
+        await using var host = CreateHost();
+        var streamId = Guid.CreateVersion7();
+        using var stop = new CancellationTokenSource();
+
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var unitOfWork = new CommitsThenReportsCancellation(scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>(), stop);
+            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), unitOfWork);
+            await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
+
+            var failure = await Record.ExceptionAsync(() => events.SaveChangesAsync(stop.Token));
+
+            Assert.True(failure is null or CommittedEventsNotPublishedException, $"The save reported {failure?.GetType().Name}.");
+        }
+
+        await using var read = host.Services.CreateAsyncScope();
+        var store = read.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
+        await using var transaction = await store.StartAsync();
+        Assert.Single(await store.CreateEventStreamRepository(transaction).GetManyAsync(streamId));
+    }
+
+    /// <summary>A save cancelled before its changes go to the store is cancelled, and writes nothing.</summary>
+    [Fact]
+    public async Task A_save_cancelled_before_its_changes_go_to_the_store_writes_nothing()
+    {
+        await using var host = CreateHost();
+        var streamId = Guid.CreateVersion7();
+        using var stop = new CancellationTokenSource();
+
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var events = scope.ServiceProvider.GetRequiredService<IEventSource>();
+            await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
+            await stop.CancelAsync();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => events.SaveChangesAsync(stop.Token));
+        }
+
+        await using var read = host.Services.CreateAsyncScope();
+        var store = read.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
+        await using var transaction = await store.StartAsync();
+        Assert.Empty(await store.CreateEventStreamRepository(transaction).GetManyAsync(streamId));
     }
 
     /// <summary>A handover cancelled after the commit leaves the events recorded just the same, so it says so too.</summary>
