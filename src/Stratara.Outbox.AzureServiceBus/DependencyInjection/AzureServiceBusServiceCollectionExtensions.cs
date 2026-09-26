@@ -89,7 +89,9 @@ public static class AzureServiceBusServiceCollectionExtensions
         // Replace (not TryAdd) so an explicit Azure Service Bus registration wins the IMessageBus
         // slot even when the RabbitMQ umbrella (AddMessaging) already claimed it. One transport per
         // host; the explicitly-chosen one is the transport.
-        services.Replace(ServiceDescriptor.Singleton<IMessageBus, AzureServiceBusBus>());
+        // The concrete bus is a service of its own, so the drain reaches it even when the message bus is decorated.
+        services.TryAddSingleton<AzureServiceBusBus>();
+        services.Replace(ServiceDescriptor.Singleton<IMessageBus>(provider => provider.GetRequiredService<AzureServiceBusBus>()));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AzureServiceBusSubscriptionsDrain>());
         services.AddOptions<MessageRetryOptions>()
             .Configure<IServiceProvider>((options, provider) =>

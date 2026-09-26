@@ -179,28 +179,25 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
     }
 
     /// <summary>
-    /// The host stops while a handler runs. It waits for the handler to settle before it counts as stopped — so before
-    /// the container that holds the handler's services is disposed — and the message is acknowledged.
+    /// The host stops while a handler runs, and the handler takes longer than a subscription stopped on its own would
+    /// wait. The host waits for it — as long as its shutdown timeout allows — before it counts as stopped, so before the
+    /// container that holds the handler's services is disposed, and the message is acknowledged.
     /// </summary>
     [Fact]
     public async Task HostStopsDuringTheHandler_TheHostWaitsForItAndTheMessageIsAcknowledged()
     {
         var topic = $"test-topic-{Guid.NewGuid():N}";
         var subscription = $"worker-{Guid.NewGuid():N}";
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var subscribed = new TaskCompletionSource();
         var entered = new TaskCompletionSource();
         var release = new TaskCompletionSource();
 
-        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
-        builder.Configuration.AddConfiguration(fixture.Configuration);
-        builder.AddMessaging();
-        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), topic, subscription, subscribed, async _ =>
+        using var host = BuildHost(TimeSpan.FromSeconds(60), topic, subscription, subscribed, async _ =>
         {
             entered.TrySetResult();
             await release.Task;
-        }));
-        using var host = builder.Build();
+        });
         await host.StartAsync(cts.Token);
         await subscribed.Task.WaitAsync(cts.Token);
 
@@ -208,12 +205,77 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         await entered.Task.WaitAsync(cts.Token);
 
         var stopping = host.StopAsync(cts.Token);
-        await Task.Delay(QuietPeriod, cts.Token);
+        await Task.Delay(LongerThanAStandaloneStopWaits, cts.Token);
         Assert.False(stopping.IsCompleted);
 
         release.TrySetResult();
         await stopping.WaitAsync(cts.Token);
         Assert.Equal(0u, await ReadyCountAsync(subscription, cts.Token));
+    }
+
+    /// <summary>
+    /// A handler that never returns holds neither the host's stop nor its disposal up beyond the host's shutdown timeout
+    /// and the bounded wait for the channel to close.
+    /// </summary>
+    [Fact]
+    public async Task HostStopsWhileAHandlerNeverReturns_TheStopAndTheDisposalStillFinish()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var subscribed = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+        var never = new TaskCompletionSource();
+
+        var host = BuildHost(TimeSpan.FromSeconds(3), topic, subscription, subscribed, async _ =>
+        {
+            entered.TrySetResult();
+            await never.Task;
+        });
+        try
+        {
+            await host.StartAsync(cts.Token);
+            await subscribed.Task.WaitAsync(cts.Token);
+            await host.Services.GetRequiredService<IMessageBus>().PublishAsync(topic, new TestMessage("stuck"), cts.Token);
+            await entered.Task.WaitAsync(cts.Token);
+
+            await host.StopAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+            await ((IAsyncDisposable)host).DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+        }
+        finally
+        {
+            never.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// The handler gives up because its subscription stops — it observed the stopping token — on the message's last
+    /// allowed delivery. That is not a failure: the message goes back to the queue and is not dead-lettered.
+    /// </summary>
+    [Fact]
+    public async Task SubscriptionStopsAndTheHandlerGivesUp_TheMessageGoesBackRatherThanToTheDeadLetterQueue()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 1 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+        var handled = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, async _ =>
+        {
+            await subscribed.CancelAsync();
+            handled.TrySetResult();
+            subscribed.Token.ThrowIfCancellationRequested();
+        }, subscribed.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("given up"), cts.Token);
+        await handled.Task.WaitAsync(cts.Token);
+        await bus.DisposeAsync();
+
+        Assert.Equal(1u, await WaitForReadyCountAsync(subscription, 1, cts.Token));
+        Assert.Null(await TryGetDeadLetterAsync(subscription, cts.Token));
     }
 
     /// <summary>
@@ -447,6 +509,19 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
     }
 
     private sealed record DeadLettered(byte[] Body, IReadOnlyBasicProperties Properties);
+
+    /// <summary>Longer than a subscription stopped on its own waits for its handler (twenty seconds).</summary>
+    private static readonly TimeSpan LongerThanAStandaloneStopWaits = TimeSpan.FromSeconds(22);
+
+    private IHost BuildHost(TimeSpan shutdownTimeout, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
+        builder.Configuration.AddConfiguration(fixture.Configuration);
+        builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = shutdownTimeout);
+        builder.AddMessaging();
+        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), topic, subscription, subscribed, handler));
+        return builder.Build();
+    }
 
     /// <summary>Subscribes when the host starts, with the host's stopping token — the way a worker does.</summary>
     private sealed class SubscribingWorker(IMessageBus bus, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler) : BackgroundService

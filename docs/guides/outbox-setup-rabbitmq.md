@@ -260,13 +260,20 @@ dropped — there is nobody to return a message to.
 ## When the host stops
 
 A subscription stops with the token it was opened with — for a worker, the host's stopping token. It
-takes no further message, waits up to twenty seconds for the handler it is running to settle, and then
-closes its channel. The host waits for that before it counts as stopped, within its shutdown timeout
-(`HostOptions.ShutdownTimeout`, 30 seconds by default), so a handler that is still running finishes
-while the services it uses exist, and its message is acknowledged rather than delivered again. A
-handler's outcome is settled whatever the subscription's token says. A handler that takes longer does
-not hold the stop up: after the twenty seconds, and at most five more for the channel to close, the
-subscription counts as stopped, and the broker puts the message back once the process has gone.
+takes no further message, waits for the handler it is running to settle, and then closes its channel.
+While the host stops, it waits as long as the host's shutdown timeout allows
+(`HostOptions.ShutdownTimeout`, 30 seconds by default); a subscription whose own token was cancelled
+waits twenty seconds. The host counts as stopped only after its subscriptions have closed, so a handler
+that is still running finishes while the services it uses exist, and its message is acknowledged
+rather than delivered again. A handler's outcome is settled whatever the subscription's token says, and
+a handler that gives up on that token — an `OperationCanceledException` while the subscription stops —
+has its message put back on the queue, never on the dead-letter queue.
+
+A handler that takes longer than the wait does not hold the stop up. The subscription closes its
+channel; the broker acknowledges the close and puts the handler's message back at once, so another
+consumer may take it while the first handler is still running — the handler must tolerate that, as
+at-least-once delivery already requires. The subscription counts as stopped at most five seconds later,
+whether or not the handler has returned.
 
 What the subscription had fetched but not yet handed to its handler goes back to the queue unhandled.
 The broker counts that as a delivery, so each such stop brings those messages one delivery closer to

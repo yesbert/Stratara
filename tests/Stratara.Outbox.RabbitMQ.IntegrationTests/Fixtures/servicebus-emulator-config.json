@@ -60,6 +60,18 @@
             ]
           },
           {
+            "Name": "test-host-stuck-handler",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
+            "Name": "test-handler-gives-up",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
             "Name": "test-durable",
             "Subscriptions": [
               { "Name": "worker" }

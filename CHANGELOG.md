@@ -37,10 +37,12 @@ applies to the entire NuGet family.
   during a shutdown ran twice; deliveries the client had already fetched then ran on the closing channel
   too. A Service Bus subscription did not stop its processor at all. A stopping subscription now stops
   taking messages, hands fetched but unhandled ones back to the queue, lets the running handler settle
-  for up to twenty seconds, and then closes; the host waits for that when it stops, within its shutdown
-  timeout, before anything is disposed. A RabbitMQ handler that never returned kept its channel from
-  closing, and the bus's disposal — and with it the process — waited forever; the close is now bounded
-  too. Both transports settle a handler's outcome whatever the
+  — as long as the host's shutdown timeout allows while the host stops, twenty seconds otherwise — and
+  then closes; the host waits for that when it stops, before anything is disposed. A handler that gives
+  up because its subscription stops has its message put back rather than counted as a failure, which on
+  its last allowed delivery would have dead-lettered it. A RabbitMQ handler that never returned kept its
+  channel from closing, and the bus's disposal — and with it the process — waited forever; the close is
+  now bounded too. The drains reach the concrete bus, so a decorated `IMessageBus` keeps them. Both transports settle a handler's outcome whatever the
   subscription's own cancellation says.
 
 - **A RabbitMQ subscription holds at most `Messaging:PrefetchCount` messages** (default 16, 1 to 65535,
@@ -53,6 +55,8 @@ applies to the entire NuGet family.
   handler on another silo reaches the caller with its `Failures` — each field, message and code, never
   the attempted value — so the problem-details handler still answers with the fields to correct. Its
   message stays generic: a failure's message may quote the input, and exception messages are logged.
+  During a rolling upgrade, a silo not yet upgraded cannot read a validation failure from an upgraded
+  one; that call fails there with a serialization failure until every silo is upgraded.
 
 - **A save that committed but could not publish says so, and nothing runs it again.** On a host
   without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after

@@ -78,6 +78,20 @@
   and its failures cross silos through a surrogate instead, without the attempted value
   (`FrameworkExceptionSerializationTests.A_validation_failure_keeps_which_field_failed_…`).
 
+- [x] 2b.11 Round 7 of the review: a handler that stops on its subscription's token has its message put back —
+  requeued or abandoned — instead of counted as a failure, which on the last allowed delivery dead-lettered it
+  (`SubscriptionStopsAndTheHandlerGivesUp_…` on both transports); a Service Bus message taken after the
+  subscription started stopping is abandoned unhandled; while the host stops, a stopping subscription waits for
+  its handlers as long as the host's shutdown timeout allows instead of twenty seconds, handed over in the
+  drain's `StoppingAsync` (the host tests now hold the handler for twenty-two seconds under a sixty-second
+  timeout), and cancelling the RabbitMQ consumer counts against the same deadline; a handler that never returns
+  holds neither the host's stop nor its disposal up (`HostStopsWhileAHandlerNeverReturns_…` on both
+  transports, which found that the drain's timeout branch could dispose its registration before the
+  registration's callback ran, so the drain now tells the bus itself); a Service Bus close abandoned after the deadline has its fault logged; the drains take the
+  concrete bus, registered as a service of its own, so a decorated `IMessageBus` does not hide it; the
+  documentation says that a validation failure from an upgraded silo cannot be read by an older one during a
+  rolling upgrade, and when RabbitMQ puts a stuck handler's message back.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

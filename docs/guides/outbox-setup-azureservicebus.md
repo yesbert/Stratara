@@ -84,12 +84,15 @@ a knob Stratara exposes. With those defaults the processor runs one handler at a
 message ahead of it.
 
 **When the host stops**, a subscription stops with the token it was opened with — for a worker, the
-host's stopping token — and closes its processor, which takes no further message and waits up to
-twenty seconds for the handler it is running. The host waits for that before it counts as stopped,
-within its shutdown timeout, so a handler that is still running finishes while the services it uses
-exist and its message is completed rather than delivered again. A handler that takes longer keeps its
-message locked until the lock expires. A handler's outcome is settled whatever the subscription's
-token says.
+host's stopping token — and closes its processor, which takes no further message and waits for the
+handler it is running: while the host stops, as long as the host's shutdown timeout allows
+(`HostOptions.ShutdownTimeout`, 30 seconds by default); a subscription whose own token was cancelled
+waits twenty seconds. The host counts as stopped only after its subscriptions have closed, so a handler
+that is still running finishes while the services it uses exist and its message is completed rather
+than delivered again. A handler's outcome is settled whatever the subscription's token says; a handler
+that gives up on that token has its message abandoned, never dead-lettered, and a message the processor
+took after the subscription started stopping is abandoned unhandled. A handler that takes longer than
+the wait keeps its message locked until the lock expires, and then it is delivered again.
 
 ## DLQ + retries
 

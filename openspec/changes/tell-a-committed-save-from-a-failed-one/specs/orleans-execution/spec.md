@@ -528,9 +528,9 @@ having to, and the documentation SHALL say that a host which replaces Orleans' e
 afterwards must keep letting such chains through. Properties of such a failure beyond those need not
 cross; where they do not, they SHALL read as empty rather than fail, and the message SHALL carry what
 they said. A validation failure is the exception to both: its failures SHALL cross with it, each with
-its field, its message and its code, so that a caller can still say which field to correct, and
-neither they nor its message SHALL carry the value a field was given, because exception messages are
-logged.
+its field, its message as the validator wrote it and its code, so that a caller can still say which
+field to correct; the value a field was given SHALL NOT cross, and the exception's own message SHALL
+NOT repeat the failures, because exception messages are logged.
 
 #### Scenario: A handler on another silo reports a conflict
 
@@ -543,8 +543,8 @@ logged.
 
 - **WHEN** a handler on another silo fails with a validation failure
 - **THEN** the caller receives a validation failure naming each field that failed, how and under
-  which code, and neither it nor its message carries the value a field was given — verified on the
-  serializer round trip the runtime uses between silos
+  which code, without the value a field was given and with a message that does not repeat the
+  failures — verified on the serializer round trip the runtime uses between silos
 
 #### Scenario: A handler on another silo committed but could not publish
 

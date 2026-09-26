@@ -171,27 +171,23 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
     }
 
     /// <summary>
-    /// The host stops while a handler runs. It waits for the handler to settle before it counts as stopped — so before
-    /// the container that holds the handler's services is disposed — and the message is completed.
+    /// The host stops while a handler runs, and the handler takes longer than a subscription stopped on its own would
+    /// wait. The host waits for it — as long as its shutdown timeout allows — before it counts as stopped, so before the
+    /// container that holds the handler's services is disposed, and the message is completed.
     /// </summary>
     [Fact]
     public async Task HostStopsDuringTheHandler_TheHostWaitsForItAndTheMessageIsCompleted()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var subscribed = new TaskCompletionSource();
         var entered = new TaskCompletionSource();
         var release = new TaskCompletionSource();
 
-        var builder = Host.CreateEmptyApplicationBuilder(null);
-        builder.Services.AddAzureServiceBus(fixture.ConnectionString);
-        // The emulator does not serve the administration endpoint; the bounds apply as configured.
-        builder.Services.RemoveAll<ServiceBusAdministrationClient>();
-        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), "test-host-stops", "worker", subscribed, async _ =>
+        using var host = BuildHost(TimeSpan.FromSeconds(60), "test-host-stops", subscribed, async _ =>
         {
             entered.TrySetResult();
             await release.Task;
-        }));
-        using var host = builder.Build();
+        });
         await host.StartAsync(cts.Token);
         await subscribed.Task.WaitAsync(cts.Token);
 
@@ -199,13 +195,92 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
         await entered.Task.WaitAsync(cts.Token);
 
         var stopping = host.StopAsync(cts.Token);
-        await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+        await Task.Delay(TimeSpan.FromSeconds(22), cts.Token);
         Assert.False(stopping.IsCompleted);
 
         release.TrySetResult();
         await stopping.WaitAsync(cts.Token);
         await using var receiver = _client.CreateReceiver("test-host-stops", "worker");
         Assert.Null(await receiver.PeekMessageAsync(cancellationToken: cts.Token));
+    }
+
+    /// <summary>
+    /// A handler that never returns holds neither the host's stop nor its disposal up beyond the host's shutdown
+    /// timeout.
+    /// </summary>
+    [Fact]
+    public async Task HostStopsWhileAHandlerNeverReturns_TheStopAndTheDisposalStillFinish()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var subscribed = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+        var never = new TaskCompletionSource();
+
+        var host = BuildHost(TimeSpan.FromSeconds(3), "test-host-stuck-handler", subscribed, async _ =>
+        {
+            entered.TrySetResult();
+            await never.Task;
+        });
+        try
+        {
+            await host.StartAsync(cts.Token);
+            await subscribed.Task.WaitAsync(cts.Token);
+            await host.Services.GetRequiredService<IMessageBus>().PublishAsync("test-host-stuck-handler", new TestMessage("stuck"), cts.Token);
+            await entered.Task.WaitAsync(cts.Token);
+
+            await host.StopAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+            await ((IAsyncDisposable)host).DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+        }
+        finally
+        {
+            never.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// The handler gives up because its subscription stops — it observed the stopping token — on the message's last
+    /// allowed delivery. That is not a failure: the message is abandoned, not dead-lettered.
+    /// </summary>
+    [Fact]
+    public async Task SubscriptionStopsAndTheHandlerGivesUp_TheMessageGoesBackRatherThanToTheDeadLetterQueue()
+    {
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 1 }));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+        var handled = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>("test-handler-gives-up", "worker", async _ =>
+        {
+            await subscribed.CancelAsync();
+            handled.TrySetResult();
+            subscribed.Token.ThrowIfCancellationRequested();
+        }, subscribed.Token);
+
+        await Task.Delay(500, cts.Token);
+        await bus.PublishAsync("test-handler-gives-up", new TestMessage("given up"), cts.Token);
+        await handled.Task.WaitAsync(cts.Token);
+        await bus.DisposeAsync();
+
+        await using var dlqReceiver = _client.CreateReceiver("test-handler-gives-up", "worker", new ServiceBusReceiverOptions
+        {
+            SubQueue = SubQueue.DeadLetter,
+        });
+        Assert.Null(await dlqReceiver.PeekMessageAsync(cancellationToken: cts.Token));
+        await using var activeReceiver = _client.CreateReceiver("test-handler-gives-up", "worker");
+        var waiting = await activeReceiver.PeekMessageAsync(cancellationToken: cts.Token);
+        Assert.NotNull(waiting);
+        Assert.Contains("given up", waiting.Body.ToString(), StringComparison.Ordinal);
+    }
+
+    private IHost BuildHost(TimeSpan shutdownTimeout, string topic, TaskCompletionSource subscribed, Func<TestMessage, Task> handler)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = shutdownTimeout);
+        builder.Services.AddAzureServiceBus(fixture.ConnectionString);
+        // The emulator does not serve the administration endpoint; the bounds apply as configured.
+        builder.Services.RemoveAll<ServiceBusAdministrationClient>();
+        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), topic, "worker", subscribed, handler));
+        return builder.Build();
     }
 
     /// <summary>

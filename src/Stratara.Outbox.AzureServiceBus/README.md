@@ -15,7 +15,7 @@ The subscription's own `MaxDeliveryCount` must leave room for the bounds; a subs
 
 System-level errors (connection drops, auth failures) arrive via `ProcessErrorAsync` and are logged; the Service Bus client owns the reconnect / retry policy for those.
 
-A subscription that stops closes its processor, which takes no further message and waits up to twenty seconds for its running handler; the host waits for that before it counts as stopped, within its shutdown timeout. A handler's outcome is settled whatever the subscription's own cancellation says, and a handler that failed because its save committed but could not publish has its message completed, not delivered again.
+A subscription that stops closes its processor, which takes no further message and waits for its running handler — as long as the host's shutdown timeout allows while the host stops, twenty seconds otherwise; the host waits for that before it counts as stopped. A handler that gives up because the subscription stops has its message abandoned, never dead-lettered. A handler's outcome is settled whatever the subscription's own cancellation says, and a handler that failed because its save committed but could not publish has its message completed, not delivered again.
 
 ## Install
 

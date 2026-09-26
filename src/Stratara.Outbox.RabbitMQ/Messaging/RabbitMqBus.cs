@@ -64,9 +64,11 @@ namespace Stratara.Outbox.RabbitMQ.Messaging;
 /// </para>
 /// <para>
 /// A subscription holds at most <see cref="MessagingOptions.PrefetchCount"/> unacknowledged messages, the one its
-/// handler is running included. When it stops it takes no further message, waits up to twenty seconds for its running
-/// handler to settle, and closes, waiting up to five seconds for that; what it held beyond the running handler's
-/// message goes back to the queue unhandled, and the broker counts it as delivered once more.
+/// handler is running included. When it stops it takes no further message and waits for its running handler to settle
+/// — as long as the host's shutdown timeout allows when the host is stopping, twenty seconds otherwise — and then
+/// closes, waiting up to five seconds for that; what it held beyond the running handler's message goes back to the
+/// queue unhandled, and the broker counts it as delivered once more. A handler that stops on the subscription's token
+/// has its message put back, never dead-lettered.
 /// </para>
 /// </remarks>
 internal sealed class RabbitMqBus(
@@ -87,16 +89,17 @@ internal sealed class RabbitMqBus(
     private static readonly TimeSpan NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// How long a stopping subscription waits for the handlers it is running to settle their messages before it
-    /// closes its channel. Within the host's default shutdown timeout, so a stuck handler cannot hold the host up.
+    /// How long a subscription that stops while the host is not stopping — its own token was cancelled — waits for the
+    /// handlers it is running to settle their messages before it closes its channel. While the host stops, the host's
+    /// shutdown timeout bounds the wait instead (<see cref="SettleWithin"/>).
     /// </summary>
     private static readonly TimeSpan HandlerSettleTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
-    /// How long a stopping subscription waits for its channel and connection to close. A channel closes only once the
-    /// handler its consumer is running has returned, so a handler that never returns would keep the close — and the
-    /// host's stop and disposal after it — waiting forever. Together with <see cref="HandlerSettleTimeout"/> within the
-    /// host's default shutdown timeout.
+    /// How long a stopping subscription waits for its channel and connection to close. The channel's close is
+    /// acknowledged by the broker — which puts the unacknowledged messages back — and then waits for the handler its
+    /// consumer is running to return, so a handler that never returns would keep the close, and the host's disposal
+    /// after it, waiting forever.
     /// </summary>
     private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
 
@@ -119,6 +122,8 @@ internal sealed class RabbitMqBus(
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly System.Collections.Concurrent.ConcurrentBag<Task> _cleanupTasks = new();
     private readonly ushort _prefetchCount = (ushort)(messagingOptions?.Value ?? new MessagingOptions()).PrefetchCount;
+    private readonly CancellationTokenSource _hostShutdownElapsed = new();
+    private volatile bool _hostStopping;
     private IConnection? _publishConnection;
     private IChannel? _publishChannel;
 
@@ -208,6 +213,24 @@ internal sealed class RabbitMqBus(
     /// </summary>
     internal Task WhenSubscriptionsStoppedAsync() => Task.WhenAll(_cleanupTasks);
 
+    /// <summary>
+    /// Tells the bus the host is stopping, before any subscription stops with it: from then on a stopping subscription
+    /// waits for its running handlers until <paramref name="shutdown"/> — the host's shutdown timeout — runs out,
+    /// rather than for <see cref="HandlerSettleTimeout"/>, so a host that grants its handlers longer gets that, and a
+    /// host that grants them less does not have its services disposed under a handler the bus still waits for.
+    /// </summary>
+    /// <returns>The registration on <paramref name="shutdown"/>, to dispose once the host has stopped.</returns>
+    internal CancellationTokenRegistration SettleWithin(CancellationToken shutdown)
+    {
+        _hostStopping = true;
+        return shutdown.Register(ShutdownElapsed);
+    }
+
+    /// <summary>
+    /// The host's shutdown timeout ran out: the stopping subscriptions stop waiting for their handlers and close.
+    /// </summary>
+    internal void ShutdownElapsed() => _hostShutdownElapsed.Cancel();
+
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
@@ -236,6 +259,7 @@ internal sealed class RabbitMqBus(
         }
         _publishLock.Dispose();
         _initLock.Dispose();
+        _hostShutdownElapsed.Dispose();
     }
 
     /// <inheritdoc/>
@@ -505,6 +529,12 @@ internal sealed class RabbitMqBus(
                 // leave the decision to the broker.
                 await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, ce, CancellationToken.None);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The handler stopped because the subscription stops — the host is shutting down. That is not a
+                // failure: the message goes back to the queue for the next consumer, never to the dead-letter queue.
+                await channel.BasicNackAsync(args.DeliveryTag, false, true, CancellationToken.None);
+            }
             catch (Exception e)
             {
                 logger.LogMessageProcessingFailed(topic, e);
@@ -532,9 +562,14 @@ internal sealed class RabbitMqBus(
             running.Stop();
             await Task.Yield();
             logger.LogSubscriptionCleanup(subscription);
+
+            // One deadline for cancelling the consumer and for the handlers to settle, so the two together stay within it.
+            using var settle = _hostStopping
+                ? CancellationTokenSource.CreateLinkedTokenSource(_hostShutdownElapsed.Token)
+                : new CancellationTokenSource(HandlerSettleTimeout);
             try
             {
-                await channel.BasicCancelAsync(consumerTag, false, CancellationToken.None);
+                await channel.BasicCancelAsync(consumerTag, false, settle.Token);
             }
             catch (Exception ex)
             {
@@ -543,18 +578,19 @@ internal sealed class RabbitMqBus(
 
             try
             {
-                await running.WhenSettledAsync().WaitAsync(HandlerSettleTimeout);
+                await running.WhenSettledAsync().WaitAsync(settle.Token);
             }
-            catch (TimeoutException ex)
+            catch (OperationCanceledException ex)
             {
                 logger.LogSubscriptionCleanupFailed(subscription, ex);
             }
 
             try
             {
-                // Bounded: a handler that never returns keeps the channel from closing. The close goes on in the
-                // background and finishes when the handler returns or the process ends; the broker then puts the
-                // message back.
+                // Bounded: the broker acknowledges the close and puts the running handler's unacknowledged message back
+                // at once — another consumer may take it while that handler still runs — but the close itself returns
+                // only once the handler has. It goes on in the background and ends when the handler returns or the
+                // process does.
                 await CloseAsync(channel, connection, subscription).WaitAsync(CloseTimeout);
             }
             catch (TimeoutException ex)

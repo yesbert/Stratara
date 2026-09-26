@@ -11,15 +11,17 @@ namespace Stratara.Outbox.RabbitMQ.Tests.DependencyInjection;
 public class MessagingServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddMessaging_RegistersRabbitMqBusAsSingletonMessageBus()
+    public async Task AddMessaging_RegistersRabbitMqBusAsSingletonMessageBus()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
 
         builder.AddMessaging();
 
         var descriptor = Assert.Single(builder.Services, d => d.ServiceType == typeof(IMessageBus));
-        Assert.Equal(typeof(RabbitMqBus), descriptor.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        await using var provider = builder.Services.BuildServiceProvider();
+        var bus = Assert.IsType<RabbitMqBus>(provider.GetRequiredService<IMessageBus>());
+        Assert.Same(provider.GetRequiredService<RabbitMqBus>(), bus);
     }
 
     [Fact]

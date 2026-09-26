@@ -15,14 +15,17 @@ again or moving it to the dead-letter destination, whatever the subscription's o
 says, and SHALL log the failure with the topic at error level. A second delivery would record the
 same facts again. Every outcome of a handler SHALL be settled with the transport whatever the
 subscription's own cancellation says. A subscription that stops SHALL stop taking messages and let
-the handlers it is running settle theirs, for a bounded time, before it closes, so that a handler that
-completed while the host stops — or whose save committed — is acknowledged rather than handed back to
-run again; a host that stops SHALL count as stopped only once its stopping subscriptions have closed,
-within its shutdown timeout, so their handlers settle while the services they use still exist. A
-message the transport had already fetched but not yet handed to a handler SHALL go back to the queue
-unhandled; the broker counts it as delivered once more, so the number of messages a subscription
-fetches ahead of its handler SHALL be bounded, and where a transport fetches ahead the host SHALL be
-able to configure that bound, with a default.
+the handlers it is running settle theirs before it closes — while the host stops, for as long as the
+host's shutdown timeout allows; otherwise for a bounded time — so that a handler that completed while
+the host stops, or whose save committed, is acknowledged rather than handed back to run again. A host
+that stops SHALL count as stopped only once its stopping subscriptions have closed, within its
+shutdown timeout, so their handlers settle while the services they use still exist, and a handler that
+never returns SHALL hold up neither the host's stop nor its disposal beyond that. A handler that
+stops because its subscription stops has not failed: its message SHALL go back to the queue, never to
+the dead-letter destination. A message the transport had already fetched but not yet handed to a
+handler SHALL go back to the queue unhandled; the broker counts it as delivered once more, so the
+number of messages a subscription fetches ahead of its handler SHALL be bounded, and where a transport
+fetches ahead the host SHALL be able to configure that bound, with a default.
 
 A concurrency conflict SHALL be treated as a retry, not a failure, but SHALL be bounded as well: a
 message that conflicts more often than the bound allows is moved to the same destination.
@@ -81,15 +84,23 @@ system behind with nothing to replay.
 
 #### Scenario: The host stops while a handler runs
 
-- **WHEN** the host stops while a subscription's handler is running
+- **WHEN** the host stops while a subscription's handler is running, and the handler takes longer
+  than a subscription stopped on its own would wait but less than the host's shutdown timeout
 - **THEN** the host counts as stopped only after the handler has settled its message, and the message
   is not found on the queue afterwards — verified on RabbitMQ and on the Service Bus emulator
 
-#### Scenario: A handler never returns when the subscription stops
+#### Scenario: A handler never returns while the host stops
 
-- **WHEN** a subscription stops while its handler never returns
-- **THEN** the subscription still finishes stopping after a bounded wait, so neither the host's stop
-  nor its disposal waits for the handler — verified on RabbitMQ and on the Service Bus emulator
+- **WHEN** the host stops while a subscription's handler never returns
+- **THEN** the host's stop finishes within its shutdown timeout and its disposal shortly after —
+  verified on RabbitMQ and on the Service Bus emulator; a subscription stopped on its own finishes
+  stopping after its bounded wait as well
+
+#### Scenario: The handler gives up because its subscription stops
+
+- **WHEN** a handler stops on its subscription's cancellation, on the message's last allowed delivery
+- **THEN** the message goes back to the queue and is not found on the dead-letter destination —
+  verified on RabbitMQ and on the Service Bus emulator
 
 #### Scenario: Messages were fetched but not yet handled when the subscription stops
 
@@ -101,5 +112,5 @@ system behind with nothing to replay.
 
 - **WHEN** a host configures how many messages a subscription may hold, and more than that wait on the
   queue while its handler runs
-- **THEN** the subscription holds no more than that many and the rest stay on the queue, and a host
-  that configures nothing gets the default — verified on RabbitMQ
+- **THEN** the subscription holds no more than that many and the rest stay on the queue — verified on
+  RabbitMQ; a host that configures nothing gets the default
