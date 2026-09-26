@@ -29,4 +29,4 @@
 ## 4. Verify
 
 - [x] 4.1 `openspec validate let-an-erasure-find-every-key-it-names --strict`.
-- [ ] 4.2 Local gauntlet green.
+- [x] 4.2 Local gauntlet green.
