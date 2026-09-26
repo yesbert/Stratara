@@ -75,4 +75,4 @@ branch. What it found, and what was done:
 ## 6. Gate
 
 - [x] 6.1 `openspec validate leave-an-irrelevant-event-unread --strict`
-- [ ] 6.2 `./scripts/local-gauntlet.sh`
+- [x] 6.2 `./scripts/local-gauntlet.sh`
