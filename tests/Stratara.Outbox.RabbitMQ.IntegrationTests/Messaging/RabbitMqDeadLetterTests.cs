@@ -208,6 +208,10 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         await Task.Delay(LongerThanAStandaloneStopWaits, cts.Token);
         Assert.False(stopping.IsCompleted);
 
+        // Still the handler's: a subscription that had given up waiting would have closed its channel by now, and the
+        // broker would have put the message back.
+        Assert.Equal(0u, await ReadyCountAsync(subscription, cts.Token));
+
         release.TrySetResult();
         await stopping.WaitAsync(cts.Token);
         Assert.Equal(0u, await ReadyCountAsync(subscription, cts.Token));
@@ -243,6 +247,10 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         var stopping = host.StopAsync(cts.Token);
         await Task.Delay(LongerThanAStandaloneStopWaits, cts.Token);
         Assert.False(stopping.IsCompleted);
+
+        // Still the handler's: a subscription that had given up waiting would have closed its channel by now, and the
+        // broker would have put the message back.
+        Assert.Equal(0u, await ReadyCountAsync(subscription, cts.Token));
 
         release.TrySetResult();
         await stopping.WaitAsync(cts.Token);

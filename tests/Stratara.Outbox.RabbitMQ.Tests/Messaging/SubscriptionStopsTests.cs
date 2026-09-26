@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Stratara.Outbox.AzureServiceBus.Messaging;
 using Stratara.Outbox.RabbitMQ.Messaging;
 
@@ -14,18 +15,117 @@ public sealed class SubscriptionStopsTests
 {
     public static TheoryData<string> Transports => new() { "RabbitMQ", "Service Bus" };
 
-    private sealed record Stops(IHostedLifecycleService Service, Func<CancellationTokenSource> Deadline, Action<Task> Add);
+    private static readonly TimeSpan JustUnderTheStandaloneBound = TimeSpan.FromSeconds(19);
+    private static readonly TimeSpan PastTheStandaloneBound = TimeSpan.FromSeconds(2);
 
-    private static Stops Create(string transport, IHostApplicationLifetime lifetime)
+    private sealed record Stops(IHostedLifecycleService Service, Func<CancellationTokenSource> Deadline, Action<Task> Add, Action BusDisposing);
+
+    private static Stops Create(string transport, IHostApplicationLifetime lifetime, TimeProvider? time = null)
     {
         if (transport == "RabbitMQ")
         {
-            var rabbit = new RabbitMqSubscriptionStops(NullLogger<RabbitMqSubscriptionStops>.Instance, lifetime);
-            return new Stops(rabbit, rabbit.Deadline, rabbit.Add);
+            var rabbit = new RabbitMqSubscriptionStops(NullLogger<RabbitMqSubscriptionStops>.Instance, lifetime, time);
+            return new Stops(rabbit, rabbit.Deadline, rabbit.Add, rabbit.BusDisposing);
         }
 
-        var serviceBus = new AzureServiceBusSubscriptionStops(NullLogger<AzureServiceBusSubscriptionStops>.Instance, lifetime);
-        return new Stops(serviceBus, serviceBus.Deadline, serviceBus.Add);
+        var serviceBus = new AzureServiceBusSubscriptionStops(NullLogger<AzureServiceBusSubscriptionStops>.Instance, lifetime, time);
+        return new Stops(serviceBus, serviceBus.Deadline, serviceBus.Add, serviceBus.BusDisposing);
+    }
+
+    /// <summary>Asserts that <paramref name="deadline"/> runs out with the standalone bound, and not before.</summary>
+    private static void RunsOutWithTheStandaloneBound(FakeTimeProvider time, CancellationTokenSource deadline)
+    {
+        time.Advance(JustUnderTheStandaloneBound);
+        Assert.False(deadline.IsCancellationRequested);
+        time.Advance(PastTheStandaloneBound);
+        Assert.True(deadline.IsCancellationRequested);
+    }
+
+    [Theory]
+    [MemberData(nameof(Transports))]
+    public async Task Outside_a_host_stop_a_stop_runs_out_with_the_standalone_bound(string transport)
+    {
+        var time = new FakeTimeProvider();
+        var stops = Create(transport, new FakeLifetime(), time);
+        await stops.Service.StartedAsync(Ct);
+
+        using var deadline = stops.Deadline();
+
+        RunsOutWithTheStandaloneBound(time, deadline);
+    }
+
+    [Theory]
+    [MemberData(nameof(Transports))]
+    public async Task While_the_host_stops_a_stop_outlasts_the_standalone_bound(string transport)
+    {
+        var time = new FakeTimeProvider();
+        var stops = Create(transport, new FakeLifetime(), time);
+        using var shutdown = new CancellationTokenSource();
+        await stops.Service.StartedAsync(Ct);
+        await stops.Service.StoppingAsync(shutdown.Token);
+
+        using var deadline = stops.Deadline();
+        time.Advance(TimeSpan.FromMinutes(5));
+
+        Assert.False(deadline.IsCancellationRequested);
+    }
+
+    [Theory]
+    [MemberData(nameof(Transports))]
+    public async Task Once_the_host_has_stopped_a_stop_still_under_its_deadline_runs_out_with_the_standalone_bound(string transport)
+    {
+        var time = new FakeTimeProvider();
+        var stops = Create(transport, new FakeLifetime(), time);
+        using var shutdown = new CancellationTokenSource();
+        await stops.Service.StartedAsync(Ct);
+        await stops.Service.StoppingAsync(shutdown.Token);
+        using var deadline = stops.Deadline();
+
+        await stops.Service.StoppedAsync(shutdown.Token);
+
+        RunsOutWithTheStandaloneBound(time, deadline);
+    }
+
+    /// <summary>
+    /// The application was told to stop and the host is disposed without being stopped: the bus's disposal bounds a
+    /// stop that took the host's deadline, and a stop that begins afterwards keeps the standalone bound.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Transports))]
+    public async Task A_host_disposed_without_being_stopped_leaves_no_stop_without_a_bound(string transport)
+    {
+        var time = new FakeTimeProvider();
+        var lifetime = new FakeLifetime();
+        var stops = Create(transport, lifetime, time);
+        await stops.Service.StartedAsync(Ct);
+        lifetime.StopApplication();
+        using var before = stops.Deadline();
+
+        stops.BusDisposing();
+        using var after = stops.Deadline();
+
+        time.Advance(JustUnderTheStandaloneBound);
+        Assert.False(before.IsCancellationRequested);
+        Assert.False(after.IsCancellationRequested);
+        time.Advance(PastTheStandaloneBound);
+        Assert.True(before.IsCancellationRequested);
+        Assert.True(after.IsCancellationRequested);
+    }
+
+    [Theory]
+    [MemberData(nameof(Transports))]
+    public async Task A_bus_disposed_before_its_application_was_told_to_stop_leaves_no_stop_without_a_bound(string transport)
+    {
+        var time = new FakeTimeProvider();
+        var lifetime = new FakeLifetime();
+        var stops = Create(transport, lifetime, time);
+        await stops.Service.StartedAsync(Ct);
+
+        stops.BusDisposing();
+        lifetime.StopApplication();
+        using var deadline = stops.Deadline();
+
+        RunsOutWithTheStandaloneBound(time, deadline);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

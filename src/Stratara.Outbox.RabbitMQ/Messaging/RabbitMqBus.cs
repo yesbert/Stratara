@@ -66,7 +66,8 @@ namespace Stratara.Outbox.RabbitMQ.Messaging;
 /// <para>
 /// A subscription holds at most <see cref="MessagingOptions.PrefetchCount"/> unacknowledged messages, the one its
 /// handler is running included. When it stops it takes no further message and waits for its running handler to settle
-/// — as long as the host's shutdown timeout allows while the host stops, twenty seconds otherwise — and then closes,
+/// — as long as the host's shutdown timeout allows from the moment the application starts stopping until the host has
+/// stopped, twenty seconds otherwise — and then closes,
 /// waiting up to five seconds for that; what it held beyond the running handler's message goes back to the queue
 /// unhandled, and the broker counts it as delivered once more. A handler that stops on the subscription's token has its
 /// message requeued rather than dead-lettered by the framework; the broker counts that delivery too.

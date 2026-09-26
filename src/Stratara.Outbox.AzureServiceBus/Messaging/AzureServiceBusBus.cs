@@ -53,8 +53,8 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// </para>
 /// <para>
 /// A subscription that stops closes its processor, which takes no further message and waits for the handler it is
-/// running to settle — as long as the host's shutdown timeout allows when the host is stopping, twenty seconds
-/// otherwise. A handler still running after that keeps its message locked until the lock expires, and the client
+/// running to settle — as long as the host's shutdown timeout allows from the moment the application starts stopping
+/// until the host has stopped, twenty seconds otherwise. A handler still running after that keeps its message locked until the lock expires, and the client
 /// closes the processor's links when it is disposed. A message taken after the subscription started stopping is
 /// abandoned unhandled, and a handler that stops on the subscription's token has its message abandoned rather than
 /// dead-lettered by the framework; the broker counts that delivery too.
@@ -77,7 +77,6 @@ internal sealed class AzureServiceBusBus(
     AzureServiceBusSubscriptionStops? subscriptionStops = null) : IMessageBus, IAsyncDisposable
 {
     private const int MaxDeadLetterDescriptionLength = 4096;
-
 
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly MessageRetryOptions _retryOptions = retryOptions.Value;

@@ -111,8 +111,18 @@
   gives a stop still under its deadline the standalone bound instead of cutting it short
   (`A_host_that_stopped_in_time_does_not_cut_short_…`); a host disposed without being stopped after its
   application was told to stop no longer leaves the bus's disposal waiting without bound; a Service Bus close that
-  faults after its wait ran out is observed and logged; the stop with no time left is verified on RabbitMQ too
+  faults after its wait ran out is observed and logged (`AzureServiceBusBus`, the stop's catch; not reproducible
+  against the emulator); the stop with no time left is verified on RabbitMQ too
   (`HostStopsWithNoTimeLeft_TheSubscriptionStillStopsTakingMessages`), and the spec names both new scenarios.
+
+- [x] 2b.14 Round 10 of the review: the host's stop in the trackers is guarded by one lock and ends — with the host
+  stopping or the bus being disposed — for good, so a deadline taken late can no longer install a host stop that
+  never runs out, and a stop that begins after the bus's disposal keeps the standalone bound; the trackers take a
+  `TimeProvider`, and `SubscriptionStopsTests` now pins both bounds with a fake clock
+  (`Once_the_host_has_stopped_…_runs_out_with_the_standalone_bound`,
+  `A_host_disposed_without_being_stopped_leaves_no_stop_without_a_bound`,
+  `A_bus_disposed_before_its_application_was_told_to_stop_leaves_no_stop_without_a_bound`); the RabbitMQ host tests
+  check at twenty-two seconds that the message is still the handler's, which the old twenty-second wait fails.
 
 ## 3. Documentation
 
