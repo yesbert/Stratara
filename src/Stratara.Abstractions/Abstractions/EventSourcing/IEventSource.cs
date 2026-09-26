@@ -135,6 +135,11 @@ public interface IEventSource
     /// Flush every pending append/create to the underlying write store. Throws
     /// <see cref="ConcurrencyException"/> if another writer committed first.
     /// </summary>
+    /// <remarks>
+    /// A save clears what was staged whether it succeeds or fails. After a failure, append the events
+    /// again before saving again, as after a <see cref="ConcurrencyException"/>: a second save with
+    /// nothing appended writes nothing.
+    /// </remarks>
     /// <exception cref="ConcurrencyException">Another writer beat this one to the stream's head version.</exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);

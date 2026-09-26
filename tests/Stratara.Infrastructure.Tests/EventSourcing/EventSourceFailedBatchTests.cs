@@ -134,6 +134,7 @@ public class EventSourceFailedBatchTests
         }
 
         var stream = await ReadStreamAsync(host, streamId);
+        Assert.Equal([1L, 2L], stream.Select(e => e.Version));
         Assert.All(stream, e => Assert.Equal(EventStoreTestHost.DefaultTenantId, e.TenantId));
     }
 }
