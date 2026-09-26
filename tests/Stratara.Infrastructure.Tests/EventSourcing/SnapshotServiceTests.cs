@@ -35,7 +35,8 @@ public class SnapshotServiceTests
             _serializerMock.Object,
             _unitOfWorkMock.Object,
             _typeResolver,
-            new VersionThresholdSnapshotStrategy());
+            new VersionThresholdSnapshotStrategy(),
+            AggregateEventSelectorTests.PassThrough());
     }
 
     private SnapshotService CreateService(ISnapshotStrategy strategy) =>
@@ -45,7 +46,8 @@ public class SnapshotServiceTests
             _serializerMock.Object,
             _unitOfWorkMock.Object,
             _typeResolver,
-            strategy);
+            strategy,
+            AggregateEventSelectorTests.PassThrough());
 
     private sealed class TestAggregate
     {

@@ -43,6 +43,11 @@ public static class LogEvents
         public const int SaveChangesFailed = 102_102;
         /// <summary>Requested event stream not found.</summary>
         public const int StreamNotFound = 102_103;
+        /// <summary>
+        /// Rebuilding an aggregate skipped an event whose type does not resolve in the host and that no
+        /// <c>Apply</c> of the aggregate could take; logged once per aggregate type and event type (warning).
+        /// </summary>
+        public const int UnresolvableEventSkipped = 102_004;
     }
 
     /// <summary>Validation event-IDs (103_000s).</summary>
