@@ -18,9 +18,11 @@ public sealed class StrataraValidationException : Exception
     public StrataraValidationException(IReadOnlyList<ValidationFailure> failures)
         : base("One or more validation failures occurred.")
     {
-        Failures = failures;
+        _failures = failures;
     }
 
-    /// <summary>The aggregated failures that caused the request to be rejected.</summary>
-    public IReadOnlyList<ValidationFailure> Failures { get; }
+    /// <summary>The aggregated failures that caused the request to be rejected.; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
+    public IReadOnlyList<ValidationFailure> Failures => _failures ?? [];
+
+    private readonly IReadOnlyList<ValidationFailure>? _failures;
 }

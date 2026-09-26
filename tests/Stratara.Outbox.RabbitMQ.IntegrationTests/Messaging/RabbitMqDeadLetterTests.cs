@@ -133,6 +133,43 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         Assert.Equal(0u, await channel.MessageCountAsync(RabbitMqBus.WorkerQueueName(subscription), cts.Token));
     }
 
+    /// <summary>
+    /// The subscription stops while its handler runs — the host is shutting down — and the handler still settles: a
+    /// handler that completed, or one whose save committed but could not publish, has done its work, and an
+    /// acknowledgement cancelled with the subscription would hand the message back to run it again.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SubscriptionStopsDuringTheHandler_TheMessageIsStillAcknowledged(bool committedButNotPublished)
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+        var handled = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, async _ =>
+        {
+            await subscribed.CancelAsync();
+            handled.TrySetResult();
+            if (committedButNotPublished)
+            {
+                throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("the outbox table is down"));
+            }
+        }, subscribed.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("stopping"), cts.Token);
+
+        await handled.Task.WaitAsync(cts.Token);
+        await Task.Delay(QuietPeriod, cts.Token);
+        await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token);
+        Assert.Equal(0u, await channel.MessageCountAsync(RabbitMqBus.WorkerQueueName(subscription), cts.Token));
+    }
+
     [Fact]
     public async Task HandlerKeepsConflicting_MessageIsDeadLetteredPastTheRequeueBound_AsAConflict()
     {

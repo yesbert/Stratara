@@ -13,7 +13,9 @@ A handler that fails with the event store's failure saying its events were commi
 be published has taken the message: the framework SHALL acknowledge it instead of delivering it
 again or moving it to the dead-letter destination, whatever the subscription's own cancellation
 says, and SHALL log the failure with the topic at error level. A second delivery would record the
-same facts again.
+same facts again. A subscription that stops SHALL stop taking messages and let the handlers it is
+running settle theirs before it closes, so that a handler that completed while the host stops — or
+whose save committed — is acknowledged rather than handed back to run again.
 
 A concurrency conflict SHALL be treated as a retry, not a failure, but SHALL be bounded as well: a
 message that conflicts more often than the bound allows is moved to the same destination.
@@ -62,3 +64,9 @@ system behind with nothing to replay.
 - **THEN** the message is acknowledged after that one delivery, is not delivered again and is not
   found on the dead-letter destination, and the failure is logged with the topic — verified on
   RabbitMQ and on the Service Bus emulator
+
+#### Scenario: The subscription stops while a handler runs
+
+- **WHEN** a subscription is stopped while its handler is running, and the handler then completes or
+  fails because its save committed but could not publish
+- **THEN** the message is acknowledged and is not found on the queue afterwards — verified on RabbitMQ

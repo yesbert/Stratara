@@ -154,18 +154,14 @@ recorded and handed over without waiting, in its own turn.
 ## Failures that cross silos
 
 A command forwarded to an aggregate on another silo can fail there. Orleans carries an exception from
-one silo to another with its type only when the type's namespace is one it supports, and the
-execution model's registrations add `Stratara`, so the framework's own failures arrive as they were
-thrown. A bus worker that forwarded a command therefore still sees a `ConcurrencyException` as a
-conflict and a `CommittedEventsNotPublishedException` as a save not to run again. What crosses is the
-type, the message and the inner exception; the properties of those exceptions read empty on the far
-side, and their messages carry the same facts. An exception of your own crosses with its type only if
-you add its namespace too:
-
-```csharp
-builder.Services.Configure<Orleans.Serialization.ExceptionSerializationOptions>(
-    options => options.SupportedNamespacePrefixes.Add("MyCompany.Orders"));
-```
+one silo to another with its type only when it is told to, and a chain with one exception it refuses —
+a database or a broker exception inside the framework's own — does not cross at all. The execution
+model's registrations therefore let every exception type cross, so the framework's failures arrive as
+they were thrown, their inner exceptions included. A bus worker that forwarded a command still sees a
+`ConcurrencyException` as a conflict and a `CommittedEventsNotPublishedException` as a save not to run
+again. What crosses is the type, the message, the stack trace and the inner exceptions; the properties
+of the framework's exceptions read empty on the far side, and their messages carry the same facts. A
+filter the host sets on `Orleans.Serialization.ExceptionSerializationOptions` keeps applying alongside.
 
 ## Kept commands
 

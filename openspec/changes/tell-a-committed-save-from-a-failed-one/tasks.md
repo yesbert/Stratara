@@ -47,6 +47,14 @@
   `117_127`–`117_129` in the schema page; "republish" is gone from the docs, which the framework does
   not offer.
 
+- [x] 2b.8 Round 4 of the review: every exception type crosses silos, so a provider's inner failure does not
+  stop a framework exception from crossing (`FrameworkExceptionSerializationTests` with a real Npgsql chain), a
+  host's own filter kept; the prefix is `Stratara.`; the framework exceptions' properties read empty after a
+  crossing; a timer's unregister after committed work ignores the stopping token; a stopping RabbitMQ
+  subscription cancels its consumer and waits for running handlers to settle before closing the channel, and
+  every settlement uses `CancellationToken.None` (`RabbitMqDeadLetterTests.SubscriptionStopsDuringTheHandler_…`,
+  which found the message back in the queue before); the durable-host test checks the events committed.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

@@ -23,12 +23,14 @@ public sealed class PrecedingFactMissingException : Exception
         : base($"The fact {eventTypeName} on stream {streamId} refers to an entity that has not been applied yet.", innerException)
     {
         StreamId = streamId;
-        EventTypeName = eventTypeName;
+        _eventTypeName = eventTypeName;
     }
 
     /// <summary>The stream the fact belongs to.</summary>
     public Guid StreamId { get; }
 
-    /// <summary>The type name of the fact that was being applied.</summary>
-    public string EventTypeName { get; }
+    /// <summary>The type name of the fact that was being applied.; empty on an exception that crossed a process boundary, where only its type, message and inner exception are carried.</summary>
+    public string EventTypeName => _eventTypeName ?? string.Empty;
+
+    private readonly string? _eventTypeName;
 }

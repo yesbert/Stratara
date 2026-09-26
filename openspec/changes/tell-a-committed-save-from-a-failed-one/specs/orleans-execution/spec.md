@@ -306,9 +306,9 @@ stops that saga's reading of the partition only: every other saga SHALL apply th
 past it, and SHALL NOT apply it again because another saga failed on it.
 
 An entry whose handler fails with the event store's failure saying the handler's events were
-committed but could not be published SHALL count as applied: the reader SHALL log it with the entry's
-identity at error level and go on past it, because applying it again would record the handler's facts
-a second time.
+committed but could not be published SHALL count as applied, exactly as an entry whose handler
+succeeded does: the reader SHALL log it with the entry's identity at error level and go on past it
+rather than stall on it, because retrying it would record the handler's facts a second time.
 
 #### Scenario: A projection throws on one entry
 
@@ -522,10 +522,11 @@ start with a message naming both.
 
 A failure the framework defines — a concurrency conflict, a save that committed but could not publish —
 thrown on one silo SHALL reach a caller on another silo, or a client, with its type, its message and
-its inner failure, so that the caller treats it as it would in process. The registrations of the
-execution model SHALL arrange this without the host having to. Properties of such a failure beyond
-those need not cross; where they do not, they SHALL read as empty rather than fail, and the message
-SHALL carry what they said.
+its inner failures, whatever library those inner failures come from, so that the caller treats it as
+it would in process. The registrations of the execution model SHALL arrange this without the host
+having to, and a restriction the host placed on exception types SHALL keep applying. Properties of
+such a failure beyond those need not cross; where they do not, they SHALL read as empty rather than
+fail, and the message SHALL carry what they said.
 
 #### Scenario: A handler on another silo reports a conflict
 

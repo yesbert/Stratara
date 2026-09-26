@@ -197,8 +197,8 @@ internal sealed class EventSource(
         }
         catch (Exception) when (outboxDispatcher.StoresBundlesWithCommit)
         {
-            // The bundle was recorded with the commit and the drain publishes it: the save lost nothing, and the
-            // dispatcher logs what went wrong in handing it on at once.
+            // The bundle was recorded with the commit and the drain publishes it: the save lost nothing. The dispatcher
+            // logs a failure to hand it on at once; a cancellation it does not, and needs no log here either.
         }
         catch (Exception ex)
         {

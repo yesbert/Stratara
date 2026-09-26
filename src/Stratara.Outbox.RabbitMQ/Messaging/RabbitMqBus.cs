@@ -78,6 +78,12 @@ internal sealed class RabbitMqBus(
     private const int MaxOutstandingConfirms = 50_000;
     private static readonly TimeSpan NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// How long a stopping subscription waits for the handlers it is running to settle their messages before it
+    /// closes its channel. Within the host's default shutdown timeout, so a stuck handler cannot hold the host up.
+    /// </summary>
+    private static readonly TimeSpan HandlerSettleTimeout = TimeSpan.FromSeconds(20);
+
     private static readonly CreateChannelOptions ChannelOpts = new(
         true,
         true,
@@ -419,8 +425,10 @@ internal sealed class RabbitMqBus(
         await DeclareAndBindAsync(connection, channel, topic, subscription, cancellationToken);
 
         var consumer = new AsyncEventingBasicConsumer(channel);
+        var running = new RunningHandlers();
         consumer.ReceivedAsync += async (_, args) =>
         {
+            running.Enter();
             try
             {
                 var body = args.Body.ToArray();
@@ -431,7 +439,9 @@ internal sealed class RabbitMqBus(
                     await handler(message);
                 }
 
-                await channel.BasicAckAsync(args.DeliveryTag, false, cancellationToken);
+                // Settled whatever the subscription's token says: a handler that completed while the subscription
+                // stops has done its work, and an acknowledgement that throws would deliver the message again.
+                await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
             }
             catch (CommittedEventsNotPublishedException committed)
             {
@@ -449,20 +459,38 @@ internal sealed class RabbitMqBus(
                 logger.LogMessageProcessingFailed(topic, e);
                 await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, e, cancellationToken);
             }
+            finally
+            {
+                running.Exit();
+            }
         };
 
-        await channel.BasicConsumeAsync(QueueName(subscription), false, consumer, cancellationToken);
+        var consumerTag = await channel.BasicConsumeAsync(QueueName(subscription), false, consumer, cancellationToken);
 
         cancellationToken.Register(() =>
         {
             // Track the cleanup task so DisposeAsync can await it during graceful host shutdown
             // (Round-3-Audit Finding R3-Sec-010) — fire-and-forget Task.Run let the host tear
             // down the bus while a subscription was still mid-cleanup.
+            //
+            // The subscription stops taking messages first and lets the handlers it is running settle theirs before it
+            // closes the channel: a handler that completed — or whose save committed — while the host stops must be
+            // able to acknowledge, or its message is handed back and runs again.
             var cleanup = Task.Run(async () =>
             {
                 try
                 {
                     logger.LogSubscriptionCleanup(subscription);
+                    await channel.BasicCancelAsync(consumerTag, false, CancellationToken.None);
+                    await running.WhenSettledAsync().WaitAsync(HandlerSettleTimeout);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogSubscriptionCleanupFailed(subscription, ex);
+                }
+
+                try
+                {
                     await channel.DisposeAsync();
                     await connection.DisposeAsync();
                 }
@@ -529,6 +557,51 @@ internal sealed class RabbitMqBus(
             // exception message that propagates to OTel exception-recorders and the host logger.
             throw new InvalidOperationException(
                 "RabbitMQ connection-string 'rabbitmq' is malformed. Expected an amqp:// URI; verify the configuration value.");
+        }
+    }
+
+    /// <summary>Counts the handlers a subscription is running, so a stopping subscription can wait for them to settle.</summary>
+    private sealed class RunningHandlers
+    {
+        private readonly Lock _gate = new();
+        private int _count;
+        private TaskCompletionSource? _settled;
+
+        public void Enter()
+        {
+            lock (_gate)
+            {
+                _count++;
+            }
+        }
+
+        public void Exit()
+        {
+            TaskCompletionSource? settled = null;
+            lock (_gate)
+            {
+                if (--_count == 0)
+                {
+                    settled = _settled;
+                    _settled = null;
+                }
+            }
+
+            settled?.TrySetResult();
+        }
+
+        public Task WhenSettledAsync()
+        {
+            lock (_gate)
+            {
+                if (_count == 0)
+                {
+                    return Task.CompletedTask;
+                }
+
+                _settled ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                return _settled.Task;
+            }
         }
     }
 }

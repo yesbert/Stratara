@@ -113,7 +113,9 @@ internal sealed class AzureServiceBusBus(
                     await handler(message);
                 }
 
-                await args.CompleteMessageAsync(args.Message, cancellationToken);
+                // Settled whatever the subscription's token says: a handler that completed while the subscription
+                // stops has done its work, and a completion that throws would deliver the message again.
+                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
             }
             catch (CommittedEventsNotPublishedException committed)
             {

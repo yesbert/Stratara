@@ -123,10 +123,17 @@ public class EventSourceSaveOutcomeTests
     {
         await using var host = CreateHost();
         var streamId = Guid.CreateVersion7();
-        await using var scope = host.Services.CreateAsyncScope();
-        var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), new DurableFailingHandover());
-        await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), new DurableFailingHandover());
+            await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
 
-        await events.SaveChangesAsync();
+            await events.SaveChangesAsync();
+        }
+
+        await using var read = host.Services.CreateAsyncScope();
+        var unitOfWork = read.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
+        await using var transaction = await unitOfWork.StartAsync();
+        Assert.Single(await unitOfWork.CreateEventStreamRepository(transaction).GetManyAsync(streamId));
     }
 }
