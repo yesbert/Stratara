@@ -190,10 +190,13 @@ partition shows up before it shows up as latency.
 `SaveChangesAsync` commits the events and then hands their bundle on to the outbox. On a host without
 durable bundles, that handover can fail after the commit, when both the bus and the outbox's own table
 are unavailable. The save then throws `CommittedEventsNotPublishedException`, which names the committed
-streams. **The events are recorded; do not append them again.** Readers that consume bundles see them
-only once they are republished or replayed. The framework's retrying pipelines never retry this
-exception. A host that stores bundles with the commit does not raise it, because its bundle is recorded
-in the same transaction as the events.
+streams, whatever ended the handover — a cancellation included. **The events are recorded; do not
+append them again.** Readers that consume bundles see them only once they are republished or
+replayed. Nothing in the framework runs the work again because of it: the RabbitMQ and Azure Service
+Bus transports acknowledge the message and log an error (`108_113`), the Orleans execution model
+completes a recorded command and logs an error (`117_127`), and the retrying pipelines do not retry it.
+A host that stores bundles with the commit does not raise it, because its bundle is recorded in the
+same transaction as the events.
 
 ## Mandatory hygiene
 

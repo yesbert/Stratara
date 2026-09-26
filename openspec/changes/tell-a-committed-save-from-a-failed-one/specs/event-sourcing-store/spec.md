@@ -7,9 +7,10 @@ produced them, so that read models and process managers see the batch as it was 
 with nothing staged SHALL write and publish nothing.
 
 Where the events were committed but their bundle could not be handed on, the save SHALL fail with a
-failure of its own that says the events are committed and names their streams. It SHALL be
-distinguishable from a save that wrote nothing, and the framework's own retrying pipelines SHALL NOT
-retry it, because running the work again would record the same facts a second time.
+failure of its own that says the events are committed and names their streams — whatever ended the
+handover, a cancellation included. It SHALL be distinguishable from a save that wrote nothing, and
+neither the framework's retrying pipelines nor its transports nor its recorded-command resumption
+SHALL run the work again because of it, since that would record the same facts a second time.
 
 On a host that has opted in to durable bundles (`outbox-and-messaging` → *Dispatch attempts the bus
 first and falls back to durable storage*), the bundle SHALL be written to durable storage in the
@@ -47,3 +48,9 @@ SHALL NOT fail after the commit because the bundle could not be recorded.
 - **THEN** the save fails with a failure that says the events are committed and names their streams,
   the events remain recorded, and a pipeline of the framework that retries on failure does not retry
   it
+
+#### Scenario: The handover is cancelled after the commit
+
+- **WHEN** a save commits its events and handing their bundle on is then cancelled
+- **THEN** the save fails with the same failure, carrying the cancellation, rather than surfacing as a
+  plain cancellation

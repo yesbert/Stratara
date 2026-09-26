@@ -64,19 +64,11 @@ public class ResilienceFactoryTests
     [Theory]
     [InlineData(nameof(ResilienceFactory.CreateCommandDispatcherPipeline))]
     [InlineData(nameof(ResilienceFactory.CreateEventBundleDispatcherPipeline))]
-    public async Task DispatcherPipelines_DoNotRetryCommittedEventsNotPublished(string pipelineName)
+    [InlineData(nameof(ResilienceFactory.CreateMessageBusPipeline))]
+    [InlineData(nameof(ResilienceFactory.CreateProjectionReplayBatchPipeline))]
+    public async Task RetryAnyPipelines_DoNotRetryCommittedEventsNotPublished(string pipelineName)
     {
-        var builder = new ResiliencePipelineBuilder();
-        if (pipelineName == nameof(ResilienceFactory.CreateCommandDispatcherPipeline))
-        {
-            ResilienceFactory.CreateCommandDispatcherPipeline(builder);
-        }
-        else
-        {
-            ResilienceFactory.CreateEventBundleDispatcherPipeline(builder);
-        }
-
-        var pipeline = builder.Build();
+        var pipeline = Build(pipelineName);
 
         var attempts = 0;
         await Assert.ThrowsAsync<CommittedEventsNotPublishedException>(async () => await pipeline.ExecuteAsync(_ =>
@@ -86,6 +78,49 @@ public class ResilienceFactoryTests
         }));
 
         Assert.Equal(1, attempts);
+    }
+
+    [Theory]
+    [InlineData(nameof(ResilienceFactory.CreateCommandDispatcherPipeline))]
+    [InlineData(nameof(ResilienceFactory.CreateEventBundleDispatcherPipeline))]
+    public async Task DispatcherPipelines_StillRetryAnOrdinaryFailure_AndNotCancellation(string pipelineName)
+    {
+        var pipeline = Build(pipelineName);
+
+        var attempts = 0;
+        await pipeline.ExecuteAsync(_ =>
+        {
+            if (++attempts == 1)
+            {
+                throw new InvalidOperationException("transient");
+            }
+
+            return ValueTask.CompletedTask;
+        });
+        Assert.Equal(2, attempts);
+
+        var cancelledAttempts = 0;
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await pipeline.ExecuteAsync(_ =>
+        {
+            cancelledAttempts++;
+            throw new OperationCanceledException();
+        }));
+        Assert.Equal(1, cancelledAttempts);
+    }
+
+    private static ResiliencePipeline Build(string pipelineName)
+    {
+        var builder = new ResiliencePipelineBuilder();
+        Action<ResiliencePipelineBuilder> create = pipelineName switch
+        {
+            nameof(ResilienceFactory.CreateCommandDispatcherPipeline) => ResilienceFactory.CreateCommandDispatcherPipeline,
+            nameof(ResilienceFactory.CreateEventBundleDispatcherPipeline) => ResilienceFactory.CreateEventBundleDispatcherPipeline,
+            nameof(ResilienceFactory.CreateMessageBusPipeline) => ResilienceFactory.CreateMessageBusPipeline,
+            nameof(ResilienceFactory.CreateProjectionReplayBatchPipeline) => ResilienceFactory.CreateProjectionReplayBatchPipeline,
+            _ => throw new ArgumentOutOfRangeException(nameof(pipelineName), pipelineName, null),
+        };
+        create(builder);
+        return builder.Build();
     }
 
     [Fact]

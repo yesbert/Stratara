@@ -36,6 +36,12 @@
             ]
           },
           {
+            "Name": "test-committed-not-published",
+            "Subscriptions": [
+              { "Name": "worker" }
+            ]
+          },
+          {
             "Name": "test-durable",
             "Subscriptions": [
               { "Name": "worker" }

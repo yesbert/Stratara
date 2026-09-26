@@ -8,7 +8,10 @@ namespace Stratara.Abstractions.EventSourcing;
 /// <remarks>
 /// Readers that consume bundles do not see these events until they are republished or replayed. A host
 /// that stores bundles with the commit does not raise it, because its bundle is recorded in the same
-/// transaction as the events. The framework's retry pipelines do not retry it.
+/// transaction as the events. It is raised whatever ended the handover, a cancellation included.
+/// Nothing in the framework runs the work again because of it: the transports acknowledge the message
+/// instead of delivering it again, the Orleans execution model completes a recorded command instead of
+/// resuming it, and the retry pipelines do not retry it.
 /// </remarks>
 public sealed class CommittedEventsNotPublishedException : Exception
 {

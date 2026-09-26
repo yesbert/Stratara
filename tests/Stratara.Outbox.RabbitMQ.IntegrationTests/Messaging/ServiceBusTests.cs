@@ -95,6 +95,39 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
     }
 
     /// <summary>
+    /// A handler whose save committed its events but could not publish them is not run again: a second
+    /// delivery would record the same facts twice. The message is completed, not abandoned or dead-lettered.
+    /// </summary>
+    [Fact]
+    public async Task SubscribeAsync_HandlerCommittedButCouldNotPublish_MessageIsCompleted()
+    {
+        var bus = new SutServiceBus(NullLogger<SutServiceBus>.Instance, _client, Options.Create(new BusEnvelopeJsonOptions()), Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 3 }));
+
+        var attempts = 0;
+        var handled = new TaskCompletionSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        await bus.SubscribeAsync<TestMessage>("test-committed-not-published", "worker", _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            handled.TrySetResult();
+            throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("the outbox table is down"));
+        }, cts.Token);
+
+        await Task.Delay(500, cts.Token);
+        await bus.PublishAsync("test-committed-not-published", new TestMessage("committed"), cts.Token);
+        await handled.Task.WaitAsync(cts.Token);
+        await Task.Delay(3000, cts.Token);
+
+        Assert.Equal(1, attempts);
+        await using var dlqReceiver = _client.CreateReceiver("test-committed-not-published", "worker", new ServiceBusReceiverOptions
+        {
+            SubQueue = SubQueue.DeadLetter,
+        });
+        Assert.Null(await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), cts.Token));
+    }
+
+    /// <summary>
     /// <c>outbox-and-messaging</c> → <em>A handler keeps failing</em>, on the Service Bus emulator:
     /// the framework abandons the message until <c>MaxDeliveryAttempts</c> deliveries have failed
     /// and then dead-letters it itself, with the reason the operator filters on and the exception in

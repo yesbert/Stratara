@@ -2,8 +2,11 @@
 
 `EventSource.SaveChangesAsync` prepares the bundle, commits entries, snapshots and (durable mode) the
 bundle row in one transaction, then calls `IEventBundleOutboxDispatcher.EnqueueEventBundleAsync`. In
-non-durable mode the RabbitMQ and Azure Service Bus dispatchers try the bus and fall back to an
-outbox row in a separate transaction; a failure of that write propagates. Evidence: the
+non-durable mode the outbox dispatcher tries the bus and falls back to an
+outbox row in a separate transaction; a failure of that write propagates. The transports redeliver
+any handler failure except a concurrency conflict, and the Orleans drain resumes a recorded command
+whose attempt failed — both would run a committed save's work again. The review of this change found
+that; it is why the change reaches past the save. Evidence: the
 implementation (`EventSource.cs`, `EventBundleOutboxDispatcher.cs`), and the review of #160, which
 named both cases.
 
@@ -24,9 +27,14 @@ named both cases.
 a retry predicate and in a handler, and `ConcurrencyException` and the persistence failures mean the
 opposite (nothing was written).
 
-**Wrap everything but cancellation.** A cancellation after the commit leaves the same state behind. But
-a cancelled operation is expected to surface as `OperationCanceledException`, and retry pipelines do
-not retry cancellation anyway.
+**Wrap everything, cancellation included.** A cancellation after the commit leaves the same state
+behind as any other failure. Surfacing it as a plain `OperationCanceledException` would make a
+transport requeue the message and a stopping silo hand the command back, both of which run it again.
+
+**Acknowledge in the transports, complete in the execution model.** The events are durable; what is
+lost is their publication, which a republish or replay restores. Redelivery or resumption can only
+add duplicates. Both log at error level so the lost publication is seen.
+- *Alternative:* dead-letter the message. Rejected: an operator returning it would run it again.
 
 **The empty save still runs its (empty) transaction and only skips the bundle.** The bundle is what a
 reader sees. The empty transaction writes nothing, and keeping it leaves the save's shape unchanged for

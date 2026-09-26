@@ -18,15 +18,20 @@ applies to the entire NuGet family.
 
 ### Fixed
 
-- **A save that committed but could not publish says so.** On a host without durable bundles,
-  `SaveChangesAsync` hands the committed events' bundle to the outbox after the commit. When both the
-  bus and the outbox's own table failed, the save threw the outbox's exception although the events
-  were recorded. A caller could not tell it from a save that wrote nothing, and a pipeline that
-  retries on any exception ran the work again and recorded the same facts twice. The save now throws
-  the new `CommittedEventsNotPublishedException`, naming the committed streams, with the outbox's
-  failure as the inner exception. `ResilienceNames.CommandDispatcher` and
-  `ResilienceNames.EventBundleDispatcher` do not retry it. A caller that caught the outbox's own
-  exception type after a save now finds it as the inner exception.
+- **A save that committed but could not publish says so, and nothing runs it again.** On a host
+  without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after
+  the commit. When both the bus and the outbox's own table failed, the save threw the outbox's
+  exception although the events were recorded. The transports then delivered the message again, the
+  Orleans execution model resumed a recorded command, and a pipeline that retries on any exception ran
+  the work again: each recorded the same facts a second time. The save now throws the new
+  `CommittedEventsNotPublishedException`, naming the committed streams, with the handover's failure as
+  the inner exception, a cancellation after the commit included. The RabbitMQ and Azure Service Bus
+  transports acknowledge such a message and log an error (`LogEvents.Messaging.CommittedEventsNotPublished`,
+  `108_113`). The Orleans execution model completes such a recorded command and logs an error
+  (`LogEvents.Orleans.IntentCommittedNotPublished`, `117_127`). `ResilienceNames.CommandDispatcher`,
+  `EventBundleDispatcher`, `MessageBus` and `ProjectionReplayBatch` do not retry it. A caller that caught
+  the outbox's own exception type, or `OperationCanceledException`, after a save now finds it as the
+  inner exception.
 
 - **A save with nothing staged no longer publishes an empty bundle.** It still requires a session, and
   it stores and publishes nothing.

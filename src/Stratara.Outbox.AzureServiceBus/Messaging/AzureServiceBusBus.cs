@@ -115,6 +115,11 @@ internal sealed class AzureServiceBusBus(
 
                 await args.CompleteMessageAsync(args.Message, cancellationToken);
             }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                logger.LogCommittedEventsNotPublished(topic, committed);
+                await args.CompleteMessageAsync(args.Message, cancellationToken);
+            }
             catch (ConcurrencyException ce)
             {
                 await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, cancellationToken);

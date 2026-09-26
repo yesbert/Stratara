@@ -177,6 +177,8 @@ public static class LogEvents
         public const int BrokerDeliveryLimitBelowBounds = 108_111;
         /// <summary>A worker queue already exists with arguments other than the ones declared now, typically the delivery limit of earlier retry bounds, and is used as it is (warning).</summary>
         public const int WorkerQueueDeclaredWithOtherArguments = 108_112;
+        /// <summary>A handler committed its events but could not publish them; the message is acknowledged so it is not run twice (error).</summary>
+        public const int CommittedEventsNotPublished = 108_113;
     }
 
     /// <summary>Aggregate-update event-IDs (109_000s).</summary>
@@ -359,5 +361,7 @@ public static class LogEvents
         public const int SharedSagaReaderRetired = 117_125;
         /// <summary>A saga's reader was brought back on a silo that registers no saga of its name and retired: it unregistered its keep-alive, reads nothing and deactivates.</summary>
         public const int UnregisteredSagaReaderRetired = 117_126;
+        /// <summary>A recorded command committed its events but could not publish them; it is completed so it is not run twice (error).</summary>
+        public const int IntentCommittedNotPublished = 117_127;
     }
 }

@@ -18,6 +18,21 @@
 - [x] 2.3 `ResilienceFactory`: the dispatcher retry does not handle the new exception.
 - [x] 2.4 `IEventSource.SaveChangesAsync` documents both.
 
+## 2b. Nothing runs committed work again (found in review)
+
+- [x] 2b.1 `EventSource` wraps a cancelled handover after the commit too
+  (`EventSourceSaveOutcomeTests.A_handover_cancelled_after_the_commit_still_says_the_events_are_committed`).
+- [x] 2b.2 `RabbitMqBus` and `AzureServiceBusBus` acknowledge the message and log `108_113`
+  (`RabbitMqDeadLetterTests.HandlerCommittedButCouldNotPublish_…`,
+  `ServiceBusTests.SubscribeAsync_HandlerCommittedButCouldNotPublish_MessageIsCompleted`; the RabbitMQ one
+  runs the handler three times on `main`).
+- [x] 2b.3 `CommandExecution.RunIntentAsync` completes the intent and logs `117_127`
+  (`IntentCommittedNotPublishedTests`, which fails without the change).
+- [x] 2b.4 `ResilienceNames.MessageBus` and `ProjectionReplayBatch` exclude it too; the dispatcher
+  pipelines still retry an ordinary failure and not cancellation (`ResilienceFactoryTests`).
+- [x] 2b.5 `RabbitMqDeadLetterTests.MeterCapture` reads the metric names before its listener starts, so
+  the metrics' first initialisation does not call back into a half-built listener.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

@@ -94,6 +94,37 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         Assert.Null(await TryGetDeadLetterAsync(subscription, cts.Token));
     }
 
+    /// <summary>
+    /// A handler whose save committed its events but could not publish them is not run again: a second
+    /// delivery would record the same facts twice. The message is acknowledged, not redelivered and not
+    /// dead-lettered.
+    /// </summary>
+    [Fact]
+    public async Task HandlerCommittedButCouldNotPublish_MessageIsAcknowledged_NotRedeliveredOrDeadLettered()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var attempts = 0;
+        var handled = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            handled.TrySetResult();
+            throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("the outbox table is down"));
+        }, cts.Token);
+        await Task.Delay(200, cts.Token);
+
+        await bus.PublishAsync(topic, new TestMessage("committed"), cts.Token);
+
+        await handled.Task.WaitAsync(cts.Token);
+        await Task.Delay(QuietPeriod, cts.Token);
+        Assert.Equal(1, attempts);
+        Assert.Null(await TryGetDeadLetterAsync(subscription, cts.Token));
+    }
+
     [Fact]
     public async Task HandlerKeepsConflicting_MessageIsDeadLetteredPastTheRequeueBound_AsAConflict()
     {
@@ -260,9 +291,13 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
 
         private MeterCapture(string subscription)
         {
+            // Read before the listener starts: the first read initialises the metrics, and an initialisation
+            // that publishes its instruments into a running listener would call back into it half-built.
+            var meterName = ApplicationDiagnostics.Metrics.MeterName;
+            var instrumentName = ApplicationDiagnostics.Metrics.MessagesDeadLettered.Name;
             _listener.InstrumentPublished = (instrument, listener) =>
             {
-                if (instrument.Meter.Name == ApplicationDiagnostics.Metrics.MeterName && instrument.Name == ApplicationDiagnostics.Metrics.MessagesDeadLettered.Name)
+                if (instrument.Meter.Name == meterName && instrument.Name == instrumentName)
                 {
                     listener.EnableMeasurementEvents(instrument);
                 }

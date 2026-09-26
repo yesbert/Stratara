@@ -195,9 +195,10 @@ internal sealed class EventSource(
         {
             await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
-            // The events are committed. The caller must know that, so it does not append them again.
+            // The events are committed, even when the handover was cancelled. The caller must know that,
+            // so neither it nor a transport or a retry runs the work again and records them twice.
             var streamIds = _eventStreamEntries.Select(entry => entry.StreamId).Distinct().ToList();
             throw new CommittedEventsNotPublishedException(streamIds, _eventStreamEntries.Count, ex);
         }

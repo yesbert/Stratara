@@ -433,6 +433,11 @@ internal sealed class RabbitMqBus(
 
                 await channel.BasicAckAsync(args.DeliveryTag, false, cancellationToken);
             }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                logger.LogCommittedEventsNotPublished(topic, committed);
+                await channel.BasicAckAsync(args.DeliveryTag, false, cancellationToken);
+            }
             catch (ConcurrencyException ce)
             {
                 await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, ce, cancellationToken);
