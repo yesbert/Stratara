@@ -1,6 +1,6 @@
 # Keep the owning user with the stream
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 
