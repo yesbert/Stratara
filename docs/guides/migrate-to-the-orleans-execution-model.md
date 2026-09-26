@@ -226,13 +226,14 @@ the host makes on such a context itself, outside the framework, runs the same un
 commits, and a commit that fails once then retries with nothing to save:
 
 ```csharp
-await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-{
-    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
-    await context.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
-    await transaction.CommitAsync(CancellationToken.None);
-    context.ChangeTracker.AcceptAllChanges();
-});
+static Task SaveAsOneUnitAsync(AppWriteDbContext context, CancellationToken cancellationToken) =>
+    context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    {
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await context.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
+        await transaction.CommitAsync(CancellationToken.None);
+        context.ChangeTracker.AcceptAllChanges();
+    });
 ```
 
 On every context with a retrying strategy — write, read or projection — the framework's saves run this way,
