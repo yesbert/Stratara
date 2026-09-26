@@ -217,7 +217,13 @@ positioned — in **every process that appends to the store**, not only in the h
 does not add it. Add `CommitCompletionInterceptor.Instance` beside it, last among the context's transaction
 interceptors, and to the read context as well, as the framework does on the contexts it registers itself: it lets a commit, once begun, run to its end, so a save the store committed is never reported
 as cancelled and run again. `CommitOrderOptions.MaintainPartitionCounter` switches nothing: it is obsolete, warns where it is
-set, and is removed with the next major version; the interceptor is what maintains the counter. Within one save,
+set, and is removed with the next major version; the interceptor is what maintains the counter. A write context
+whose execution strategy retries on failure — `EnableRetryOnFailure`, which Aspire's EF integrations switch
+on — is supported: the framework's unit of work runs each append as one retriable unit through that
+strategy, so the interceptor finds a transaction and a transient failure runs the append again whole. A save
+the host makes on such a context itself, outside the framework, wraps itself in
+`Database.CreateExecutionStrategy().ExecuteAsync(...)`, as EF requires for any transaction under a retrying
+strategy. Within one save,
 positions follow each stream's version order. A read stops at an entry appended without a position rather than skipping it: the
 partition stops advancing, the failure names the entry, and positioning it with the backfill lets the
 partition continue. The partition count is fixed once the store holds positions — lowering it would merge

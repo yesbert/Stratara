@@ -58,6 +58,14 @@ applies to the entire NuGet family.
   During a rolling upgrade, silos of the two versions cannot read each other's validation failures; such
   a call fails with a serialization failure until every silo is upgraded.
 
+- **An append runs under a retrying execution strategy.** A host whose write context retries on failure
+  (`EnableRetryOnFailure`, on by default in Aspire's EF integrations) and that keeps the partition
+  positions for the portable commit-order reader could not append at all: `PartitionCounterInterceptor`
+  began a transaction outside the strategy, which EF refuses. The framework's unit of work now runs a save
+  on such a context as one retriable unit through the strategy — a transaction of its own, the changes
+  accepted only after the commit — so the interceptor finds the transaction and a transient failure runs
+  the append again whole. A context whose strategy does not retry saves as before.
+
 - **A commit once begun runs to its end.** A database driver told to cancel while it waits for a commit to
   be acknowledged may report the cancellation after the database committed, so a stop that landed
   there had a committed save look cancelled — and a transport, a store reader or a resumed command then
