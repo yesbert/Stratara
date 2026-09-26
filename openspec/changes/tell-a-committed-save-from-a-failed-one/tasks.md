@@ -103,6 +103,17 @@
   say that the broker counts a put-back delivery, that an infinite shutdown timeout waits as long as the
   handler, and that a rolling upgrade breaks validation failures in both directions.
 
+- [x] 2b.13 Round 9 of the review: a subscription tied to the application's stopping token stopped in one of that
+  token's callbacks before the one that marked the host as stopping — callbacks run newest first — and waited
+  twenty seconds instead of the host's timeout; the tracker now reads whether the application is stopping when a
+  deadline is taken (`SubscriptionStopsTests.A_stop_tied_to_the_applications_stopping_token_…`,
+  `ApplicationStopsWhileAHandlerRuns_ASubscriptionTiedToItWaitsUnderTheHostsTimeout`); a host that stopped in time
+  gives a stop still under its deadline the standalone bound instead of cutting it short
+  (`A_host_that_stopped_in_time_does_not_cut_short_…`); a host disposed without being stopped after its
+  application was told to stop no longer leaves the bus's disposal waiting without bound; a Service Bus close that
+  faults after its wait ran out is observed and logged; the stop with no time left is verified on RabbitMQ too
+  (`HostStopsWithNoTimeLeft_TheSubscriptionStillStopsTakingMessages`), and the spec names both new scenarios.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

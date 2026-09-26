@@ -91,13 +91,6 @@ internal sealed class RabbitMqBus(
     private static readonly TimeSpan NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// How long a subscription that stops while the host is not stopping — its own token was cancelled — waits for the
-    /// handlers it is running to settle their messages before it closes its channel. While the host stops, the host's
-    /// shutdown timeout bounds the wait instead (<see cref="RabbitMqSubscriptionStops"/>).
-    /// </summary>
-    private static readonly TimeSpan HandlerSettleTimeout = TimeSpan.FromSeconds(20);
-
-    /// <summary>
     /// How long a stopping subscription waits for its channel and connection to close. The channel's close is
     /// acknowledged by the broker — which puts the unacknowledged messages back — and then waits for the handler its
     /// consumer is running to return, so a handler that never returns would keep the close, and the host's disposal
@@ -217,6 +210,7 @@ internal sealed class RabbitMqBus(
         // A host waits for them earlier, when it stops (RabbitMqSubscriptionStops); this covers a bus used without one.
         try
         {
+            _stops.BusDisposing();
             await _stops.WhenAllStoppedAsync();
         }
         catch (Exception ex)
@@ -538,8 +532,8 @@ internal sealed class RabbitMqBus(
             running.Stop();
 
             // One deadline for cancelling the consumer and for the handlers to settle, so the two together stay within
-            // it; taken when the token is cancelled, so it is the host's while the host stops.
-            using var settle = _stops.Deadline(HandlerSettleTimeout);
+            // it; taken when the token is cancelled, so it is the host's while the host stops (RabbitMqSubscriptionStops).
+            using var settle = _stops.Deadline();
             await Task.Yield();
             logger.LogSubscriptionCleanup(subscription);
             try

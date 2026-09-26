@@ -214,6 +214,98 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
     }
 
     /// <summary>
+    /// A subscription tied to the application's stopping token stops when the application is told to stop — before the
+    /// host stops, as on a termination signal — and its handler still has as long as the host's shutdown timeout allows,
+    /// not the shorter wait of a subscription stopped on its own.
+    /// </summary>
+    [Fact]
+    public async Task ApplicationStopsWhileAHandlerRuns_ASubscriptionTiedToItWaitsUnderTheHostsTimeout()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        var subscribed = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+
+        using var host = BuildHost(TimeSpan.FromSeconds(60), topic, subscription, subscribed, async _ =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+        }, tiedToTheApplicationStopping: true);
+        await host.StartAsync(cts.Token);
+        await subscribed.Task.WaitAsync(cts.Token);
+
+        await host.Services.GetRequiredService<IMessageBus>().PublishAsync(topic, new TestMessage("stopping"), cts.Token);
+        await entered.Task.WaitAsync(cts.Token);
+
+        host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+        var stopping = host.StopAsync(cts.Token);
+        await Task.Delay(LongerThanAStandaloneStopWaits, cts.Token);
+        Assert.False(stopping.IsCompleted);
+
+        release.TrySetResult();
+        await stopping.WaitAsync(cts.Token);
+        Assert.Equal(0u, await ReadyCountAsync(subscription, cts.Token));
+    }
+
+    /// <summary>
+    /// The host stops with no shutdown time left, so the subscription's wait for its handler has run out before it
+    /// starts, and the handler finishes after that. The subscription still takes no further message: one published
+    /// afterwards waits on the queue, never delivered.
+    /// </summary>
+    [Fact]
+    public async Task HostStopsWithNoTimeLeft_TheSubscriptionStillStopsTakingMessages()
+    {
+        var topic = $"test-topic-{Guid.NewGuid():N}";
+        var subscription = $"worker-{Guid.NewGuid():N}";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var subscribed = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        var handled = 0;
+
+        var host = BuildHost(TimeSpan.Zero, topic, subscription, subscribed, async _ =>
+        {
+            Interlocked.Increment(ref handled);
+            entered.TrySetResult();
+            await release.Task;
+        });
+        try
+        {
+            await host.StartAsync(cts.Token);
+            await subscribed.Task.WaitAsync(cts.Token);
+            await host.Services.GetRequiredService<IMessageBus>().PublishAsync(topic, new TestMessage("first"), cts.Token);
+            await entered.Task.WaitAsync(cts.Token);
+
+            await host.StopAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+            release.TrySetResult();
+            await Task.Delay(TimeSpan.FromSeconds(1), cts.Token);
+            await PublishRawAsync(topic, new TestMessage("after the stop"), cts.Token);
+
+            // The first message is acknowledged or back on the queue, depending on whether its handler returned before the
+            // channel closed; either is right. The one published afterwards must be waiting, never delivered.
+            await Task.Delay(QuietPeriod, cts.Token);
+            Assert.Equal(1, handled);
+            await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token);
+            await using var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token);
+            var waiting = new List<BasicGetResult>();
+            while (await channel.BasicGetAsync(RabbitMqBus.WorkerQueueName(subscription), autoAck: false, cts.Token) is { } message)
+            {
+                waiting.Add(message);
+            }
+
+            var after = Assert.Single(waiting, message => JsonSerializer.Deserialize<TestMessage>(message.Body.Span)?.Payload == "after the stop");
+            Assert.False(after.Redelivered);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await ((IAsyncDisposable)host).DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// A handler that never returns holds neither the host's stop nor its disposal up beyond the host's shutdown timeout
     /// and the bounded wait for the channel to close.
     /// </summary>
@@ -513,22 +605,25 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
     /// <summary>Longer than a subscription stopped on its own waits for its handler (twenty seconds).</summary>
     private static readonly TimeSpan LongerThanAStandaloneStopWaits = TimeSpan.FromSeconds(22);
 
-    private IHost BuildHost(TimeSpan shutdownTimeout, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler)
+    private IHost BuildHost(TimeSpan shutdownTimeout, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler, bool tiedToTheApplicationStopping = false)
     {
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
         builder.Configuration.AddConfiguration(fixture.Configuration);
         builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = shutdownTimeout);
         builder.AddMessaging();
-        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), topic, subscription, subscribed, handler));
+        builder.Services.AddHostedService(provider => new SubscribingWorker(provider.GetRequiredService<IMessageBus>(), topic, subscription, subscribed, handler,
+            tiedToTheApplicationStopping ? provider.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping : null));
         return builder.Build();
     }
 
-    /// <summary>Subscribes when the host starts, with the host's stopping token — the way a worker does.</summary>
-    private sealed class SubscribingWorker(IMessageBus bus, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler) : BackgroundService
+    /// <summary>
+    /// Subscribes when the host starts, with the host's stopping token — the way a worker does — or with the token given.
+    /// </summary>
+    private sealed class SubscribingWorker(IMessageBus bus, string topic, string subscription, TaskCompletionSource subscribed, Func<TestMessage, Task> handler, CancellationToken? token = null) : BackgroundService
     {
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            await bus.SubscribeAsync(topic, subscription, handler, stoppingToken);
+            await bus.SubscribeAsync(topic, subscription, handler, token ?? stoppingToken);
             subscribed.TrySetResult();
         }
     }

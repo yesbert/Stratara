@@ -91,6 +91,21 @@ system behind with nothing to replay.
 - **THEN** the host counts as stopped only after the handler has settled its message, and the message
   is not found on the queue afterwards — verified on RabbitMQ and on the Service Bus emulator
 
+#### Scenario: The application is told to stop before the host stops
+
+- **WHEN** a subscription tied to the application's stopping signal stops because the application is
+  told to stop, and its handler takes longer than a subscription stopped on its own would wait but
+  less than the host's shutdown timeout
+- **THEN** the host counts as stopped only after the handler has settled its message, and the message
+  is not found on the queue afterwards — verified on RabbitMQ
+
+#### Scenario: The host stops with no time left
+
+- **WHEN** the host stops with no shutdown time left while a subscription's handler runs, and the
+  handler returns afterwards
+- **THEN** the subscription takes no message published after the stop — verified on RabbitMQ and on
+  the Service Bus emulator
+
 #### Scenario: A handler never returns while the host stops
 
 - **WHEN** the host stops while a subscription's handler never returns

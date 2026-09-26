@@ -78,12 +78,6 @@ internal sealed class AzureServiceBusBus(
 {
     private const int MaxDeadLetterDescriptionLength = 4096;
 
-    /// <summary>
-    /// How long a subscription that stops while the host is not stopping — its own token was cancelled — waits for the
-    /// handler it is running to settle its message. While the host stops, the host's shutdown timeout bounds the wait
-    /// instead (<see cref="AzureServiceBusSubscriptionStops"/>).
-    /// </summary>
-    private static readonly TimeSpan HandlerSettleTimeout = TimeSpan.FromSeconds(20);
 
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly MessageRetryOptions _retryOptions = retryOptions.Value;
@@ -98,7 +92,11 @@ internal sealed class AzureServiceBusBus(
     /// waits for them earlier, when it stops (<see cref="AzureServiceBusSubscriptionStops"/>); this covers a bus used
     /// without one.
     /// </remarks>
-    public async ValueTask DisposeAsync() => await _stops.WhenAllStoppedAsync();
+    public async ValueTask DisposeAsync()
+    {
+        _stops.BusDisposing();
+        await _stops.WhenAllStoppedAsync();
+    }
 
     /// <inheritdoc/>
     public async Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default)
@@ -202,8 +200,9 @@ internal sealed class AzureServiceBusBus(
 
         async Task StopAsync()
         {
-            // Taken when the token is cancelled, so it is the host's shutdown timeout while the host stops.
-            using var settle = _stops.Deadline(HandlerSettleTimeout);
+            // Taken when the token is cancelled, so it is the host's shutdown timeout while the host stops
+            // (AzureServiceBusSubscriptionStops).
+            using var settle = _stops.Deadline();
             await Task.Yield();
 
             // Closing is what disposing the processor does, and it is never cancelled itself: a close cancelled before it
@@ -219,7 +218,10 @@ internal sealed class AzureServiceBusBus(
             catch (Exception ex)
             {
                 logger.LogSubscriptionCleanupFailed(subscription, ex);
-                if (!closing.IsCompleted)
+
+                // Unless this was the close's own fault, already logged: whatever the close still does is observed, and
+                // a fault logged, when it ends — at once if it already has.
+                if (closing.Exception?.InnerExceptions.Contains(ex) != true)
                 {
                     _ = closing.ContinueWith(
                         closed => logger.LogSubscriptionCleanupFailed(subscription, closed.Exception!),
