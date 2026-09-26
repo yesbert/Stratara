@@ -1,7 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Abstractions.EventSourcing;
+using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Session;
+using Stratara.Contracts.Messages;
+using Stratara.Infrastructure.EventSourcing;
 using Stratara.Testing;
 using Stratara.Testing.EntityFrameworkCore;
 using Xunit;
@@ -22,23 +25,31 @@ public class EventSourceFailedBatchTests
 
     private sealed record FailedBatchProbeTouched(int By);
 
-    /// <summary>Once armed, fails the next save it takes part in, before anything is committed.</summary>
-    private sealed class FailingOnceSnapshotService : ISnapshotService
+    /// <summary>
+    /// A host with durable bundles records the bundle in the save's own transaction; this one fails to, once,
+    /// so the save fails before anything is committed.
+    /// </summary>
+    private sealed class FailingOnceDurableHandover : IEventBundleOutboxDispatcher
     {
-        private bool _armed;
+        private bool _failed;
 
-        public void Arm() => _armed = true;
+        public bool StoresBundlesWithCommit => true;
 
-        public Task AddSnapshotIfNeededAsync(IEnumerable<EventStreamEntry> eventStreamEntries, CancellationToken cancellationToken = default)
+        public Task StoreEventBundleAsync(EventBundle eventBundle, ITransaction transaction, CancellationToken cancellationToken = default)
         {
-            if (!_armed)
+            if (_failed)
             {
                 return Task.CompletedTask;
             }
 
-            _armed = false;
+            _failed = true;
             throw new InvalidOperationException("The store is briefly unavailable.");
         }
+
+        public Task EnqueueEventBundleAsync(EventBundle eventBundle, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task EnqueueOutboxEntriesAsync(IEnumerable<OutboxEntry> outboxEntries, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private static EventStoreTestHost CreateHost(Action<IServiceCollection>? configure = null) =>
@@ -70,14 +81,12 @@ public class EventSourceFailedBatchTests
     [Fact]
     public async Task A_save_that_fails_before_the_commit_leaves_nothing_for_the_next_attempt_to_write_twice()
     {
-        var failingOnce = new FailingOnceSnapshotService();
-        await using var host = CreateHost(services => services.AddSingleton<ISnapshotService>(failingOnce));
+        await using var host = CreateHost();
         var streamId = await CreateStreamAsync(host);
-        failingOnce.Arm();
 
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var events = scope.ServiceProvider.GetRequiredService<IEventSource>();
+            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), new FailingOnceDurableHandover());
 
             await events.AppendAsync<FailedBatchProbe>(streamId, new FailedBatchProbeTouched(2));
             await Assert.ThrowsAsync<InvalidOperationException>(() => events.SaveChangesAsync());
