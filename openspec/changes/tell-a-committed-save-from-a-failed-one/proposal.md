@@ -31,8 +31,9 @@ nothing.
 - Nothing in the framework runs the work again because of it:
   - the RabbitMQ and Azure Service Bus transports acknowledge the message instead of redelivering it,
     and log an error;
-  - the Orleans execution model completes a recorded command instead of resuming it, and logs an
-    error;
+  - on the Orleans execution model a recorded command is completed instead of resumed, a store
+    reader counts the entry as applied instead of stalling, and a durable timer counts as fired
+    instead of staying registered, each logged as an error;
   - the pipelines that retry any failure (`ResilienceNames.CommandDispatcher`,
     `ResilienceNames.EventBundleDispatcher`, `ResilienceNames.MessageBus`,
     `ResilienceNames.ProjectionReplayBatch`) do not retry it.
@@ -49,10 +50,12 @@ _None._
 
 - `event-sourcing-store`: *A successful save publishes what was written* gains a save with nothing staged
   and a handover that fails, or is cancelled, after the commit.
-- `outbox-and-messaging`: a new requirement — a message whose handler committed its events is not
-  delivered again.
-- `orleans-execution`: two new requirements — a recorded command whose events were committed is not
-  run again, and a framework failure keeps its type between silos.
+- `outbox-and-messaging`: *A message a handler cannot take is retried a bounded number of times and
+  then kept* gains the carve-out for a handler whose events were committed.
+- `orleans-execution`: *An accepted command is recorded …*, *A failing entry stops its partition …*
+  and *Work that must happen once happens once per cluster* gain the same carve-out for recorded
+  commands, store readers and durable timers; a new requirement says a framework failure keeps its
+  type between silos.
 
 ## Impact
 

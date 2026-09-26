@@ -363,5 +363,9 @@ public static class LogEvents
         public const int UnregisteredSagaReaderRetired = 117_126;
         /// <summary>A recorded command committed its events but could not publish them; it is completed so it is not run twice (error).</summary>
         public const int IntentCommittedNotPublished = 117_127;
+        /// <summary>A store reader's handler committed its events but could not publish them; the entry counts as applied so it is not run twice (error).</summary>
+        public const int EntryCommittedNotPublished = 117_128;
+        /// <summary>A durable timer's handler committed its events but could not publish them; the timer counts as fired so it is not run twice (error).</summary>
+        public const int TimerCommittedNotPublished = 117_129;
     }
 }

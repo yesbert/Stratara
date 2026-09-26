@@ -106,6 +106,7 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         var subscription = $"worker-{Guid.NewGuid():N}";
         var bus = CreateBus(new MessageRetryOptions { MaxDeliveryAttempts = 3 });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var subscribed = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
 
         var attempts = 0;
         var handled = new TaskCompletionSource();
@@ -114,7 +115,7 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
             Interlocked.Increment(ref attempts);
             handled.TrySetResult();
             throw new CommittedEventsNotPublishedException([Guid.NewGuid()], 1, new InvalidOperationException("the outbox table is down"));
-        }, cts.Token);
+        }, subscribed.Token);
         await Task.Delay(200, cts.Token);
 
         await bus.PublishAsync(topic, new TestMessage("committed"), cts.Token);
@@ -123,6 +124,13 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
         await Task.Delay(QuietPeriod, cts.Token);
         Assert.Equal(1, attempts);
         Assert.Null(await TryGetDeadLetterAsync(subscription, cts.Token));
+
+        // Closing the consumer returns a message it never settled to the queue; an acknowledged one is gone.
+        await subscribed.CancelAsync();
+        await Task.Delay(QuietPeriod, cts.Token);
+        await using var connection = await new ConnectionFactory { Uri = new Uri(fixture.ConnectionString) }.CreateConnectionAsync(cts.Token);
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cts.Token);
+        Assert.Equal(0u, await channel.MessageCountAsync(RabbitMqBus.WorkerQueueName(subscription), cts.Token));
     }
 
     [Fact]

@@ -1,12 +1,59 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: A message whose handler committed its events is not delivered again
+### Requirement: A message a handler cannot take is retried a bounded number of times and then kept
 
-Where a handler fails with the event store's failure that says its events were committed but could
-not be published, the framework SHALL acknowledge the message instead of delivering it again or
-moving it to the dead-letter destination, and SHALL log the failure with the topic at error level. A
-second delivery would record the same facts again; the events are already durable, and what is
-missing is their publication, which a republish or a replay restores.
+Where a handler fails on a message from a durable subscription, the framework SHALL have the
+transport deliver the message again a bounded number of times, and after the bound SHALL move it to
+a dead-letter destination that belongs to that subscription, where an operator can inspect it and
+return it to the subscription. A message on a durable subscription SHALL NOT be discarded by the
+framework on any transport. A transient subscription — one that exists only while its process
+listens — has nobody to return a message to and is outside this requirement.
+
+A handler that fails with the event store's failure saying its events were committed but could not
+be published has taken the message: the framework SHALL acknowledge it instead of delivering it
+again or moving it to the dead-letter destination, whatever the subscription's own cancellation
+says, and SHALL log the failure with the topic at error level. A second delivery would record the
+same facts again.
+
+A concurrency conflict SHALL be treated as a retry, not a failure, but SHALL be bounded as well: a
+message that conflicts more often than the bound allows is moved to the same destination.
+
+Both bounds SHALL be configurable with defaults, and every move to the dead-letter destination the
+framework decides SHALL be recorded with the topic, the subscription and the reason, and counted as
+a measurement dimensioned by topic and subscription. A move the broker makes on its own — its
+backstop limit firing before the framework's decision — is the broker's to record.
+
+The alternative — reject and drop — turns a handler bug into a silent loss after the caller was told
+the command was accepted; a bundle that vanishes from one subscription leaves that side of the
+system behind with nothing to replay.
+
+#### Scenario: A handler keeps failing
+
+- **WHEN** a handler throws on every delivery of a message
+- **THEN** the message is delivered again until the bound is reached and is then found on the
+  subscription's dead-letter destination, with the failure recorded and counted
+
+#### Scenario: A handler fails once
+
+- **WHEN** a handler throws on one delivery and succeeds on the next
+- **THEN** the message is acknowledged on the successful delivery and is not dead-lettered
+
+#### Scenario: A handler keeps conflicting
+
+- **WHEN** a handler reports a concurrency conflict on every delivery of a message
+- **THEN** the message is redelivered until the conflict bound is reached and is then found on the
+  subscription's dead-letter destination, recorded as a conflict rather than a failure
+
+#### Scenario: An operator returns a dead-lettered message
+
+- **WHEN** an operator moves a message from the dead-letter destination back to its subscription
+- **THEN** it is delivered to the subscription's consumers like any other message, with its retry
+  count starting over
+
+#### Scenario: A host configures the bounds
+
+- **WHEN** a host configures a different number of deliveries or conflicts before dead-lettering
+- **THEN** the configured bounds apply, and a host that configures nothing gets the defaults
 
 #### Scenario: A handler committed but could not publish
 

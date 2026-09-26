@@ -268,12 +268,17 @@ internal sealed class StoreReaderLoop(
                     {
                         await applyEntry(entry, ct);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (Exception ex) when (ex is not (OperationCanceledException or CommittedEventsNotPublishedException))
                     {
                         logger.LogEntryAttemptFailed(ex, consumer, partition, entry.Id, attempt);
                         throw;
                     }
                 }, cancellationToken);
+            }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                // The handler's events are recorded. Applying the entry again would record them a second time.
+                logger.LogEntryCommittedNotPublished(committed, consumer, partition, entry.Id);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

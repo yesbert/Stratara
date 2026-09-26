@@ -117,8 +117,10 @@ internal sealed class AzureServiceBusBus(
             }
             catch (CommittedEventsNotPublishedException committed)
             {
+                // Settled whatever the subscription's token says: a stopping subscription must not abandon it, which
+                // would deliver the message again.
                 logger.LogCommittedEventsNotPublished(topic, committed);
-                await args.CompleteMessageAsync(args.Message, cancellationToken);
+                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
             }
             catch (ConcurrencyException ce)
             {

@@ -195,6 +195,11 @@ internal sealed class EventSource(
         {
             await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
         }
+        catch (Exception) when (outboxDispatcher.StoresBundlesWithCommit)
+        {
+            // The bundle was recorded with the commit and the drain publishes it: the save lost nothing, and the
+            // dispatcher logs what went wrong in handing it on at once.
+        }
         catch (Exception ex)
         {
             // The events are committed, even when the handover was cancelled. The caller must know that,

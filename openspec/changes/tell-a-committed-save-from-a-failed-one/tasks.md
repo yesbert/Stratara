@@ -38,6 +38,15 @@
   `ConcurrencyException` and `CommittedEventsNotPublishedException` read empty rather than null after a
   crossing (`FrameworkExceptionSerializationTests`; without the registration the round trip fails).
 
+- [x] 2b.7 Round 3 of the review: the transports settle with `CancellationToken.None`; a durable host does
+  not fail a save whose handover fails after the commit (`EventSourceSaveOutcomeTests`); a store reader
+  counts such an entry as applied (`StoreReaderLoopTests`) and a durable timer as fired
+  (`CommittedTimerTests`, integration); the RabbitMQ test proves the message was acknowledged by closing
+  the consumer and finding the queue empty, the Service Bus one by peeking the subscription; the
+  existing requirements that promised a retry carry the carve-out (MODIFIED deltas); log ids
+  `117_127`–`117_129` in the schema page; "republish" is gone from the docs, which the framework does
+  not offer.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

@@ -32,15 +32,25 @@ applies to the entire NuGet family.
 - **A save that committed but could not publish says so, and nothing runs it again.** On a host
   without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after
   the commit. When both the bus and the outbox's own table failed, the save threw the outbox's
-  exception although the events were recorded. The transports then delivered the message again, the
-  Orleans execution model resumed a recorded command, and a pipeline that retries on any exception ran
-  the work again: each recorded the same facts a second time. The save now throws the new
+  exception although the events were recorded. Everything that runs work again on a failure then ran
+  it again and recorded the same facts a second time: the transports delivered the message again, the
+  Orleans execution model resumed a recorded command, a store reader retried the entry, a durable timer
+  fired again, and a pipeline that retries on any exception retried. The save now throws the new
   `CommittedEventsNotPublishedException`, naming the committed streams, with the handover's failure as
-  the inner exception, a cancellation after the commit included. The RabbitMQ and Azure Service Bus
-  transports acknowledge such a message and log an error (`LogEvents.Messaging.CommittedEventsNotPublished`,
-  `108_113`). The Orleans execution model completes such a recorded command and logs an error
-  (`LogEvents.Orleans.IntentCommittedNotPublished`, `117_127`). `ResilienceNames.CommandDispatcher`,
-  `EventBundleDispatcher`, `MessageBus` and `ProjectionReplayBatch` do not retry it. A caller that caught
+  the inner exception, a cancellation after the commit included. Each of those places treats it as
+  done and logs an error:
+  - the RabbitMQ and Azure Service Bus transports acknowledge the message, whatever their own
+    cancellation says (`LogEvents.Messaging.CommittedEventsNotPublished`, `108_113`);
+  - on the Orleans execution model a recorded command is completed
+    (`LogEvents.Orleans.IntentCommittedNotPublished`, `117_127`), a store reader counts the entry as
+    applied (`EntryCommittedNotPublished`, `117_128`), and a durable timer counts as fired
+    (`TimerCommittedNotPublished`, `117_129`);
+  - `ResilienceNames.CommandDispatcher`, `EventBundleDispatcher`, `MessageBus` and
+    `ProjectionReplayBatch` do not retry it.
+
+  The bundle itself is lost: replay the projections that consume it; a saga that reacts to bundles has
+  missed it. A host that cannot lose a bundle stores bundles with the commit, and such a host no longer
+  fails a save whose handover fails after the commit, since its bundle is recorded. A caller that caught
   the outbox's own exception type, or `OperationCanceledException`, after a save now finds it as the
   inner exception.
 

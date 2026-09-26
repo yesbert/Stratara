@@ -191,12 +191,15 @@ partition shows up before it shows up as latency.
 durable bundles, that handover can fail after the commit, when both the bus and the outbox's own table
 are unavailable. The save then throws `CommittedEventsNotPublishedException`, which names the committed
 streams, whatever ended the handover — a cancellation included. **The events are recorded; do not
-append them again.** Readers that consume bundles see them only once they are republished or
-replayed. Nothing in the framework runs the work again because of it: the RabbitMQ and Azure Service
-Bus transports acknowledge the message and log an error (`108_113`), the Orleans execution model
-completes a recorded command and logs an error (`117_127`), and the retrying pipelines do not retry it.
-A host that stores bundles with the commit does not raise it, because its bundle is recorded in the
-same transaction as the events.
+append them again.** Readers that consume bundles did not receive them: a projection is repaired by a
+replay, but a saga that reacts to bundles has missed them, and nothing repairs that — which is why a
+host that cannot lose a bundle stores bundles with the commit. Such a host does not raise the
+exception at all: its bundle is recorded in the same transaction as the events, and a handover that
+fails afterwards loses nothing. Nothing in the framework runs the work again because of it: the
+RabbitMQ and Azure Service Bus transports acknowledge the message and log an error (`108_113`); on the
+Orleans execution model a recorded command is completed (`117_127`), a store reader counts the entry
+as applied (`117_128`) and a durable timer counts as fired (`117_129`), each logged as an error; and
+the retrying pipelines do not retry it.
 
 ## Mandatory hygiene
 

@@ -36,7 +36,7 @@ public static partial class LoggerAzureServiceBusExtensions
     [LoggerMessage(
         EventId = LogEvents.Messaging.CommittedEventsNotPublished,
         Level = LogLevel.Error,
-        Message = "A message from topic {Topic} committed its events but could not publish them; it is acknowledged so it is not run twice. Republish or replay the events for readers that consume bundles.")]
+        Message = "A message from topic {Topic} committed its events but could not publish them; it is acknowledged so it is not run twice. Replay the projections that consume those events.")]
     public static partial void LogCommittedEventsNotPublished(this ILogger logger, string topic, Exception exception);
 
     /// <summary>Logs that a message exhausted its redelivery bound and was moved to the subscription's dead-letter queue.</summary>

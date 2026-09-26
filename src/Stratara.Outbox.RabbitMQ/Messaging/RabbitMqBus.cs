@@ -435,8 +435,10 @@ internal sealed class RabbitMqBus(
             }
             catch (CommittedEventsNotPublishedException committed)
             {
+                // Settled whatever the subscription's token says: a stopping subscription must not leave it unacked,
+                // which would deliver the message again.
                 logger.LogCommittedEventsNotPublished(topic, committed);
-                await channel.BasicAckAsync(args.DeliveryTag, false, cancellationToken);
+                await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
             }
             catch (ConcurrencyException ce)
             {

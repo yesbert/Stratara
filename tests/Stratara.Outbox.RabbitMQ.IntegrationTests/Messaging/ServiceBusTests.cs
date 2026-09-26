@@ -125,6 +125,8 @@ public sealed class ServiceBusTests(ServiceBusFixture fixture) : IAsyncDisposabl
             SubQueue = SubQueue.DeadLetter,
         });
         Assert.Null(await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), cts.Token));
+        await using var activeReceiver = _client.CreateReceiver("test-committed-not-published", "worker");
+        Assert.Null(await activeReceiver.PeekMessageAsync(cancellationToken: cts.Token));
     }
 
     /// <summary>

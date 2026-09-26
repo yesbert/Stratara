@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Timers;
 using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
@@ -183,7 +184,15 @@ internal sealed class TimerOwnerGrain(
         }
 
         var handler = TimerPorts.HandlerFor(scope.ServiceProvider, ownerId);
-        await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), _stopping.Token);
+        try
+        {
+            await handler.OnDueAsync(new TimerDue(ownerId, purpose, dueAt, firedAt), _stopping.Token);
+        }
+        catch (CommittedEventsNotPublishedException committed)
+        {
+            // The handler's events are recorded. Firing the timer again would record them a second time.
+            logger.LogTimerCommittedNotPublished(committed, ownerId, purpose);
+        }
 
         // Under the gate: a registration for the same purpose and due time that lands between the handler's return
         // and the unregister is a renewal, and its reminder must not be deleted by the tick it renewed. A silo that

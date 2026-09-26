@@ -6,12 +6,14 @@ namespace Stratara.Abstractions.EventSourcing;
 /// same facts a second time.
 /// </summary>
 /// <remarks>
-/// Readers that consume bundles do not see these events until they are republished or replayed. A host
-/// that stores bundles with the commit does not raise it, because its bundle is recorded in the same
-/// transaction as the events. It is raised whatever ended the handover, a cancellation included.
-/// Nothing in the framework runs the work again because of it: the transports acknowledge the message
-/// instead of delivering it again, the Orleans execution model completes a recorded command instead of
-/// resuming it, and the retry pipelines do not retry it.
+/// Readers that consume bundles did not receive these events: a projection is repaired by a replay; a saga
+/// that reacts to bundles has missed them, and nothing repairs that, which is why a host that cannot lose
+/// a bundle stores bundles with the commit. Such a host does not raise it, because its bundle is recorded
+/// in the same transaction as the events. It is raised whatever ended the handover, a cancellation
+/// included. Nothing in the framework runs the work again because of it: the transports acknowledge the
+/// message instead of delivering it again; on the Orleans execution model a recorded command is completed
+/// instead of resumed, a store reader counts the entry as applied, and a durable timer as fired; and the
+/// retry pipelines do not retry it.
 /// </remarks>
 public sealed class CommittedEventsNotPublishedException : Exception
 {
@@ -22,8 +24,8 @@ public sealed class CommittedEventsNotPublishedException : Exception
     public CommittedEventsNotPublishedException(IReadOnlyList<Guid> streamIds, int eventCount, Exception innerException)
         : base(
             $"The save committed {eventCount} event(s) on stream(s) {string.Join(", ", streamIds)}, but handing their " +
-            "bundle on failed. The events are recorded: do not append them again. Readers that consume bundles see " +
-            "them only once they are republished or replayed.",
+            "bundle on failed. The events are recorded: do not append them again. Readers that consume bundles did not " +
+            "receive them: replay the projections that do. A host that stores bundles with the commit cannot lose one.",
             innerException)
     {
         _streamIds = streamIds;
