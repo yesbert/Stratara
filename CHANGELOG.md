@@ -28,6 +28,14 @@ applies to the entire NuGet family.
   first event the stated Subject is the owner the stream records, so the rest of that batch keeps
   it, as every later batch does.
 
+- **`IEventSource` no longer says an event's owner comes from the session.** Its XML doc said
+  every create and append takes the tenant in the session, and `AppendOnBehalfOfAsync` and
+  `EventSubject` spoke of overriding "the session's Subject". Since 4.0.0 a stream keeps the owner
+  it was created with, whatever session appends to it later. The XML docs of `IEventSource`,
+  `EventSubject` and `IAggregateCreationEvent` now state the order the store applies, and that an
+  aggregate created for another tenant than the session's states that tenant on its creation
+  event.
+
 ## [4.4.0] — 2026-09-26
 
 A release about events a reader has no use for. Rebuilding an aggregate, and every projection and
