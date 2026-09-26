@@ -150,8 +150,7 @@
 
 - [x] 2b.17 Round 13 of the review: the guarantee no longer depends on a context carrying the interceptor — the
   unit of work (`UnitOfWork<TDbContext>`'s transaction) writes under the caller's token and commits without it on
-  any relational context, inside the context's execution strategy
-  (`CommitCompletionInterceptorTests.The_unit_of_work_lets_a_commit_run_to_its_end_on_a_context_without_the_interceptor`);
+  any relational context, inside the context's execution strategy (superseded in round 14, 2b.18);
   `PartitionCounterInterceptor` releases its transaction on a cancelled save, which EF reports to
   `SaveChangesCanceledAsync`, not `SaveChangesFailedAsync`
   (`PartitionCounterCancelledSaveTests.A_cancelled_append_leaves_no_transaction_open_for_the_next_save`, red
@@ -160,6 +159,18 @@
   injection in the grain); the dispatcher test checks that a cancelled publish logs no warning; the interceptor's
   documentation says it must come last among transaction interceptors and what bounds a commit; the spec scopes the
   guarantee to the stores the framework provides and the cancelled-handover scenario to a handover the host provides.
+
+- [x] 2b.18 Round 14 of the review: the unit of work's own transaction (2b.17) threw under an ambient transaction,
+  bypassed a context's `SaveChangesAsync` override, raised `SavedChanges` before the commit and cost a savepoint
+  round trip — reverted. The unit of work instead reads whether the context carries `CommitCompletionInterceptor`
+  and, where it does not, saves without the caller's token, so that save runs to its end whole
+  (`CommitCompletionInterceptorTests.The_unit_of_work_saves_whole_on_a_context_without_the_interceptor`,
+  `…honours_a_cancellation_during_the_writes_on_a_context_with_the_interceptor`); `PartitionCounterInterceptor`
+  also releases its transaction on a concurrency conflict, which EF reports to `ThrowingConcurrencyExceptionAsync`
+  only (`PartitionCounterCancelledSaveTests.An_append_that_fails_as_a_concurrency_conflict_leaves_no_transaction_open`,
+  red without the override); `SagaProcessGrain` swallows a failure to cancel its timers only when its step
+  committed; the interceptor's documentation names what a retrying execution strategy does to a commit whose
+  acknowledgement was lost.
 
 ## 3. Documentation
 

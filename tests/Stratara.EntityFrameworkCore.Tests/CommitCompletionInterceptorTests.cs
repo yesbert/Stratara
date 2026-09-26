@@ -153,26 +153,45 @@ public sealed class CommitCompletionInterceptorTests : IAsyncLifetime
         public NotesContext CreateDbContext() => new(options);
     }
 
+    private NotesUnitOfWork UnitOfWork(params IInterceptor[] interceptors) =>
+        new(new NotesFactory(new DbContextOptionsBuilder<NotesContext>().UseSqlite(_connection).AddInterceptors(interceptors).Options));
+
     /// <summary>
-    /// The framework's unit of work commits without the caller's token on a context that does not carry the
-    /// interceptor — a write context a host registered itself — and gives even a single statement a transaction to
-    /// commit.
+    /// On a context that does not carry the interceptor — a write context a host registered itself — the unit of work
+    /// saves without the caller's token, so a cancellation requested while the changes are written does not leave a
+    /// save whose outcome the caller cannot know: it runs to its end.
     /// </summary>
     [Fact]
-    public async Task The_unit_of_work_lets_a_commit_run_to_its_end_on_a_context_without_the_interceptor()
+    public async Task The_unit_of_work_saves_whole_on_a_context_without_the_interceptor()
     {
         using var stop = new CancellationTokenSource();
-        var unitOfWork = new NotesUnitOfWork(new NotesFactory(
-            new DbContextOptionsBuilder<NotesContext>().UseSqlite(_connection).AddInterceptors(new CancelsWhenTheCommitBegins(stop)).Options));
+        var unitOfWork = UnitOfWork(new CancelsWhileTheChangesAreWritten(stop));
 
         await using (var transaction = await unitOfWork.StartAsync())
         {
-            NotesUnitOfWork.ContextOf(transaction).Notes.Add(new Note { Text = "one statement" });
+            NotesUnitOfWork.ContextOf(transaction).Notes.Add(new Note { Text = "whole" });
 
             await transaction.SaveChangesAsync(stop.Token);
         }
 
         Assert.True(stop.IsCancellationRequested);
         Assert.Equal(1, await CountAsync());
+    }
+
+    /// <summary>On a context that carries it, the unit of work passes the caller's token on: the writes stay cancellable.</summary>
+    [Fact]
+    public async Task The_unit_of_work_honours_a_cancellation_during_the_writes_on_a_context_with_the_interceptor()
+    {
+        using var stop = new CancellationTokenSource();
+        var unitOfWork = UnitOfWork(new CancelsWhileTheChangesAreWritten(stop), CommitCompletionInterceptor.Instance);
+
+        await using (var transaction = await unitOfWork.StartAsync())
+        {
+            NotesUnitOfWork.ContextOf(transaction).Notes.Add(new Note { Text = "never" });
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => transaction.SaveChangesAsync(stop.Token));
+        }
+
+        Assert.Equal(0, await CountAsync());
     }
 }

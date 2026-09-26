@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.Abstractions.Persistence;
 
@@ -36,29 +37,18 @@ public class UnitOfWork<TDbContext>(IDbContextFactory<TDbContext> contextFactory
     {
         internal TDbContext DbContext => context;
 
+        private bool CarriesCommitCompletion =>
+            context.GetService<IDbContextOptions>().FindExtension<CoreOptionsExtension>()?.Interceptors?.Contains(CommitCompletionInterceptor.Instance) == true;
+
         public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                // Nothing to write, a store without transactions, or a transaction the caller opened and commits itself:
-                // the context's own save, as it always was.
-                if (!context.ChangeTracker.HasChanges() || !context.Database.IsRelational() || context.Database.CurrentTransaction is not null)
-                {
-                    return await context.SaveChangesAsync(cancellationToken);
-                }
-
-                // Written under the caller's token and committed without it, whether or not the context carries
-                // CommitCompletionInterceptor: a commit once begun runs to its end, so a save the store committed is
-                // never reported as cancelled and run again.
-                var strategy = context.Database.CreateExecutionStrategy();
-                return await strategy.ExecuteAsync(context, static async (context, ct) =>
-                {
-                    await using var transaction = await context.Database.BeginTransactionAsync(ct);
-                    var written = await context.SaveChangesAsync(acceptAllChangesOnSuccess: false, ct);
-                    await transaction.CommitAsync(CancellationToken.None);
-                    context.ChangeTracker.AcceptAllChanges();
-                    return written;
-                }, cancellationToken);
+                // A save the store committed must never be reported as cancelled, or whatever runs it runs it again. A
+                // context that carries CommitCompletionInterceptor honours the caller's token while the changes are
+                // written and lets the commit run to its end; on one that does not — a context a host registered itself
+                // — the save runs to its end whole.
+                return await context.SaveChangesAsync(CarriesCommitCompletion ? cancellationToken : CancellationToken.None);
             }
             catch (DbUpdateConcurrencyException ex)
             {

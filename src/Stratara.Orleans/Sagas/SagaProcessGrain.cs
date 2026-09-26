@@ -125,6 +125,7 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
             await timers.RegisterAsync(new TimerRegistration(owner, purpose, dueAt), cancellationToken);
         }
 
+        var committed = false;
         if (context.Emitted.Count > 0)
         {
             var events = services.GetRequiredService<IEventSource>();
@@ -138,6 +139,7 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
             }
 
             await events.SaveChangesAsync(cancellationToken);
+            committed = true;
 
             // The step is committed from here on, and nothing after it fails the step: a step that failed now would be
             // applied again, and emit and dispatch again.
@@ -154,7 +156,12 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
         }
 
         // After the append: a kill before this leaves timers of a completed process, which the owner check drops.
-        if (state.Completed)
+        if (state.Completed && !committed)
+        {
+            // Nothing was committed by this step, so a failure here fails it and running it again is harmless.
+            await timers.CancelAllAsync(owner, cancellationToken);
+        }
+        else if (state.Completed)
         {
             try
             {

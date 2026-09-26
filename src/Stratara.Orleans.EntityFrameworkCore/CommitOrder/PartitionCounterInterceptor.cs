@@ -94,6 +94,25 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
 
     /// <inheritdoc/>
     /// <remarks>
+    /// A concurrency failure is reported here and to neither <see cref="SaveChangesFailedAsync"/> nor
+    /// <see cref="SaveChangesCanceledAsync"/>; without releasing the transaction this interceptor opened, the context's
+    /// next save would run inside it.
+    /// </remarks>
+    public override async ValueTask<InterceptionResult> ThrowingConcurrencyExceptionAsync(
+        ConcurrencyExceptionEventData eventData,
+        InterceptionResult result,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventData.Context is { } context)
+        {
+            await ReleaseAsync(context, commit: false, CancellationToken.None);
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// A cancelled save is reported here rather than to <see cref="SaveChangesFailedAsync"/>; without releasing the
     /// transaction this interceptor opened, the context's next save would run inside it.
     /// </remarks>
