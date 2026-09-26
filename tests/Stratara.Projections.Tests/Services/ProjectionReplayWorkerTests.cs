@@ -12,6 +12,7 @@ using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
 using Stratara.Shared.EventSourcing;
+using Stratara.Domain;
 
 namespace Stratara.Projections.Tests.Services;
 
@@ -300,6 +301,136 @@ public class ProjectionReplayWorkerTests
             .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = FastRetryAttempts - 1, Delay = TimeSpan.Zero })
             .Build();
 
+    [Fact]
+    public async Task ReplayCallback_EmptiesTheRecordOfEachDeclaringProjectionBeforeTruncating()
+    {
+        var harness = new Harness();
+        var order = new List<string>();
+        harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("truncate")).Returns(Task.CompletedTask);
+        var store = new Mock<IForgottenTenantStore>();
+        store.Setup(s => s.ClearAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((string projection, CancellationToken _) => order.Add($"clear {projection}")).Returns(Task.CompletedTask);
+        harness.Configure = services =>
+        {
+            services.AddSingleton(store.Object);
+            services.AddScoped<IProjection, EntryProjection>();
+            services.AddScoped<IProjection, UndeclaredProjection>();
+            services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker(), null, store.Object));
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Equal([$"clear {nameof(EntryProjection)}", "truncate"], order);
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_WithoutADeclaringProjection_DoesNotTouchTheStore()
+    {
+        var harness = new Harness();
+        var store = new Mock<IForgottenTenantStore>(MockBehavior.Strict);
+        harness.Configure = services =>
+        {
+            services.AddSingleton(store.Object);
+            services.AddScoped<IProjection, UndeclaredProjection>();
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Once);
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+    }
+
+    private sealed class UndeclaredProjection : IProjection
+    {
+        private Task HandleAsync(EntryCreated @event, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task ReplayCallback_ReplaysPastAFactRecordedAfterItsTenantWasDeleted()
+    {
+        var harness = new Harness();
+        var tenant = Guid.NewGuid();
+        var entry = Guid.NewGuid();
+        var created = NewEntry(sequenceNumber: 1, tenantId: tenant);
+        var cascade = NewEntry(sequenceNumber: 2);
+        var indexed = NewEntry(sequenceNumber: 3, tenantId: tenant);
+        var events = new Dictionary<EventStreamEntry, IEvent>(ReferenceEqualityComparer.Instance)
+        {
+            [created] = new Event<EntryCreated>(created.Id, 1, new EntryCreated(), entry, tenant, Guid.Empty),
+            [cascade] = new Event<CustomerTenantsDeleted>(cascade.Id, 1,
+                new CustomerTenantsDeleted(cascade.StreamId, [tenant], DateTimeOffset.UtcNow), cascade.StreamId, cascade.TenantId, Guid.Empty),
+            [indexed] = new Event<EntryIndexed>(indexed.Id, 2, new EntryIndexed(), entry, tenant, Guid.Empty)
+        };
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(3);
+        SetupBatchSequence(harness, [[created, cascade, indexed], []]);
+        harness.EventMapperFactory
+            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, CancellationToken _) => entries.Select(e => events[e]).ToList());
+        var projection = new EntryProjection();
+        var store = new InMemoryForgottenTenantStore();
+        harness.Configure = services => services.AddScoped<IProjectionManager>(_ => new ProjectionManager(
+            Mock.Of<ILogger<ProjectionManager>>(), new ProjectionHandler(new ProjectionMethodInvoker(), null, store), [projection]));
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+        Assert.Empty(projection.Rows);
+        Assert.Contains((nameof(EntryProjection), tenant), store.Forgotten);
+    }
+
+    private sealed record EntryCreated;
+
+    private sealed record EntryIndexed;
+
+    private sealed class EntryProjection : IForgetsDeletedTenants
+    {
+        public Dictionary<Guid, Guid> Rows { get; } = [];
+
+        private Task HandleAsync(IEvent<EntryCreated> @event, CancellationToken cancellationToken)
+        {
+            Rows[@event.StreamId] = @event.TenantId;
+            return Task.CompletedTask;
+        }
+
+        private Task HandleAsync(IEvent<EntryIndexed> @event, CancellationToken cancellationToken) =>
+            Rows.ContainsKey(@event.StreamId)
+                ? Task.CompletedTask
+                : throw new PrecedingFactMissingException(@event.StreamId, nameof(EntryIndexed));
+
+        private Task HandleAsync(CustomerTenantsDeleted @event, CancellationToken cancellationToken)
+        {
+            foreach (var row in Rows.Where(r => @event.TenantIds.Contains(r.Value)).ToList())
+            {
+                Rows.Remove(row.Key);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class InMemoryForgottenTenantStore : IForgottenTenantStore
+    {
+        public HashSet<(string Projection, Guid TenantId)> Forgotten { get; } = [];
+
+        public Task ForgetAsync(string projection, IReadOnlyCollection<Guid> tenantIds, CancellationToken cancellationToken = default)
+        {
+            Forgotten.UnionWith(tenantIds.Select(t => (projection, t)));
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> HasForgottenAsync(string projection, Guid tenantId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Forgotten.Contains((projection, tenantId)));
+
+        public Task ClearAsync(string projection, CancellationToken cancellationToken = default)
+        {
+            Forgotten.RemoveWhere(f => f.Projection == projection);
+            return Task.CompletedTask;
+        }
+
+    }
+
     private static void SetupBatchSequence(Harness harness, IReadOnlyList<EventStreamEntry>[] batches)
     {
         var queue = new Queue<IReadOnlyList<EventStreamEntry>>(batches);
@@ -336,6 +467,8 @@ public class ProjectionReplayWorkerTests
         public Mock<IEventMapperFactory> EventMapperFactory { get; } = new();
         public Mock<ISessionContextProvider> SessionContextProvider { get; } = new();
 
+        public Action<IServiceCollection>? Configure { get; set; }
+
         public Harness(ResiliencePipeline? batchPipeline = null)
         {
             _batchPipeline = batchPipeline ?? ResiliencePipeline.Empty;
@@ -369,6 +502,7 @@ public class ProjectionReplayWorkerTests
             services.AddSingleton(ProjectionManager.Object);
             services.AddSingleton(EventMapperFactory.Object);
             services.AddSingleton(SessionContextProvider.Object);
+            Configure?.Invoke(services);
             var sp = services.BuildServiceProvider();
             var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
 

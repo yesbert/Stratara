@@ -17,7 +17,9 @@ namespace Stratara.Projections.Services;
 
 /// <summary>
 /// Background service that replays the full event stream against all projections on demand. Triggered via
-/// <see cref="IProjectionReplayState"/>; truncates all projection views and re-applies every event, batched
+/// <see cref="IProjectionReplayState"/>; truncates all projection views — having first emptied the record of deleted
+/// tenants of each registered projection that declares <see cref="IForgetsDeletedTenants"/> — and re-applies every
+/// event, batched
 /// by <see cref="ProjectionOptions.BatchSize"/>, each stream in version order and the streams interleaved as
 /// their sequence numbers interleave them.
 /// </summary>
@@ -79,6 +81,7 @@ internal sealed class ProjectionReplayWorker(
         try
         {
             using var truncateScope = scopeFactory.CreateScope();
+            await ClearForgottenTenantsAsync(truncateScope.ServiceProvider, cancellationToken);
             var viewTruncator = truncateScope.ServiceProvider.GetRequiredService<IProjectionViewTruncator>();
             await viewTruncator.TruncateAllAsync(cancellationToken);
             logger.LogProjectionViewsTruncated();
@@ -93,6 +96,27 @@ internal sealed class ProjectionReplayWorker(
         finally
         {
             replayState.Deactivate();
+        }
+    }
+
+    /// <summary>
+    /// Empties the record of deleted tenants of every projection this host registers that declares
+    /// <see cref="IForgetsDeletedTenants"/> — before the views are truncated, so a deletion a stray consumer applies
+    /// in between is recorded again rather than lost, and without touching another deployment's projections in a
+    /// shared read store. A host without such a projection does not touch the store at all.
+    /// </summary>
+    private static async Task ClearForgottenTenantsAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var forgetting = services.GetServices<IProjection>().OfType<IForgetsDeletedTenants>().ToList();
+        if (forgetting.Count == 0 || services.GetService<IForgottenTenantStore>() is not { } store)
+        {
+            return;
+        }
+
+        var handler = services.GetRequiredService<IProjectionHandler>();
+        foreach (var projection in forgetting)
+        {
+            await store.ClearAsync(handler.GetProjectionName(projection), cancellationToken);
         }
     }
 

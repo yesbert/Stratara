@@ -82,7 +82,8 @@ public static class NpgsqlDbContextServiceCollectionExtensions
     /// The <see cref="IProjectionsUnitOfWork"/> that projections query and write through — and the
     /// <see cref="IReadUnitOfWork"/> it derives from, resolving to the same scoped instance — is
     /// registered here as <c>ProjectionsUnitOfWork&lt;TDbContext&gt;</c>. A host that registers its
-    /// own read-side unit of work, before or after this call, keeps it.
+    /// own read-side unit of work, before or after this call, keeps it. The store that keeps the tenants
+    /// projections have seen deleted is registered here too, as <c>AddStrataraForgottenTenants</c> would.
     /// </remarks>
     /// <typeparam name="TDbContext">The concrete read-store DbContext type.</typeparam>
     /// <param name="services">The service collection to add registrations to.</param>
@@ -100,6 +101,7 @@ public static class NpgsqlDbContextServiceCollectionExtensions
             new ProjectionsUnitOfWork<TDbContext>(sp.GetRequiredService<IDbContextFactory<TDbContext>>()));
         services.TryAddScoped<IReadUnitOfWork>(sp => sp.GetRequiredService<IProjectionsUnitOfWork>());
         services.TryAddScoped<IDbResolver, DefaultDbResolver>();
+        services.AddStrataraForgottenTenants<TDbContext>();
         return services;
     }
 

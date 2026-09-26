@@ -3,6 +3,7 @@ using Stratara.Abstractions.EventSourcing;
 using Microsoft.EntityFrameworkCore;
 using Stratara.Projections.Multitenancy.Models;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
 using Stratara.Shared.EventSourcing;
 using Stratara.Abstractions.Outbox;
 
@@ -18,6 +19,7 @@ public class ReadDbContextTests
         var entityClrTypes = ctx.Model.GetEntityTypes().Select(t => t.ClrType).ToHashSet();
 
         Assert.Contains(typeof(TenantView), entityClrTypes);
+        Assert.Contains(typeof(ForgottenTenant), entityClrTypes);
     }
 
     [Fact]

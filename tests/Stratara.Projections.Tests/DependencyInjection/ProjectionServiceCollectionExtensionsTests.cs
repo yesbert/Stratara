@@ -2,6 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Stratara.Abstractions.Reflections;
+using Stratara.Domain;
 using Stratara.Projections.Abstractions;
 using Stratara.Projections.Services;
 
@@ -22,6 +24,11 @@ public class ProjectionServiceCollectionExtensionsTests
     }
 
     public abstract class AbstractProjection : IProjection;
+
+    public sealed class ForgettingProjection : IForgetsDeletedTenants
+    {
+        public Task HandleAsync(FakeProjectionEvent @event, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
 
     public interface IUnrelated;
 
@@ -96,6 +103,29 @@ public class ProjectionServiceCollectionExtensionsTests
         var projectionDescriptors = services.Where(d => d.ServiceType == typeof(IProjection)).ToList();
         Assert.DoesNotContain(projectionDescriptors, d => d.ImplementationType == typeof(AbstractProjection));
         Assert.DoesNotContain(projectionDescriptors, d => d.ImplementationType == typeof(IUnrelated));
+    }
+
+    [Fact]
+    public void A_projection_that_forgets_deleted_tenants_trusts_the_deletion_facts_it_does_not_handle()
+    {
+        var resolver = new TrustedTypeResolver();
+
+        ProjectionServiceCollectionExtensions.RegisterHandledEventTypes(typeof(ForgettingProjection), resolver);
+
+        Assert.True(resolver.TryResolve(typeof(TenantDeleted).AssemblyQualifiedName!, out _));
+        Assert.True(resolver.TryResolve(typeof(CustomerTenantsDeleted).AssemblyQualifiedName!, out _));
+        Assert.True(resolver.TryResolve(typeof(FakeProjectionEvent).AssemblyQualifiedName!, out _));
+    }
+
+    [Fact]
+    public void A_projection_that_does_not_declare_it_trusts_only_what_it_handles()
+    {
+        var resolver = new TrustedTypeResolver();
+
+        ProjectionServiceCollectionExtensions.RegisterHandledEventTypes(typeof(FirstProjection), resolver);
+
+        Assert.False(resolver.TryResolve(typeof(TenantDeleted).AssemblyQualifiedName!, out _));
+        Assert.False(resolver.TryResolve(typeof(CustomerTenantsDeleted).AssemblyQualifiedName!, out _));
     }
 
     private static void AssertSingleScoped<TService, TImpl>(IServiceCollection services)

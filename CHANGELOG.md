@@ -26,7 +26,31 @@ applies to the entire NuGet family.
   whose type does not resolve in the host and that no `Apply` of the aggregate could take. Usually
   that is an event the aggregate ignores; if it is a handled type renamed without an upcaster, add the
   upcaster.
-- No public signature changes, no schema change.
+- **Generate an EF Core migration for your read context.** The framework's read context declares a new
+  table, `projection_forgotten_tenant`, for projections that declare `IForgetsDeletedTenants`. A host
+  without such a projection never touches it. A projection that declares it knows deletions applied
+  before the upgrade only after a replay — or, on the Orleans execution model, a rebuild of an
+  `IRebuildableProjection`.
+- No existing public signature changes.
+
+### Added
+
+- **A projection can forget a deleted tenant.** A projection that removes a deleted tenant's rows met
+  facts recorded for that tenant after its deletion — work queued before it ran to its end — with
+  nothing to apply them to, and its `PrecedingFactMissingException` made the live bundle dead-letter and
+  every replay fail, leaving the read models the replay had emptied empty. Declare
+  `IForgetsDeletedTenants` on it — a promise that a deleted tenant's data is gone from its read model
+  once either deletion fact is applied: the framework hands it `TenantDeleted` and `CustomerTenantsDeleted`
+  whether or not it handles them, records per projection the tenants it deleted, and passes over a
+  missing-prerequisite report for a fact owned by such a tenant, logged at Information (`104_014`).
+  Nothing else changes. The record is kept by `IForgottenTenantStore`, which
+  `AddNpgsqlReadDbContextFactory<TContext>()` registers over the new table, or
+  `AddStrataraForgottenTenants<TReadContext>()` for a read context registered another way; a declaring
+  projection without it fails on its first fact, naming both. A replay empties the record of each
+  declaring projection it registers just before the read models — and no other deployment's — and a
+  single-projection rebuild on the Orleans execution model empties that projection's just before its
+  read model.
+  `AddProjectionsFromAssemblyContaining<T>()` trusts the two deletion facts for a declaring projection.
 
 ### Fixed
 

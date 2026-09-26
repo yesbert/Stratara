@@ -56,6 +56,21 @@ public static partial class LoggerProjectionExtensions
         Message = "Projection bundle refers to an entity not applied yet on stream {StreamId} ({EventTypeName}); attempt {Attempt}.")]
     public static partial void LogProjectionPrecedingFactMissing(this ILogger logger, Exception exception, Guid streamId, string eventTypeName, int attempt);
 
+    /// <summary>
+    /// Logs that a projection declaring <c>IForgetsDeletedTenants</c> reported a missing prerequisite for a
+    /// fact of a tenant it has seen deleted, and that the fact was passed over.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="projection">The projection's name.</param>
+    /// <param name="streamId">The stream the fact belongs to.</param>
+    /// <param name="eventTypeName">The fact's type name.</param>
+    /// <param name="tenantId">The deleted tenant that owns the fact.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionForgottenTenantFactPassedOver,
+        Level = LogLevel.Information,
+        Message = "Projection {Projection} passed over {EventTypeName} on stream {StreamId}: its tenant {TenantId} was deleted, and the projection forgot it.")]
+    public static partial void LogProjectionForgottenTenantFactPassedOver(this ILogger logger, string projection, Guid streamId, string eventTypeName, Guid tenantId);
+
     /// <summary>Logs that projection replay has started.</summary>
     /// <param name="logger">The logger.</param>
     [LoggerMessage(

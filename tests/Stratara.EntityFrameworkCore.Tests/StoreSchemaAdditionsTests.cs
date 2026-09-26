@@ -4,6 +4,7 @@ using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Outbox;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 
@@ -94,6 +95,21 @@ public sealed class StoreSchemaAdditionsTests
     }
 
     [Fact]
+    public void The_read_model_declares_the_forgotten_tenant_table_keyed_by_projection_and_tenant()
+    {
+        using var context = new SchemaReadContext(new DbContextOptionsBuilder<SchemaReadContext>()
+            .UseInMemoryDatabase($"schema-read-{Guid.NewGuid():N}")
+            .Options);
+        var forgotten = Entity<ForgottenTenant>(context.Model);
+
+        Assert.Equal("projection_forgotten_tenant", forgotten.GetTableName());
+        Assert.Equal(
+            [nameof(ForgottenTenant.Projection), nameof(ForgottenTenant.TenantId)],
+            forgotten.FindPrimaryKey()!.Properties.Select(p => p.Name));
+        Assert.Equal(255, forgotten.FindProperty(nameof(ForgottenTenant.Projection))!.GetMaxLength());
+    }
+
+    [Fact]
     public void The_read_model_carries_no_write_side_addition_and_the_write_model_no_checkpoint()
     {
         using var read = new SchemaReadContext(new DbContextOptionsBuilder<SchemaReadContext>()
@@ -103,6 +119,7 @@ public sealed class StoreSchemaAdditionsTests
 
         Assert.Null(read.Model.FindEntityType(typeof(PartitionPosition)));
         Assert.Null(write.Model.FindEntityType(typeof(ProjectionCheckpoint)));
+        Assert.Null(write.Model.FindEntityType(typeof(ForgottenTenant)));
     }
 
     private static IEntityType Entity<T>(IModel model) =>

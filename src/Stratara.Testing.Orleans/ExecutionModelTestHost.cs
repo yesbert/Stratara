@@ -341,6 +341,7 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
         services.AddSagaHandling(builder.Configuration);
         services.AddStrataraPortableCounterReader<StrataraTestWriteDbContext>();
         services.AddStrataraProjectionCheckpoints<StrataraTestReadDbContext>();
+        services.AddStrataraForgottenTenants<StrataraTestReadDbContext>();
         services.AddStrataraIntentStore<StrataraTestWriteDbContext>();
         services.AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName);
         services.AddSingleton(directory);
