@@ -18,6 +18,22 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A stream keeps the user it was created for.** A later event takes its owner from the stream's
+  first event rather than from the session: since 4.0.0 for every aggregate, and before that for
+  aggregates implementing `ITenantAggregate`. But only the tenant was taken over. A stream whose
+  first event was recorded for a user, from the session's data-owner user or from a stated Subject,
+  recorded every event of a later save with no user. Their protected fields were encrypted under
+  keys without that user, so erasing the user did not reach them. The save that created the stream
+  had kept the user, so the owner depended on how events were batched.
+
+  A later event now carries the whole owner recorded on the stream's first event, tenant and user. A
+  stream whose first event names no user is still given none, whatever user the session names. The
+  user now also appears where the event's owner is passed on: in the bundle published for the save,
+  and in the session a projection handles the event under.
+
+  Events already recorded are not rewritten. An event a later save recorded without the stream's
+  user stays encrypted under its tenant's keys: a tenant's erasure reaches it, the user's does not.
+
 - **A save that fails discards what it staged.** A failed save is specified to discard the whole
   staged batch, but only a successful save and a concurrency conflict did so. A save that failed for
   any other reason kept its events staged, whether the store was briefly unavailable or the save was

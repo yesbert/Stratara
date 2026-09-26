@@ -295,8 +295,9 @@ internal sealed class EventSource(
     /// a Subject stated with AppendOnBehalfOfAsync outranks all of them and is never resolved here:
     /// 1. Per-batch cache (the owner an earlier event in the same SaveChanges resolved for this
     ///    stream — never a Subject stated for another event, except on the stream's first event)
-    /// 2. The owner recorded on the stream's first entry, for any aggregate type — a stream keeps
-    ///    the owner it was created with, whatever session appends to it later
+    /// 2. The owner recorded on the stream's first entry — its tenant, and its user where one was
+    ///    recorded — for any aggregate type: a stream keeps the owner it was created with, whatever
+    ///    session appends to it later
     /// 3. Event payload's IAggregateCreationEvent.TenantId
     /// 4. SessionContext.TenantId fallback
     /// 5. Hard failure if Subject still unresolved (all candidates empty)
@@ -309,10 +310,9 @@ internal sealed class EventSource(
             return cachedSubject;
         }
 
-        var existingTenantId = await LookupExistingAggregateTenantIdAsync(streamId, cancellationToken);
-        if (existingTenantId.HasValue && existingTenantId.Value != Guid.Empty)
+        if (await LookupStreamOwnerAsync(streamId, cancellationToken) is { } streamOwner)
         {
-            return new EventSubject(existingTenantId.Value);
+            return streamOwner;
         }
 
         if (@event is IAggregateCreationEvent creation && creation.TenantId != Guid.Empty)
@@ -331,7 +331,7 @@ internal sealed class EventSource(
             "or set SessionContext.TenantId before appending.");
     }
 
-    private async Task<Guid?> LookupExistingAggregateTenantIdAsync(Guid streamId, CancellationToken cancellationToken)
+    private async Task<EventSubject?> LookupStreamOwnerAsync(Guid streamId, CancellationToken cancellationToken)
     {
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
@@ -341,6 +341,8 @@ internal sealed class EventSource(
         }
 
         var firstEntry = await eventStreamRepository.GetFirstOrDefaultAsync(streamId, cancellationToken);
-        return firstEntry?.TenantId;
+        return firstEntry is { TenantId: var tenantId } && tenantId != Guid.Empty
+            ? new EventSubject(tenantId, firstEntry.UserId)
+            : null;
     }
 }

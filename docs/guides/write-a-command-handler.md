@@ -76,9 +76,9 @@ names a tenant:
 
 1. the subject you stated for that event with `AppendOnBehalfOfAsync`;
 2. the owner already resolved for the same stream earlier in the same batch;
-3. the tenant recorded on the stream's first event;
+3. the owner recorded on the stream's first event — its tenant, and its user where one was recorded;
 4. the `TenantId` the event carries itself, when it implements `IAggregateCreationEvent`;
-5. the tenant in the session.
+5. the tenant in the session, together with the session's data-owner user.
 
 If none of them yields a tenant, the append fails with a message that names the event, the stream,
 and the three ways to supply an owner: an explicit subject, a creation event, or a session tenant.
@@ -86,9 +86,12 @@ and the three ways to supply an owner: an explicit subject, a creation event, or
 The stream comes before the session on purpose. A privileged operator whose session names another
 tenant cannot silently re-home an existing aggregate by appending to it — the stream keeps the owner
 it was created with, for every aggregate, whether or not the aggregate exposes a tenant property of
-its own. An aggregate whose events carried different owners could not be fully erased, because each
-tenant's erasure reaches only its own entries, and once one of those keys was shredded it could not
-be rehydrated at all.
+its own. The user is part of that owner: a stream whose first event was recorded for a user gives
+every later event the same user, whichever user the session names, and a stream whose first event
+names no user is given none. A creation event carries a tenant and no user, so a stream it creates
+has no user. An aggregate whose events carried different owners could not be fully
+erased, because each tenant's or user's erasure reaches only its own entries, and once one of those
+keys was shredded it could not be rehydrated at all.
 
 So a new aggregate states its owner on its first event:
 

@@ -11,15 +11,17 @@ namespace Stratara.Abstractions.EventSourcing;
 /// simply the one in the caller's session. For each event the store takes the first of these that
 /// names a tenant: the Subject stated for that event with
 /// <see cref="AppendOnBehalfOfAsync{TAggregate}"/>; the owner already resolved for the same stream
-/// earlier in the batch; the tenant recorded on the stream's first event; the
-/// <see cref="IAggregateCreationEvent.TenantId"/> of a creation event; and only then the tenant in
-/// the session. If none of them names a tenant, the append fails.
+/// earlier in the batch; the owner recorded on the stream's first event — its tenant, and its user
+/// where one was recorded; the <see cref="IAggregateCreationEvent.TenantId"/> of a creation event;
+/// and only then the tenant in the session. If none of them names a tenant, the append fails.
 /// </para>
 /// <para>
-/// A stream therefore keeps the owner it was created with, whatever session appends to it later.
-/// A first event that states no owner takes the tenant in the session, so an aggregate created for
+/// A stream therefore keeps the owner it was created with, user included, whatever session appends
+/// to it later; a stream whose first event names no user is given none. A first event that states
+/// no owner takes the tenant and the data-owner user in the session, so an aggregate created for
 /// another tenant states that tenant on its first event by implementing
-/// <see cref="IAggregateCreationEvent"/>.
+/// <see cref="IAggregateCreationEvent"/>. A creation event names no user, so a stream it creates
+/// has none.
 /// </para>
 /// </remarks>
 /// <example>
