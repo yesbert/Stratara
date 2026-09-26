@@ -8,11 +8,12 @@ with nothing staged SHALL write and publish nothing.
 
 Where the events were committed but their bundle could not be handed on, the save SHALL fail with a
 failure of its own that says the events are committed and names their streams — whatever ended the
-handover, a cancellation included. A cancellation SHALL be honoured while the save's changes are
-written, which leaves nothing behind, and a commit once begun SHALL run to its end, so that a save the
-store committed is never reported as cancelled. A cancellation requested after the commit SHALL NOT
-keep the bundle from being published: where the bus does not take it before the cancellation, it SHALL
-be recorded for later publication. It SHALL be distinguishable from a save that wrote nothing, and
+handover, a cancellation included. On the stores the framework provides, a cancellation SHALL be
+honoured while the save's changes are written, which leaves nothing behind, and a commit once begun
+SHALL run to its end, so that a save the store committed is never reported as cancelled. A
+cancellation requested after the commit SHALL NOT keep the bundle from being published: where the bus
+does not take it before the cancellation, the framework's outbox SHALL record it for later
+publication. It SHALL be distinguishable from a save that wrote nothing, and
 neither the framework's retrying pipelines nor its transports nor its recorded-command resumption
 SHALL run the work again because of it, since that would record the same facts a second time. On a
 host with durable bundles the bundle is already recorded when the handover fails, so the save SHALL
@@ -58,7 +59,7 @@ SHALL NOT fail after the commit because the bundle could not be recorded.
 #### Scenario: The handover is cancelled after the commit
 
 - **WHEN** a save commits its events and handing their bundle on is then cancelled before the bundle
-  could be published or recorded
+  could be published or recorded — by a handover the host provides, since the framework's records it
 - **THEN** the save fails with the same failure, carrying the cancellation, rather than surfacing as a
   plain cancellation
 
@@ -74,7 +75,8 @@ SHALL NOT fail after the commit because the bundle could not be recorded.
 
 - **WHEN** a save has committed its events and its caller is cancelled before the bus has taken their
   bundle
-- **THEN** the bundle is recorded for later publication rather than lost
+- **THEN** the bundle is recorded for later publication rather than lost, and no warning is logged for
+  the cancellation
 
 #### Scenario: The handover fails after the commit on a host with durable bundles
 

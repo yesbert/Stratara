@@ -21,8 +21,12 @@ namespace Stratara.EventSourcing.EntityFrameworkCore;
 ///     .UseNpgsql(connectionString)
 ///     .AddInterceptors(CommitCompletionInterceptor.Instance));
 /// </code>
-/// A commit is bounded by the provider's command timeout like any other statement. A context whose
-/// <c>AutoTransactionBehavior</c> was set to <c>Never</c> keeps it, and its saves are not covered.
+/// Add it after any transaction interceptor that must act before the commit: it performs the commit in its own
+/// <c>TransactionCommittingAsync</c>, and an interceptor that runs after it sees the commit already done. A commit is
+/// bounded by the connection's own command timeout (with Npgsql, <c>Command Timeout</c> in the connection string). A
+/// context whose <c>AutoTransactionBehavior</c> was set to <c>Never</c> keeps it, and its single-statement saves are
+/// not covered. The framework's unit of work commits without the caller's token on any relational context, with or
+/// without this interceptor; the interceptor covers the saves that do not go through it.
 /// </remarks>
 public sealed class CommitCompletionInterceptor : IDbTransactionInterceptor, ISaveChangesInterceptor
 {

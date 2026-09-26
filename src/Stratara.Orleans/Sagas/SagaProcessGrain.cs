@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Session;
@@ -137,15 +139,31 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
 
             await events.SaveChangesAsync(cancellationToken);
 
-            // The step is committed from here on and is not reported as cancelled: a step that were would be applied
-            // again, and emit and dispatch again.
-            state = await loader.LoadAsync(services, stateStream, CancellationToken.None) ?? state;
+            // The step is committed from here on, and nothing after it fails the step: a step that failed now would be
+            // applied again, and emit and dispatch again.
+            try
+            {
+                state = await loader.LoadAsync(services, stateStream, CancellationToken.None) ?? state;
+            }
+            catch (Exception ex)
+            {
+                // Without the state the timers stay; the owner check drops the timers of a completed process.
+                services.GetRequiredService<ILogger<SagaProcessGrain>>().LogSagaStepAftermathFailed(ex, this.GetPrimaryKeyString());
+                return;
+            }
         }
 
         // After the append: a kill before this leaves timers of a completed process, which the owner check drops.
         if (state.Completed)
         {
-            await timers.CancelAllAsync(owner, CancellationToken.None);
+            try
+            {
+                await timers.CancelAllAsync(owner, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                services.GetRequiredService<ILogger<SagaProcessGrain>>().LogSagaStepAftermathFailed(ex, this.GetPrimaryKeyString());
+            }
         }
     }
 

@@ -93,6 +93,19 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A cancelled save is reported here rather than to <see cref="SaveChangesFailedAsync"/>; without releasing the
+    /// transaction this interceptor opened, the context's next save would run inside it.
+    /// </remarks>
+    public override async Task SaveChangesCanceledAsync(DbContextEventData eventData, CancellationToken cancellationToken = default)
+    {
+        if (eventData.Context is { } context)
+        {
+            await ReleaseAsync(context, commit: false, CancellationToken.None);
+        }
+    }
+
+    /// <inheritdoc/>
     /// <exception cref="NotSupportedException">The save appends event stream entries — the framework's write path is asynchronous, and the counter is only maintained on it. A synchronous save that appends none passes.</exception>
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {

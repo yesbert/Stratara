@@ -85,6 +85,7 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_127` | IntentCommittedNotPublished | Error | A recorded command's save committed its events but could not publish them; the command is completed rather than resumed, so it does not run twice; carries the intent and the command type |
 | `117_128` | EntryCommittedNotPublished | Error | A store reader's handler committed its events but could not publish them; the entry counts as applied rather than stalling the partition, so it does not run twice; carries the consumer, the partition and the entry |
 | `117_129` | TimerCommittedNotPublished | Error | A durable timer's handler committed its events but could not publish them; the timer counts as fired rather than staying registered, so it does not run twice; carries the owner and the purpose |
+| `117_130` | SagaStepAftermathFailed | Warning | A saga step committed, and reading its state or cancelling its timers afterwards failed; the step still counts as applied, so it does not emit twice, and the owner check drops the timers of a completed process; carries the process |
 
 ## Authoring a new log event
 

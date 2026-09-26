@@ -148,6 +148,19 @@
   (`EventBundleOutboxDispatcherTests.EnqueueEventBundleAsync_PublishCancelledByTheCaller_StillRecordsTheBundle`);
   documented in `IEventSource.SaveChangesAsync`, the migration guide and the CHANGELOG.
 
+- [x] 2b.17 Round 13 of the review: the guarantee no longer depends on a context carrying the interceptor — the
+  unit of work (`UnitOfWork<TDbContext>`'s transaction) writes under the caller's token and commits without it on
+  any relational context, inside the context's execution strategy
+  (`CommitCompletionInterceptorTests.The_unit_of_work_lets_a_commit_run_to_its_end_on_a_context_without_the_interceptor`);
+  `PartitionCounterInterceptor` releases its transaction on a cancelled save, which EF reports to
+  `SaveChangesCanceledAsync`, not `SaveChangesFailedAsync`
+  (`PartitionCounterCancelledSaveTests.A_cancelled_append_leaves_no_transaction_open_for_the_next_save`, red
+  without the override); `SagaProcessGrain` logs and swallows a failure to reread its state or cancel its timers
+  after its step committed (`LogEvents.Orleans.SagaStepAftermathFailed`, 117_130; not reproducible without fault
+  injection in the grain); the dispatcher test checks that a cancelled publish logs no warning; the interceptor's
+  documentation says it must come last among transaction interceptors and what bounds a commit; the spec scopes the
+  guarantee to the stores the framework provides and the cancelled-handover scenario to a handover the host provides.
+
 ## 3. Documentation
 
 - [x] 3.1 `docs/guides/write-a-command-handler.md` and `docs/guides/use-resilience-policies.md`.

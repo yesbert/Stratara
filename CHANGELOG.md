@@ -64,11 +64,16 @@ applies to the entire NuGet family.
   ran it again and recorded the same facts twice. The new `CommitCompletionInterceptor` lets a commit
   run to its end whatever the cancellation says, while a cancellation during the writes still leaves
   nothing behind, and gives a single-statement save a transaction so it has a commit to protect. The
-  framework adds it to every context it registers; a host that registers its own write context — the
-  Orleans execution model on a store other than PostgreSQL — adds it beside `PartitionCounterInterceptor`.
-  The Orleans commit-order interceptor and the saga step after its save no longer pass a cancellation
-  on either, and the event-bundle dispatcher records a bundle whose publication a cancellation cut short
-  instead of losing it.
+  framework adds it to every context it registers, and its unit of work commits without the caller's
+  token on any relational context, so the event source's save is covered on a write context a host
+  registered itself too; such a host adds the interceptor for its other saves — the Orleans execution
+  model on a store other than PostgreSQL, beside `PartitionCounterInterceptor`, last among its
+  transaction interceptors. The Orleans commit-order interceptor commits without the token and releases
+  its transaction when a save is cancelled (a cancelled append left it open, and the context's next save
+  ran inside it); a saga step no longer fails after its save committed — a failure to reread its state or
+  cancel its timers is logged (`LogEvents.Orleans.SagaStepAftermathFailed`, `117_130`); and the
+  event-bundle dispatcher records a bundle whose publication a cancellation cut short instead of losing
+  it.
 
 - **A save that committed but could not publish says so, and nothing runs it again.** On a host
   without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after

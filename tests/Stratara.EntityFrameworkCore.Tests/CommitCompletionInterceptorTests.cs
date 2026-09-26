@@ -21,7 +21,7 @@ public sealed class CommitCompletionInterceptorTests : IAsyncLifetime
         public string Text { get; set; } = string.Empty;
     }
 
-    private sealed class NotesContext(DbContextOptions<NotesContext> options) : DbContext(options)
+    private sealed class NotesContext(DbContextOptions<NotesContext> options) : DbContext(options), Stratara.EventSourcing.EntityFrameworkCore.Abstractions.IDbContext
     {
         public DbSet<Note> Notes => Set<Note>();
     }
@@ -140,6 +140,39 @@ public sealed class CommitCompletionInterceptorTests : IAsyncLifetime
             await transaction.CommitAsync(stop.Token);
         }
 
+        Assert.Equal(1, await CountAsync());
+    }
+
+    private sealed class NotesUnitOfWork(IDbContextFactory<NotesContext> factory) : UnitOfWork<NotesContext>(factory)
+    {
+        public static NotesContext ContextOf(Stratara.Abstractions.Persistence.ITransaction transaction) => GetDbContext(transaction);
+    }
+
+    private sealed class NotesFactory(DbContextOptions<NotesContext> options) : IDbContextFactory<NotesContext>
+    {
+        public NotesContext CreateDbContext() => new(options);
+    }
+
+    /// <summary>
+    /// The framework's unit of work commits without the caller's token on a context that does not carry the
+    /// interceptor — a write context a host registered itself — and gives even a single statement a transaction to
+    /// commit.
+    /// </summary>
+    [Fact]
+    public async Task The_unit_of_work_lets_a_commit_run_to_its_end_on_a_context_without_the_interceptor()
+    {
+        using var stop = new CancellationTokenSource();
+        var unitOfWork = new NotesUnitOfWork(new NotesFactory(
+            new DbContextOptionsBuilder<NotesContext>().UseSqlite(_connection).AddInterceptors(new CancelsWhenTheCommitBegins(stop)).Options));
+
+        await using (var transaction = await unitOfWork.StartAsync())
+        {
+            NotesUnitOfWork.ContextOf(transaction).Notes.Add(new Note { Text = "one statement" });
+
+            await transaction.SaveChangesAsync(stop.Token);
+        }
+
+        Assert.True(stop.IsCancellationRequested);
         Assert.Equal(1, await CountAsync());
     }
 }

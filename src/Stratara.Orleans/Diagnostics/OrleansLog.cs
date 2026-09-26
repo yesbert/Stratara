@@ -67,6 +67,12 @@ internal static partial class OrleansLog
     public static partial void LogTimerCommittedNotPublished(this ILogger logger, Exception exception, string owner, string purpose);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.SagaStepAftermathFailed,
+        Level = LogLevel.Warning,
+        Message = "The saga process {Process} committed its step, and reading its state or cancelling its timers afterwards failed; the step counts as applied, and the owner check drops the timers of a completed process.")]
+    public static partial void LogSagaStepAftermathFailed(this ILogger logger, Exception exception, string process);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.StoreReaderStopped,
         Level = LogLevel.Information,
         Message = "Store reader for {Consumer} stopped on partition {Partition}.")]

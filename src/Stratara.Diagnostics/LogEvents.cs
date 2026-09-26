@@ -367,5 +367,7 @@ public static class LogEvents
         public const int EntryCommittedNotPublished = 117_128;
         /// <summary>A durable timer's handler committed its events but could not publish them; the timer counts as fired so it is not run twice (error).</summary>
         public const int TimerCommittedNotPublished = 117_129;
+        /// <summary>A saga step committed, and reading its state or cancelling its timers afterwards failed; the step still counts as applied, and the owner check drops leftover timers (warning).</summary>
+        public const int SagaStepAftermathFailed = 117_130;
     }
 }
