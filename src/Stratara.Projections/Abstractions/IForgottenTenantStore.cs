@@ -27,14 +27,9 @@ public interface IForgottenTenantStore
     /// <returns><see langword="true"/> when the tenant is recorded for the projection.</returns>
     Task<bool> HasForgottenAsync(string projection, Guid tenantId, CancellationToken cancellationToken = default);
 
-    /// <summary>Empties the record of one projection, as its read model is emptied for a rebuild.</summary>
+    /// <summary>Empties the record of one projection, as its read model is emptied for a replay or a rebuild.</summary>
     /// <param name="projection">The projection's name.</param>
     /// <param name="cancellationToken">Propagated to the store.</param>
     /// <returns>A task that completes when the projection's record is empty.</returns>
     Task ClearAsync(string projection, CancellationToken cancellationToken = default);
-
-    /// <summary>Empties the record of every projection, as the read models are emptied for a replay.</summary>
-    /// <param name="cancellationToken">Propagated to the store.</param>
-    /// <returns>A task that completes when every record is empty.</returns>
-    Task ClearAllAsync(CancellationToken cancellationToken = default);
 }

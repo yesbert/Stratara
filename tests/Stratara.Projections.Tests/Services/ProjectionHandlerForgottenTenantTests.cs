@@ -122,11 +122,6 @@ public class ProjectionHandlerForgottenTenantTests
             return Task.CompletedTask;
         }
 
-        public Task ClearAllAsync(CancellationToken cancellationToken = default)
-        {
-            Forgotten.Clear();
-            return Task.CompletedTask;
-        }
     }
 
     private ProjectionHandler CreateHandler() => new(new ProjectionMethodInvoker(), _logger.Object, _store);
@@ -242,6 +237,22 @@ public class ProjectionHandlerForgottenTenantTests
 
         Assert.Contains("AddNpgsqlReadDbContextFactory", failure.Message, StringComparison.Ordinal);
         Assert.Contains("AddStrataraForgottenTenants", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_store_that_fails_is_reported_as_the_missing_prerequisite()
+    {
+        var store = new Mock<IForgottenTenantStore>();
+        store.Setup(s => s.HasForgottenAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("the read store is unreachable"));
+        var handler = new ProjectionHandler(new ProjectionMethodInvoker(), _logger.Object, store.Object);
+        var entry = Guid.CreateVersion7();
+
+        var failure = await Assert.ThrowsAsync<PrecedingFactMissingException>(() =>
+            handler.ProjectAsync(new EntryProjection(), [Fact(new EntryIndexed(), entry, Tenant)]));
+
+        Assert.Equal(entry, failure.StreamId);
+        Assert.IsType<InvalidOperationException>(failure.InnerException);
     }
 
     [Fact]

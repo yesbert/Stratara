@@ -1,8 +1,8 @@
 ## 1. Contracts
 
 - [x] 1.1 Add `IForgetsDeletedTenants : IProjection` (marker) and `IForgottenTenantStore` (`ForgetAsync`,
-  `HasForgottenAsync`, `ClearAsync`, `ClearAllAsync`) under `src/Stratara.Projections/Abstractions/`,
-  with full XML documentation.
+  `HasForgottenAsync`, `ClearAsync`) under `src/Stratara.Projections/Abstractions/`, with full XML
+  documentation.
 - [x] 1.2 Add `ProjectionForgottenTenantFactPassedOver = 104_014` to `src/Stratara.Diagnostics/LogEvents.cs`
   and its source-generated log method in `src/Stratara.Projections/Diagnostics/Extensions/`.
 
@@ -46,16 +46,18 @@
   - `ReadDbContextTests` asserts the entity is declared;
   - `StoreSchemaAdditionsTests` asserts the table and its key;
   - `ForgottenTenantStoreTests`, on SQLite, covers forget idempotently (twice, and overlapping lists),
-    has-forgotten per projection, clear one projection keeping the others, and clear all;
+    has-forgotten per projection, and clear one projection keeping the others;
   - a registration test asserts that `AddNpgsqlReadDbContextFactory` provides the store.
 
 ## 5. Clearing
 
-- [x] 5.1 `ProjectionReplayWorker.RunReplayAsync` clears every record after `TruncateAllAsync` when a
-  store is registered. Cover it in `ProjectionReplayWorkerTests`: clear called after truncation, and
-  a replay without a store runs as before.
-- [x] 5.2 `ProjectionRebuilder` clears the rebuilt projection's record together with its truncation.
-  Cover it in the existing rebuilder tests in `tests/Stratara.Orleans.Tests`.
+- [x] 5.1 `ProjectionReplayWorker.RunReplayAsync` empties the record of each registered declaring
+  projection before `TruncateAllAsync`. Cover it in `ProjectionReplayWorkerTests`: the declaring
+  projection's record is cleared, before the truncation, and only its record; a host without a
+  declaring projection does not touch the store.
+- [x] 5.2 `ProjectionRebuilder` clears a declaring projection's record just before its truncation,
+  between the resets. Cover it in the existing rebuilder tests in `tests/Stratara.Orleans.Tests`,
+  together with a non-declaring projection that leaves the store alone.
 - [x] 5.3 `src/Stratara.Testing.Orleans/ExecutionModelTestHost.cs` registers
   `AddStrataraForgottenTenants<StrataraTestReadDbContext>()`.
 
@@ -70,7 +72,38 @@
 - [x] 6.3 Add the entry to `CHANGELOG.md` under Unreleased: Added, and an Upgrading note for the
   migration and the replay.
 
-## 7. Gate
+## 7. Review follow-ups
 
-- [x] 7.1 `openspec validate let-a-projection-forget-a-deleted-tenant --strict`
-- [ ] 7.2 `./scripts/local-gauntlet.sh`
+Copilot could not review (the requester's quota was exhausted), so an independent review ran on the
+branch. What it found, and what was done:
+
+- [x] 7.1 The replay emptied every projection's record in the read store, including another
+  deployment's, and needed the table even in a host without a declaring projection, failing after the
+  truncation. It now clears only the host's declaring projections, by name, before the truncation.
+  `ClearAllAsync` is gone from the contract. Covered by
+  `ReplayCallback_EmptiesTheRecordOfEachDeclaringProjectionBeforeTruncating` and
+  `ReplayCallback_WithoutADeclaringProjection_DoesNotTouchTheStore`.
+- [x] 7.2 On the Orleans model the replay's clear ran after the readers resumed. Clearing before the
+  truncation, in the replay and in the rebuild, removes the window (see `design.md`).
+- [x] 7.3 Two requirements contradicted the new one after archiving. The delta now modifies *A
+  projection declares the events it cares about by handling them* and *A projection can report that a
+  fact's prerequisite has not been applied yet*.
+- [x] 7.4 A partial insert conflict in `ForgetAsync` rethrew. It now re-inserts the missing rows, up
+  to three attempts.
+- [x] 7.5 A failing store replaced the `PrecedingFactMissingException` and lost its retry. It now
+  surfaces as one, carrying the store's failure. Covered by
+  `A_store_that_fails_is_reported_as_the_missing_prerequisite`.
+- [x] 7.6 The declaration is a promise about both deletion facts. It is stated on the marker, in the
+  requirement and in the guide, whose example now handles both.
+- [x] 7.7 The documentation offered a projection's rebuild as a general alternative to a replay, but it
+  exists only on Orleans for `IRebuildableProjection`. It also said projections cannot race each other,
+  which holds between projections only. Both corrected.
+- [x] 7.8 There was no test on the Orleans path. Added
+  `tests/Stratara.Testing.Orleans.Tests/ForgottenTenantOnTheExecutionModelTests.cs`: the store reader
+  reads past the late fact, and without the declaration the partition stalls. The spec scenarios now
+  say what they were verified on.
+
+## 8. Gate
+
+- [x] 8.1 `openspec validate let-a-projection-forget-a-deleted-tenant --strict`
+- [x] 8.2 `./scripts/local-gauntlet.sh`

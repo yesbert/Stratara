@@ -65,6 +65,18 @@ as `IRebuildableProjection` does, and discovery already scans for projection typ
 *Alternative rejected: always on.* Every projection host would need the store, and so the table and
 its registration. Outcomes would also change for projections that never asked for it.
 
+**The declaration is a promise.** Once either deletion fact has been applied, the tenant's data is gone
+from the projection's read model, whether its own handlers remove it or something else does. The
+framework records both facts for a declaring projection, so a projection that keeps a tenant's rows
+after `TenantDeleted`, the tenant's soft delete, must not declare it. Otherwise a genuine "not yet" for
+that tenant would be passed over for good. An independent review found that the guide's first example
+broke this promise.
+
+*Alternative rejected: record only the deletion facts the projection handles itself.* It would keep a
+projection from promising too much, but it fails a projection whose rows go by other means. An example
+is a foreign key that cascades from a table another projection keeps. That is the case the reporting
+consumer's decorator covered by recording both facts for every declaring projection.
+
 ### The behaviour lives in the default projection handler
 
 `ProjectionHandler` does four things for a declaring projection:
@@ -99,7 +111,9 @@ the cascade at 1063 and the stream's creation at 1055.
 - `ForgetAsync(projection, tenantIds)`: idempotent.
 - `HasForgottenAsync(projection, tenantId)`.
 - `ClearAsync(projection)`.
-- `ClearAllAsync()`.
+
+A first version also had `ClearAllAsync()`, for the replay. The review showed that it would empty
+another deployment's records in a shared read store, so it is gone (see Clearing).
 
 `ForgottenTenantStore<TContext>` in `Stratara.EventSourcing.EntityFrameworkCore`, namespace
 `…ReadStore.ForgottenTenants`, implements it. It uses an `IDbContextFactory<TContext>` and one context
@@ -107,9 +121,11 @@ per call, as `ProjectionCheckpointStore` does:
 
 - Entity `ForgottenTenant(Projection, TenantId)`, table `projection_forgotten_tenant`, primary key on
   both columns, projection name up to 255 characters.
-- `ForgetAsync` adds the missing rows. When a concurrent writer wins, it clears the tracker and
-  re-checks, as the checkpoint store's `CreateAsync` does.
-- The two clears use `ExecuteDeleteAsync`.
+- `ForgetAsync` adds the missing rows. When a concurrent writer inserts some of them first, the save
+  fails as a whole. It then clears the tracker and inserts the rows still missing, up to three
+  attempts in all. This covers two partitions of one projection recording overlapping tenants at once.
+  A conflict that outlasts the attempts propagates, and the fact is applied again.
+- `ClearAsync` uses `ExecuteDeleteAsync`.
 
 Because the configuration sits in the `ReadStore` namespace, every context derived from
 `ReadDbContext<T>` declares the table.
@@ -137,14 +153,40 @@ takes its resolver. A declaring projection handed any fact when the store is abs
 `InvalidOperationException`, which names both registrations. It fails and does not skip, because a
 projection that declared the behaviour and silently lacked it would fail later and more confusingly.
 
-### Clearing happens where the read models are emptied
+### A store that fails keeps the missing prerequisite
 
-- `ProjectionReplayWorker.RunReplayAsync`: right after `TruncateAllAsync`, it resolves the store from
-  the same scope, if one is registered, and calls `ClearAllAsync`. A failure fails the replay like a
-  truncation failure.
-- `ProjectionRebuilder`: the truncation it hands to `TruncationBetweenResets.RunAsync` becomes the
-  projection's `TruncateAsync` followed by `ClearAsync(projectionName)`. Both therefore run between the
-  two checkpoint resets.
+If `HasForgottenAsync` throws while the handler handles a `PrecedingFactMissingException`, the handler
+throws a new `PrecedingFactMissingException` for the same stream and event type, with the store's
+failure as its inner exception. The bundle therefore keeps the missing-prerequisite retry. It does not
+turn into an ordinary failure that fails on its first attempt. Cancellation passes through unchanged.
+
+### Clearing: only the host's declaring projections, and before the read models
+
+- `ProjectionReplayWorker.RunReplayAsync`: before `TruncateAllAsync`, it resolves the registered
+  `IProjection`s from the truncation scope. For each that declares the marker, it calls
+  `ClearAsync(name)`. A host without a declaring projection does not resolve the store at all.
+- `ProjectionRebuilder`: for a declaring projection, the truncation it hands to
+  `TruncationBetweenResets.RunAsync` becomes `ClearAsync(projectionName)` followed by the projection's
+  `TruncateAsync`. Both therefore run between the two checkpoint resets.
+
+The first version cleared everything after the truncation. The review found three faults in that:
+
+1. **Shared read stores.** Deployments may share a read store under distinct projection names, as the
+   checkpoints already allow. Clearing everything emptied another deployment's records while its read
+   models kept the deletions. Its next late fact would then dead-letter, or stall a partition for good.
+   Clearing by name, for the host's own declaring projections, is how the checkpoint reset already
+   behaves.
+2. **Failure after the damage.** In a host without a declaring projection whose read database lacks
+   the table, the clear failed after the truncation and left the read models empty. Now such a host
+   never touches the store. A declaring host that lacks the table fails before anything is emptied.
+3. **Order.** On the Orleans model the replay's clear ran after the readers had resumed. A reader
+   whose replay flag had lapsed could record a deletion, checkpoint past it, and then have the record
+   erased. A later late fact would then stall its partition.
+
+   Clearing before the truncation reverses the risk. A deletion applied in between is recorded again
+   when it is re-applied, and a record that outlives the reset only concerns a tenant whose data the
+   projection removes at the deletion anyway. By the promise above, passing over that tenant's facts
+   earlier cannot change the rebuilt state.
 
 ### Discovery trusts the deletion facts for a declaring projection
 
@@ -165,9 +207,13 @@ effect must be able to find it. It is not a Warning, because nothing is wrong.
 - [Every consumer must add a migration, including those that never declare a projection.] → The
   upgrade note says so. The checkpoint table set the precedent. A conditional model would need the
   context to know about DI registrations.
-- [After the upgrade, deletions applied before it are not in the record.] → A replay, or a rebuild of
-  the projection, records them from the history. The upgrade note recommends a replay before relying
-  on the behaviour for tenants deleted earlier.
+- [After the upgrade, deletions applied before it are not in the record.] → A replay records them from
+  the history, and so does rebuilding the projection on its own on the Orleans model for an
+  `IRebuildableProjection`. The upgrade note recommends a replay before relying on the behaviour for
+  tenants deleted earlier.
+- [A projection declares the marker but keeps a tenant's rows after one of the deletion facts.] → The
+  promise is stated on the marker, in the requirement and in the guide, whose example handles both
+  facts.
 - [A genuine ordering problem for a deleted tenant's fact is passed over.] → The tenant's data is gone
   by design, and the pass-over is logged.
 - [A fact of a tenant is handled before the projection has applied the tenant's deletion, live, on
@@ -182,8 +228,8 @@ effect must be able to find it. It is not a Warning, because nothing is wrong.
 1. Upgrade, then generate an EF Core migration for the read context. It adds
    `projection_forgotten_tenant`.
 2. Declare `IForgetsDeletedTenants` on the projections that remove a deleted tenant's rows.
-3. Run a replay, or rebuild those projections, so the record covers deletions applied before the
-   upgrade.
+3. Run a replay so the record covers deletions applied before the upgrade. On the Orleans model, an
+   `IRebuildableProjection` can be rebuilt on its own instead.
 
 A consumer that kept its own record in a decorator can remove the decorator after step 3.
 

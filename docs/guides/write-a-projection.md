@@ -204,7 +204,10 @@ throws `PrecedingFactMissingException`, and the framework cannot tell "not appli
 on purpose". Live, the bundle is retried and dead-lettered; in a replay the batch fails on every
 attempt, and the read models the replay emptied stay empty.
 
-Declare `IForgetsDeletedTenants` on such a projection:
+Declare `IForgetsDeletedTenants` on such a projection. The declaration is a promise: once *either*
+deletion fact has been applied, the tenant's data is gone from this projection's read model — removed
+by its own handlers, as below, or by anything else. A projection that keeps a tenant's rows after
+`TenantDeleted`, the tenant's soft delete, must not declare it.
 
 <!-- stratara-snippet-ignore: narrative fragment - the repository is the consumer's own -->
 ```csharp
@@ -217,6 +220,9 @@ public sealed class KnowledgeEntryProjection(IKnowledgeEntryRepository entries) 
         await entries.MarkIndexedAsync(entry, cancellationToken);
     }
 
+    private Task HandleAsync(IEvent<TenantDeleted> @event, CancellationToken cancellationToken) =>
+        entries.DeleteForTenantsAsync([@event.StreamId], cancellationToken);
+
     private Task HandleAsync(CustomerTenantsDeleted @event, CancellationToken cancellationToken) =>
         entries.DeleteForTenantsAsync(@event.TenantIds, cancellationToken);
 }
@@ -226,25 +232,30 @@ The framework then does three things for this projection, and nothing else:
 
 - It hands the projection `TenantDeleted` and `CustomerTenantsDeleted` whether or not it handles them,
   and after applying one records the tenants it deleted — for this projection alone, in the order the
-  projection applies facts, so projections running in parallel or at their own pace on the Orleans
-  execution model cannot race each other.
+  projection applies facts. What one projection has recorded never depends on how far another has
+  got; the partitions of one projection on the Orleans execution model converge through the usual
+  retry until each has applied the deletion.
 - When the projection throws `PrecedingFactMissingException` for a fact whose owning tenant it has
   recorded, the fact is passed over: treated as applied, not retried, and logged at Information
   (`104_014`) with the projection, the stream, the fact's type and the tenant.
-- A replay empties the record together with the read models; rebuilding one projection empties its
-  own record with its read model. The record is rebuilt from the history, in order.
+- A replay empties the record of each declaring projection the host registers, just before it empties
+  the read models, and leaves another deployment's records in a shared read store alone; rebuilding
+  an `IRebuildableProjection` on its own on the Orleans execution model empties its record just before
+  its read model. The record is rebuilt from the history, in order.
 
 A fact of a deleted tenant that the projection applies without complaint — a late creation, say —
 is applied as usual; if you want those dropped too, inject `IForgottenTenantStore` and ask it. A
-missing prerequisite for any tenant not recorded is retried and fails as before, and a projection
-that does not declare the interface is not affected at all.
+missing prerequisite for any tenant not recorded — or one the store could not be asked about — is
+retried and fails as before, and a projection that does not declare the interface is not affected at
+all.
 
 **The record lives in the read store.** The framework's read context declares the table
 `projection_forgotten_tenant`, so upgrading needs a migration of your read context.
 `AddNpgsqlReadDbContextFactory<TContext>()` registers the store; for a read context registered another
 way, call `AddStrataraForgottenTenants<TReadContext>()`. A declaring projection in a host without the
-store fails on the first fact it is handed, naming both. Deletions applied before the upgrade are not
-in the record until a replay — or a rebuild of the projection — records them from the history.
+store fails on the first fact it is handed, naming both; a host without a declaring projection never
+touches the table. Deletions applied before the upgrade are not in the record until a replay records
+them from the history — or, on the Orleans execution model, a rebuild of an `IRebuildableProjection`.
 
 **Discovery trusts the deletion facts for you.** `AddProjectionsFromAssemblyContaining<T>()` adds
 `TenantDeleted` and `CustomerTenantsDeleted` to the trusted types for a declaring projection; a

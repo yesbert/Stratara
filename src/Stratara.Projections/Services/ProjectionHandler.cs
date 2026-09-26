@@ -82,9 +82,9 @@ internal sealed class ProjectionHandler(
         {
             await HandleEventAsync(projection, @event, cancellationToken);
         }
-        catch (PrecedingFactMissingException)
+        catch (PrecedingFactMissingException missing)
         {
-            if (!await store.HasForgottenAsync(projectionName, @event.TenantId, cancellationToken))
+            if (!await HasForgottenAsync(store, projectionName, @event, missing, cancellationToken))
             {
                 throw;
             }
@@ -104,6 +104,23 @@ internal sealed class ProjectionHandler(
         if (deleted.Count > 0)
         {
             await store.ForgetAsync(projectionName, deleted, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Asks the store whether the fact's tenant is forgotten. A store that fails is reported as the missing
+    /// prerequisite it was asked about, with the store's failure inside, so the bundle keeps its retry.
+    /// </summary>
+    private static async Task<bool> HasForgottenAsync(IForgottenTenantStore store, string projectionName, IEvent @event,
+        PrecedingFactMissingException missing, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await store.HasForgottenAsync(projectionName, @event.TenantId, cancellationToken);
+        }
+        catch (Exception storeFailure) when (storeFailure is not OperationCanceledException)
+        {
+            throw new PrecedingFactMissingException(missing.StreamId, missing.EventTypeName, storeFailure);
         }
     }
 

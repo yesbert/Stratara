@@ -29,7 +29,8 @@ the sign the memory belongs here.
 ## What Changes
 
 - A projection can declare that it forgets a deleted tenant. The declaration is a marker interface on
-  the projection.
+  the projection. It is a promise: once either deletion fact is applied, the tenant's data is gone
+  from the projection's read model.
 - For such a projection the framework hands it the tenant-deletion facts it ships: a tenant's
   deletion, and the cascade that deletes all of a customer's tenants. It does so whether or not the
   projection handles them itself. After the projection has applied one, the framework records, for
@@ -42,9 +43,11 @@ the sign the memory belongs here.
   - a fact of a deleted tenant that the projection applies without complaint is applied;
   - a missing prerequisite for any other tenant is retried and fails as before;
   - a projection that does not declare itself is not affected at all.
-- The record is derived data. A full replay clears it together with the read models. Rebuilding one
-  projection on its own clears that projection's record. A replay therefore rebuilds it from the
-  history, in order.
+- The record is derived data. A full replay empties the record of each declaring projection it
+  registers, before it empties the read models, and leaves every other deployment's records in a
+  shared read store alone. Rebuilding one projection on its own empties that projection's record just
+  before its read model. A replay therefore rebuilds it from the history, in order. A host without a
+  declaring projection never touches the record's table.
 - The record lives in the read store, in a new table the framework's read context declares.
   **Upgrading requires a migration** of the consumer's read context, as the checkpoint table did. The
   store is registered by `AddNpgsqlReadDbContextFactory<TContext>()`. A host that registers its read
@@ -63,9 +66,14 @@ None.
 
 ### Modified Capabilities
 
-- `projections`: a new requirement, *A projection can forget a deleted tenant*. It covers the
-  declaration, the dispatch of the deletion facts, the per-projection record and when it is cleared,
-  the pass-over of a missing prerequisite, and the failure when no store is registered.
+- `projections`:
+  - A new requirement, *A projection can forget a deleted tenant*. It covers the declaration and its
+    promise, the dispatch of the deletion facts, the per-projection record and when it is cleared, the
+    pass-over of a missing prerequisite, and the failure when no store is registered.
+  - *A projection declares the events it cares about by handling them* gains the exception for the
+    deletion facts.
+  - *A projection can report that a fact's prerequisite has not been applied yet* gains the exception
+    for a recorded tenant.
 
 ## Impact
 
@@ -83,7 +91,8 @@ None.
   record. `src/Stratara.Testing.Orleans/ExecutionModelTestHost.cs` registers the store.
 - `src/Stratara.Diagnostics/LogEvents.cs`: one new event id for a passed-over fact.
 - Tests in `tests/Stratara.Projections.Tests`, `tests/Stratara.EntityFrameworkCore.Tests`,
-  `tests/Stratara.Orleans.Tests`.
+  `tests/Stratara.Orleans.Tests`, `tests/Stratara.Testing.Orleans.Tests`.
+- `llms-full.txt`: the regenerated reference catalogue.
 - `docs/guides/write-a-projection.md`, `docs/guides/tenant-membership.md`,
   `docs/reference/di-extensions-cheatsheet.md`, `src/Stratara.Projections/README.md`.
 - `CHANGELOG.md`: a minor release, because of the new public surface and the new table.

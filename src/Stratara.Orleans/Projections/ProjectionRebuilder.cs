@@ -19,8 +19,8 @@ namespace Stratara.Orleans.Projections;
 /// although it should have been paused — its pause lapsed, or its activation moved and forgot the pause — so those
 /// facts are applied again after it. The readers hold the rebuild's pause apart from any other, so two rebuilds of one
 /// projection may overlap and the readers resume only when the last has finished. A rebuild while a full replay is
-/// active is refused: the replay empties and refills every projection itself. Where an <see cref="IForgottenTenantStore"/>
-/// is registered, the projection's record of deleted tenants is emptied together with its read model.
+/// active is refused: the replay empties and refills every projection itself. A projection that declares
+/// <see cref="IForgetsDeletedTenants"/> has its record of deleted tenants emptied just before its read model.
 /// </summary>
 internal sealed class ProjectionRebuilder(
     IGrainFactory grainFactory,
@@ -55,17 +55,18 @@ internal sealed class ProjectionRebuilder(
 
         var checkpoints = services.GetRequiredService<IProjectionCheckpointStore>();
         var reader = services.GetRequiredService<ICommittedPositionReader>().Name;
-        var forgottenTenants = services.GetService<IForgottenTenantStore>();
+        var forgottenTenants = projection is IForgetsDeletedTenants ? services.GetService<IForgottenTenantStore>() : null;
         await TruncationBetweenResets.RunAsync(
             token => Task.WhenAll(Enumerable.Range(0, commitOrder.Value.PartitionCount)
                 .Select(partition => checkpoints.ResetAsync(projectionName, partition, reader, token))),
             async token =>
             {
-                await rebuildable.TruncateAsync(token);
                 if (forgottenTenants is not null)
                 {
                     await forgottenTenants.ClearAsync(projectionName, token);
                 }
+
+                await rebuildable.TruncateAsync(token);
             },
             hold.QuiesceAsync,
             cancellationToken);

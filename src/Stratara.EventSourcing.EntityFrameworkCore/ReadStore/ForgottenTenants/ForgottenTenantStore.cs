@@ -8,10 +8,13 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
 internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext> contextFactory) : IForgottenTenantStore
     where TContext : DbContext
 {
+    private const int MaxInsertAttempts = 3;
+
     /// <inheritdoc/>
     /// <remarks>
-    /// Inserts the rows that are missing. A writer whose insert loses to another's finds the rows present
-    /// and writes nothing; a conflict that leaves a row missing propagates, so the fact is applied again.
+    /// Inserts the rows that are missing. When a concurrent writer inserts some of them first, the save fails as a
+    /// whole; the rows still missing are then inserted again, a bounded number of times, and a conflict that
+    /// outlasts the attempts propagates so the fact is applied again.
     /// </remarks>
     public async Task ForgetAsync(string projection, IReadOnlyCollection<Guid> tenantIds, CancellationToken cancellationToken = default)
     {
@@ -25,26 +28,24 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
         }
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var missing = await MissingAsync(context, projection, wanted, cancellationToken);
-        if (missing.Count == 0)
+        for (var attempt = 1; ; attempt++)
         {
-            return;
-        }
-
-        context.Set<ForgottenTenant>().AddRange(missing.Select(tenantId => new ForgottenTenant { Projection = projection, TenantId = tenantId }));
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            context.ChangeTracker.Clear();
-            if ((await MissingAsync(context, projection, wanted, cancellationToken)).Count == 0)
+            var missing = await MissingAsync(context, projection, wanted, cancellationToken);
+            if (missing.Count == 0)
             {
                 return;
             }
 
-            throw;
+            context.Set<ForgottenTenant>().AddRange(missing.Select(tenantId => new ForgottenTenant { Projection = projection, TenantId = tenantId }));
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateException) when (attempt < MaxInsertAttempts)
+            {
+                context.ChangeTracker.Clear();
+            }
         }
     }
 
@@ -65,13 +66,6 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Set<ForgottenTenant>().Where(forgotten => forgotten.Projection == projection).ExecuteDeleteAsync(cancellationToken);
-    }
-
-    /// <inheritdoc/>
-    public async Task ClearAllAsync(CancellationToken cancellationToken = default)
-    {
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        await context.Set<ForgottenTenant>().ExecuteDeleteAsync(cancellationToken);
     }
 
     private static async Task<List<Guid>> MissingAsync(TContext context, string projection, List<Guid> wanted, CancellationToken cancellationToken)

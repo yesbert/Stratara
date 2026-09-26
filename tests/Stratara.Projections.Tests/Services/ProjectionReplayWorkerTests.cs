@@ -302,21 +302,49 @@ public class ProjectionReplayWorkerTests
             .Build();
 
     [Fact]
-    public async Task ReplayCallback_ClearsTheForgottenTenantsAfterTruncating()
+    public async Task ReplayCallback_EmptiesTheRecordOfEachDeclaringProjectionBeforeTruncating()
     {
         var harness = new Harness();
         var order = new List<string>();
         harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
             .Callback(() => order.Add("truncate")).Returns(Task.CompletedTask);
         var store = new Mock<IForgottenTenantStore>();
-        store.Setup(s => s.ClearAllAsync(It.IsAny<CancellationToken>()))
-            .Callback(() => order.Add("clear")).Returns(Task.CompletedTask);
-        harness.Configure = services => services.AddSingleton(store.Object);
+        store.Setup(s => s.ClearAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((string projection, CancellationToken _) => order.Add($"clear {projection}")).Returns(Task.CompletedTask);
+        harness.Configure = services =>
+        {
+            services.AddSingleton(store.Object);
+            services.AddScoped<IProjection, EntryProjection>();
+            services.AddScoped<IProjection, UndeclaredProjection>();
+            services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker(), null, store.Object));
+        };
 
         await harness.RunAsync(triggerReplay: true);
 
-        Assert.Equal(["truncate", "clear"], order);
+        Assert.Equal([$"clear {nameof(EntryProjection)}", "truncate"], order);
         harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_WithoutADeclaringProjection_DoesNotTouchTheStore()
+    {
+        var harness = new Harness();
+        var store = new Mock<IForgottenTenantStore>(MockBehavior.Strict);
+        harness.Configure = services =>
+        {
+            services.AddSingleton(store.Object);
+            services.AddScoped<IProjection, UndeclaredProjection>();
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Once);
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+    }
+
+    private sealed class UndeclaredProjection : IProjection
+    {
+        private Task HandleAsync(EntryCreated @event, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     [Fact]
@@ -401,11 +429,6 @@ public class ProjectionReplayWorkerTests
             return Task.CompletedTask;
         }
 
-        public Task ClearAllAsync(CancellationToken cancellationToken = default)
-        {
-            Forgotten.Clear();
-            return Task.CompletedTask;
-        }
     }
 
     private static void SetupBatchSequence(Harness harness, IReadOnlyList<EventStreamEntry>[] batches)

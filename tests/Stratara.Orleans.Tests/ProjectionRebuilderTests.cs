@@ -284,7 +284,7 @@ public sealed class ProjectionRebuilderTests
     }
 
     /// <summary>
-    /// Change let-a-projection-forget-a-deleted-tenant: the projection's record of deleted tenants is emptied with its
+    /// Change let-a-projection-forget-a-deleted-tenant: the projection's record of deleted tenants is emptied just before its
     /// read model, between the two resets, and no other projection's record is touched.
     /// </summary>
     [Fact]
@@ -295,19 +295,32 @@ public sealed class ProjectionRebuilderTests
         forgotten.Setup(f => f.ClearAsync("View", It.IsAny<CancellationToken>()))
             .Callback(() => { lock (journal) { journal.Add("forget"); } })
             .Returns(Task.CompletedTask);
-        var (rebuilder, projection, _) = Build(journal, forgotten.Object);
+        var (rebuilder, projection, _) = Build(journal, forgotten.Object, forgets: true);
         projection.Setup(p => p.TruncateAsync(It.IsAny<CancellationToken>())).Callback(() => { lock (journal) { journal.Add("truncate"); } }).Returns(Task.CompletedTask);
 
         await rebuilder.RebuildAsync("View");
 
-        Assert.Equal(journal.IndexOf("truncate") + 1, journal.IndexOf("forget"));
-        Assert.Equal(Partitions + 1, journal.IndexOf("forget"));
+        Assert.Equal(Partitions, journal.IndexOf("forget"));
+        Assert.Equal(Partitions + 1, journal.IndexOf("truncate"));
         forgotten.Verify(f => f.ClearAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
-        forgotten.Verify(f => f.ClearAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>Change let-a-projection-forget-a-deleted-tenant: a projection that does not declare it leaves the store alone.</summary>
+    [Fact]
+    public async Task A_rebuild_of_a_projection_that_does_not_forget_leaves_the_store_alone()
+    {
+        var journal = new List<string>();
+        var forgotten = new Mock<IForgottenTenantStore>(MockBehavior.Strict);
+        var (rebuilder, projection, _) = Build(journal, forgotten.Object);
+        projection.Setup(p => p.TruncateAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        await rebuilder.RebuildAsync("View");
+
+        projection.Verify(p => p.TruncateAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static (ProjectionRebuilder Rebuilder, Mock<IRebuildableProjection> Projection, Mock<IProjectionCheckpointStore> Checkpoints) Build(
-        List<string> journal, IForgottenTenantStore? forgotten = null)
+        List<string> journal, IForgottenTenantStore? forgotten = null, bool forgets = false)
     {
         var grains = Enumerable.Range(0, Partitions).ToDictionary(
             partition => StoreReaderGrainKey.Of("View", partition),
@@ -324,6 +337,11 @@ public sealed class ProjectionRebuilderTests
         grainFactory.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => grains[key]);
 
         var projection = new Mock<IRebuildableProjection>();
+        if (forgets)
+        {
+            projection.As<IForgetsDeletedTenants>();
+        }
+
         var handler = new Mock<IProjectionHandler>();
         handler.Setup(h => h.GetProjectionName(projection.Object)).Returns("View");
         var checkpoints = new Mock<IProjectionCheckpointStore>();

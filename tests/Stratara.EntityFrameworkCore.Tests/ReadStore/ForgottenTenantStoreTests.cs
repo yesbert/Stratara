@@ -7,8 +7,8 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.Tests.ReadStore;
 
 /// <summary>
 /// <c>projections</c> → <em>A projection can forget a deleted tenant</em>: the read store keeps each
-/// projection's deleted tenants apart, records them idempotently, and empties one projection's record or
-/// all of them — verified on SQLite.
+/// projection's deleted tenants apart, records them idempotently, and empties one projection's record while
+/// keeping the others — verified on SQLite.
 /// </summary>
 public sealed class ForgottenTenantStoreTests : IDisposable
 {
@@ -76,18 +76,5 @@ public sealed class ForgottenTenantStoreTests : IDisposable
 
         Assert.False(await _store.HasForgottenAsync("Entries", tenant));
         Assert.True(await _store.HasForgottenAsync("Customers", tenant));
-    }
-
-    [Fact]
-    public async Task Clearing_all_empties_every_projection()
-    {
-        var tenant = Guid.CreateVersion7();
-        await _store.ForgetAsync("Entries", [tenant]);
-        await _store.ForgetAsync("Customers", [tenant]);
-
-        await _store.ClearAllAsync();
-
-        Assert.False(await _store.HasForgottenAsync("Entries", tenant));
-        Assert.False(await _store.HasForgottenAsync("Customers", tenant));
     }
 }
