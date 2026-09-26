@@ -26,8 +26,8 @@ namespace Stratara.Orleans.Projections;
 /// checkpoint otherwise, so the cached position is the stored one. A partition that
 /// stops at an entry is logged with the entry and counted as stalled until it advances again, and the
 /// time recorded with the oldest entry it has not applied is reported for the lag gauge. The token a
-/// catch-up receives reaches every store call it makes, and a cancelled catch-up stops at the next
-/// batch boundary without reading or writing again.
+/// catch-up receives reaches every store read it makes, and a cancelled catch-up stops at the next
+/// batch boundary without reading again; the checkpoint for the entries it applied is written whatever the token says.
 /// </remarks>
 internal sealed class StoreReaderLoop(
     IServiceScopeFactory scopeFactory,
@@ -190,8 +190,8 @@ internal sealed class StoreReaderLoop(
     /// forgets the cached position, so the next catch-up starts from what the checkpoint store holds. The checkpoint
     /// is advanced from the position the loop last saw, so a store that guards it refuses a write from an activation
     /// that another has overtaken; an entry that
-    /// cannot be applied is the batch's own affair. The checkpoint for the entries a cut batch applied is written
-    /// with a token of its own, because those entries are applied whether or not the catch-up was cancelled.
+    /// cannot be applied is the batch's own affair. The checkpoint for the entries a batch applied — cut or whole — is
+    /// written with a token of its own, because those entries are applied whether or not the catch-up was cancelled.
     /// </summary>
     private async Task<int> ReadAndApplyAsync(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
     {
@@ -234,7 +234,7 @@ internal sealed class StoreReaderLoop(
             }
 
             MarkAdvancing(onRead: false);
-            await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, batch.Position, cancellationToken);
+            await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, batch.Position, CancellationToken.None);
             _position = batch.Position;
             if (!batch.HasMore)
             {
@@ -268,12 +268,17 @@ internal sealed class StoreReaderLoop(
                     {
                         await applyEntry(entry, ct);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (Exception ex) when (ex is not (OperationCanceledException or CommittedEventsNotPublishedException))
                     {
                         logger.LogEntryAttemptFailed(ex, consumer, partition, entry.Id, attempt);
                         throw;
                     }
                 }, cancellationToken);
+            }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                // The handler's events are recorded. Applying the entry again would record them a second time.
+                logger.LogEntryCommittedNotPublished(committed, consumer, partition, entry.Id);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

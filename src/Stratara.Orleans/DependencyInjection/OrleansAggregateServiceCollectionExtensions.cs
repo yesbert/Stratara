@@ -19,6 +19,13 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// aggregates, commands that name no aggregate and heavy work are placed only on silos that called this,
     /// so call it where the command handlers are — every handler of the role, on every silo that registers it.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Sets <c>MessagingOptions.WaitForCancellationAcknowledgement</c> for the silo and the client: a grain call of the
+    /// host whose token is cancelled waits for its grain's answer — at the latest until the response timeout — instead of ending at
+    /// once, so a step that committed is not reported as cancelled.
+    /// </para>
+    /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
@@ -31,6 +38,8 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddStrataraAggregateGrains(this IServiceCollection services)
     {
+        FrameworkExceptionSerialization.Register(services);
+        FrameworkCallCancellation.Register(services);
         services.TryAddScoped<AggregateSendLane>();
         if (!services.Any(d => d.ImplementationType == typeof(AggregateGrainBehavior<>)))
         {
@@ -88,6 +97,13 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// dispatcher slot, so <c>AddAuthorizingCommandOutboxDispatcher</c> authorizes every enqueue whether it is
     /// registered before or after this call. Each command runs through the mediator pipeline in its grain.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Sets <c>MessagingOptions.WaitForCancellationAcknowledgement</c> for the silo and the client: a grain call of the
+    /// host whose token is cancelled waits for its grain's answer — at the latest until the response timeout — instead of ending at
+    /// once, so a step that committed is not reported as cancelled.
+    /// </para>
+    /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>
     /// <returns>The same service collection for chaining.</returns>
@@ -109,6 +125,8 @@ public static class OrleansAggregateServiceCollectionExtensions
         }
 
         MessageRetryOptionsBinding.Register(services);
+        FrameworkExceptionSerialization.Register(services);
+        FrameworkCallCancellation.Register(services);
         services.TryAddScoped<AggregateSendLane>();
         services.TryAddScoped<IntentRecorder>();
         services.TryAddScoped<IntentHandOver>();

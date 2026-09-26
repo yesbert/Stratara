@@ -214,7 +214,9 @@ builder.Services.AddStrataraPortableCounterReader<AppWriteDbContext>();
 
 The write context must add `PartitionCounterInterceptor` to its interceptors so every append is
 positioned — in **every process that appends to the store**, not only in the hosts that read. The framework
-does not add it. `CommitOrderOptions.MaintainPartitionCounter` switches nothing: it is obsolete, warns where it is
+does not add it. Add `CommitCompletionInterceptor.Instance` beside it, last among the context's transaction
+interceptors, and to the read context as well, as the framework does on the contexts it registers itself: it lets a commit, once begun, run to its end, so a save the store committed is never reported
+as cancelled and run again. `CommitOrderOptions.MaintainPartitionCounter` switches nothing: it is obsolete, warns where it is
 set, and is removed with the next major version; the interceptor is what maintains the counter. Within one save,
 positions follow each stream's version order. A read stops at an entry appended without a position rather than skipping it: the
 partition stops advancing, the failure names the entry, and positioning it with the backfill lets the

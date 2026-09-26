@@ -5,6 +5,7 @@ using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Messaging;
 using Stratara.Outbox.AzureServiceBus.Messaging;
 
@@ -78,8 +79,10 @@ public static class AzureServiceBusServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The registrations both entry points share: the bus itself, and the retry bounds bound from
-    /// the <c>MessageRetry</c> section when the host carries a configuration, validated at start-up.
+    /// The registrations both entry points share: the bus itself, the retry bounds bound from
+    /// the <c>MessageRetry</c> section when the host carries a configuration, validated at start-up, and the wait —
+    /// when the host stops, within its shutdown timeout — for the subscriptions that stopped with it to let their
+    /// running handlers settle before anything is disposed.
     /// </summary>
     private static IServiceCollection AddAzureServiceBusCore(this IServiceCollection services)
     {
@@ -87,6 +90,9 @@ public static class AzureServiceBusServiceCollectionExtensions
         // slot even when the RabbitMQ umbrella (AddMessaging) already claimed it. One transport per
         // host; the explicitly-chosen one is the transport.
         services.Replace(ServiceDescriptor.Singleton<IMessageBus, AzureServiceBusBus>());
+        services.TryAddSingleton<AzureServiceBusSubscriptionStops>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AzureServiceBusSubscriptionStops>(
+            provider => provider.GetRequiredService<AzureServiceBusSubscriptionStops>()));
         services.AddOptions<MessageRetryOptions>()
             .Configure<IServiceProvider>((options, provider) =>
                 provider.GetService<IConfiguration>()?.GetSection(MessageRetryOptions.SectionName).Bind(options))

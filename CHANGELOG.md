@@ -18,6 +18,100 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A framework exception keeps its type between silos.** Orleans carries an exception from one silo
+  to another with its type only for namespaces it supports, and a chain with one exception it refuses
+  does not cross at all. A `ConcurrencyException` from a handler on another silo therefore did not reach
+  the caller as one — its inner failure is a database exception — and a bus worker running the
+  forwarding handler counted a conflict against the delivery bound instead of the conflict bound; a
+  `CommittedEventsNotPublishedException` would have been delivered again. The execution model's
+  registrations (`AddStrataraOrleans`, `AddStrataraOrleansCommandDispatcher`,
+  `AddStrataraAggregateGrains`) now let every exception type cross, alongside a filter the host set
+  itself. The type, message, stack trace and inner exceptions cross; the properties of the framework's
+  exceptions — `ConcurrencyException`, `CommittedEventsNotPublishedException`,
+  `PrecedingFactMissingException`, `ErasureIncompleteException`, `AuthorizationException`,
+  `PermissionAuthorizationException` — read empty on the far side rather than null.
+
+- **A stopping subscription lets its handlers finish, and the host waits for it.** A RabbitMQ
+  subscription closed its channel the moment it was cancelled, while a handler could still be running,
+  so the handler's acknowledgement failed and the message was delivered again — a handler that completed
+  during a shutdown ran twice; deliveries the client had already fetched then ran on the closing channel
+  too. A Service Bus subscription did not stop its processor at all. A stopping subscription now stops
+  taking messages, hands fetched but unhandled ones back to the queue, lets the running handler settle
+  — as long as the host's shutdown timeout allows from the moment the application starts stopping,
+  twenty seconds otherwise — and then closes; the host waits for that when it stops, before anything is
+  disposed. A handler that gives up because its subscription stops has its message put back rather than
+  counted as a failure, which on its last allowed delivery would have dead-lettered it; the broker still
+  counts the delivery. A RabbitMQ handler that never returned kept its channel from closing, and the
+  bus's disposal — and with it the process — waited forever; the close is now bounded too. Both
+  transports settle a handler's outcome whatever the subscription's own cancellation says.
+
+- **A RabbitMQ subscription holds at most `Messaging:PrefetchCount` messages** (default 16, 1 to 65535,
+  validated at start-up). It held every message the broker would push: on a stop they all went back to
+  the queue, and the broker counted each as a delivery — enough restarts could dead-letter a message
+  whose handler never ran. What a subscription holds beyond the running handler's message still goes
+  back counted.
+
+- **A validation failure keeps its fields between silos.** A `StrataraValidationException` thrown by a
+  handler on another silo reaches the caller with its `Failures` — each field, message and code, never
+  the attempted value — so the problem-details handler still answers with the fields to correct. Its
+  message stays generic: a failure's message may quote the input, and exception messages are logged.
+  During a rolling upgrade, silos of the two versions cannot read each other's validation failures; such
+  a call fails with a serialization failure until every silo is upgraded.
+
+- **A commit once begun runs to its end.** A database driver told to cancel while it waits for a commit to
+  be acknowledged may report the cancellation after the database committed, so a stop that landed
+  there had a committed save look cancelled — and a transport, a store reader or a resumed command then
+  ran it again and recorded the same facts twice. The new `CommitCompletionInterceptor` lets a commit
+  run to its end whatever the cancellation says, while a cancellation during the writes still leaves none
+  of them committed, and gives a single-statement save a transaction so it has a commit to protect. The
+  framework adds it to every context it registers. On a context a host registered itself without it —
+  write or read — the framework's unit of work saves without the caller's token, so the save runs to its
+  end whole, bounded by the connection's pool wait and command timeout rather than the caller. Such a
+  host adds the interceptor — the Orleans execution model on a store other than PostgreSQL, to its write
+  and read contexts, beside `PartitionCounterInterceptor`, last among the transaction interceptors. The
+  recorded-command store runs every statement whose outcome it acts on to its end, so a recorded command is never recorded twice and
+  a claim never spends an attempt on a hand-over that did not happen. The Orleans commit-order interceptor
+  commits without the token and releases its transaction when a save is cancelled (a cancelled append left
+  it open, and the context's next save ran inside it); a durable timer whose handler finished as its silo
+  stopped is unregistered rather than fired again, and a store reader whose batch finished as it stopped
+  records its checkpoint rather than applying the whole batch again; the execution model's registrations
+  set `MessagingOptions.WaitForCancellationAcknowledgement`, so a grain call cancelled while its callee
+  committed — a saga step called by a stopping timer or reader — reports the commit instead of a
+  cancellation that ran the step again. The setting applies to every grain call of the host that carries
+  a token: such a call now waits for its grain's answer — at the latest until the response timeout — instead
+  of ending the moment its token fires; a saga step no longer fails after its save committed — a failure to reread its state or
+  cancel its timers is logged (`LogEvents.Orleans.SagaStepAftermathFailed`, `117_130`); and the
+  event-bundle dispatcher records a bundle whose publication a cancellation cut short instead of losing
+  it.
+
+- **A save that committed but could not publish says so, and nothing runs it again.** On a host
+  without durable bundles, `SaveChangesAsync` hands the committed events' bundle to the outbox after
+  the commit. When both the bus and the outbox's own table failed, the save threw the outbox's
+  exception although the events were recorded. Everything that runs work again on a failure then ran
+  it again and recorded the same facts a second time: the transports delivered the message again, the
+  Orleans execution model resumed a recorded command, a store reader retried the entry, a durable timer
+  fired again, and a pipeline that retries on any exception retried. The save now throws the new
+  `CommittedEventsNotPublishedException`, naming the committed streams, with the handover's failure as
+  the inner exception, a cancellation after the commit included. Each of those places treats it as
+  done and logs an error:
+  - the RabbitMQ and Azure Service Bus transports acknowledge the message, whatever their own
+    cancellation says (`LogEvents.Messaging.CommittedEventsNotPublished`, `108_113`);
+  - on the Orleans execution model a recorded command is completed
+    (`LogEvents.Orleans.IntentCommittedNotPublished`, `117_127`), a store reader counts the entry as
+    applied (`EntryCommittedNotPublished`, `117_128`), and a durable timer counts as fired
+    (`TimerCommittedNotPublished`, `117_129`);
+  - `ResilienceNames.CommandDispatcher`, `EventBundleDispatcher`, `MessageBus` and
+    `ProjectionReplayBatch` do not retry it.
+
+  The bundle itself is lost: replay the projections that consume it; a saga that reacts to bundles has
+  missed it. A host that cannot lose a bundle stores bundles with the commit, and such a host no longer
+  fails a save whose handover fails after the commit, since its bundle is recorded. A caller that caught
+  the outbox's own exception type, or `OperationCanceledException`, after a save now finds it as the
+  inner exception.
+
+- **A save with nothing staged no longer publishes an empty bundle.** It still requires a session, and
+  it stores and publishes nothing.
+
 - **An erasure finds every key that names the subject, not only the ones the directory names.** A
   key is named by level, tenant and user together, and the eraser computed those names from the
   current memberships. A key shared with someone outside the directory was found by neither erasure

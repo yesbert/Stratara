@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.Abstractions.Persistence;
 
@@ -10,6 +11,15 @@ namespace Stratara.EventSourcing.EntityFrameworkCore;
 /// DbContext that lives for the duration of the returned transaction.
 /// </summary>
 /// <typeparam name="TDbContext">The concrete DbContext type owned by this unit of work.</typeparam>
+/// <remarks>
+/// A save the store committed is never reported as cancelled. On a context whose options carry
+/// <see cref="CommitCompletionInterceptor"/> — every context the framework registers — a transaction's save honours the
+/// caller's token while the changes are written and lets the commit run to its end. On any other — a context a host
+/// registered itself without the interceptor, one whose interceptors come from an internal service provider, or one whose
+/// <c>AutoTransactionBehavior</c> is <c>Never</c> — the save ignores the token and runs to its end whole, bounded by the
+/// connection's pool wait and command timeout rather than by the caller; a host that stops within a shorter shutdown
+/// timeout adds the interceptor to such a context.
+/// </remarks>
 /// <param name="contextFactory">Factory used to create a new DbContext per transaction.</param>
 public class UnitOfWork<TDbContext>(IDbContextFactory<TDbContext> contextFactory) : IUnitOfWork where TDbContext : DbContext, IDbContext
 {
@@ -36,11 +46,19 @@ public class UnitOfWork<TDbContext>(IDbContextFactory<TDbContext> contextFactory
     {
         internal TDbContext DbContext => context;
 
+        private bool CarriesCommitCompletion =>
+            context.Database.AutoTransactionBehavior != AutoTransactionBehavior.Never
+            && context.GetService<IDbContextOptions>().FindExtension<CoreOptionsExtension>()?.Interceptors?.Contains(CommitCompletionInterceptor.Instance) == true;
+
         public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                return await context.SaveChangesAsync(cancellationToken);
+                // A save the store committed must never be reported as cancelled, or whatever runs it runs it again. A
+                // context that carries CommitCompletionInterceptor honours the caller's token while the changes are
+                // written and lets the commit run to its end; on one that does not — a context a host registered itself
+                // — the save runs to its end whole.
+                return await context.SaveChangesAsync(CarriesCommitCompletion ? cancellationToken : CancellationToken.None);
             }
             catch (DbUpdateConcurrencyException ex)
             {

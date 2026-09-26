@@ -151,6 +151,42 @@ B's command fails with the refusal and A's command with B's failure. Nothing wai
 Where a handler has to reach back, dispatch through `ICommandOutboxDispatcher` instead: the command is
 recorded and handed over without waiting, in its own turn.
 
+## Cancelled calls report what the callee did
+
+Orleans completes a grain call whose token is cancelled with a cancellation the moment the token fires,
+whatever the grain it called does. A saga step that committed as the timer tick or saga reader calling it
+stopped would then look cancelled, and would run again. The execution model's registrations
+(`AddStrataraOrleans`, `AddStrataraOrleansCommandDispatcher`, `AddStrataraAggregateGrains`) set
+`MessagingOptions.WaitForCancellationAcknowledgement` for the silo and the client, so a cancelled call waits
+for the callee's answer: the cancellation still reaches the callee, a callee that stops before it commits
+answers with it, one that has committed answers with its outcome, and one that does not answer ends the
+call with a `TimeoutException` at the response timeout — or with a `SiloUnavailableException` once its silo
+is declared dead, whichever comes first — rather than at once. The setting is the host's for every grain call that carries a token, the host's own included — a
+call made with a web request's abort token, for instance, now waits for its grain's answer; calls without
+a token are unaffected. A host that sets it back after these registrations gives that guarantee up.
+
+## Failures that cross silos
+
+A command forwarded to an aggregate on another silo can fail there. Orleans carries an exception from
+one silo to another with its type only when it is told to, and a chain with one exception it refuses —
+a database or a broker exception inside the framework's own — does not cross at all. The execution
+model's registrations therefore let every exception type cross, so the framework's failures arrive as
+they were thrown, their inner exceptions included. A bus worker that forwarded a command still sees a
+`ConcurrencyException` as a conflict and a `CommittedEventsNotPublishedException` as a save not to run
+again. What crosses is the type, the message, the stack trace and the inner exceptions; the properties
+of the framework's exceptions read empty on the far side, and their messages carry the same facts. A
+`StrataraValidationException` is the exception: its `Failures` cross with it — field, message and code,
+not the attempted value — so the problem-details handler still names the fields to correct, and its
+message stays generic, because a failure's message may quote the input and exception messages are
+logged. During a rolling upgrade from an earlier version, silos of the two versions cannot read each
+other's validation failures: such a call fails on the caller's side with a serialization failure until
+every silo runs the new version. The
+setting only decides what a silo sends; what a silo accepts is Orleans' own type filter, which stays as
+it is. A host that sets its own `SupportedExceptionTypeFilter` on
+`Orleans.Serialization.ExceptionSerializationOptions` after these registrations replaces the
+framework's, and must keep letting exception chains through, or a framework failure from another silo
+arrives as a serialization failure again.
+
 ## Kept commands
 
 A recorded command is bounded as a bus message is, by the two bounds of `MessageRetryOptions`:

@@ -9,6 +9,7 @@
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.Hosting"/>
         <PackageReference Include="Microsoft.Extensions.Diagnostics.Testing"/>
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing"/>
         <PackageReference Include="Moq"/>
         <PackageReference Include="xunit.v3"/>
         <PackageReference Include="xunit.runner.visualstudio"/>

@@ -118,9 +118,9 @@ Use the `ResilienceNames` constants rather than the literal pipeline strings.
 
 | Extension | Bus |
 |---|---|
-| `builder.AddMessaging()` | RabbitMQ — extends `IHostApplicationBuilder`, and is what the worker composites call. Binds `Messaging`, `BusEnvelopeJson` and `MessageRetry` (the redelivery bounds, validated at start-up) |
-| `services.AddAzureServiceBus(connectionString)` | Azure Service Bus (connection-string) |
-| `services.AddAzureServiceBusWithManagedIdentity(...)` | Azure Service Bus (DefaultAzureCredential) |
+| `builder.AddMessaging()` | RabbitMQ — extends `IHostApplicationBuilder`, and is what the worker composites call. Binds `Messaging` (with `PrefetchCount`, validated at start-up), `BusEnvelopeJson` and `MessageRetry` (the redelivery bounds, validated at start-up); the host waits for stopping subscriptions when it stops |
+| `services.AddAzureServiceBus(connectionString)` | Azure Service Bus (connection-string); the host waits for stopping subscriptions when it stops |
+| `services.AddAzureServiceBusWithManagedIdentity(...)` | Azure Service Bus (DefaultAzureCredential); the host waits for stopping subscriptions when it stops |
 
 **One transport per host — the explicit one wins.** `AddMessaging()` registers `IMessageBus` for
 RabbitMQ; the Azure Service Bus extensions *replace* it, so an explicit `AddAzureServiceBus` takes
@@ -161,9 +161,9 @@ registered with `UseOrleans`. See [Choose an Execution Model](../getting-started
 
 | Extension | What it does |
 |---|---|
-| `silo.AddStrataraOrleans((s, name) => …)` | Extends `ISiloBuilder`. Registers the storage-backed grain directory the model's single-activation grains use, under the name it passes, and publishes the silo's roles and singleton work in its metadata. A silo that runs the model's grains without it fails at start naming this call, and so does a silo that registered the directory itself and registers a role or singleton work |
-| `services.AddStrataraAggregateGrains()` | Runs every command that names an aggregate in that aggregate's grain. Register it after every other pipeline behaviour |
-| `services.AddStrataraOrleansCommandDispatcher(opts?)` | Replaces the undecorated `ICommandOutboxDispatcher` with the durable-intent one: a command is recorded before the call returns and resumed after a crash, a bounded number of times. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order. Needs an intent store |
+| `silo.AddStrataraOrleans((s, name) => …)` | Extends `ISiloBuilder`. Registers the storage-backed grain directory the model's single-activation grains use, under the name it passes, and publishes the silo's roles and singleton work in its metadata. A silo that runs the model's grains without it fails at start naming this call, and so does a silo that registered the directory itself and registers a role or singleton work. Has a cancelled grain call wait for its grain's answer (`WaitForCancellationAcknowledgement`) |
+| `services.AddStrataraAggregateGrains()` | Runs every command that names an aggregate in that aggregate's grain. Register it after every other pipeline behaviour. Has a cancelled grain call wait for its grain's answer |
+| `services.AddStrataraOrleansCommandDispatcher(opts?)` | Replaces the undecorated `ICommandOutboxDispatcher` with the durable-intent one: a command is recorded before the call returns and resumed after a crash, a bounded number of times. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order. Needs an intent store. Has a cancelled grain call wait for its grain's answer |
 | `services.AddStrataraIntentStore<TWriteContext>()` | The `ICommandIntentStore` in the write context's outbox table. The dispatcher's host fails at start without an intent store |
 | `services.ConfigureStrataraHeavyWork(o => …)` | The cluster-wide limit, the permit retry and the permit lease of heavy work |
 | `services.AddStrataraProjectionGrains(opts?, hybrid?)` | Runs every projection in grains that read the store in commit order from a checkpoint. Call after `builder.AddEventProjectionServices()`; register the host's `IProjectionViewTruncator` before it |

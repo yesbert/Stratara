@@ -81,11 +81,13 @@ internal sealed class EventBundleOutboxDispatcher(
             return;
         }
 
-        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        // Recorded whatever the caller's token says: the events are committed, and a bundle the bus did not take — its
+        // publication cut short by a stopping host included — would otherwise be lost to every reader.
+        await using var transaction = await unitOfWork.StartAsync(CancellationToken.None);
         var repository = unitOfWork.CreateOutboxRepository(transaction);
-        await repository.AddAsync(eventBundle, cancellationToken);
+        await repository.AddAsync(eventBundle, CancellationToken.None);
 
-        await transaction.SaveChangesAsync(cancellationToken);
+        await transaction.SaveChangesAsync(CancellationToken.None);
     }
 
     /// <summary>
@@ -153,6 +155,11 @@ internal sealed class EventBundleOutboxDispatcher(
                 }, (messageBus, messagingIdentifier, eventBundle), cancellationToken);
 
             return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Cut short by the caller, not failed: the bundle is recorded for the drain instead.
+            return false;
         }
         catch (Exception ex)
         {

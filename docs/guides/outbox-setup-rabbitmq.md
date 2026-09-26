@@ -257,6 +257,42 @@ Quorum queues exist since RabbitMQ 3.8; the framework's floor is 3.13 (see
 listening right now; they have no dead-letter queue. A conflict is requeued, any other failure is
 dropped — there is nobody to return a message to.
 
+## When the host stops
+
+A subscription stops with the token it was opened with — for a worker, the host's stopping token. It
+takes no further message, waits for the handler it is running to settle, and then closes its channel.
+From the moment the application starts stopping — `ApplicationStopping` included — until the host has
+stopped, it waits as long as the host's shutdown timeout allows (`HostOptions.ShutdownTimeout`, 30
+seconds by default; an infinite timeout waits as long as the handler runs); a subscription whose own
+token was cancelled at any other time waits twenty seconds. The host counts as stopped only after the
+subscriptions its hosted services stopped have closed, so a handler that is still running finishes
+while the services it uses exist, and its message is acknowledged rather than delivered again. A handler's outcome is settled
+whatever the subscription's token says, and a handler that gives up on that token — an
+`OperationCanceledException` while the subscription stops — has its message requeued rather than
+dead-lettered by the framework. The broker counts that delivery like any other: it uses up one of
+`MaxDeliveryAttempts`, and before RabbitMQ 4.3 it counts against the queue's `x-delivery-limit` too.
+
+A handler that takes longer than the wait does not hold the stop up. The subscription closes its
+channel; the broker acknowledges the close and puts the handler's message back at once, so another
+consumer may take it while the first handler is still running — the handler must tolerate that, as
+at-least-once delivery already requires. The subscription counts as stopped at most five seconds later,
+whether or not the handler has returned.
+
+What the subscription had fetched but not yet handed to its handler goes back to the queue unhandled.
+The broker counts that as a delivery, so each such stop brings those messages one delivery closer to
+their bound. The number a subscription holds at once, the running handler's message included, is
+therefore bounded:
+
+```jsonc
+{
+  "Messaging": {
+    "PrefetchCount": 16   // 1 to 65535; a value outside is refused at start-up
+  }
+}
+```
+
+The handler still runs one message at a time; a higher bound only hides more network latency.
+
 ## Backpressure
 
 The `OutboxWorker` polls the outbox table every `OutboxOptions.PollingIntervalSeconds` (default 30) and publishes pending rows. If the broker is unreachable, rows sit in the table — at-least-once delivery preserved. The next poll-cycle retries.

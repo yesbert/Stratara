@@ -63,4 +63,41 @@ public class MessagingServiceCollectionExtensionsTests
 
         Assert.Same(builder, returned);
     }
+
+    [Fact]
+    public async Task AddMessaging_RegistersTheStoppingSubscriptionsOnceAsAHostedService()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+
+        builder.AddMessaging();
+        builder.AddMessaging();
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var stops = Assert.Single(provider.GetServices<IHostedService>().OfType<RabbitMqSubscriptionStops>());
+        Assert.Same(provider.GetRequiredService<RabbitMqSubscriptionStops>(), stops);
+    }
+
+    [Fact]
+    public void AddMessaging_BoundsWhatASubscriptionHoldsBySixteenUnlessConfigured()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.AddMessaging();
+
+        Assert.Equal(16, builder.Services.BuildServiceProvider().GetRequiredService<IOptions<MessagingOptions>>().Value.PrefetchCount);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("65536")]
+    public async Task AddMessaging_RefusesAPrefetchBoundOutsideItsRangeAtStart(string prefetchCount)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Messaging:PrefetchCount"] = prefetchCount });
+        builder.AddMessaging();
+        using var host = builder.Build();
+
+        var refused = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("Messaging:PrefetchCount", refused.Message, StringComparison.Ordinal);
+    }
 }

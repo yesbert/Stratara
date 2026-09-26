@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using Stratara.Abstractions.Messaging;
+using Stratara.Outbox.AzureServiceBus.Messaging;
 using Stratara.Outbox.RabbitMQ.Messaging;
 
 namespace Stratara.Outbox.RabbitMQ.Tests.DependencyInjection;
@@ -46,5 +48,86 @@ public class TransportSelectionTests
 
         var descriptor = Assert.Single(builder.Services, d => d.ServiceType == typeof(IMessageBus));
         Assert.Equal(AzureServiceBusBusTypeName, descriptor.ImplementationType?.FullName);
+    }
+
+    [Fact]
+    public async Task AddAzureServiceBus_RegistersTheStoppingSubscriptionsOnceAsAHostedService()
+    {
+        var services = new ServiceCollection().AddLogging();
+
+        services.AddAzureServiceBus(SampleConnectionString);
+        services.AddAzureServiceBusWithManagedIdentity("example.servicebus.windows.net");
+
+        await using var provider = services.BuildServiceProvider();
+        var stops = Assert.Single(provider.GetServices<IHostedService>().OfType<AzureServiceBusSubscriptionStops>());
+        Assert.Same(provider.GetRequiredService<AzureServiceBusSubscriptionStops>(), stops);
+    }
+
+    [Fact]
+    public async Task TheStoppingSubscriptions_WithoutAStoppedSubscription_HaveNothingToWaitFor()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.AddMessaging();
+        builder.Services.AddAzureServiceBus(SampleConnectionString);
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        var hosted = provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>().ToList();
+
+        Assert.Equal(2, hosted.Count);
+        foreach (var service in hosted)
+        {
+            await service.StartedAsync(TestContext.Current.CancellationToken);
+            await service.StoppingAsync(TestContext.Current.CancellationToken);
+            await service.StoppedAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// The hosted service that waits for stopping subscriptions needs nothing the bus needs, so a host that replaced
+    /// the message bus — a test host with a fake and a placeholder connection string — starts as before.
+    /// </summary>
+    [Fact]
+    public async Task A_host_that_replaced_the_message_bus_starts_without_building_the_transport()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddAzureServiceBus("not a connection string");
+        builder.Services.AddSingleton<IMessageBus, FakeBus>();
+        using var host = builder.Build();
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.IsType<FakeBus>(host.Services.GetRequiredService<IMessageBus>());
+    }
+
+    private sealed class FakeBus : IMessageBus
+    {
+        public Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SubscribeAsync<T>(string topic, string subscription, Func<T, Task> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task EnsureSubscriptionAsync(string topic, string subscription, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The bound a stopping subscription waits under runs on real time, like the host's own shutdown timeout — not on a
+    /// clock the application registered, which a test host may have frozen.
+    /// </summary>
+    [Fact]
+    public async Task The_stopping_subscriptions_keep_real_time_whatever_clock_the_host_registers()
+    {
+        var frozen = new FakeTimeProvider();
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddSingleton<TimeProvider>(frozen);
+        builder.AddMessaging();
+        builder.Services.AddAzureServiceBus(SampleConnectionString);
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        using var rabbit = provider.GetRequiredService<RabbitMqSubscriptionStops>().Deadline();
+        using var serviceBus = provider.GetRequiredService<AzureServiceBusSubscriptionStops>().Deadline();
+        frozen.Advance(TimeSpan.FromMinutes(5));
+
+        Assert.False(rabbit.IsCancellationRequested);
+        Assert.False(serviceBus.IsCancellationRequested);
     }
 }

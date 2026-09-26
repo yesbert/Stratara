@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Runtime;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
@@ -408,6 +409,13 @@ internal static class CommandExecution
             try
             {
                 await Wrap(() => InvokeAsync(services, envelope, throughMediator: true, stopping), around)();
+            }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                // The handler's events are recorded. Completing the intent keeps the drain from running it again,
+                // which would record them a second time.
+                services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(CommandExecution))
+                    .LogIntentCommittedNotPublished(committed, intentId, envelope.CommandTypeName);
             }
             catch (OperationCanceledException) when (stopping.IsCancellationRequested)
             {

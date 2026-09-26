@@ -136,6 +136,7 @@ public static class NpgsqlDbContextServiceCollectionExtensions
         var connectionString = EnsureMaxPoolSize(ResolveTenantConnectionString(sp));
         options.UseSnakeCaseNamingConvention()
             .UseNpgsql(connectionString, o => o.UseVector())
+            .AddInterceptors(CommitCompletionInterceptor.Instance)
             .ConfigureWarnings(w => w.Ignore(CoreEventId.NoEntityTypeConfigurationsWarning));
     }
 

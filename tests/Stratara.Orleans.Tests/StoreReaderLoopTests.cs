@@ -151,6 +151,65 @@ public sealed class StoreReaderLoopTests
         Assert.Equal(2, checkpoints.Reads);
     }
 
+    /// <summary>
+    /// A saga step whose save committed but could not publish has done its work: the reader counts the entry as applied
+    /// and goes on, rather than stalling on it and running the step again.
+    /// </summary>
+    [Fact]
+    public async Task An_entry_whose_handler_committed_but_could_not_publish_counts_as_applied()
+    {
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), new MemoryCheckpoints(), batchSize: 10);
+        var entries = Entries(1, 3);
+        var attempts = new List<Guid>();
+
+        var applied = await loop.ApplyEachAsync(new CommittedBatch(entries, 3), (entry, _) =>
+        {
+            attempts.Add(entry.Id);
+            return entry.Id == entries[1].Entry.Id
+                ? throw new CommittedEventsNotPublishedException([entry.StreamId], 1, new InvalidOperationException("the bus is down"))
+                : Task.CompletedTask;
+        });
+
+        Assert.Equal(3, applied);
+        Assert.Equal(entries.Select(e => e.Entry.Id), attempts);
+    }
+
+    /// <summary>
+    /// The reader stops while the batch's last entry applies, and the entry finishes — its save's commit runs to its
+    /// end. The checkpoint is still recorded for the whole batch, so the next activation does not apply it again.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_that_finishes_as_the_reader_stops_still_records_its_checkpoint()
+    {
+        var checkpoints = new TokenHonouringCheckpoints();
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), checkpoints, batchSize: 10);
+        using var stopping = new CancellationTokenSource();
+
+        var applied = await loop.CatchUpAsync(async (batch, _) =>
+        {
+            await stopping.CancelAsync();
+            return batch.Entries.Count;
+        }, () => false, stopping.Token);
+
+        Assert.Equal(3, applied);
+        Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
+    /// <summary>Refuses a write with a cancelled token before sending it, as a database driver does.</summary>
+    private sealed class TokenHonouringCheckpoints : IProjectionCheckpointStore
+    {
+        private readonly MemoryCheckpoints _inner = new();
+
+        public Task<long> GetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default) =>
+            _inner.GetAsync(projection, partition, reader, CancellationToken.None);
+
+        public Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return _inner.SetAsync(projection, partition, reader, position, CancellationToken.None);
+        }
+    }
+
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)
     {
         var services = new ServiceCollection()

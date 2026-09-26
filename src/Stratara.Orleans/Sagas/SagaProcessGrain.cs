@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Session;
@@ -123,6 +125,7 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
             await timers.RegisterAsync(new TimerRegistration(owner, purpose, dueAt), cancellationToken);
         }
 
+        var committed = false;
         if (context.Emitted.Count > 0)
         {
             var events = services.GetRequiredService<IEventSource>();
@@ -136,13 +139,43 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
             }
 
             await events.SaveChangesAsync(cancellationToken);
-            state = await loader.LoadAsync(services, stateStream, cancellationToken) ?? state;
+            committed = true;
+
+            // The step is committed from here on, and nothing after it fails the step: a step that failed now would be
+            // applied again, and emit and dispatch again.
+            try
+            {
+                state = await loader.LoadAsync(services, stateStream, CancellationToken.None) ?? state;
+            }
+            catch (Exception ex)
+            {
+                // Without the state the timers stay; the owner check drops the timers of a completed process.
+                services.GetRequiredService<ILogger<SagaProcessGrain>>().LogSagaStepAftermathFailed(ex, this.GetPrimaryKeyString());
+                return;
+            }
         }
 
         // After the append: a kill before this leaves timers of a completed process, which the owner check drops.
-        if (state.Completed)
+        if (state.Completed && !committed)
         {
+            // Nothing was committed by this step, so a failure here fails it and running it again is harmless.
             await timers.CancelAllAsync(owner, cancellationToken);
+        }
+        else if (state.Completed)
+        {
+            // With the step's token: the timer owner may be deactivating with the silo, and a call to it without one
+            // would wait for its response timeout instead of ending with the step's budget.
+            try
+            {
+                await timers.CancelAllAsync(owner, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                services.GetRequiredService<ILogger<SagaProcessGrain>>().LogSagaStepAftermathFailed(ex, this.GetPrimaryKeyString());
+            }
         }
     }
 

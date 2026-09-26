@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Registry;
@@ -60,6 +62,35 @@ public class EventBundleOutboxDispatcherTests
 
         harness.OutboxRepository.Verify(r => r.AddAsync(bundle, It.IsAny<CancellationToken>()), Times.Once);
         harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>
+    /// The save committed, and its caller is cancelled — the host is stopping — before the bus took the bundle. The
+    /// bundle is recorded for the drain regardless of that cancellation, so no reader misses the committed events.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueEventBundleAsync_PublishCancelledByTheCaller_StillRecordsTheBundle()
+    {
+        var logger = new FakeLogger<EventBundleOutboxDispatcher>();
+        var harness = new Harness(logger: logger);
+        using var stop = new CancellationTokenSource();
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .Returns<string, EventBundle, CancellationToken>(async (_, _, ct) =>
+            {
+                await stop.CancelAsync();
+                ct.ThrowIfCancellationRequested();
+            });
+        var bundle = NewEventBundle();
+
+        await harness.Sut.EnqueueEventBundleAsync(bundle, stop.Token);
+
+        harness.UnitOfWork.Verify(u => u.StartAsync(CancellationToken.None), Times.Once);
+        harness.OutboxRepository.Verify(r => r.AddAsync(bundle, CancellationToken.None), Times.Once);
+        harness.Transaction.Verify(t => t.SaveChangesAsync(CancellationToken.None), Times.Once);
+
+        // Cut short, not failed: nothing to warn about.
+        Assert.DoesNotContain(logger.Collector.GetSnapshot(), record => record.Level >= LogLevel.Warning);
     }
 
     [Fact]
@@ -183,7 +214,7 @@ public class EventBundleOutboxDispatcherTests
 
         public EventBundleOutboxDispatcher Sut { get; }
 
-        public Harness(bool durableBundles = false)
+        public Harness(bool durableBundles = false, ILogger<EventBundleOutboxDispatcher>? logger = null)
         {
             MessagingIdentifier.SetupGet(m => m.EventBundleTopic).Returns(EventBundleTopic);
             UnitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Transaction.Object);
@@ -191,7 +222,7 @@ public class EventBundleOutboxDispatcherTests
             PipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(ResiliencePipeline.Empty);
 
             Sut = new EventBundleOutboxDispatcher(
-                NullLogger<EventBundleOutboxDispatcher>.Instance,
+                logger ?? NullLogger<EventBundleOutboxDispatcher>.Instance,
                 UnitOfWork.Object,
                 MessageBus.Object,
                 MessagingIdentifier.Object,

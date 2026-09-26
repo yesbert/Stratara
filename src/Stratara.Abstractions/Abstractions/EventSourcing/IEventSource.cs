@@ -139,10 +139,21 @@ public interface IEventSource
     /// </summary>
     /// <remarks>
     /// A save clears what was staged whether it succeeds or fails. After a failure, append the events
-    /// again before saving again, as after a <see cref="ConcurrencyException"/>: a second save with
-    /// nothing appended writes nothing.
+    /// again before saving again, as after a <see cref="ConcurrencyException"/>: a save with nothing
+    /// staged writes and publishes nothing. The one exception is
+    /// <see cref="CommittedEventsNotPublishedException"/>: its events are already recorded, and
+    /// appending them again would record them twice.
     /// </remarks>
+    /// <param name="cancellationToken">
+    /// Honoured while the changes are written; a commit once begun runs to its end on the framework's stores, so a save
+    /// the store committed is never reported as cancelled. A handover after the commit that the cancellation stops
+    /// before the bundle is published or recorded surfaces as <see cref="CommittedEventsNotPublishedException"/>.
+    /// </param>
+    /// <exception cref="OperationCanceledException">The save was cancelled before it committed; no events were written.</exception>
     /// <exception cref="ConcurrencyException">Another writer beat this one to the stream's head version.</exception>
+    /// <exception cref="CommittedEventsNotPublishedException">
+    /// The events were committed, but handing their bundle on failed afterwards. Do not append them again.
+    /// </exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

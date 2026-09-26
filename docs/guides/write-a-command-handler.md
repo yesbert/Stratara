@@ -185,6 +185,22 @@ Each conflict is also counted, on `event_source.append.conflicts`, tagged with `
 `bucket.id` — the partition the stream fell in — so contention on one aggregate type or one hot
 partition shows up before it shows up as latency.
 
+## When a save committed but could not publish
+
+`SaveChangesAsync` commits the events and then hands their bundle on to the outbox. On a host without
+durable bundles, that handover can fail after the commit, when both the bus and the outbox's own table
+are unavailable. The save then throws `CommittedEventsNotPublishedException`, which names the committed
+streams, whatever ended the handover — a cancellation included. **The events are recorded; do not
+append them again.** Readers that consume bundles did not receive them: a projection is repaired by a
+replay, but a saga that reacts to bundles has missed them, and nothing repairs that — which is why a
+host that cannot lose a bundle stores bundles with the commit. Such a host does not raise the
+exception at all: its bundle is recorded in the same transaction as the events, and a handover that
+fails afterwards loses nothing. Nothing in the framework runs the work again because of it: the
+RabbitMQ and Azure Service Bus transports acknowledge the message and log an error (`108_113`); on the
+Orleans execution model a recorded command is completed (`117_127`), a store reader counts the entry
+as applied (`117_128`) and a durable timer counts as fired (`117_129`), each logged as an error; and
+the retrying pipelines do not retry it.
+
 ## Mandatory hygiene
 
 - **Max 7 constructor parameters** (this counts as one). If you need more, group them in a `sealed record` parameter object.

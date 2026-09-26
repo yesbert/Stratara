@@ -3,6 +3,7 @@ using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
@@ -50,6 +51,14 @@ namespace Stratara.Outbox.AzureServiceBus.Messaging;
 /// are logged but otherwise swallowed — the Service Bus client owns the reconnect / retry policy
 /// for those.
 /// </para>
+/// <para>
+/// A subscription that stops closes its processor, which takes no further message and waits for the handler it is
+/// running to settle — as long as the host's shutdown timeout allows from the moment the application starts stopping
+/// until the host has stopped, twenty seconds otherwise. A handler still running after that keeps its message locked
+/// until the lock expires, and the client closes the processor's links when it is disposed. A message taken after the
+/// subscription started stopping is abandoned unhandled, and a handler that stops on the subscription's token has its
+/// message abandoned rather than dead-lettered by the framework; the broker counts that delivery too.
+/// </para>
 /// </remarks>
 /// <example>
 /// Register Azure Service Bus as the host's <see cref="IMessageBus"/>:
@@ -64,7 +73,8 @@ internal sealed class AzureServiceBusBus(
     ServiceBusClient client,
     IOptions<BusEnvelopeJsonOptions> envelopeOptions,
     IOptions<MessageRetryOptions> retryOptions,
-    ServiceBusAdministrationClient? administration = null) : IMessageBus
+    ServiceBusAdministrationClient? administration = null,
+    AzureServiceBusSubscriptionStops? subscriptionStops = null) : IMessageBus, IAsyncDisposable
 {
     private const int MaxDeadLetterDescriptionLength = 4096;
 
@@ -73,6 +83,19 @@ internal sealed class AzureServiceBusBus(
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MessageRetryPolicy> _subscriptionPolicies = new(StringComparer.Ordinal);
+    private readonly AzureServiceBusSubscriptionStops _stops = subscriptionStops ?? new(NullLogger<AzureServiceBusSubscriptionStops>.Instance);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Waits for every subscription that was stopped to finish stopping, so its running handlers could settle. A host
+    /// waits for them earlier, when it stops (<see cref="AzureServiceBusSubscriptionStops"/>); this covers a bus used
+    /// without one.
+    /// </remarks>
+    public async ValueTask DisposeAsync()
+    {
+        _stops.BusDisposing();
+        await _stops.WhenAllStoppedAsync();
+    }
 
     /// <inheritdoc/>
     public async Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default)
@@ -103,6 +126,14 @@ internal sealed class AzureServiceBusBus(
 
         processor.ProcessMessageAsync += async args =>
         {
+            // A message the processor took after the subscription started stopping — before the processor itself has
+            // stopped — is not handled: it goes back for the next consumer instead of running with a cancelled token.
+            if (cancellationToken.IsCancellationRequested)
+            {
+                await args.AbandonMessageAsync(args.Message, cancellationToken: CancellationToken.None);
+                return;
+            }
+
             try
             {
                 var body = args.Message.Body.ToMemory();
@@ -113,16 +144,34 @@ internal sealed class AzureServiceBusBus(
                     await handler(message);
                 }
 
-                await args.CompleteMessageAsync(args.Message, cancellationToken);
+                // Settled whatever the subscription's token says: a handler that completed while the subscription
+                // stops has done its work, and a completion that throws would deliver the message again.
+                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
+            }
+            catch (CommittedEventsNotPublishedException committed)
+            {
+                // Settled whatever the subscription's token says: a stopping subscription must not abandon it, which
+                // would deliver the message again.
+                logger.LogCommittedEventsNotPublished(topic, committed);
+                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
             }
             catch (ConcurrencyException ce)
             {
-                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, cancellationToken);
+                // Settled whatever the subscription's token says, like every outcome: a settlement that throws would
+                // leave the decision to the broker.
+                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, CancellationToken.None);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The handler stopped because the subscription stops — the host is shutting down. That is not a
+                // failure: the framework abandons the message for the next consumer rather than dead-letter it. The broker
+                // counts the delivery like any other.
+                await args.AbandonMessageAsync(args.Message, cancellationToken: CancellationToken.None);
             }
             catch (Exception ex)
             {
                 logger.LogMessageProcessingFailed(topic, ex);
-                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Failure, ex, cancellationToken);
+                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Failure, ex, CancellationToken.None);
             }
         };
 
@@ -132,7 +181,55 @@ internal sealed class AzureServiceBusBus(
             return Task.CompletedTask;
         };
 
-        await processor.StartProcessingAsync(cancellationToken);
+        try
+        {
+            await processor.StartProcessingAsync(cancellationToken);
+        }
+        catch
+        {
+            // Nothing processes yet, and nothing would close the processor later.
+            await processor.DisposeAsync();
+            throw;
+        }
+
+        // A stopping subscription closes its processor, which takes no further message and waits for the handlers it is
+        // running: a handler that completed — or whose save committed — while the host stops settles its message instead
+        // of having it delivered again.
+        cancellationToken.Register(() => _stops.Add(StopAsync()));
+
+        async Task StopAsync()
+        {
+            // Taken when the token is cancelled, so it is the host's shutdown timeout while the host stops
+            // (AzureServiceBusSubscriptionStops).
+            using var settle = _stops.Deadline();
+            await Task.Yield();
+
+            // Closing is what disposing the processor does, and it is never cancelled itself: a close cancelled before it
+            // began would leave the processor receiving. Only the wait for it is bounded — a handler that does not settle
+            // in time keeps its message locked until the lock expires, the close finishes in the background, and the
+            // client closes the links when it is disposed. An unbounded wait here would hold the host's stop, and its
+            // disposal, up for as long as the handler runs.
+            var closing = processor.CloseAsync(CancellationToken.None);
+            try
+            {
+                await closing.WaitAsync(settle.Token);
+            }
+            catch (Exception ex)
+            {
+                logger.LogSubscriptionCleanupFailed(subscription, ex);
+
+                // Unless this was the close's own fault, already logged: whatever the close still does is observed, and
+                // a fault logged, when it ends — at once if it already has.
+                if (closing.Exception?.InnerExceptions.Contains(ex) != true)
+                {
+                    _ = closing.ContinueWith(
+                        closed => logger.LogSubscriptionCleanupFailed(subscription, closed.Exception!),
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default);
+                }
+            }
+        }
     }
 
     private async Task SettleFailedAsync(ProcessMessageEventArgs args, string topic, string subscription, MessageRetryPolicy retryPolicy, MessageFailureKind kind, Exception cause, CancellationToken cancellationToken)
