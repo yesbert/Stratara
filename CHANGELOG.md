@@ -16,7 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.0`._
+
+## [4.4.0] — 2026-09-26
+
+A release about events a reader has no use for. Rebuilding an aggregate, and every projection and
+saga read path, used to resolve and decrypt each event before asking whether anything handled it, so
+an event nobody in the host took — one retired from an aggregate, a framework event another host
+reads — could stop a rebuild, dead-letter a bundle, fail every replay or stall an Orleans partition
+merely because its type was not registered. Such events are now left unread, while an event that
+might be handled still fails loudly. Beside that, a projection can declare that it forgets a deleted
+tenant, so facts recorded for the tenant after its deletion no longer fail it; that needs a migration
+of the read context.
+
 **Upgrading:**
+- **Generate an EF Core migration for your read context.** The framework's read context declares a new
+  table, `projection_forgotten_tenant`, for projections that declare `IForgetsDeletedTenants`. A host
+  without such a projection never touches it. A projection that declares it knows deletions applied
+  before the upgrade only after a replay — or, on the Orleans execution model, a rebuild of an
+  `IRebuildableProjection`.
 - **If an aggregate's stream holds an event the aggregate has no `Apply` for, upgrade.** Rebuilding
   it no longer requires that event's type to be registered. A workaround — a no-op `Apply` or an
   explicit `AddTrustedType<T>()` — keeps working. A no-op `Apply` can go; an `AddTrustedType<T>()`
@@ -36,11 +54,6 @@ applies to the entire NuGet family.
   that forwards only the older `MapToEventsAsync` overloads — still maps everything through the new
   overloads' default implementations. A test double of `IEventMapperFactory` must set up the new
   overloads (with Moq: or `CallBase = true`).
-- **Generate an EF Core migration for your read context.** The framework's read context declares a new
-  table, `projection_forgotten_tenant`, for projections that declare `IForgetsDeletedTenants`. A host
-  without such a projection never touches it. A projection that declares it knows deletions applied
-  before the upgrade only after a replay — or, on the Orleans execution model, a rebuild of an
-  `IRebuildableProjection`.
 - No existing public signature changes.
 
 ### Added
@@ -3964,7 +3977,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.3.1...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.0...main
+[4.4.0]: https://github.com/yesbert/Stratara/releases/tag/v4.4.0
 [4.3.1]: https://github.com/yesbert/Stratara/releases/tag/v4.3.1
 [4.3.0]: https://github.com/yesbert/Stratara/releases/tag/v4.3.0
 [4.2.0]: https://github.com/yesbert/Stratara/releases/tag/v4.2.0
