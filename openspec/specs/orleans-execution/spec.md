@@ -132,7 +132,12 @@ running, as after a crash, and the stop SHALL NOT count as a failed attempt. A f
 whose handler stops on that token SHALL fail back to its caller with a message saying that the silo
 stopped and the command may be dispatched again. A handler that does not observe the token SHALL run
 to its end, and the silo SHALL wait for it as long as the runtime's deactivation allows. Every handler
-stopped this way SHALL be logged with the command's identity. The documentation SHALL name the
+stopped this way SHALL be logged with the command's identity.
+A handler that fails with the event store's failure saying its events were committed but could not
+be published — a cancellation after that commit included — has neither stopped nor failed in this
+sense: its recorded command SHALL be completed, not resumed and not counted as a failed attempt, the
+failure SHALL be logged with the command's identity and type at error level, and a forwarded
+command's caller SHALL receive that failure. The documentation SHALL name the
 deactivation budget as a setting the host sizes and SHALL say what a handler is expected to do with
 the token.
 
@@ -334,6 +339,13 @@ the token.
 - **WHEN** a host registers its own clock and records a command, and that clock passes the grace
 - **THEN** the command is due, whatever the wall clock says
 
+#### Scenario: A recorded command committed but could not publish
+
+- **WHEN** a recorded command's handler fails because its save committed its events but could not
+  hand their bundle on
+- **THEN** the command is completed, no failed attempt is recorded, it is not resumed, and the failure
+  is logged with the command's identity
+
 ### Requirement: Projections and sagas read the store in commit order and never miss a committed fact
 
 Where a host has registered the Orleans execution model for projections or sagas, each SHALL read
@@ -491,6 +503,11 @@ store-reading saga SHALL read with a checkpoint of its own, so that an entry one
 stops that saga's reading of the partition only: every other saga SHALL apply the entry once and go on
 past it, and SHALL NOT apply it again because another saga failed on it.
 
+An entry whose handler fails with the event store's failure saying the handler's events were
+committed but could not be published SHALL count as applied, exactly as an entry whose handler
+succeeded does: the reader SHALL log it with the entry's identity at error level and go on past it
+rather than stall on it, because retrying it would record the handler's facts a second time.
+
 #### Scenario: A projection throws on one entry
 
 - **WHEN** a projection throws while applying an entry
@@ -522,6 +539,12 @@ past it, and SHALL NOT apply it again because another saga failed on it.
 - **THEN** the other applies the fact once and goes on to later facts of the partition, while the
   failing saga stays before the fact, logs it and counts the stall under its own consumer name
 
+#### Scenario: A saga's step committed but could not publish
+
+- **WHEN** a store-reading saga applies an entry and its save commits but cannot hand its bundle on
+- **THEN** the entry counts as applied, the reader goes on past it and logs the failure with the
+  entry's identity, and the step does not run again
+
 ### Requirement: Work that must happen once happens once per cluster
 
 Singleton work SHALL run in one place in the cluster at its period, without a lock, only on a silo
@@ -547,7 +570,10 @@ handling cancels or registers the process's timers SHALL complete.
 A timer's handler SHALL receive a cancellation token that is requested when the silo running it
 stops and the handler has not completed within the runtime's deactivation budget; a timer whose
 handler stops on that token SHALL stay registered and fire on the next silo, which is the at-least-once
-delivery the timers promise, and the stop SHALL be logged with the owner and the purpose. A timer
+delivery the timers promise, and the stop SHALL be logged with the owner and the purpose. A timer whose handler fails with the
+event store's failure saying its events were committed but could not be published SHALL count as
+fired — it SHALL NOT stay registered to fire again — and the failure SHALL be logged with the owner
+and the purpose at error level. A timer
 registered for an owner and purpose while a tick for that owner and purpose is being handled SHALL be
 kept and SHALL fire, whether or not its due time is the one being handled. An owner id longer than
 the timer store holds SHALL be refused on registration, cancellation and listing with a message
@@ -680,6 +706,13 @@ start with a message naming both.
 
 - **WHEN** a host registers the same singleton work twice, each time with a different keep-alive period
 - **THEN** the work runs once, with the period of the later registration
+
+#### Scenario: A timer's handler committed but could not publish
+
+- **WHEN** a durable timer's handler fails because its save committed its events but could not hand
+  their bundle on
+- **THEN** the timer counts as fired and is not registered afterwards, and the failure is logged with
+  the owner and the purpose
 
 ### Requirement: Heavy work is bounded across the cluster by permits that expire with their holder
 
@@ -1049,3 +1082,53 @@ sample that does so.
 - **THEN** its handlers, projections, sagas and timers run through the registrations it uses in
   production, in the test's process, without a cluster, a broker or a database server — and the
   shipped sample runs the same in one console run
+
+### Requirement: A framework failure keeps its type between silos
+
+A failure the framework defines — a concurrency conflict, a save that committed but could not publish —
+thrown on one silo SHALL reach a caller on another silo, or a client, with its type, its message and
+its inner failures, whatever library those inner failures come from, so that the caller treats it as
+it would in process. The registrations of the execution model SHALL arrange this without the host
+having to, and the documentation SHALL say that a host which replaces Orleans' exception filter
+afterwards must keep letting such chains through. Properties of such a failure beyond those need not
+cross; where they do not, they SHALL read as empty rather than fail, and the message SHALL carry what
+they said. A validation failure is the exception to both: its failures SHALL cross with it, each with
+its field, its message as the validator wrote it and its code, so that a caller can still say which
+field to correct; the value a field was given SHALL NOT cross, and the exception's own message SHALL
+NOT repeat the failures, because exception messages are logged.
+
+#### Scenario: A handler on another silo reports a conflict
+
+- **WHEN** a command forwarded to an aggregate on another silo fails with a concurrency conflict
+- **THEN** the caller receives a concurrency conflict, and a transport that runs the forwarding
+  handler treats it as a conflict rather than a failure — verified on the serializer round trip the
+  runtime uses between silos
+
+#### Scenario: A handler on another silo rejects a command as invalid
+
+- **WHEN** a handler on another silo fails with a validation failure
+- **THEN** the caller receives a validation failure naming each field that failed, how and under
+  which code, without the value a field was given and with a message that does not repeat the
+  failures — verified on the serializer round trip the runtime uses between silos
+
+#### Scenario: A handler on another silo committed but could not publish
+
+- **WHEN** a command forwarded to another silo fails because its save committed but could not
+  publish
+- **THEN** the caller receives that failure with its type, so nothing runs the command again
+
+### Requirement: A cancelled grain call reports what the grain did
+
+A call to a grain that its caller cancels SHALL report what the grain did — its outcome where it
+committed, the cancellation where it stopped before — so that a step that committed is not run again
+because its caller stopped; where the grain does not answer, the call SHALL end at the latest at the
+response timeout. The registrations of the execution model SHALL arrange this for every grain call of
+the host that carries a cancellation, and the documentation SHALL say so.
+
+#### Scenario: A call is cancelled while its grain commits
+
+- **WHEN** a grain call is cancelled by its caller while the grain it called is committing
+- **THEN** the caller receives the grain's outcome rather than a cancellation — verified from within
+  one silo on localhost clustering, where the same call without the registrations reports a
+  cancellation; calls between silos and from a client take the same path in the runtime and are not
+  exercised separately
