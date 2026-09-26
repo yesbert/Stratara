@@ -18,6 +18,18 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **A snapshot captures only committed events.** A snapshot was written in a transaction of its own,
+  before the events it captured were committed. A save that then lost a concurrency race left a
+  snapshot of events that were never recorded, and every later rebuild started from it: the aggregate
+  silently carried state from a write that did not happen. A clash on the snapshot's own version also
+  surfaced as the provider's raw exception instead of a concurrency conflict. The event source now
+  writes the snapshot after the events are committed and their bundle handed on, from the committed
+  stream up to the save's highest version. A failure to write it, a cancellation included, is logged
+  (`LogEvents.EventStore.SnapshotFailed`, `102_006`) and no longer fails a save whose events are
+  recorded. A snapshot that an earlier release wrote this way stays in the store. To be sure none is
+  left, delete the snapshots and let the next threshold write them again; a rebuild without one
+  replays the events.
+
 - **An erasure finds every key that names the subject, not only the ones the directory names.** A
   key is named by level, tenant and user together, and the eraser computed those names from the
   current memberships. A key shared with someone outside the directory was found by neither erasure

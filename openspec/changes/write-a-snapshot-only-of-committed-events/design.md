@@ -29,8 +29,13 @@ apply those events twice.
 tell the caller the save failed and invite a retry that records them twice. The next threshold writes
 a snapshot, and a rebuild without one replays the events.
 
-**The snapshot runs before the bundle is handed on.** It is part of finishing the save; the order keeps
-the existing sequence for anything observing it and puts the (rare) handover failure last.
+**The snapshot runs after the bundle is handed on.** Publication is what readers wait for; a snapshot is
+a cache. Taking it last means a slow or failing snapshot never delays or blocks publication, and a
+cancellation that arrives during it — after the events are committed and published — is logged, not
+thrown.
+
+**Its dependencies shrink.** Building from the committed stream needs neither the event mapper nor the
+aggregate event selector, so `SnapshotService` no longer takes them.
 
 ## Risks / Trade-offs
 

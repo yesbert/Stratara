@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Contracts.Messages;
 using Stratara.Contracts.Session;
 using Stratara.Abstractions.Domain;
@@ -37,14 +39,15 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// propagates as the persistence failure it was.
 /// </para>
 /// </remarks>
-internal sealed class EventSource(
+internal sealed partial class EventSource(
     ISnapshotService snapshotService,
     IWriteUnitOfWork unitOfWork,
     ISessionContextProvider sessionContextProvider,
     IEventBundleOutboxDispatcher outboxDispatcher,
     ISecureJsonSerializer serializer,
     IEnumerable<IStoreConflictDetector> conflictDetectors,
-    IBusEnvelopeSigner? signer = null) : IEventSource
+    IBusEnvelopeSigner? signer = null,
+    ILogger<EventSource>? logger = null) : IEventSource
 {
     private readonly List<EventStreamEntry> _eventStreamEntries = [];
     private readonly Dictionary<Guid, long> _streamVersions = new();
@@ -158,7 +161,6 @@ internal sealed class EventSource(
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
 
         await eventStreamRepository.AddRangeAsync(_eventStreamEntries, cancellationToken);
-        await snapshotService.AddSnapshotIfNeededAsync(_eventStreamEntries, cancellationToken);
         if (outboxDispatcher.StoresBundlesWithCommit)
         {
             await outboxDispatcher.StoreEventBundleAsync(eventBundle, transaction, cancellationToken);
@@ -181,7 +183,31 @@ internal sealed class EventSource(
         }
 
         await outboxDispatcher.EnqueueEventBundleAsync(eventBundle, cancellationToken);
+        await SnapshotCommittedAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// A snapshot is a cache of committed state. It is taken only once the events are committed and
+    /// published, so a save that fails leaves none behind, and a failure to take it — a cancellation
+    /// included — is logged rather than failing a save whose events are recorded.
+    /// </summary>
+    private async Task SnapshotCommittedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await snapshotService.AddSnapshotIfNeededAsync(_eventStreamEntries, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            LogSnapshotFailed(logger ?? NullLogger<EventSource>.Instance, ex, _eventStreamEntries.Count);
+        }
+    }
+
+    [LoggerMessage(
+        EventId = LogEvents.EventStore.SnapshotFailed,
+        Level = LogLevel.Warning,
+        Message = "Writing a snapshot after {EventCount} committed event(s) failed. The events are recorded and published; a later save writes a snapshot.")]
+    private static partial void LogSnapshotFailed(ILogger logger, Exception exception, int eventCount);
 
     private void ClearBatchState()
     {
