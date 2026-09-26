@@ -217,7 +217,29 @@ positioned — in **every process that appends to the store**, not only in the h
 does not add it. Add `CommitCompletionInterceptor.Instance` beside it, last among the context's transaction
 interceptors, and to the read context as well, as the framework does on the contexts it registers itself: it lets a commit, once begun, run to its end, so a save the store committed is never reported
 as cancelled and run again. `CommitOrderOptions.MaintainPartitionCounter` switches nothing: it is obsolete, warns where it is
-set, and is removed with the next major version; the interceptor is what maintains the counter. Within one save,
+set, and is removed with the next major version; the interceptor is what maintains the counter. A write context
+whose execution strategy retries on failure — `EnableRetryOnFailure`, which Aspire's EF integrations switch
+on — is supported: the framework's unit of work runs each append as one retriable unit through that
+strategy, so the interceptor finds a transaction and a transient failure runs the append again whole. A save
+the host makes on such a context itself, outside the framework, runs the same unit — wrapping only
+`SaveChangesAsync` in the strategy is not enough, because the changes are accepted before the interceptor
+commits, and a commit that fails once then retries with nothing to save:
+
+```csharp
+static Task SaveAsOneUnitAsync(AppWriteDbContext context, CancellationToken cancellationToken) =>
+    context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    {
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await context.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
+        await transaction.CommitAsync(CancellationToken.None);
+        context.ChangeTracker.AcceptAllChanges();
+    });
+```
+
+On every context with a retrying strategy — write, read or projection — the framework's saves run this way,
+so an override of `SaveChangesAsync(CancellationToken)` alone is not called (override the
+`(bool, CancellationToken)` overload), `SavedChanges` handlers run before the commit, and a single-statement
+save runs in a transaction. Within one save,
 positions follow each stream's version order. A read stops at an entry appended without a position rather than skipping it: the
 partition stops advancing, the failure names the entry, and positioning it with the backfill lets the
 partition continue. The partition count is fixed once the store holds positions — lowering it would merge

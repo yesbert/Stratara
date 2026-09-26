@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.Abstractions.Persistence;
 
@@ -12,6 +13,7 @@ namespace Stratara.EventSourcing.EntityFrameworkCore;
 /// </summary>
 /// <typeparam name="TDbContext">The concrete DbContext type owned by this unit of work.</typeparam>
 /// <remarks>
+/// <para>
 /// A save the store committed is never reported as cancelled. On a context whose options carry
 /// <see cref="CommitCompletionInterceptor"/> — every context the framework registers — a transaction's save honours the
 /// caller's token while the changes are written and lets the commit run to its end. On any other — a context a host
@@ -19,6 +21,15 @@ namespace Stratara.EventSourcing.EntityFrameworkCore;
 /// <c>AutoTransactionBehavior</c> is <c>Never</c> — the save ignores the token and runs to its end whole, bounded by the
 /// connection's pool wait and command timeout rather than by the caller; a host that stops within a shorter shutdown
 /// timeout adds the interceptor to such a context.
+/// </para>
+/// <para>
+/// On a context whose execution strategy retries on failure, a transaction's save that does not already run inside a
+/// transaction runs as one retriable unit through that strategy: a transaction of its own, the changes written with
+/// <c>SaveChangesAsync(false, …)</c> and accepted only once the commit has run, so a transient failure — the commit's
+/// included — runs the whole save again. On such a context an override of <c>SaveChangesAsync(CancellationToken)</c>
+/// alone is not called, <c>SavedChanges</c> handlers run before the commit, and a single statement is saved in a
+/// transaction.
+/// </para>
 /// </remarks>
 /// <param name="contextFactory">Factory used to create a new DbContext per transaction.</param>
 public class UnitOfWork<TDbContext>(IDbContextFactory<TDbContext> contextFactory) : IUnitOfWork where TDbContext : DbContext, IDbContext
@@ -50,20 +61,49 @@ public class UnitOfWork<TDbContext>(IDbContextFactory<TDbContext> contextFactory
             context.Database.AutoTransactionBehavior != AutoTransactionBehavior.Never
             && context.GetService<IDbContextOptions>().FindExtension<CoreOptionsExtension>()?.Interceptors?.Contains(CommitCompletionInterceptor.Instance) == true;
 
+        /// <summary>
+        /// A retrying execution strategy refuses a transaction begun outside it — the partition counter's, for one —
+        /// so under one the save runs as a single retriable unit, unless it already runs inside a transaction.
+        /// </summary>
+        private bool RunsAsARetriableUnit =>
+            context.ChangeTracker.HasChanges()
+            && context.Database.IsRelational()
+            && context.Database.CurrentTransaction is null
+            && context.GetService<IRelationalConnection>() is not RelationalConnection { EnlistedTransaction: not null }
+            && System.Transactions.Transaction.Current is null
+            && context.Database.CreateExecutionStrategy().RetriesOnFailure;
+
         public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
+            // A save the store committed must never be reported as cancelled, or whatever runs it runs it again. A
+            // context that carries CommitCompletionInterceptor honours the caller's token while the changes are
+            // written and lets the commit run to its end; on one that does not — a context a host registered itself
+            // — the save runs to its end whole.
+            var token = CarriesCommitCompletion ? cancellationToken : CancellationToken.None;
             try
             {
-                // A save the store committed must never be reported as cancelled, or whatever runs it runs it again. A
-                // context that carries CommitCompletionInterceptor honours the caller's token while the changes are
-                // written and lets the commit run to its end; on one that does not — a context a host registered itself
-                // — the save runs to its end whole.
-                return await context.SaveChangesAsync(CarriesCommitCompletion ? cancellationToken : CancellationToken.None);
+                return RunsAsARetriableUnit
+                    ? await context.Database.CreateExecutionStrategy().ExecuteAsync(context, SaveAsOneUnitAsync, token)
+                    : await context.SaveChangesAsync(token);
             }
             catch (DbUpdateConcurrencyException ex)
             {
                 throw new ConcurrencyConflictException(ex.Message, ex);
             }
+        }
+
+        /// <summary>
+        /// EF's pattern for a transaction under a retrying strategy: the changes are accepted only once the commit has
+        /// run, so a transient failure runs the whole unit again with the same changes.
+        /// </summary>
+        private static async Task<int> SaveAsOneUnitAsync(TDbContext context, CancellationToken cancellationToken)
+        {
+            context.Database.AutoSavepointsEnabled = false;
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+            var written = await context.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
+            await transaction.CommitAsync(CancellationToken.None);
+            context.ChangeTracker.AcceptAllChanges();
+            return written;
         }
 
         public async ValueTask DisposeAsync()
