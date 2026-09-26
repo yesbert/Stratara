@@ -252,6 +252,9 @@ Every sweep is safe to repeat, and the planes already swept simply find nothing 
 - **The command audit log and the outbox.** Both carry a session context naming the subject, and
   both are deliberately left alone — the audit log is the evidence that the erasure happened, and
   whether to retain it is a decision only you can take for your jurisdiction.
+- **System-wide `Confidential` key material.** A confidential value written with an empty tenant uses
+  one key for everybody, and no erasure shreds it. Written for a tenant, it is shredded with the
+  tenant.
 - **Keys shared with someone who is not a member.** The memberships name the other half of a shared
   key. A key naming a tenant together with a user who is not a member when the erasure runs is found
   by neither the tenant's erasure nor the user's. That covers a user who left the tenant, and an
