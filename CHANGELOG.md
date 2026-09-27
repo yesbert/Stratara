@@ -14,7 +14,114 @@ applies to the entire NuGet family.
 > The historical entries were originally written in German with internal-team identifiers;
 > they have been rewritten retroactively for public consumption.
 
-## [Unreleased]
+## [4.4.0] — unreleased
+
+A release about events a reader has no use for. Rebuilding an aggregate, and every projection and
+saga read path, used to resolve and decrypt each event before asking whether anything handled it, so
+an event nobody in the host took — one retired from an aggregate, a framework event another host
+reads — could stop a rebuild, dead-letter a bundle, fail every replay or stall an Orleans partition
+merely because its type was not registered. Such events are now left unread, while an event that
+might be handled still fails loudly. Beside that, a projection can declare that it forgets a deleted
+tenant, so facts recorded for the tenant after its deletion no longer fail it; that needs a migration
+of the read context.
+
+It also closes gaps in who owns an event and what an erasure reaches. A tenant's erasure left the
+default-level and confidential fields of the tenant's events readable; it now shreds every key naming
+the tenant, and an erasure finds a key even when the subject it shares it with is no longer in the
+directory. A stream keeps the user it was created for in every later save, a Subject stated for one
+event stays with that event, and a user's erasure reaches the snapshots of that user's aggregates. A
+save that fails no longer leaves its events staged for a retry to write a second time.
+
+And it makes sure work that committed is not run twice. A save whose events are committed but whose
+bundle could not be handed on now says so, with `CommittedEventsNotPublishedException`, and nothing the
+framework runs — the transports, the retry pipelines, the Orleans execution model's recorded commands,
+store readers, timers and sagas — runs it again. A commit once begun runs to its end, so a committed
+save is never reported as cancelled. Subscriptions stop without handing back or dead-lettering what
+their handlers finished, and the host waits for them within its shutdown timeout. A snapshot captures
+only committed events, and an append now also runs on a write context whose execution strategy
+retries on failure.
+
+**Upgrading:**
+- **Generate EF Core migrations for your read and write contexts.** The read context declares a new
+  table, `projection_forgotten_tenant`, for projections that declare `IForgetsDeletedTenants`; a host
+  without such a projection never touches it, and a projection that declares it knows deletions applied
+  before the upgrade only after a replay — or, on the Orleans execution model, a rebuild of an
+  `IRebuildableProjection`. The write context's `snapshot` table gains a nullable `user_id` column.
+- **Remove the snapshots an earlier release may have written wrongly.** A snapshot of a user's aggregate
+  was written under the tenant alone, and a snapshot could capture events that were never committed. The
+  entries below give the statement that removes the first kind; to be sure of the second, delete the
+  snapshots and let the next save the snapshot strategy approves write them again — a rebuild without
+  one replays the events.
+- **If an aggregate's stream holds an event the aggregate has no `Apply` for, upgrade.** Rebuilding
+  it no longer requires that event's type to be registered. A workaround — a no-op `Apply` or an
+  explicit `AddTrustedType<T>()` — keeps working. A no-op `Apply` can go; an `AddTrustedType<T>()`
+  keeps the new warning quiet and is still needed wherever a projection, a saga or the bus reads the
+  type.
+- **Watch for the new warning `102_004`** (*Rebuilding … skipped events of type …*). It names an event
+  whose type does not resolve in the host and that no `Apply` of the aggregate could take. Usually
+  that is an event the aggregate ignores; if it is a handled type renamed without an upcaster, add the
+  upcaster.
+- **A projection or saga host no longer needs every domain event type registered.** An event no
+  handler in the host takes is left unread. `AddDomainEventTypesFromAssemblyContaining<T>()` calls that
+  existed only for that can go. One trade: a handled type *renamed* without an upcaster used to fail the
+  bundle or replay loudly and is now left unread — a type moved to another namespace or assembly still
+  fails, because it keeps its name. Add the upcaster when you rename a handled event.
+- **If you replaced a framework piece on the read path,** it keeps today's behaviour: a projection or saga
+  manager of your own still receives every event of a bundle, and a mapper of your own — or a decorator
+  that forwards only the older `MapToEventsAsync` overloads — still maps everything through the new
+  overloads' default implementations. A test double of `IEventMapperFactory` must set up the new
+  overloads (with Moq: or `CallBase = true`).
+- **If you erased a tenant before upgrading, erase it again.** The earlier run left the keys of its
+  default-level and confidential values that name no user; a second run shreds them and, where the key
+  store can list its keys, the keys the tenant shared with its former members as well.
+- **A key store of your own should implement `IKeyStore.ListScopesAsync`,** and a decorator should
+  forward it. Without it an erasure shreds the keys the directory names and warns that it could not
+  reach the rest.
+- **Retrying a failed `SaveChangesAsync` without appending again now writes nothing.** A failed save
+  discards what it staged. Append the events again, as after a `ConcurrencyException`. A save that
+  fails with `CommittedEventsNotPublishedException` has recorded its events: do not append them again
+  and do not retry it.
+- **`ErasureReport.Planes` lists `KeyMaterial` before `Memberships`.** The erasure sweeps the
+  memberships last now, so that a second run still finds them.
+- **A write or read context your host registers itself** — the Orleans execution model on a store other
+  than PostgreSQL — adds `CommitCompletionInterceptor.Instance`, last among its transaction interceptors,
+  as the framework does on the contexts it registers. Without it the framework's unit of work saves on
+  that context without the caller's token.
+- **The Orleans execution model's registrations set `MessagingOptions.WaitForCancellationAcknowledgement`.**
+  A grain call of the host that carries a token now waits for its grain's answer — at the latest until
+  the response timeout — instead of ending the moment the token fires.
+- **A RabbitMQ subscription holds at most `Messaging:PrefetchCount` messages** (default 16).
+- **On a context whose execution strategy retries on failure,** the framework's saves run as one
+  retriable unit: an override of `SaveChangesAsync(CancellationToken)` alone is no longer called there,
+  and `SavedChanges` handlers run before the commit.
+- **During a rolling upgrade of an Orleans cluster,** silos of the two versions cannot read each other's
+  validation failures; such a call fails with a serialization failure until every silo is upgraded.
+- New types and members are additive; no existing public signature changes.
+
+### Added
+
+- **`EventRelevance` and two `IEventMapperFactory` overloads that take it**, one for stored entries and one
+  for bus messages. The framework's mapper resolves and decrypts only the events the relevance accepts;
+  the overloads' default implementations map everything and filter afterwards, so a consumer's own
+  mapper compiles and behaves as before. `EventRelevance.ForTypes`, `AnyResolvable` and `AnyResolvableWith`
+  describe what a reader takes. Warning `102_005` names an event a stateful saga process's reader skipped
+  because its type does not resolve, once per host and event type.
+- **A projection can forget a deleted tenant.** A projection that removes a deleted tenant's rows met
+  facts recorded for that tenant after its deletion — work queued before it ran to its end — with
+  nothing to apply them to, and its `PrecedingFactMissingException` made the live bundle dead-letter and
+  every replay fail, leaving the read models the replay had emptied empty. Declare
+  `IForgetsDeletedTenants` on it — a promise that a deleted tenant's data is gone from its read model
+  once either deletion fact is applied: the framework hands it `TenantDeleted` and `CustomerTenantsDeleted`
+  whether or not it handles them, records per projection the tenants it deleted, and passes over a
+  missing-prerequisite report for a fact owned by such a tenant, logged at Information (`104_014`).
+  Nothing else changes. The record is kept by `IForgottenTenantStore`, which
+  `AddNpgsqlReadDbContextFactory<TContext>()` registers over the new table, or
+  `AddStrataraForgottenTenants<TReadContext>()` for a read context registered another way; a declaring
+  projection without it fails on its first fact, naming both. A replay empties the record of each
+  declaring projection it registers just before the read models — and no other deployment's — and a
+  single-projection rebuild on the Orleans execution model empties that projection's just before its
+  read model.
+  `AddProjectionsFromAssemblyContaining<T>()` trusts the two deletion facts for a declaring projection.
 
 ### Fixed
 
@@ -187,7 +294,7 @@ applies to the entire NuGet family.
     user. That is every such field of an event appended from an ordinary request, where the session's
     data-owner user is not set;
   - a tenant-level value written for a member;
-  - every `Confidential` value, which is bound to its tenant like any other.
+  - a `Confidential` value written for the tenant, whose key names the tenant like any other.
 
   A tenant's erasure now shreds every key naming the tenant, at every level, alone or with each of
   its members. A user's erasure is unchanged: it shreds the user's user-level keys, and tenant-level
@@ -252,71 +359,6 @@ applies to the entire NuGet family.
   `EventSubject` and `IAggregateCreationEvent` now state the order the store applies, and that an
   aggregate created for another tenant than the session's states that tenant on its creation
   event.
-
-## [4.4.0] — 2026-09-26
-
-A release about events a reader has no use for. Rebuilding an aggregate, and every projection and
-saga read path, used to resolve and decrypt each event before asking whether anything handled it, so
-an event nobody in the host took — one retired from an aggregate, a framework event another host
-reads — could stop a rebuild, dead-letter a bundle, fail every replay or stall an Orleans partition
-merely because its type was not registered. Such events are now left unread, while an event that
-might be handled still fails loudly. Beside that, a projection can declare that it forgets a deleted
-tenant, so facts recorded for the tenant after its deletion no longer fail it; that needs a migration
-of the read context.
-
-**Upgrading:**
-- **Generate an EF Core migration for your read context.** The framework's read context declares a new
-  table, `projection_forgotten_tenant`, for projections that declare `IForgetsDeletedTenants`. A host
-  without such a projection never touches it. A projection that declares it knows deletions applied
-  before the upgrade only after a replay — or, on the Orleans execution model, a rebuild of an
-  `IRebuildableProjection`.
-- **If an aggregate's stream holds an event the aggregate has no `Apply` for, upgrade.** Rebuilding
-  it no longer requires that event's type to be registered. A workaround — a no-op `Apply` or an
-  explicit `AddTrustedType<T>()` — keeps working. A no-op `Apply` can go; an `AddTrustedType<T>()`
-  keeps the new warning quiet and is still needed wherever a projection, a saga or the bus reads the
-  type.
-- **Watch for the new warning `102_004`** (*Rebuilding … skipped events of type …*). It names an event
-  whose type does not resolve in the host and that no `Apply` of the aggregate could take. Usually
-  that is an event the aggregate ignores; if it is a handled type renamed without an upcaster, add the
-  upcaster.
-- **A projection or saga host no longer needs every domain event type registered.** An event no
-  handler in the host takes is left unread. `AddDomainEventTypesFromAssemblyContaining<T>()` calls that
-  existed only for that can go. One trade: a handled type *renamed* without an upcaster used to fail the
-  bundle or replay loudly and is now left unread — a type moved to another namespace or assembly still
-  fails, because it keeps its name. Add the upcaster when you rename a handled event.
-- **If you replaced a framework piece on the read path,** it keeps today's behaviour: a projection or saga
-  manager of your own still receives every event of a bundle, and a mapper of your own — or a decorator
-  that forwards only the older `MapToEventsAsync` overloads — still maps everything through the new
-  overloads' default implementations. A test double of `IEventMapperFactory` must set up the new
-  overloads (with Moq: or `CallBase = true`).
-- No existing public signature changes.
-
-### Added
-
-- **`EventRelevance` and two `IEventMapperFactory` overloads that take it**, one for stored entries and one
-  for bus messages. The framework's mapper resolves and decrypts only the events the relevance accepts;
-  the overloads' default implementations map everything and filter afterwards, so a consumer's own
-  mapper compiles and behaves as before. `EventRelevance.ForTypes`, `AnyResolvable` and `AnyResolvableWith`
-  describe what a reader takes. Warning `102_005` names an event a stateful saga process's reader skipped
-  because its type does not resolve, once per host and event type.
-- **A projection can forget a deleted tenant.** A projection that removes a deleted tenant's rows met
-  facts recorded for that tenant after its deletion — work queued before it ran to its end — with
-  nothing to apply them to, and its `PrecedingFactMissingException` made the live bundle dead-letter and
-  every replay fail, leaving the read models the replay had emptied empty. Declare
-  `IForgetsDeletedTenants` on it — a promise that a deleted tenant's data is gone from its read model
-  once either deletion fact is applied: the framework hands it `TenantDeleted` and `CustomerTenantsDeleted`
-  whether or not it handles them, records per projection the tenants it deleted, and passes over a
-  missing-prerequisite report for a fact owned by such a tenant, logged at Information (`104_014`).
-  Nothing else changes. The record is kept by `IForgottenTenantStore`, which
-  `AddNpgsqlReadDbContextFactory<TContext>()` registers over the new table, or
-  `AddStrataraForgottenTenants<TReadContext>()` for a read context registered another way; a declaring
-  projection without it fails on its first fact, naming both. A replay empties the record of each
-  declaring projection it registers just before the read models — and no other deployment's — and a
-  single-projection rebuild on the Orleans execution model empties that projection's just before its
-  read model.
-  `AddProjectionsFromAssemblyContaining<T>()` trusts the two deletion facts for a declaring projection.
-
-### Fixed
 
 - **An event no projection or saga in the host handles no longer fails the host.** The projection worker,
   the projection replay, the saga worker and the Orleans projection and saga readers mapped every event of

@@ -24,7 +24,8 @@ namespace Stratara.Abstractions.Erasure;
 /// context naming the subject and are deliberately left alone: the audit log is the evidence that
 /// the erasure happened, and retaining it is a decision only the consumer can take.
 /// Tenant-level and confidential values written for a user belong to the tenant and survive that
-/// user's erasure. A key store that cannot list its scopes leaves an erasure with the keys the
+/// user's erasure. Confidential values written with an empty tenant share one system-wide key that
+/// no erasure shreds. A key store that cannot list its scopes leaves an erasure with the keys the
 /// directory names; a key shared with a former member, or with an operator acting in a tenant from
 /// outside it, is then not found. A snapshot written before 4.4.0 records no user and stays under its
 /// tenant alone, so a user's erasure does not reach it unless the host removed such snapshots on
