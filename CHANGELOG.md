@@ -404,6 +404,7 @@ retries on failure.
   return and prepare exactly what they did. `IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync`
   now documents that its order holds for a walk from the start: from `0`, and from there after the highest
   sequence number of each result.
+
 - **The portable reader's backfill positions every entry, whatever query filters the write context
   declares.** It read the store through the context's filters, so on a write context with tenant query
   filters (`ApplyGlobalTenantQueryFilters`) and no session it positioned nothing. Under a session it
