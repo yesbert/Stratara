@@ -22,7 +22,7 @@ public class RegistrationAfterBuildTests
 
         var refused = Assert.Throws<InvalidOperationException>(() => services.AddPermissionCatalog(c => c.Add("sims.write")));
 
-        Assert.Contains(nameof(IdentityDirectoryServiceCollectionExtensions.AddPermissionCatalog), refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"{nameof(IdentityDirectoryServiceCollectionExtensions.AddPermissionCatalog)} was called", refused.Message, StringComparison.Ordinal);
         using var provider = services.BuildServiceProvider();
         Assert.Equal(["sims.read"], provider.GetRequiredService<PermissionCatalog>().All);
     }
@@ -37,7 +37,7 @@ public class RegistrationAfterBuildTests
         var refused = Assert.Throws<InvalidOperationException>(() =>
             services.AddSettingCatalog(c => c.Add(new SettingDefinition("ui.language", DefaultValue: "en"))));
 
-        Assert.Contains(nameof(IdentityDirectoryServiceCollectionExtensions.AddSettingCatalog), refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"{nameof(IdentityDirectoryServiceCollectionExtensions.AddSettingCatalog)} was called", refused.Message, StringComparison.Ordinal);
         using var provider = services.BuildServiceProvider();
         var catalog = provider.GetRequiredService<SettingCatalog>();
         Assert.True(catalog.Contains("ui.theme"));
@@ -56,8 +56,22 @@ public class RegistrationAfterBuildTests
         var refusedOptions = Assert.Throws<InvalidOperationException>(() =>
             services.AddMembershipAuthorizationOptions(o => o.HomeTenantRoles.Add("Operator")));
 
-        Assert.Contains(nameof(IdentityDirectoryServiceCollectionExtensions.AddMembershipAuthorization), refused.Message, StringComparison.Ordinal);
-        Assert.Contains(nameof(IdentityDirectoryServiceCollectionExtensions.AddMembershipAuthorizationOptions), refusedOptions.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"{nameof(IdentityDirectoryServiceCollectionExtensions.AddMembershipAuthorization)} was called", refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"{nameof(IdentityDirectoryServiceCollectionExtensions.AddMembershipAuthorizationOptions)} was called", refusedOptions.Message, StringComparison.Ordinal);
+        using var provider = services.BuildServiceProvider();
+        Assert.Equal(["Service"], provider.GetRequiredService<MembershipAuthorizationOptions>().HomeTenantRoles);
+    }
+
+    [Fact]
+    public void A_registration_that_would_change_nothing_is_not_refused_after_the_host_was_built()
+    {
+        var services = new ServiceCollection();
+        services.AddMembershipAuthorization(o => o.HomeTenantRoles.Add("Service"));
+        services.MakeReadOnly();
+
+        services.AddMembershipAuthorization();
+        services.AddMembershipAuthorizationOptions(configure: null);
+
         using var provider = services.BuildServiceProvider();
         Assert.Equal(["Service"], provider.GetRequiredService<MembershipAuthorizationOptions>().HomeTenantRoles);
     }

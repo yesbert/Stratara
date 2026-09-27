@@ -169,7 +169,7 @@ public static class MediatorServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddCommandHandlersFromAssemblyContaining<T>(this IServiceCollection services)
     {
-        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services, nameof(AddCommandHandlersFromAssemblyContaining));
         var assembly = typeof(T).Assembly;
 
         foreach (var type in assembly

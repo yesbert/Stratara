@@ -412,13 +412,15 @@ retries on failure.
 
 - **A registration made after the host was built is refused instead of changing the running host.**
   `AddPermissionCatalog`, `AddSettingCatalog`, `AddMembershipAuthorization`,
-  `AddMembershipAuthorizationOptions`, the trusted-type registrations (`AddTrustedType<T>`, the
-  assembly scans for aggregates, events, command handlers, projections and sagas),
+  `AddMembershipAuthorizationOptions`, the trusted-type registrations (`AddTrustedTypeResolver`,
+  `AddTrustedType<T>`, the assembly scans for aggregates, events, command handlers, projections and sagas),
   `AddStrataraAggregateGrains`, `AddStrataraProjectionGrains`, `AddStrataraSagaGrains`,
   `AddStrataraDurableTimers` and `AddStrataraSingletonWork` add to an instance registered earlier. Called
   on `builder.Services` after `Build()`, the ones that found their instance changed what the running host
   was already reading, racing its readers; the others failed with the service collection's generic
-  read-only error. They now fail with an `InvalidOperationException` that names the registration.
+  read-only error. They now fail with an `InvalidOperationException` that names the registration; a call
+  that would change nothing still succeeds. `GetOrAddResolver` has an overload that takes the name of the
+  registration calling it.
 
 ## [4.3.1] — 2026-09-25
 

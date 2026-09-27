@@ -98,7 +98,7 @@ public static class ProjectionServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddProjectionsFromAssemblyContaining<T>(this IServiceCollection services)
     {
-        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services, nameof(AddProjectionsFromAssemblyContaining));
         var assembly = typeof(T).Assembly;
 
         foreach (var type in assembly.GetTypes()

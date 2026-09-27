@@ -7,17 +7,22 @@
 Several of the framework's registrations add to an instance already registered in the service collection instead
 of registering a new one: the permission and setting catalogs, the membership authorization options, the
 trusted-type resolver, and, under the Orleans execution model, the record of the roles a silo takes and the list of
-singleton works. Called on `builder.Services` after the host was built, one of them that finds its instance changes
-the live singleton the running host already reads. That is a data race on the instance's collections, and it is a
-declaration that takes effect in the running host or not, depending on who read the instance first. The same call on
-a collection without the instance fails with .NET's read-only error. The independent review of 4.3.1 found this for
+singleton works. Called on `builder.Services` after the host was built, the catalogs, the membership options and the
+trusted-type registrations find their instance and change the live singleton the running host already reads. That is
+a data race on the instance's collections, and it is a declaration that takes effect in the running host or not,
+depending on who read the instance first. The Orleans registrations add a descriptor before they reach their
+instance, so they fail with .NET's read-only error, which names neither them nor the fix. The independent review of 4.3.1 found this for
 the catalogs. The owner ruled on 2026-09-26 that 4.4.0 is not released while a known bug is open.
 
 ## What Changes
 
 - Each framework registration that adds to an already registered instance refuses when the service collection is
   read-only, as a built host's is, with an `InvalidOperationException` that names the registration and says to
-  call it before the host is built. A registration made while the host is being configured behaves as before.
+  call it before the host is built. A call that would change nothing, such as registering the resolver or the
+  options again without configuring them, still succeeds. A registration made while the host is being configured
+  behaves as before.
+- `TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver` gains an overload that takes the calling
+  registration's name, so the mediator, projection and saga scans name themselves too.
 - No behaviour change: the `AddMembershipAuthorization` overloads are placed next to each other in their class, which
   clears the code-analysis finding (rule S4136) that has kept the nightly quality gate red since 2026-09-24.
 
@@ -39,5 +44,6 @@ the catalogs. The owner ruled on 2026-09-26 that 4.4.0 is not released while a k
   `AddDomainEventTypesFromAssemblyContaining<T>`, and the mediator, projection and saga discovery.
 - `Stratara.Orleans`: `AddStrataraAggregateGrains`, `AddStrataraProjectionGrains`, `AddStrataraSagaGrains`,
   `AddStrataraDurableTimers` (role placement) and `AddStrataraSingletonWork`.
-- Tests: `Stratara.Identity.EntityFrameworkCore.Tests`, the Abstractions resolver tests, `Stratara.Orleans.Tests`.
+- Tests: `Stratara.Identity.EntityFrameworkCore.Tests`, `Stratara.Projections.Tests` (the trusted-type registrations),
+  `Stratara.Orleans.Tests`.
 - `CHANGELOG.md` under the open `[4.4.0]`.

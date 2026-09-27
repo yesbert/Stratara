@@ -32,9 +32,15 @@ there, but the found-instance path never calls `Add`.
   `HostApplicationBuilder`, calls the registration afterwards, and asserts the exception and the unchanged instance.
 - **The message names the public registration, not the helper.** For example: "AddPermissionCatalog was called
   after the host was built: the service collection is read-only, and the catalog the running host reads would change
-  under it. Call AddPermissionCatalog while the host is being configured." `GetOrAddResolver` and the Orleans
-  helpers take the caller's name where they have one. Where they have none, they name the thing that would change:
-  the trusted types, the roles, the singleton works.
+  under it. Call AddPermissionCatalog while the host is being configured." `GetOrAddResolver` gains a public overload
+  that takes the caller's name, which the four resolver registrations and the three scans pass. The original overload
+  names itself. The Orleans registrations check at their entry, before any `Add`.
+- **A call that changes nothing is not refused.** `AddTrustedTypeResolver()` with a resolver registered, and the
+  membership registrations without a `configure` callback with the options registered, leave everything as it is.
+  They stay idempotent after the build, as documented.
+- **The Orleans guards change the message, not the behaviour.** Each of the five registrations adds a descriptor
+  before it reaches its instance, so on `main` a built host already got .NET's read-only error. The guard makes the
+  error name the registration.
 - **S4136:** move `AddMembershipAuthorizationOptions` below the two `AddMembershipAuthorization<TUser>` overloads.
   This is a pure move, verified by the diff and by the nightly analysis.
 

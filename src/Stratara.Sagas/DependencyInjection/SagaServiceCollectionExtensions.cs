@@ -79,7 +79,7 @@ public static class SagaServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddSagasFromAssemblyContaining<T>(this IServiceCollection services)
     {
-        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services, nameof(AddSagasFromAssemblyContaining));
         var assembly = typeof(T).Assembly;
 
         foreach (var type in assembly.GetTypes()

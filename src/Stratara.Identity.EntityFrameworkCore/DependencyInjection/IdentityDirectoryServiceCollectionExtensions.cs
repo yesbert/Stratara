@@ -193,8 +193,8 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The host was already built from <paramref name="services"/>, which is read-only: the options
-    /// the running host reads would change under it.
+    /// No membership authorization options are registered yet and the host was already built from
+    /// <paramref name="services"/>, which is read-only.
     /// </exception>
     /// <example>
     /// Resolves roles from tenant-scoped membership. Pair it with the authorizing mediator, which is
@@ -245,8 +245,8 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The host was already built from <paramref name="services"/>, which is read-only: the options
-    /// the running host reads would change under it.
+    /// No membership authorization options are registered yet and the host was already built from
+    /// <paramref name="services"/>, which is read-only.
     /// </exception>
     /// <example>
     /// The generic overload adds the user's global ASP.NET Core Identity roles to the membership roles:
@@ -287,6 +287,11 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configure">Callback to name the roles resolved in the actor's own tenant.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only, and
+    /// <paramref name="configure"/> would change the options the running host reads — or no options
+    /// are registered yet.
+    /// </exception>
     /// <example>
     /// Binds no configuration key — the roles are named in code. The provider itself is registered by
     /// the authorizing mediator here, so only the options come from this call:
@@ -300,10 +305,6 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// order of the calls nor their number loses a role: a module naming one role and a module naming
     /// another end up with both, and the parameterless registration adds nothing.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// The host was already built from <paramref name="services"/>, which is read-only: the options
-    /// the running host reads would change under it.
-    /// </exception>
     public static IServiceCollection AddMembershipAuthorizationOptions(
         this IServiceCollection services,
         Action<MembershipAuthorizationOptions>? configure)
@@ -584,9 +585,12 @@ public static class IdentityDirectoryServiceCollectionExtensions
         Action<MembershipAuthorizationOptions>? configure,
         string registration)
     {
-        services.RefuseOnceBuilt(registration, "membership authorization options");
         var registered = services.FirstOrDefault(service =>
             service.ServiceType == typeof(MembershipAuthorizationOptions))?.ImplementationInstance;
+        if (configure is not null || registered is null)
+        {
+            services.RefuseOnceBuilt(registration, "membership authorization options");
+        }
 
         if (registered is not MembershipAuthorizationOptions options)
         {
