@@ -14,7 +14,11 @@ applies to the entire NuGet family.
 > The historical entries were originally written in German with internal-team identifiers;
 > they have been rewritten retroactively for public consumption.
 
-## [4.4.0] — unreleased
+## [Unreleased]
+
+_No changes yet since `4.4.0`._
+
+## [4.4.0] — 2026-09-27
 
 A release about events a reader has no use for. Rebuilding an aggregate, and every projection and
 saga read path, used to resolve and decrypt each event before asking whether anything handled it, so
@@ -40,6 +44,14 @@ save is never reported as cancelled. Subscriptions stop without handing back or 
 their handlers finished, and the host waits for them within its shutdown timeout. A snapshot captures
 only committed events, and an append now also runs on a write context whose execution strategy
 retries on failure.
+
+Finally, it makes a long history cheap to read and closes two gaps in how a host is put together. A
+long-lived stream no longer makes a replay or a commit-order backfill re-read its past in every batch,
+so a long history is read and prepared in time that grows with it. A write context that filters by
+tenant no longer hides the store from the framework's own work, which now reads its events, snapshots
+and hash-chain anchors past every filter the write context declares; a handler that must refuse another
+tenant's aggregate checks the owner of the aggregate it loaded. A registration made after the host was
+built is refused instead of changing the running host.
 
 **Upgrading:**
 - **Generate EF Core migrations for your read and write contexts.** The read context declares a new
