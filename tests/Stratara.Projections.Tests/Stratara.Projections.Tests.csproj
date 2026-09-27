@@ -19,5 +19,6 @@
         <ProjectReference Include="../../src/Stratara.Domain/Stratara.Domain.csproj" />
         <ProjectReference Include="../../src/Stratara.Projections/Stratara.Projections.csproj" />
         <ProjectReference Include="../../src/Stratara.Shared/Stratara.Shared.csproj" />
+        <ProjectReference Include="../../src/Stratara.Testing.EntityFrameworkCore/Stratara.Testing.EntityFrameworkCore.csproj" />
     </ItemGroup>
 </Project>
