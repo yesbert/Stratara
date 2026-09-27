@@ -13,7 +13,8 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// Refuses to let the host start while the store holds an entry the portable reader cannot see — one
 /// without a position, written before the counter was adopted — or counter rows for partitions the configured
 /// partition count does not have. Starting anyway would let every reader skip those entries for good, or read
-/// merged partitions whose positions overlap.
+/// merged partitions whose positions overlap. It looks at every tenant's entries, whatever query filters the write
+/// context declares.
 /// </summary>
 /// <typeparam name="TWriteContext">A write context derived from the framework's write context.</typeparam>
 internal sealed class PortableCounterStartupCheck<TWriteContext>(IServiceScopeFactory scopeFactory, IOptions<CommitOrderOptions> options) : IHostedService
@@ -27,6 +28,7 @@ internal sealed class PortableCounterStartupCheck<TWriteContext>(IServiceScopeFa
         await using var context = await factory.CreateDbContextAsync(cancellationToken);
 
         var unpositioned = await context.Set<EventStreamEntry>()
+            .IgnoreQueryFilters()
             .AnyAsync(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null, cancellationToken);
         if (unpositioned)
         {

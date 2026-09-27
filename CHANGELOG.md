@@ -100,6 +100,10 @@ retries on failure.
   registered — the catalogs, the membership options, the trusted types, the Orleans roles and singleton
   works — throws `InvalidOperationException` when called on `builder.Services` after `Build()`, instead of
   changing the running host.
+- **If your write context declares the tenant query filter** (`ApplyGlobalTenantQueryFilters`), the framework
+  now reads its store past it, so the write context behaves like one without the filter. A command handler
+  given another tenant's aggregate id loads and appends to that aggregate; if yours must refuse that, check
+  the loaded aggregate's owner against the session, as the tenant-isolation guide shows.
 - New types and members are additive; no existing public signature changes.
 
 ### Added
@@ -126,6 +130,19 @@ retries on failure.
   single-projection rebuild on the Orleans execution model empties that projection's just before its
   read model.
   `AddProjectionsFromAssemblyContaining<T>()` trusts the two deletion facts for a declaring projection.
+
+### Changed
+
+- **A write context that filters by tenant no longer changes what the framework does with its store.** The
+  framework reads its events, snapshots and hash-chain anchors past every query filter the write context
+  declares, so such a write context now behaves like one that declares none. A command handler given another
+  tenant's aggregate id loads that aggregate and appends to it, recording the event for the aggregate's owner
+  with the session's actor, as it always has on an unfiltered write context. Before, the filter made that load
+  come back empty and the append fail with a version conflict. Neither the tenant-isolation guard nor the
+  filter checks a stream's owner against the session. A handler that must refuse another tenant's aggregate
+  checks the owner of the aggregate it loaded; the tenant-isolation guide shows how.
+  `IEventStreamRepository`, `ISnapshotRepository` and `IEventChainRepository` return every tenant's rows to a
+  caller that uses them directly.
 
 ### Fixed
 
@@ -425,6 +442,16 @@ retries on failure.
   read-only error. They now fail with an `InvalidOperationException` that names the registration; a call
   that would change nothing still succeeds. `GetOrAddResolver` has an overload that takes the name of the
   registration calling it.
+
+- **The framework's work on its store sees every tenant when the write context filters by tenant.**
+  Event entries, snapshots, hash-chain anchors and the command log are tenant-scoped, so
+  `ApplyGlobalTenantQueryFilters` on the write context filtered them too. Work that runs without a session
+  then saw nothing: the commit-order readers returned no entries, the portable reader's start check passed
+  over unpositioned entries, a replay emptied the read models and applied nothing, the hash chain hashed
+  nothing, and a saga process's liveness check found no process and dropped its timers. A stream holding
+  events of two owners was half read under one owner's session, snapshotted wrong, and refused that
+  owner's next append. Every read the framework makes of its store now goes past the write context's
+  query filters; a filter declared there applies to the consumer's own queries only.
 
 ## [4.3.1] — 2026-09-25
 

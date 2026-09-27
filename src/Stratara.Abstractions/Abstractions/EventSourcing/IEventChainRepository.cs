@@ -2,7 +2,8 @@ namespace Stratara.Abstractions.EventSourcing;
 
 /// <summary>
 /// Repository over the event-chain anchor table — periodic global hashes that link the
-/// per-stream hash chain into a tamper-evident sequence.
+/// per-stream hash chain into a tamper-evident sequence. Reads return every tenant's anchors,
+/// whatever query filters the underlying context declares.
 /// </summary>
 public interface IEventChainRepository
 {

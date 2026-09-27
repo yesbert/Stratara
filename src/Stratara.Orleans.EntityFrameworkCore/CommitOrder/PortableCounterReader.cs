@@ -19,7 +19,8 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// without renumbering the entries, which the framework does not offer. An entry written without the interceptor
 /// carries no position; rather than read past it, a read of its partition fails naming it until the entry is
 /// positioned with <see cref="PartitionCounterBackfill"/>. The reader's name carries the partition count, because
-/// a position is only meaningful under the count its partition was counted with. Verified on PostgreSQL, and on SQLite through the test host of <c>Stratara.Testing.Orleans</c>.
+/// a position is only meaningful under the count its partition was counted with. It reads every tenant's entries,
+/// whatever query filters the write context declares. Verified on PostgreSQL, and on SQLite through the test host of <c>Stratara.Testing.Orleans</c>.
 /// </remarks>
 /// <typeparam name="TContext">A write context derived from the framework's write context.</typeparam>
 public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> contextFactory, IOptions<CommitOrderOptions> options)
@@ -38,7 +39,7 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await RefuseUnpositionedAsync(context, partition, cancellationToken);
 
-        var entries = await context.Set<EventStreamEntry>().AsNoTracking()
+        var entries = await context.Set<EventStreamEntry>().AsNoTracking().IgnoreQueryFilters()
             .Where(e => e.BucketId % _partitionCount == partition
                         && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) > afterPosition)
             .OrderBy(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn))
@@ -65,7 +66,7 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await RefuseUnpositionedAsync(context, partition, cancellationToken);
-        var head = await context.Set<EventStreamEntry>().AsNoTracking()
+        var head = await context.Set<EventStreamEntry>().AsNoTracking().IgnoreQueryFilters()
             .Where(e => e.BucketId % _partitionCount == partition)
             .MaxAsync(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), cancellationToken);
         return head.GetValueOrDefault();
@@ -79,7 +80,7 @@ public sealed class PortableCounterReader<TContext>(IDbContextFactory<TContext> 
     /// <exception cref="InvalidOperationException">An entry of the partition was appended without a position.</exception>
     private async Task RefuseUnpositionedAsync(TContext context, int partition, CancellationToken cancellationToken)
     {
-        var blocking = await context.Set<EventStreamEntry>().AsNoTracking()
+        var blocking = await context.Set<EventStreamEntry>().AsNoTracking().IgnoreQueryFilters()
             .Where(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null && e.BucketId % _partitionCount == partition)
             .OrderBy(e => e.SequenceNumber)
             .Select(e => (long?)e.SequenceNumber)

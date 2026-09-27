@@ -142,7 +142,7 @@ app.UseExceptionHandler();
 The entrance guard covers requests. It does not cover a query that reaches your database context some
 other way: a background job, a projection helper, a repository method a handler calls with the wrong
 id. The second layer, the tenant query filter, is independent on purpose. It constrains **every**
-query a tenant-scoped context issues, including the ones the guard never saw.
+query your code issues through a tenant-scoped context, including the ones the guard never saw.
 
 Two declarations and one call switch it on:
 
@@ -190,6 +190,44 @@ A query through that context returns only rows whose `TenantId` matches the cont
 forgot to check. A context without a session resolves to the empty identifier and sees no tenant's
 rows. Entity Framework Core's own `IgnoreQueryFilters()` still switches the filter off for a single
 query, so treat that call the way you would treat any cross-tenant operation.
+
+The framework's own store entities — event entries, snapshots, hash-chain anchors and the command log — are
+tenant-scoped too, so calling `ApplyGlobalTenantQueryFilters(this)` on your write context declares the filter on them
+as well. It then applies to your own queries of those entities, and to nothing the framework does with its store. The
+event store is one history: a stream's version and owner are decided across all its entries, a stream may hold events
+of more than one owner, and the framework reads the store without a session on behalf of every tenant — its readers,
+a replay, the hash chain, the backfills, a process's timeouts. Every read the framework makes of it therefore goes past
+**every** query filter you declare on those entities, not only the tenant filter, and a filtered write context behaves
+exactly like an unfiltered one.
+
+Neither layer checks the owner of a stream. The guard compares the tenant a request names with the session's. The
+framework takes a stream's owner from the stream, so that a privileged session can append to another tenant's
+aggregate without re-homing it. A command that names another tenant's aggregate id therefore loads that aggregate and
+appends to it, and the event is recorded for the aggregate's owner with the session's actor. A handler that must
+refuse that checks the owner of the aggregate it loaded, for example with a helper like this one, called with the
+loaded aggregate's tenant before anything is appended:
+
+```csharp
+using Stratara.Abstractions.Multitenancy;
+using Stratara.Abstractions.Session;
+
+public static class AggregateOwnership
+{
+    public static void EnsureOwnedBySession(Guid aggregateTenantId, ISessionContextProvider sessions)
+    {
+        var sessionTenantId = sessions.Current?.TenantId ?? Guid.Empty;
+        if (aggregateTenantId != sessionTenantId)
+        {
+            throw new TenantAccessDeniedException(aggregateTenantId, sessionTenantId,
+                $"The aggregate belongs to tenant {aggregateTenantId}, not to the session's tenant {sessionTenantId}.");
+        }
+    }
+}
+```
+
+Two framework calls into your read models run without a session: a view truncator before a replay, and a rebuildable
+projection's truncation before a rebuild. On a read context with the tenant filter, a truncator that does not call
+`IgnoreQueryFilters()` deletes nothing, and the replay then applies on top of the old rows.
 
 ## Related
 
