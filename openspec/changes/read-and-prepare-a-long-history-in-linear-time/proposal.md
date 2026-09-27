@@ -15,7 +15,9 @@ search risks the database driver's default command timeout, which fails a replay
 The same review found that the portable reader's backfill reads the store through the write context's query
 filters but positions entries without them. A write context that filters entries by tenant, as the framework's
 own helper for tenant query filters does, therefore hides the whole history from the backfill, and the backfill
-positions nothing. The portable reader then refuses to start, or stops at the first entry it cannot read past.
+positions nothing when it runs without a session, as a migration step does. Run under a session, it decides where
+each batch ends from that tenant's entries alone, while PostgreSQL's positioning statement positions every tenant's.
+The version order within a stream is then no longer guaranteed.
 
 The owner ruled on 2026-09-26 that 4.4.0 is not released while a known bug is open. Both defects are known.
 
@@ -24,6 +26,10 @@ The owner ruled on 2026-09-26 that 4.4.0 is not released while a known bug is op
 - Reading history in stream order (the replay's read) and both backfills bound each stream's search to the
   versions that can still lie beyond the batch. The work a batch does no longer grows with how much history a
   stream holds outside it. What they return and what they prepare do not change.
+- Both backfills find where a batch ends from the event table's key alone, a window of the next entries, rather
+  than from a count of the entries still unprepared. PostgreSQL misestimates that count, and the plan it then
+  chose rescanned the rest of the table for every batch. That second quadratic cost showed up while measuring the
+  first.
 - The portable reader's backfill positions every entry of the store, whatever query filters the consumer's write
   context declares.
 - The replay's read states when its order holds: from the start of the store, or after the highest sequence

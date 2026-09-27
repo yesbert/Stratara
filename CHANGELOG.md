@@ -392,6 +392,22 @@ retries on failure.
   event names, so an aggregate whose only handler for an event took the envelope could not rebuild a
   stream holding it unless something else registered `TEvent`. They now register `TEvent`.
 
+- **A long-lived stream no longer makes a replay or a commit-order backfill quadratic.** Before a batch of
+  history ends, every stream in it is checked for a lower version beyond the batch. That check read the
+  stream's whole past, so a stream present in every batch was re-read by every batch. On two million
+  entries with one stream holding a tenth of them, a replay spent 13 s and the native reader's backfill
+  79 s; a store with millions of events in one stream risked the driver's command timeout. The check now
+  reads only the versions that can still lie beyond the batch. Where both backfills end a batch is now
+  found from the event table's key alone, so a database that misestimates how much history is left no
+  longer rescans the rest of the table for every batch. Measured again on the same store: replay 9.7 s,
+  native backfill 19.8 s, portable backfill 49 s against 52 s. Results are unchanged.
+  `IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync` now documents that its order holds for a
+  walk from the start: from `0`, or after the highest sequence number of a result it returned.
+- **The portable reader's backfill positions every entry, whatever query filters the write context
+  declares.** It read the store through the context's filters, so on a write context with tenant query
+  filters (`ApplyGlobalTenantQueryFilters`) and no session it positioned nothing. Under a session it
+  decided where each batch ended from that tenant's entries alone.
+
 ## [4.3.1] — 2026-09-25
 
 A correctness release. A projection replay could apply a stream's later fact before its first and

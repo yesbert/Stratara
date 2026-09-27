@@ -7,9 +7,10 @@ that history in a state in which the reader returns each stream's entries in ver
 where the store's sequence numbers, which a save does not assign in version order, say otherwise.
 A backfill batch SHALL NOT end while a stream it holds still has an entry of a lower version,
 unprepared, beyond the batch; such a batch SHALL be extended until none is left.
-Finding what extends a backfill batch SHALL NOT cost work that grows with the history a stream
-holds outside the batch, so that a store in which one long-lived stream holds a large share of the
-history is prepared in time that grows with its history, not with the square of that stream's length.
+The work a backfill batch does — finding where it ends and what extends it — SHALL NOT grow with
+the history outside the batch, however large a share of it one long-lived stream holds and whatever
+the database estimates of how much of the history is still unprepared, so that a store is prepared
+in time that grows with its history rather than with its square.
 
 The portable reader's backfill SHALL prepare every entry the store holds, whatever query filters the
 consumer's write context declares: a filter that hides entries from the application SHALL NOT hide
@@ -53,6 +54,6 @@ to find out whether a store holds a stream whose prepared order contradicts its 
 
 - **WHEN** the consumer's write context declares a query filter that restricts entries to the
   session's tenant, and the portable reader's backfill runs without a session
-- **THEN** it positions the entries of every tenant, and the portable reader starts and returns them
-  — verified on the PostgreSQL store for the positioning PostgreSQL uses, and on SQLite for the
-  positioning every other provider uses
+- **THEN** it positions the entries of every tenant, in the same order as on a context without the
+  filter — verified on the PostgreSQL store for the positioning PostgreSQL uses, and on SQLite for
+  the positioning every other provider uses

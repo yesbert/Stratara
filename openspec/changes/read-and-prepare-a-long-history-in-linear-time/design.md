@@ -27,8 +27,12 @@ positioning statement is raw SQL and unfiltered. The per-entry path's `ExecuteUp
 
 - Changing where a batch ends, the extension rule, or the public signatures.
 - Rewriting or revisiting history prepared by an earlier release (the spec forbids it).
-- Query filters in the replay's read. A consumer whose write context filters entries replays what that context
-  shows. That is the consumer's context and is out of scope here.
+- Query filters anywhere but the portable backfill. The review found one operation that was inconsistent with
+  itself: the portable backfill read through the filters but positioned without them. The framework's other
+  store-wide work reads through the write context's filters as well: both commit-order readers and the portable
+  reader's startup check, the replay's read, and the hash chain. Whether a write context that filters the
+  framework's own entries by tenant is supported at all is a decision for the owner. It is raised separately and
+  not settled here.
 
 ## Decisions
 
@@ -70,12 +74,47 @@ the rows the walk touches.
 - *Compare counts: a stream is complete when the range holds `top - P` of its entries.* This needs `P`, which is the
   same backward step, and the straggler's sequence number is still needed to extend the range.
 
-### Keep one query per batch, portable where it was portable
+### Keep one query per batch, portable where it was portable, with the floor in a derived table
 
 The replay's read and the portable backfill stay LINQ, so SQLite and SQL Server keep working. `floor` is a
 correlated `OrderByDescending(version).Select(version).FirstOrDefault()` per grouped stream. The native backfill stays
-raw SQL with the same shape. The shape leaves PostgreSQL an index-driven nested loop on both steps. This is evidence,
-not an assumption: the counted-rows test fails on a plan that scans the stream's past or the store's future.
+raw SQL with the same shape.
+
+Left to itself, EF inlines the floor subquery into the join's `WHERE`. PostgreSQL then evaluates it for every candidate
+entry of the stream and cannot use it to bound the index scan. The counted-rows test measured the replay's read at 28.7
+rows per entry that way. The grouped tops and the tops with their floors are therefore each followed by `Distinct()`.
+It changes nothing, since `(bucket, stream)` is already unique, but it makes each stage a derived table of its own.
+The plan on two million entries shows the intended shape: one backward index step per stream for the floor, and an
+index scan bounded by `version > floor AND version < top`. A single `Distinct()` after the floor is not enough on
+SQLite, which then rejects the floor's reference to `max(version)` ("misuse of aggregate function").
+
+*Evidence:* the counted-rows test, and `EXPLAIN ANALYZE` on the benchmark store (23 ms per straggler query at batch
+5000 with 1,126 streams).
+
+### Where a backfill batch ends is a window of the key, not of the unprepared entries
+
+Both backfills used to end a batch at the batch size's worth of *unprepared* entries after `from`. For the portable
+backfill that also meant *of its partition*: `ORDER BY seq LIMIT n` under `position IS NULL` and `bucket % P = p`.
+PostgreSQL estimates `bucket % P = p` at the default 0.5% and `IS NULL` from whatever statistics it has. It then
+concludes that the `LIMIT` will not cut the scan short, and chooses a bitmap scan over everything after `from`, for
+every batch. On two million entries that took 470 ms per batch for the portable backfill. For the native one, the plan
+flipped mid-run to about 155 ms per batch in 499 of 2,000 batches once autovacuum's statistics changed. Both are
+quadratic, independent of any long stream.
+
+The batch now ends at the last of the next `n` entries after `from` in key order, whatever their state: `n` is the
+batch size for the native backfill, and 1,000 × the partition count for the portable one, which is a partition's
+1,000 when the partitions share the store evenly. Finding that is a range of the primary key. The batch then prepares
+the unprepared entries of the window (of its partition) and is extended by stragglers as before. Positions and stamps
+do not change: batch boundaries only group, and the extension keeps every stream's inverted run inside one batch.
+
+*Consequences:* a portable batch holds about 1,000 entries of its partition rather than exactly 1,000. A window can
+hold none of a partition's entries and positions nothing, and each partition still walks the whole key range, as it
+did before whenever the plan was good. A second run over a prepared store walks it once instead of stopping at the
+first query. The native backfill's `batchSize` becomes the number of consecutive entries a batch covers. During the
+documented migration, where nothing is stamped yet, that is the number it stamps.
+
+*Evidence:* the counted-rows tests (portable 30.4 → 5.7 rows per entry, native 253.6 → 4.7). The benchmark: native
+backfill 78.5 s → 19.8 s, portable 51.9 s → 49.2 s.
 
 ### Ignore query filters in the portable backfill
 
@@ -99,5 +138,8 @@ the repository does not have.
   fails it.
 - [A consumer calls the stream-order read from an arbitrary position] → That was never ordered, and the result is
   still every entry of a contiguous range. The remarks now say so.
-- [Many short streams in one batch: one extra index probe per stream] → The probe is `O(log n)`, and it replaces a
-  range scan that cost at least as much. The benchmark in tasks.md records before and after.
+- [Many short streams in one batch: one extra index probe per stream] → The probe is `O(log n)`, about 12 µs on the
+  benchmark store, and it replaces a range scan that cost at least as much. The benchmark in tasks.md records before
+  and after.
+- [The tests that forced a boundary at 1,000 entries lose it] → The portable inverted-run tests (PostgreSQL and
+  SQLite) now use `1000 × partition count − 5` fillers. The counter-check, with the extension switched off, fails both.

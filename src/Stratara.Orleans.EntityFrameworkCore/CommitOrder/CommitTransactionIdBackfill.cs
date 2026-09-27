@@ -13,8 +13,8 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// Stamps the commit record on the entries a PostgreSQL store held before the native reader's transaction-id
 /// column existed, so that the column can be added to a populated table without rewriting it. The entries are
 /// stamped in batches, each batch under a transaction of its own: every batch receives one ascending transaction
-/// id, so the reader returns the history in batch-sized groups instead of the whole history under the migration's
-/// single id. The reader orders a stream's entries within one transaction by version, but a save does not number
+/// id, so the reader returns the history in groups of about the batch size instead of the whole history under the
+/// migration's single id. The reader orders a stream's entries within one transaction by version, but a save does not number
 /// its entries in version order, so a batch cut by sequence number alone could leave a stream's later version in an
 /// earlier batch than its first. A batch is therefore extended until no stream in it has an unstamped entry of a
 /// lower version beyond it, and may hold more entries than the batch size.
@@ -32,7 +32,12 @@ public static class CommitTransactionIdBackfill
 
     /// <summary>Stamps every entry without a commit record, oldest first, and returns how many it stamped.</summary>
     /// <param name="context">A context derived from the framework's write context on PostgreSQL.</param>
-    /// <param name="batchSize">How many entries one transaction stamps; the reader returns the history in groups of this size.</param>
+    /// <param name="batchSize">
+    /// How many consecutive entries one transaction covers at least, where that many are left; it stamps those of them
+    /// without a commit record. A batch that would end inside a stream whose entries were numbered against their
+    /// versions is extended to hold them, so it may cover more; the reader returns the history in groups of the size
+    /// each batch stamped.
+    /// </param>
     /// <param name="cancellationToken">Cancels between batches.</param>
     /// <returns>How many entries were stamped.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
@@ -76,13 +81,19 @@ public static class CommitTransactionIdBackfill
     private static NpgsqlParameter Parameter(string name, long value) =>
         new NpgsqlParameter(name, NpgsqlTypes.NpgsqlDbType.Bigint) { Value = value };
 
-    /// <summary>The highest sequence number of the next batch, or <see langword="null"/> where nothing is left.</summary>
+    /// <summary>
+    /// The highest sequence number of the next batch — the last of the next entries after the start, stamped or not —
+    /// or <see langword="null"/> where no entry follows. The window is taken over every entry, so finding it is a range
+    /// of the key whatever the database estimates of how many entries still lack a commit record.
+    /// </summary>
     private static Task<long?> BoundAsync(DbContext context, string sql, long from, CancellationToken cancellationToken) =>
         ScalarAsync(context, sql, [Parameter("from", from)], cancellationToken);
 
     /// <summary>
     /// Moves the end of the batch to the last unstamped entry beyond it whose stream appears in the batch at a higher
-    /// version, until there is none — a widened batch can bring in a stream of its own.
+    /// version, until there is none — a widened batch can bring in a stream of its own. Each batch starts where the one
+    /// before it ended, so every stream's versions at or before the start form a prefix of the stream, and the search
+    /// reads only the versions between the stream's highest one at or before the start and its top in the batch.
     /// </summary>
     private static async Task<long> ExtendAsync(DbContext context, string sql, long from, long to, CancellationToken cancellationToken)
     {
@@ -134,7 +145,7 @@ public static class CommitTransactionIdBackfill
             var bound = $$"""
                 SELECT max({{sequence}}) FROM (
                     SELECT {{sequence}} FROM {{from}}
-                    WHERE {{transaction}} IS NULL AND {{sequence}} > @from
+                    WHERE {{sequence}} > @from
                     ORDER BY {{sequence}}
                     LIMIT {{batchSize}}
                 ) AS batch
@@ -146,13 +157,24 @@ public static class CommitTransactionIdBackfill
                 """;
 
             var straggler = $$"""
-                SELECT max(later.{{sequence}}) FROM {{from}} AS later
-                JOIN (
-                    SELECT {{bucket}}, {{stream}}, max({{version}}) AS highest FROM {{from}}
-                    WHERE {{transaction}} IS NULL AND {{sequence}} > @from AND {{sequence}} <= @to
-                    GROUP BY {{bucket}}, {{stream}}
-                ) AS batch ON later.{{bucket}} = batch.{{bucket}} AND later.{{stream}} = batch.{{stream}}
-                WHERE later.{{transaction}} IS NULL AND later.{{sequence}} > @to AND later.{{version}} < batch.highest
+                SELECT max(later.{{sequence}}) FROM (
+                    SELECT batch.{{bucket}}, batch.{{stream}}, batch.highest,
+                           COALESCE((
+                               SELECT earlier.{{version}} FROM {{from}} AS earlier
+                               WHERE earlier.{{bucket}} = batch.{{bucket}} AND earlier.{{stream}} = batch.{{stream}}
+                                 AND earlier.{{version}} < batch.highest AND earlier.{{sequence}} <= @from
+                               ORDER BY earlier.{{version}} DESC
+                               LIMIT 1), 0) AS floor
+                    FROM (
+                        SELECT {{bucket}}, {{stream}}, max({{version}}) AS highest FROM {{from}}
+                        WHERE {{transaction}} IS NULL AND {{sequence}} > @from AND {{sequence}} <= @to
+                        GROUP BY {{bucket}}, {{stream}}
+                    ) AS batch
+                ) AS bounds
+                JOIN {{from}} AS later
+                  ON later.{{bucket}} = bounds.{{bucket}} AND later.{{stream}} = bounds.{{stream}}
+                 AND later.{{version}} > bounds.floor AND later.{{version}} < bounds.highest
+                WHERE later.{{transaction}} IS NULL AND later.{{sequence}} > @to
                 """;
 
             return (bound, straggler, stamp);

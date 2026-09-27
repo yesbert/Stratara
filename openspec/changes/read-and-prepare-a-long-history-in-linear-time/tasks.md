@@ -1,49 +1,59 @@
 ## 1. Bound the straggler search
 
-- [ ] 1.1 The event stream repository's stream-order read bounds each stream's search from below by the highest
+- [x] 1.1 The event stream repository's stream-order read bounds each stream's search from below by the highest
   version under the stream's top that lies at or before the range's start
   (`src/Stratara.EventSourcing.EntityFrameworkCore/WriteStore/EventSourcing/EventStreamRepository.cs`,
   `FindStragglerAsync`); `EventStreamRepositoryStreamOrderTests` (SQLite) and `ReplayStreamOrderTests`
   (PostgreSQL) pass unchanged
-- [ ] 1.2 `PartitionCounterBackfill.FindStragglerAsync` takes the same bound over unpositioned entries
+- [x] 1.2 `PartitionCounterBackfill.FindStragglerAsync` takes the same bound over unpositioned entries
   (`src/Stratara.Orleans.EntityFrameworkCore/CommitOrder/PartitionCounterBackfill.cs`); `PartitionCounterBackfillTests`
   pass unchanged
-- [ ] 1.3 `CommitTransactionIdBackfill`'s straggler statement takes the same bound over unstamped entries
+- [x] 1.3 `CommitTransactionIdBackfill`'s straggler statement takes the same bound over unstamped entries
   (`src/Stratara.Orleans.EntityFrameworkCore/CommitOrder/CommitTransactionIdBackfill.cs`); `TransactionIdMigrationTests`
   pass unchanged
-- [ ] 1.4 A PostgreSQL test over a long stream whose commits are partly numbered against their versions counts the
+- [x] 1.4 A PostgreSQL test over a long stream whose commits are partly numbered against their versions counts the
   rows the replay's read and each backfill touch, and asserts every stream's order and a bound linear in the store's
   entries (`tests/Stratara.Orleans.IntegrationTests/CommitOrder/LongStreamWorkTests.cs`); the counter-check —
   the old search restored — fails it
-- [ ] 1.5 Benchmark before and after on two million entries with one stream holding a tenth, recorded in this file
-  (scratch harness, not committed)
+- [x] 1.5 Benchmark before and after on two million entries with one stream holding a tenth, recorded in this file
+  (scratch harness, not committed). Replay at batch 5000: 13.1 s → 9.7 s. Portable backfill: 51.9 s → 49.2 s.
+  Native backfill at batch 1000: 78.5 s → 19.8 s. Counted-rows tests on 100,000 entries, half of them one stream
+  (rows read per entry, old → new): replay 206.9 → 9.4, portable 53.3 → 5.7, native 253.6 → 4.7
+- [x] 1.6 Where both backfills end a batch is a window of the key, not a count of unprepared entries (design:
+  *Where a backfill batch ends*); the inverted-run tests' fillers follow the window (`1000 × partition count − 5`)
+  in `PartitionCounterBackfillTests` and `SqlitePartitionCounterBackfillTests`, and the counter-check (extension
+  switched off) fails both
 
 ## 2. Query filters in the portable backfill
 
-- [ ] 2.1 Every read and update of the event table in `PartitionCounterBackfill` ignores query filters
-- [ ] 2.2 A test with a write context that applies the framework's tenant query filters positions every tenant's
-  entries and the portable reader returns them — on PostgreSQL
+- [x] 2.1 Every read and update of the event table in `PartitionCounterBackfill` ignores query filters
+- [x] 2.2 A test with a write context that applies the framework's tenant query filters positions every tenant's
+  entries, in the order a context without the filter positions them — on PostgreSQL
   (`tests/Stratara.Orleans.IntegrationTests/CommitOrder/PartitionCounterBackfillTests.cs`) and on SQLite for the
-  per-entry positioning; the counter-check fails both
+  per-entry positioning (`tests/Stratara.Testing.Orleans.Tests/SqlitePartitionCounterBackfillTests.cs`); the
+  counter-check (filters not ignored) fails both
 
 ## 3. Documentation
 
-- [ ] 3.1 `IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync` remarks: the version order holds from `0`
+- [x] 3.1 `IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync` remarks: the version order holds from `0`
   and from the highest sequence number of a returned result
   (`src/Stratara.Abstractions/Abstractions/EventSourcing/IEventStreamRepository.cs`)
-- [ ] 3.2 `CommitTransactionIdBackfill.RunAsync`'s `batchSize`: the least a batch stamps, extended past a stream's
+- [x] 3.2 `CommitTransactionIdBackfill.RunAsync`'s `batchSize`: the least a batch stamps, extended past a stream's
   inverted run; the class summary says the same
-- [ ] 3.3 `CHANGELOG.md` under `[4.4.0]` → Fixed: both defects, in the consumer's terms
+- [x] 3.3 `CHANGELOG.md` under `[4.4.0]` → Fixed: both defects, in the consumer's terms
 
 ## 4. The replay end to end
 
-- [ ] 4.1 A replay through the real replay worker over a real SQLite store whose sequence numbers run against its
+- [x] 4.1 A replay through the real replay worker over a real SQLite store whose sequence numbers run against its
   versions, with a batch boundary inside the inverted run, applies each stream in version order and every entry once
-- [ ] 4.2 The same over the PostgreSQL store
+  (`tests/Stratara.Projections.Tests/Services/ProjectionReplayStreamOrderTests.cs`); fails with the worker reading
+  plain sequence order
+- [x] 4.2 The same over the PostgreSQL store
+  (`tests/Stratara.Orleans.IntegrationTests/Projections/ProjectionReplayStreamOrderTests.cs`); same counter-check
 
 ## 5. Verification
 
 - [ ] 5.1 `./scripts/local-gauntlet.sh` green
 - [ ] 5.2 `tests/Stratara.Orleans.IntegrationTests` green
-- [ ] 5.3 `openspec validate read-and-prepare-a-long-history-in-linear-time --strict`
+- [x] 5.3 `openspec validate read-and-prepare-a-long-history-in-linear-time --strict`
 - [ ] 5.4 Independent review before the merge

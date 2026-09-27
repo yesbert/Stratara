@@ -103,21 +103,43 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
     /// The highest sequence number beyond <paramref name="end"/> of an entry whose stream appears in the range at a
     /// higher version, or <see langword="null"/> where no stream of the range continues below its top beyond it.
     /// </summary>
+    /// <remarks>
+    /// A range that starts at <c>0</c> or after the highest sequence number of a previous result leaves each stream's
+    /// versions at or before its start as a prefix of the stream, so every version at or below a stream's floor — its
+    /// highest version under the top that lies at or before the start — lies there too. Searching only between the
+    /// floor and the top therefore finds what searching the whole stream would, without reading the stream's past. The
+    /// tops and the floors are each kept a derived table of their own, so the database takes a stream's floor once and
+    /// bounds its index scan by it rather than evaluating it again for every candidate entry.
+    /// </remarks>
     private Task<long?> FindStragglerAsync(long afterSequenceNumber, long end, CancellationToken cancellationToken)
     {
         var entries = context.Set<EventStreamEntry>().AsNoTracking();
         var tops = entries
             .Where(e => e.SequenceNumber > afterSequenceNumber && e.SequenceNumber <= end)
             .GroupBy(e => new { e.BucketId, e.StreamId })
-            .Select(g => new { g.Key.BucketId, g.Key.StreamId, Top = g.Max(e => e.Version) });
+            .Select(g => new { g.Key.BucketId, g.Key.StreamId, Top = g.Max(e => e.Version) })
+            .Distinct()
+            .Select(t => new
+            {
+                t.BucketId,
+                t.StreamId,
+                t.Top,
+                Floor = entries
+                    .Where(e => e.BucketId == t.BucketId && e.StreamId == t.StreamId && e.Version < t.Top
+                                && e.SequenceNumber <= afterSequenceNumber)
+                    .OrderByDescending(e => e.Version)
+                    .Select(e => (long?)e.Version)
+                    .FirstOrDefault() ?? 0L,
+            })
+            .Distinct();
 
         return entries
             .Where(e => e.SequenceNumber > end)
             .Join(tops,
                 e => new { e.BucketId, e.StreamId },
                 t => new { t.BucketId, t.StreamId },
-                (e, t) => new { e.SequenceNumber, e.Version, t.Top })
-            .Where(x => x.Version < x.Top)
+                (e, t) => new { e.SequenceNumber, e.Version, t.Top, t.Floor })
+            .Where(x => x.Version < x.Top && x.Version > x.Floor)
             .MaxAsync(x => (long?)x.SequenceNumber, cancellationToken);
     }
 

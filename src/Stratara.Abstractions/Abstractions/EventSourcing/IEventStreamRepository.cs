@@ -50,6 +50,12 @@ public interface IEventStreamRepository
     /// version beyond it, so the result may hold more than <paramref name="batchSize"/> entries.
     /// </para>
     /// <para>
+    /// The order holds for a walk of the store from its beginning: a range that starts at <c>0</c>, or
+    /// after the highest sequence number of a result this method returned. From any other position, a
+    /// stream whose versions were numbered against their order on both sides of it can be returned out
+    /// of order.
+    /// </para>
+    /// <para>
     /// The next range starts after the highest sequence number in the result, which is not
     /// necessarily that of its last entry. The default implementation returns
     /// <see cref="GetManyAfterSequenceAsync"/> — sequence order, which is version order only for a
