@@ -129,11 +129,16 @@ retries on failure.
 
 ### Changed
 
-- **`IEventStreamRepository`, `ISnapshotRepository` and `IEventChainRepository` read every tenant's rows,
-  whatever query filters the write context declares.** A consumer who calls them directly through a write
-  context filtered by tenant now gets every tenant's entries, snapshots and anchors, not only the ambient
-  tenant's. Keeping tenants apart is the entrance guard's job; a filter on the write context applies to the
-  consumer's own queries.
+- **A write context that filters by tenant no longer changes what the framework does with its store.** The
+  framework reads its events, snapshots and hash-chain anchors past every query filter the write context
+  declares, so such a write context now behaves like one that declares none. A command handler given another
+  tenant's aggregate id loads that aggregate and appends to it, recording the event for the aggregate's owner
+  with the session's actor, as it always has on an unfiltered write context. Before, the filter made that load
+  come back empty and the append fail with a version conflict. Neither the tenant-isolation guard nor the
+  filter checks a stream's owner against the session. A handler that must refuse another tenant's aggregate
+  checks the owner of the aggregate it loaded; the tenant-isolation guide shows how.
+  `IEventStreamRepository`, `ISnapshotRepository` and `IEventChainRepository` return every tenant's rows to a
+  caller that uses them directly.
 
 ### Fixed
 

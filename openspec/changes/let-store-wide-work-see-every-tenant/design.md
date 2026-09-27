@@ -35,9 +35,16 @@ which is what the guide's helper is for.
   - `IgnoreQueryFilters()` switches off every filter declared on the entity, not only the tenant filter. That is
     intended: every one of these reads needs every row, or a version, a position or the chain gets a gap. The
     contracts and the guide say "every query filter".
-- **Isolation stays at the entrance.** A cross-tenant request is refused by the tenant-isolation guard before it
-  reaches the store. The filter on the write context added nothing there that worked: a stream it hid reappeared as
-  a version conflict on the next append.
+- **Neither layer checks a stream's owner, and the documentation says so.** The entrance guard compares the tenant a
+  request names with the session's. It never sees which stream a command's aggregate id names. The framework takes a
+  stream's owner from the stream, by design: a privileged session appends to another tenant's stream and the event
+  is recorded for the stream's owner. On an unfiltered write context, the usual case, a command naming another
+  tenant's aggregate id has always loaded and appended to that stream. The filter on the write context made such a
+  command fail closed, as an empty load and then a version conflict, and the review showed it with a probe. It did
+  so at the price of the failures above, and it did not do it for a stream with two owners. The owner confirmed on
+  2026-09-27, with this stated, that the framework reads unfiltered. The guide now says that a handler which must
+  refuse another tenant's stream checks the loaded aggregate's owner. A framework-side owner check would conflict
+  with the owner-resolution rule for privileged sessions and was not chosen.
 - **The repository contracts say it once, at type level.** `IEventStreamRepository`, `ISnapshotRepository` and
   `IEventChainRepository` document that every read returns every tenant's rows. For a consumer calling them directly
   through a filtered write context, this is a behaviour change, recorded under *Changed* in the release notes.
@@ -51,6 +58,10 @@ which is what the guide's helper is for.
 
 ## Risks / Trade-offs
 
-- [A consumer relied on the write context's filter to keep a tenant from another tenant's stream] → It never did
-  that reliably. The hidden stream turned into a version conflict, and the framework's own work broke with it. The
-  entrance guard is where that protection lives, and the guide now says so.
+- [A consumer relied on the write context's filter to keep a tenant from another tenant's stream] → That protection
+  existed for a stream with one owner and goes away. The release notes state it under *Changed*, and the guide tells
+  a handler to check the loaded aggregate's owner. The alternative, keeping the filter, silently broke saga timers
+  and two-owner streams.
+- [A consumer's view truncator runs on a filtered read context] → The framework calls it without a session, so a
+  truncator that does not ignore the filter deletes nothing, and the replay applies on top of the old rows. This is
+  outside this change's code; the guide now says it.

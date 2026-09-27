@@ -10,8 +10,9 @@ namespace Stratara.Abstractions.EventSourcing;
 /// <remarks>
 /// Every read returns every tenant's entries, whatever query filters the underlying context
 /// declares: a stream's version and owner are decided across all its entries, and the store is one
-/// history the framework reads on behalf of every tenant. Keep a tenant from another tenant's data
-/// at the entrance, not through this repository.
+/// history the framework reads on behalf of every tenant. Nothing here checks a stream's owner
+/// against the session; a handler that must refuse another tenant's stream checks the owner of the
+/// aggregate it loaded.
 /// </remarks>
 public interface IEventStreamRepository
 {

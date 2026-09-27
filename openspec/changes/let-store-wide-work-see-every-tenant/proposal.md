@@ -30,12 +30,19 @@ The owner decided on 2026-09-27 that the framework reads its store past the filt
   snapshots and hash-chain anchors, whether across the store or about one stream. That covers the event stream and
   snapshot repositories, both commit-order readers and the portable reader's start check, and the hash chain's anchor
   read. A filter the consumer declares on the write context applies to the consumer's own queries only.
-- **Behaviour change** for a consumer who calls `IEventStreamRepository`, `ISnapshotRepository` or
-  `IEventChainRepository` directly through a write context that filters by tenant: the repositories return every
-  tenant's entries, snapshots and anchors, not the ambient tenant's.
+- **Behaviour change** for a consumer whose write context filters by tenant. That write context now behaves like
+  one that declares no filter. A command handler given another tenant's aggregate id loads that stream and appends
+  to it, recording the event for the stream's owner with the session's actor, as every unfiltered write context
+  always has. Before, the filter made the load come back empty and the append fail with a version conflict. The
+  repositories (`IEventStreamRepository`, `ISnapshotRepository`, `IEventChainRepository`) return every tenant's
+  rows to a caller that uses them directly.
 - The three repository contracts document it.
-- The tenant-isolation guide says what a filter on the write context reaches, and that keeping tenants apart is
-  the entrance guard's job.
+- The tenant-isolation guide says what a filter on the write context reaches. It also says that neither the
+  entrance guard nor the filter checks a stream's owner against the session, so a handler that must refuse another
+  tenant's stream checks the loaded aggregate's owner. And it says that a view truncator and a rebuildable
+  projection's truncation run without a session.
+- The owner confirmed on 2026-09-27, with that behaviour stated, that the framework reads unfiltered and documents
+  it honestly.
 
 ## Capabilities
 

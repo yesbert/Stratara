@@ -3,8 +3,8 @@
 ### Requirement: Tenant-scoped rows are filtered at the database as well as at the entrance
 
 The framework SHALL additionally constrain every entity declared tenant-scoped to the ambient
-tenant of its database context, so that a read reaching the store without passing the request
-guard still cannot return another tenant's rows.
+tenant of its database context, so that a query the consumer's code makes, reaching the store without
+passing the request guard, still cannot return another tenant's rows.
 
 The two layers are independent on purpose: the entrance guard covers requests, and the query filter
 covers every query the consumer's code issues through the context, including ones the guard never saw.
@@ -17,8 +17,14 @@ history, and for work on one stream such as a process's timeout. The framework's
 SHALL therefore see every entry whatever query filters the consumer's write context declares, so
 that declaring the filter there never silently empties a reader, a replay or the hash chain, drops
 a timer, or leaves a stream half read. A filter declared on the write context SHALL apply to the
-consumer's own queries of those entities only. Keeping one tenant from another tenant's stream is
-the entrance guard's.
+consumer's own queries of those entities only, exactly as if the write context declared none.
+
+Neither layer checks the owner of a stream against the session: the guard compares the tenant a
+request names with the session's, and the framework takes a stream's owner from the stream. A command
+that names another tenant's stream therefore loads it and appends to it, recording the event for the
+stream's owner with the session's actor, whether or not the write context declares the filter. The
+documentation SHALL say so, and SHALL say that a handler which must refuse another tenant's stream
+checks the owner of the aggregate it loaded.
 
 #### Scenario: A tenant-scoped entity is queried
 
@@ -46,4 +52,4 @@ the entrance guard's.
   filter — without a session, or under the session of one of the stream's owners, for a stream
   holding events of two owners
 - **THEN** it finds the stream, rebuilds it from every entry and snapshot, snapshots it in full, and
-  appends to it at its true version — verified on SQLite
+  lets the stream's owner append to it at its true version — verified on SQLite
