@@ -7,7 +7,8 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing;
 /// <summary>
 /// EF Core-backed <see cref="IEventChainRepository"/> over the event-chain anchor table. Used
 /// by the event-stream hashing worker to read the last sequence number per bucket and append
-/// new anchors as the chain advances.
+/// new anchors as the chain advances. The chain spans every tenant, so its reads do not go through the
+/// context's query filters.
 /// </summary>
 /// <param name="context">The write-store DbContext that hosts the anchor table.</param>
 internal sealed class EventChainRepository(IWriteDbContext context) : IEventChainRepository
@@ -15,7 +16,7 @@ internal sealed class EventChainRepository(IWriteDbContext context) : IEventChai
     /// <inheritdoc/>
     public async Task<long> GetLastSequenceNumberOrDefaultAsync(int[] bucketIds, CancellationToken cancellationToken = default)
     {
-        var query = context.Set<EventChainAnchor>().AsNoTracking();
+        var query = context.Set<EventChainAnchor>().AsNoTracking().IgnoreQueryFilters();
 
         if (bucketIds.Length > 0)
         {

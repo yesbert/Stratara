@@ -33,9 +33,9 @@ declares.
 - **WHEN** a consumer's write context declares the tenant query filter and holds the entries of
   several tenants
 - **THEN** the commit-order readers return every tenant's entries, the portable reader's start check
-  refuses an unpositioned entry of any tenant, a replay's read returns every entry, and the hash
-  chain hashes every entry — verified on SQLite for the portable reader, its start check, the
-  replay's read and the hash chain, and on PostgreSQL for the native reader
+  refuses an unpositioned entry of any tenant, and the reads a replay and the hash chain make return
+  every tenant's entries and anchors — verified on SQLite for the portable reader, its start check
+  and the reads of the replay and the hash chain, and on PostgreSQL for the native reader
 
 #### Scenario: A stream is read through a filtered write context
 

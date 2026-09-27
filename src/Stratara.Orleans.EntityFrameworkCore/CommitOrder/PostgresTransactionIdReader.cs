@@ -35,6 +35,9 @@ namespace Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 /// reader delays rather than skips under one.
 /// </para>
 /// <para>
+/// It reads every tenant's entries, whatever query filters the write context declares.
+/// </para>
+/// <para>
 /// The table and column names come from the context's model, so a model that does not follow the
 /// snake-case convention is read the same way. Each statement names the columns the model maps
 /// rather than selecting them all, because a wildcard returns no system column: a context that maps
@@ -63,6 +66,7 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
         var projected = await context.Set<EventStreamEntry>()
             .FromSqlRaw(statements.ReadAfter, _partitionCount, partition, after, batchSize + 1)
             .AsNoTracking()
+            .IgnoreQueryFilters()
             .Select(e => new { Entry = e, TransactionId = EF.Property<ulong>(e, CommitOrderSchema.TransactionIdColumn) })
             .ToListAsync(cancellationToken);
         // The projection wraps the statement in a subquery, whose ORDER BY the outer query need not keep;
@@ -122,6 +126,7 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
         var rows = await context.Set<EventStreamEntry>()
             .FromSqlRaw(statements.ReadTransaction, _partitionCount, partition, id)
             .AsNoTracking()
+            .IgnoreQueryFilters()
             .ToListAsync(cancellationToken);
 
         return [.. InStreamOrder(rows.Select(entry => new Row(entry, transactionId)))];

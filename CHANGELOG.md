@@ -426,6 +426,13 @@ retries on failure.
   that would change nothing still succeeds. `GetOrAddResolver` has an overload that takes the name of the
   registration calling it.
 
+- **The framework's work across the store sees every tenant when the write context filters by tenant.**
+  Event entries, snapshots, hash-chain anchors and the command log are tenant-scoped, so
+  `ApplyGlobalTenantQueryFilters` on the write context filtered them too. Work that runs without a session
+  then saw nothing: the commit-order readers returned no entries, the portable reader's start check passed
+  over unpositioned entries, a replay emptied the read models and applied nothing, and the hash chain hashed
+  nothing. That work now reads past the filters. A read about one stream still goes through them.
+
 ## [4.3.1] — 2026-09-25
 
 A correctness release. A projection replay could apply a stream's later fact before its first and

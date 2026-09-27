@@ -191,6 +191,13 @@ forgot to check. A context without a session resolves to the empty identifier an
 rows. Entity Framework Core's own `IgnoreQueryFilters()` still switches the filter off for a single
 query, so treat that call the way you would treat any cross-tenant operation.
 
+The framework's own store entities — event entries, snapshots, hash-chain anchors and the command log — are
+tenant-scoped too, so calling `ApplyGlobalTenantQueryFilters(this)` on your write context filters them as well.
+What the framework asks about one stream then goes through the filter: whether it exists, its entries, its version
+and its snapshots. That is the second layer doing its job. The framework's work across the store does not, because
+it runs without a session on behalf of every tenant: the commit-order readers and the portable reader's start check,
+a replay's reads, the hash chain, and the backfills. That work always sees every tenant's entries.
+
 ## Related
 
 - **[Write a Command Handler](write-a-command-handler.md)** — the handler the behavior guards.

@@ -8,11 +8,15 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing;
 /// <summary>
 /// EF Core-backed <see cref="IEventStreamRepository"/> over the <c>event_stream_entry</c>
 /// table. Reads are no-tracked; appends use the EF Core change tracker so the surrounding
-/// unit of work decides when to flush.
+/// unit of work decides when to flush. A read about one stream goes through the context's query
+/// filters; a read across the store does not.
 /// </summary>
 /// <param name="context">The write-store DbContext that hosts the event-stream table.</param>
 internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStreamRepository
 {
+    /// <summary>Every tenant's entries, whatever query filters the context declares — what a read across the store sees.</summary>
+    private IQueryable<EventStreamEntry> AcrossTheStore => context.Set<EventStreamEntry>().AsNoTracking().IgnoreQueryFilters();
+
     /// <inheritdoc/>
     public Task<bool> StreamExistsAsync(Guid streamId, CancellationToken cancellationToken = default) =>
         context.Set<EventStreamEntry>().AnyAsync(e => e.StreamId == streamId, cancellationToken);
@@ -45,7 +49,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
     /// <inheritdoc/>
     public async Task<IReadOnlyList<EventStreamEntry>> GetUnhashedEventsAsync(int batchSize, DateTimeOffset cutoff,
         CancellationToken cancellationToken = default) =>
-        await context.Set<EventStreamEntry>().AsNoTracking()
+        await AcrossTheStore
             .Where(e => e.Hash == null && e.Timestamp <= cutoff)
             .OrderBy(e => e.SequenceNumber)
             .Take(batchSize)
@@ -53,7 +57,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
 
     /// <inheritdoc/>
     public async Task<EventStreamEntry?> GetPreviousEventAsync(long sequenceNumber, CancellationToken cancellationToken = default) =>
-        await context.Set<EventStreamEntry>().AsNoTracking()
+        await AcrossTheStore
             .Where(x => x.SequenceNumber < sequenceNumber)
             .OrderByDescending(x => x.SequenceNumber)
             .FirstOrDefaultAsync(cancellationToken);
@@ -61,7 +65,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
 
     /// <inheritdoc/>
     public async Task<EventStreamEntry?> GetLastHashedEventAsync(CancellationToken cancellationToken = default) =>
-        await context.Set<EventStreamEntry>().AsNoTracking()
+        await AcrossTheStore
             .Where(x => x.Hash != null)
             .OrderByDescending(x => x.SequenceNumber)
             .FirstOrDefaultAsync(cancellationToken);
@@ -69,7 +73,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
     /// <inheritdoc/>
     public async Task<IReadOnlyList<EventStreamEntry>> GetManyAfterSequenceAsync(long afterSequenceNumber, int batchSize,
         CancellationToken cancellationToken = default) =>
-        await context.Set<EventStreamEntry>().AsNoTracking()
+        await AcrossTheStore
             .Where(e => e.SequenceNumber > afterSequenceNumber)
             .OrderBy(e => e.SequenceNumber)
             .Take(batchSize)
@@ -89,7 +93,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
         while (await FindStragglerAsync(afterSequenceNumber, end, cancellationToken) is { } straggler)
         {
             var from = end;
-            range.AddRange(await context.Set<EventStreamEntry>().AsNoTracking()
+            range.AddRange(await AcrossTheStore
                 .Where(e => e.SequenceNumber > from && e.SequenceNumber <= straggler)
                 .OrderBy(e => e.SequenceNumber)
                 .ToListAsync(cancellationToken));
@@ -113,7 +117,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
     /// </remarks>
     private Task<long?> FindStragglerAsync(long afterSequenceNumber, long end, CancellationToken cancellationToken)
     {
-        var entries = context.Set<EventStreamEntry>().AsNoTracking();
+        var entries = AcrossTheStore;
         var tops = entries
             .Where(e => e.SequenceNumber > afterSequenceNumber && e.SequenceNumber <= end)
             .GroupBy(e => new { e.BucketId, e.StreamId })
@@ -157,7 +161,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
 
     /// <inheritdoc/>
     public async Task<long> GetMaxSequenceNumberAsync(CancellationToken cancellationToken = default) =>
-        await context.Set<EventStreamEntry>().AsNoTracking()
+        await AcrossTheStore
             .OrderByDescending(e => e.SequenceNumber)
             .Select(e => (long?)e.SequenceNumber)
             .FirstOrDefaultAsync(cancellationToken) ?? 0L;

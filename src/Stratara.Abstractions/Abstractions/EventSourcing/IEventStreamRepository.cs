@@ -23,15 +23,19 @@ public interface IEventStreamRepository
     Task<long> GetVersionOrDefaultAsync(Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>Returns up to <paramref name="batchSize"/> entries that have not yet been hashed and are older than <paramref name="cutoff"/>.</summary>
+    /// <remarks>Reads across the store: every tenant's entries, whatever query filters the underlying context declares.</remarks>
     Task<IReadOnlyList<EventStreamEntry>> GetUnhashedEventsAsync(int batchSize, DateTimeOffset cutoff, CancellationToken cancellationToken = default);
 
     /// <summary>Returns the entry immediately preceding <paramref name="sequenceNumber"/> in stream order.</summary>
+    /// <remarks>Reads across the store: every tenant's entries, whatever query filters the underlying context declares.</remarks>
     Task<EventStreamEntry?> GetPreviousEventAsync(long sequenceNumber, CancellationToken cancellationToken = default);
 
     /// <summary>Returns the most recent entry whose hash has been computed.</summary>
+    /// <remarks>Reads across the store: every tenant's entries, whatever query filters the underlying context declares.</remarks>
     Task<EventStreamEntry?> GetLastHashedEventAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Returns up to <paramref name="batchSize"/> entries with a sequence number greater than <paramref name="afterSequenceNumber"/>.</summary>
+    /// <remarks>Reads across the store: every tenant's entries, whatever query filters the underlying context declares.</remarks>
     Task<IReadOnlyList<EventStreamEntry>> GetManyAfterSequenceAsync(long afterSequenceNumber, int batchSize,
         CancellationToken cancellationToken = default);
 
@@ -48,6 +52,10 @@ public interface IEventStreamRepository
     /// that many — and within the range each stream's entries take the places its sequence numbers
     /// hold, in version order. The range is extended until no stream in it has an entry of a lower
     /// version beyond it, so the result may hold more than <paramref name="batchSize"/> entries.
+    /// </para>
+    /// <para>
+    /// It reads across the store: every tenant's entries, whatever query filters the underlying
+    /// context declares.
     /// </para>
     /// <para>
     /// The order holds for a walk of the store from its beginning: a first range that starts at
@@ -72,6 +80,7 @@ public interface IEventStreamRepository
         GetManyAfterSequenceAsync(afterSequenceNumber, batchSize, cancellationToken);
 
     /// <summary>Returns the maximum sequence number across all streams.</summary>
+    /// <remarks>Reads across the store: every tenant's entries, whatever query filters the underlying context declares.</remarks>
     Task<long> GetMaxSequenceNumberAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Appends entries to the underlying DbContext. Caller is responsible for the transactional save.</summary>

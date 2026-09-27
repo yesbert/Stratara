@@ -10,6 +10,7 @@ public interface IEventChainRepository
     /// Returns the most-recent sequence number that is already covered by an anchor for
     /// any of the given <paramref name="bucketIds"/>, or <c>0</c> if no anchor exists yet.
     /// </summary>
+    /// <remarks>Reads across the store: every tenant's anchors, whatever query filters the underlying context declares.</remarks>
     Task<long> GetLastSequenceNumberOrDefaultAsync(int[] bucketIds, CancellationToken cancellationToken = default);
 
     /// <summary>Persist a new anchor row. Caller owns the transactional save.</summary>
