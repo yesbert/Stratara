@@ -100,6 +100,10 @@ retries on failure.
   registered — the catalogs, the membership options, the trusted types, the Orleans roles and singleton
   works — throws `InvalidOperationException` when called on `builder.Services` after `Build()`, instead of
   changing the running host.
+- **If your write context declares the tenant query filter** (`ApplyGlobalTenantQueryFilters`), the framework
+  now reads its store past it, so the write context behaves like one without the filter. A command handler
+  given another tenant's aggregate id loads and appends to that aggregate; if yours must refuse that, check
+  the loaded aggregate's owner against the session, as the tenant-isolation guide shows.
 - New types and members are additive; no existing public signature changes.
 
 ### Added

@@ -15,12 +15,12 @@
   session (`tests/Stratara.WriteStore.Tests/TenantFilteredStoreReadTests.cs`)
 - [x] 2.2 SQLite, execution model: the portable reader returns every tenant's entries and its start check refuses an
   unpositioned entry of any tenant (`tests/Stratara.Testing.Orleans.Tests/TenantFilteredPortableReaderTests.cs`)
-- [ ] 2.3 PostgreSQL: the native reader returns every tenant's entries
+- [x] 2.3 PostgreSQL: the native reader returns every tenant's entries
   (`tests/Stratara.Orleans.IntegrationTests/CommitOrder/TenantFilteredNativeReaderTests.cs`)
 - [x] 2.5 SQLite, event source: a stream with events of two owners, snapshotted after every save, is rebuilt in
   full under either owner's session and without one, found without one, and appended to by its owner
   (`tests/Stratara.Testing.EntityFrameworkCore.Tests/TenantFilteredStreamTests.cs`)
-- [ ] 2.4 Counter-check: with the filters honoured, 2.1–2.3 and 2.5 fail (SQLite done: with `src/` as on the base
+- [x] 2.4 Counter-check: with the filters honoured, 2.1–2.3 and 2.5 fail (SQLite done: with `src/` as on the base
   every store-wide test fails; with the first cut, per-stream reads filtered, 2.1's per-stream test and 2.5 fail)
 
 ## 3. Documentation
@@ -31,7 +31,7 @@
 
 ## 4. Verification
 
-- [ ] 4.1 `./scripts/local-gauntlet.sh` green
-- [ ] 4.2 `tests/Stratara.Orleans.IntegrationTests` green
+- [x] 4.1 `./scripts/local-gauntlet.sh` green
+- [x] 4.2 `tests/Stratara.Orleans.IntegrationTests` green
 - [x] 4.3 `openspec validate let-store-wide-work-see-every-tenant --strict`
-- [ ] 4.4 Independent review before the merge
+- [x] 4.4 Independent review before the merge
