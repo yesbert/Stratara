@@ -462,60 +462,7 @@ internal sealed class RabbitMqBus(
 
         var consumer = new AsyncEventingBasicConsumer(channel);
         var running = new RunningHandlers();
-        consumer.ReceivedAsync += async (_, args) =>
-        {
-            // A delivery the client had buffered before the subscription stopped is not handled: it stays unacked and
-            // goes back to the queue when the channel closes, instead of running on a channel that can no longer
-            // acknowledge it.
-            if (!running.TryEnter())
-            {
-                return;
-            }
-
-            try
-            {
-                var body = args.Body.ToArray();
-                BusEnvelopeJsonGuard.EnsureWithinSizeLimit(body.Length, _envelopeOptions.MaxBodyBytes, topic);
-                var message = JsonSerializer.Deserialize<T>(body, _deserializeOptions);
-                if (message is not null)
-                {
-                    await handler(message);
-                }
-
-                // Settled whatever the subscription's token says: a handler that completed while the subscription
-                // stops has done its work, and an acknowledgement that throws would deliver the message again.
-                await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
-            }
-            catch (CommittedEventsNotPublishedException committed)
-            {
-                // Settled whatever the subscription's token says: a stopping subscription must not leave it unacked,
-                // which would deliver the message again.
-                logger.LogCommittedEventsNotPublished(topic, committed);
-                await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
-            }
-            catch (ConcurrencyException ce)
-            {
-                // Settled whatever the subscription's token says, like every outcome: a settlement that throws would
-                // leave the decision to the broker.
-                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, ce, CancellationToken.None);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // The handler stopped because the subscription stops — the host is shutting down. That is not a
-                // failure: the framework requeues the message for the next consumer rather than dead-letter it. The broker
-                // counts the delivery like any other.
-                await channel.BasicNackAsync(args.DeliveryTag, false, true, CancellationToken.None);
-            }
-            catch (Exception e)
-            {
-                logger.LogMessageProcessingFailed(topic, e);
-                await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, e, CancellationToken.None);
-            }
-            finally
-            {
-                running.Exit();
-            }
-        };
+        consumer.ReceivedAsync += (_, args) => HandleDeliveryAsync(channel, args, running, topic, subscription, handler, cancellationToken);
 
         var consumerTag = await channel.BasicConsumeAsync(QueueName(subscription), false, consumer, cancellationToken);
 
@@ -561,12 +508,68 @@ internal sealed class RabbitMqBus(
                 // at once — another consumer may take it while that handler still runs — but the close itself returns
                 // only once the handler has. It goes on in the background and ends when the handler returns or the
                 // process does.
-                await CloseAsync(channel, connection, subscription).WaitAsync(CloseTimeout);
+                await CloseAsync(channel, connection, subscription).WaitAsync(CloseTimeout, CancellationToken.None);
             }
             catch (TimeoutException ex)
             {
                 logger.LogSubscriptionCleanupFailed(subscription, ex);
             }
+        }
+    }
+
+    private async Task HandleDeliveryAsync<T>(IChannel channel, BasicDeliverEventArgs args, RunningHandlers running, string topic, string subscription,
+        Func<T, Task> handler, CancellationToken cancellationToken)
+    {
+        // A delivery the client had buffered before the subscription stopped is not handled: it stays unacked and
+        // goes back to the queue when the channel closes, instead of running on a channel that can no longer
+        // acknowledge it.
+        if (!running.TryEnter())
+        {
+            return;
+        }
+
+        try
+        {
+            var body = args.Body.ToArray();
+            BusEnvelopeJsonGuard.EnsureWithinSizeLimit(body.Length, _envelopeOptions.MaxBodyBytes, topic);
+            var message = JsonSerializer.Deserialize<T>(body, _deserializeOptions);
+            if (message is not null)
+            {
+                await handler(message);
+            }
+
+            // Settled whatever the subscription's token says: a handler that completed while the subscription
+            // stops has done its work, and an acknowledgement that throws would deliver the message again.
+            await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
+        }
+        catch (CommittedEventsNotPublishedException committed)
+        {
+            // Settled whatever the subscription's token says: a stopping subscription must not leave it unacked,
+            // which would deliver the message again.
+            logger.LogCommittedEventsNotPublished(topic, committed);
+            await channel.BasicAckAsync(args.DeliveryTag, false, CancellationToken.None);
+        }
+        catch (ConcurrencyException ce)
+        {
+            // Settled whatever the subscription's token says, like every outcome: a settlement that throws would
+            // leave the decision to the broker.
+            await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Conflict, ce, CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The handler stopped because the subscription stops — the host is shutting down. That is not a
+            // failure: the framework requeues the message for the next consumer rather than dead-letter it. The broker
+            // counts the delivery like any other.
+            await channel.BasicNackAsync(args.DeliveryTag, false, true, CancellationToken.None);
+        }
+        catch (Exception e)
+        {
+            logger.LogMessageProcessingFailed(topic, e);
+            await SettleFailedAsync(channel, args, topic, subscription, MessageFailureKind.Failure, e, CancellationToken.None);
+        }
+        finally
+        {
+            running.Exit();
         }
     }
 

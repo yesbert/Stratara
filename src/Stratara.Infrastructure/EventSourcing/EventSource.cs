@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -39,6 +40,10 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// propagates as the persistence failure it was.
 /// </para>
 /// </remarks>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "DI-resolved sealed internal event source; primary-constructor parameters reflect intrinsic " +
+                    "framework dependencies (snapshots, unit of work, session, outbox, serializer, conflict detectors, " +
+                    "signer, logger) and are not a hand-called API surface.")]
 internal sealed partial class EventSource(
     ISnapshotService snapshotService,
     IWriteUnitOfWork unitOfWork,

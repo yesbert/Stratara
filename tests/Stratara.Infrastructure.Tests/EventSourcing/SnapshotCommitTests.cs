@@ -118,8 +118,8 @@ public class SnapshotCommitTests
 
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var events = (IEventSource)ActivatorUtilities.CreateInstance(
-                scope.ServiceProvider, typeof(EventSource), new FailingSnapshotService(), logger);
+            IEventSource events = ActivatorUtilities.CreateInstance<EventSource>(
+                scope.ServiceProvider, new FailingSnapshotService(), logger);
             await events.CreateAsync<Counter>(streamId, new CounterAdded(1));
             await events.SaveChangesAsync();
         }
@@ -138,8 +138,8 @@ public class SnapshotCommitTests
 
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var events = (IEventSource)ActivatorUtilities.CreateInstance(
-                scope.ServiceProvider, typeof(EventSource), new FailingSnapshotService(new TaskCanceledException("the key provider timed out")), logger);
+            IEventSource events = ActivatorUtilities.CreateInstance<EventSource>(
+                scope.ServiceProvider, new FailingSnapshotService(new TaskCanceledException("the key provider timed out")), logger);
             await events.CreateAsync<Counter>(Guid.CreateVersion7(), new CounterAdded(1));
             await events.SaveChangesAsync();
         }

@@ -64,8 +64,7 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
         {
             // The runtime does not report a failure of this callback to SaveChangesFailedAsync, so the transaction this
             // interceptor opened is released here; otherwise the context's next save would run inside it and never commit.
-            // The caller's token is not forwarded: a cancelled save must still roll back.
-            await ReleaseAsync(context, commit: false, CancellationToken.None);
+            await ReleaseAsync(context, commit: false);
             throw;
         }
 
@@ -77,7 +76,7 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     {
         if (eventData.Context is { } context)
         {
-            await ReleaseAsync(context, commit: true, cancellationToken);
+            await ReleaseAsync(context, commit: true);
         }
 
         return result;
@@ -88,7 +87,7 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     {
         if (eventData.Context is { } context)
         {
-            await ReleaseAsync(context, commit: false, cancellationToken);
+            await ReleaseAsync(context, commit: false);
         }
     }
 
@@ -101,7 +100,7 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     {
         if (eventData.Context is { } context)
         {
-            await ReleaseAsync(context, commit: false, CancellationToken.None);
+            await ReleaseAsync(context, commit: false);
         }
     }
 
@@ -119,7 +118,7 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
     /// Commits or rolls back the transaction this interceptor opened for the context, and always disposes and forgets
     /// it — disposing a transaction whose commit failed rolls it back — so no path leaves it open on the context.
     /// </summary>
-    private async Task ReleaseAsync(DbContext context, bool commit, CancellationToken cancellationToken = default)
+    private async Task ReleaseAsync(DbContext context, bool commit)
     {
         if (!_ownedTransactions.TryGetValue(context, out var transaction))
         {
@@ -136,6 +135,7 @@ public sealed class PartitionCounterInterceptor(IOptions<CommitOrderOptions> opt
             }
             else
             {
+                // Without the caller's token: a cancelled save must still roll back.
                 await transaction.RollbackAsync(CancellationToken.None);
             }
         }

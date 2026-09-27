@@ -86,7 +86,7 @@ public class EventSourceFailedBatchTests
 
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), new FailingOnceDurableHandover());
+            IEventSource events = ActivatorUtilities.CreateInstance<EventSource>(scope.ServiceProvider, new FailingOnceDurableHandover());
 
             await events.AppendAsync<FailedBatchProbe>(streamId, new FailedBatchProbeTouched(2));
             await Assert.ThrowsAsync<InvalidOperationException>(() => events.SaveChangesAsync());

@@ -339,8 +339,13 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
             await host.Services.GetRequiredService<IMessageBus>().PublishAsync(topic, new TestMessage("stuck"), cts.Token);
             await entered.Task.WaitAsync(cts.Token);
 
-            await host.StopAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
-            await ((IAsyncDisposable)host).DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+            var stopped = await Record.ExceptionAsync(async () =>
+            {
+                await host.StopAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+                await ((IAsyncDisposable)host).DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15), cts.Token);
+            });
+
+            Assert.Null(stopped);
         }
         finally
         {
@@ -405,7 +410,9 @@ public sealed class RabbitMqDeadLetterTests(RabbitMqFixture fixture)
 
         try
         {
-            await bus.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(40), cts.Token);
+            var disposed = await Record.ExceptionAsync(() => bus.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(40), cts.Token));
+
+            Assert.Null(disposed);
         }
         finally
         {

@@ -124,56 +124,7 @@ internal sealed class AzureServiceBusBus(
 
         var processor = client.CreateProcessor(topic, subscription, new ServiceBusProcessorOptions());
 
-        processor.ProcessMessageAsync += async args =>
-        {
-            // A message the processor took after the subscription started stopping — before the processor itself has
-            // stopped — is not handled: it goes back for the next consumer instead of running with a cancelled token.
-            if (cancellationToken.IsCancellationRequested)
-            {
-                await args.AbandonMessageAsync(args.Message, cancellationToken: CancellationToken.None);
-                return;
-            }
-
-            try
-            {
-                var body = args.Message.Body.ToMemory();
-                BusEnvelopeJsonGuard.EnsureWithinSizeLimit(body.Length, _envelopeOptions.MaxBodyBytes, topic);
-                var message = JsonSerializer.Deserialize<T>(body.Span, _deserializeOptions);
-                if (message is not null)
-                {
-                    await handler(message);
-                }
-
-                // Settled whatever the subscription's token says: a handler that completed while the subscription
-                // stops has done its work, and a completion that throws would deliver the message again.
-                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
-            }
-            catch (CommittedEventsNotPublishedException committed)
-            {
-                // Settled whatever the subscription's token says: a stopping subscription must not abandon it, which
-                // would deliver the message again.
-                logger.LogCommittedEventsNotPublished(topic, committed);
-                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
-            }
-            catch (ConcurrencyException ce)
-            {
-                // Settled whatever the subscription's token says, like every outcome: a settlement that throws would
-                // leave the decision to the broker.
-                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, CancellationToken.None);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // The handler stopped because the subscription stops — the host is shutting down. That is not a
-                // failure: the framework abandons the message for the next consumer rather than dead-letter it. The broker
-                // counts the delivery like any other.
-                await args.AbandonMessageAsync(args.Message, cancellationToken: CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                logger.LogMessageProcessingFailed(topic, ex);
-                await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Failure, ex, CancellationToken.None);
-            }
-        };
+        processor.ProcessMessageAsync += args => HandleMessageAsync(args, topic, subscription, retryPolicy, handler, cancellationToken);
 
         processor.ProcessErrorAsync += errorArgs =>
         {
@@ -229,6 +180,58 @@ internal sealed class AzureServiceBusBus(
                         TaskScheduler.Default);
                 }
             }
+        }
+    }
+
+    private async Task HandleMessageAsync<T>(ProcessMessageEventArgs args, string topic, string subscription, MessageRetryPolicy retryPolicy,
+        Func<T, Task> handler, CancellationToken cancellationToken)
+    {
+        // A message the processor took after the subscription started stopping — before the processor itself has
+        // stopped — is not handled: it goes back for the next consumer instead of running with a cancelled token.
+        if (cancellationToken.IsCancellationRequested)
+        {
+            await args.AbandonMessageAsync(args.Message, cancellationToken: CancellationToken.None);
+            return;
+        }
+
+        try
+        {
+            var body = args.Message.Body.ToMemory();
+            BusEnvelopeJsonGuard.EnsureWithinSizeLimit(body.Length, _envelopeOptions.MaxBodyBytes, topic);
+            var message = JsonSerializer.Deserialize<T>(body.Span, _deserializeOptions);
+            if (message is not null)
+            {
+                await handler(message);
+            }
+
+            // Settled whatever the subscription's token says: a handler that completed while the subscription
+            // stops has done its work, and a completion that throws would deliver the message again.
+            await args.CompleteMessageAsync(args.Message, CancellationToken.None);
+        }
+        catch (CommittedEventsNotPublishedException committed)
+        {
+            // Settled whatever the subscription's token says: a stopping subscription must not abandon it, which
+            // would deliver the message again.
+            logger.LogCommittedEventsNotPublished(topic, committed);
+            await args.CompleteMessageAsync(args.Message, CancellationToken.None);
+        }
+        catch (ConcurrencyException ce)
+        {
+            // Settled whatever the subscription's token says, like every outcome: a settlement that throws would
+            // leave the decision to the broker.
+            await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Conflict, ce, CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The handler stopped because the subscription stops — the host is shutting down. That is not a
+            // failure: the framework abandons the message for the next consumer rather than dead-letter it. The broker
+            // counts the delivery like any other.
+            await args.AbandonMessageAsync(args.Message, cancellationToken: CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogMessageProcessingFailed(topic, ex);
+            await SettleFailedAsync(args, topic, subscription, retryPolicy, MessageFailureKind.Failure, ex, CancellationToken.None);
         }
     }
 

@@ -78,12 +78,9 @@ public sealed partial class EventMapperFactory(
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(relevance);
         var result = new List<IEvent>();
-        foreach (var entry in entries)
+        foreach (var entry in entries.Where(entry => Reads(entry.EventTypeName, entry.DataJson, relevance)))
         {
-            if (Reads(entry.EventTypeName, entry.DataJson, relevance))
-            {
-                result.Add(await MapToEventAsync(entry, cancellationToken));
-            }
+            result.Add(await MapToEventAsync(entry, cancellationToken));
         }
         return result;
     }
@@ -100,12 +97,9 @@ public sealed partial class EventMapperFactory(
         ArgumentNullException.ThrowIfNull(messages);
         ArgumentNullException.ThrowIfNull(relevance);
         var result = new List<IEvent>();
-        foreach (var message in messages)
+        foreach (var message in messages.Where(message => Reads(message.EventTypeName, message.DataJson, relevance)))
         {
-            if (Reads(message.EventTypeName, message.DataJson, relevance))
-            {
-                result.Add(await MapToEventEnvelopesAsync(message, cancellationToken));
-            }
+            result.Add(await MapToEventEnvelopesAsync(message, cancellationToken));
         }
         return result;
     }

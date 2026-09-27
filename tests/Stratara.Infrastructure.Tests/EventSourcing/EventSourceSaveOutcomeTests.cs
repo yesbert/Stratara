@@ -74,7 +74,7 @@ public class EventSourceSaveOutcomeTests
 
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), new FailingHandover());
+            IEventSource events = ActivatorUtilities.CreateInstance<EventSource>(scope.ServiceProvider, new FailingHandover());
             await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
 
             var failure = await Assert.ThrowsAsync<CommittedEventsNotPublishedException>(() => events.SaveChangesAsync());
@@ -152,8 +152,8 @@ public class EventSourceSaveOutcomeTests
         await using var host = CreateHost();
         var streamId = Guid.CreateVersion7();
         await using var scope = host.Services.CreateAsyncScope();
-        var events = (IEventSource)ActivatorUtilities.CreateInstance(
-            scope.ServiceProvider, typeof(EventSource), new FailingHandover(new OperationCanceledException("the host is stopping")));
+        IEventSource events = ActivatorUtilities.CreateInstance<EventSource>(
+            scope.ServiceProvider, new FailingHandover(new OperationCanceledException("the host is stopping")));
         await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
 
         var failure = await Assert.ThrowsAsync<CommittedEventsNotPublishedException>(() => events.SaveChangesAsync());
@@ -199,7 +199,7 @@ public class EventSourceSaveOutcomeTests
         var handover = new DurableFailingHandover();
         await using (var scope = host.Services.CreateAsyncScope())
         {
-            var events = (IEventSource)ActivatorUtilities.CreateInstance(scope.ServiceProvider, typeof(EventSource), handover);
+            IEventSource events = ActivatorUtilities.CreateInstance<EventSource>(scope.ServiceProvider, handover);
             await events.CreateAsync<OutcomeProbe>(streamId, new OutcomeProbeTouched(1));
 
             await events.SaveChangesAsync();
