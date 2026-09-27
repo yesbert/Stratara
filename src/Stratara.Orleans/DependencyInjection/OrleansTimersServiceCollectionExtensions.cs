@@ -23,6 +23,10 @@ public static class OrleansTimersServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings; binds nothing from configuration on its own.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the roles the
+    /// running silo publishes would change under it.
+    /// </exception>
     /// <example>
     /// <code>
     /// var cs = builder.Configuration.GetConnectionString("orleans")!;
@@ -35,6 +39,7 @@ public static class OrleansTimersServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddStrataraDurableTimers(this IServiceCollection services, Action<DurableTimerOptions>? configure = null)
     {
+        Stratara.Orleans.Hosting.BuiltHostGuard.Refuse(services, nameof(AddStrataraDurableTimers), "roles the running silo publishes");
         var options = services.AddOptions<DurableTimerOptions>();
         if (configure is not null)
         {

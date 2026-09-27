@@ -26,6 +26,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <example>
     /// Idempotent. The assembly-scanning registrations call it, so a host that uses them does not:
     /// <code>
@@ -46,6 +50,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <typeparam name="T">The type to add to the allowlist.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <example>
     /// For a type that is produced but never handled — a snapshot type whose aggregate has no
     /// projection or saga to anchor the automatic scan:
@@ -70,6 +78,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <typeparam name="T">A marker type from the assembly to scan.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <remarks>
     /// For each discovered aggregate, every public instance method named <c>Apply</c> that takes
     /// a single parameter contributes its parameter type to the allowlist — the payload type for an
@@ -104,6 +116,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <typeparam name="T">A marker type from the assembly that contains the aggregates and their events.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Use this in a host that only needs to <em>deserialize</em> event payloads coming off the message
@@ -167,8 +183,20 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The shared resolver instance, created and registered on first call.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     public static TrustedTypeResolver GetOrAddResolver(IServiceCollection services)
     {
+        if (services.IsReadOnly)
+        {
+            throw new InvalidOperationException(
+                "A trusted type was registered after the host was built: the service collection is read-only, and the " +
+                "types the running host trusts would change under it. Register trusted types — AddTrustedType, the " +
+                "assembly scans, the mediator, projection and saga registrations — while the host is being configured.");
+        }
+
         var existing = services.FirstOrDefault(s =>
             s.ServiceType == typeof(ITrustedTypeResolver) && s.ImplementationInstance is TrustedTypeResolver);
         if (existing?.ImplementationInstance is TrustedTypeResolver registered)

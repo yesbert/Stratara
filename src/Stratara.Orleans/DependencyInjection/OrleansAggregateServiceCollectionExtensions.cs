@@ -28,6 +28,10 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the roles the
+    /// running silo publishes would change under it.
+    /// </exception>
     /// <example>
     /// <code>
     /// builder.Services
@@ -38,6 +42,7 @@ public static class OrleansAggregateServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddStrataraAggregateGrains(this IServiceCollection services)
     {
+        BuiltHostGuard.Refuse(services, nameof(AddStrataraAggregateGrains), "roles the running silo publishes");
         FrameworkExceptionSerialization.Register(services);
         FrameworkCallCancellation.Register(services);
         services.TryAddScoped<AggregateSendLane>();

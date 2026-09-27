@@ -192,6 +192,10 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the options
+    /// the running host reads would change under it.
+    /// </exception>
     /// <example>
     /// Resolves roles from tenant-scoped membership. Pair it with the authorizing mediator, which is
     /// what enforces the attributes:
@@ -210,6 +214,10 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <param name="services">The service collection to mutate.</param>
     /// <param name="configure">Callback to name the roles resolved in the actor's own tenant.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the options
+    /// the running host reads would change under it.
+    /// </exception>
     /// <example>
     /// A service that holds one machine key and names the tenant per request: the key's role is held
     /// in the tenant the key was issued for, and the request concerns another.
@@ -222,8 +230,53 @@ public static class IdentityDirectoryServiceCollectionExtensions
         this IServiceCollection services,
         Action<MembershipAuthorizationOptions>? configure)
     {
-        services.AddMembershipAuthorizationOptions(configure);
+        services.ConfigureMembershipAuthorizationOptions(configure, nameof(AddMembershipAuthorization));
         services.TryAddScoped<IAuthorizationProvider, MembershipAuthorizationProvider>();
+        return services;
+    }
+
+    /// <summary>
+    /// Register <see cref="MembershipAuthorizationProvider{TUser}"/> as the
+    /// <see cref="IAuthorizationProvider"/> — role checks pass on tenant-scoped membership roles
+    /// <em>or</em> global ASP.NET Identity roles (platform roles). Requires the host's Identity
+    /// registration (<c>UserManager&lt;TUser&gt;</c> resolvable).
+    /// </summary>
+    /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the options
+    /// the running host reads would change under it.
+    /// </exception>
+    /// <example>
+    /// The generic overload adds the user's global ASP.NET Core Identity roles to the membership roles:
+    /// <code>
+    /// services.AddMembershipAuthorization&lt;ApplicationUser&gt;();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddMembershipAuthorization<TUser>(this IServiceCollection services)
+        where TUser : class
+        => services.AddMembershipAuthorization<TUser>(configure: null);
+
+    /// <summary>
+    /// Register <see cref="MembershipAuthorizationProvider{TUser}"/> as the
+    /// <see cref="IAuthorizationProvider"/>, naming the roles that resolve in the actor's own tenant.
+    /// </summary>
+    /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <param name="configure">Callback to name the roles resolved in the actor's own tenant.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the options
+    /// the running host reads would change under it.
+    /// </exception>
+    public static IServiceCollection AddMembershipAuthorization<TUser>(
+        this IServiceCollection services,
+        Action<MembershipAuthorizationOptions>? configure)
+        where TUser : class
+    {
+        services.ConfigureMembershipAuthorizationOptions(configure, nameof(AddMembershipAuthorization));
+        services.TryAddScoped<IAuthorizationProvider, MembershipAuthorizationProvider<TUser>>();
         return services;
     }
 
@@ -247,59 +300,14 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// order of the calls nor their number loses a role: a module naming one role and a module naming
     /// another end up with both, and the parameterless registration adds nothing.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the options
+    /// the running host reads would change under it.
+    /// </exception>
     public static IServiceCollection AddMembershipAuthorizationOptions(
         this IServiceCollection services,
         Action<MembershipAuthorizationOptions>? configure)
-    {
-        var registered = services.FirstOrDefault(service =>
-            service.ServiceType == typeof(MembershipAuthorizationOptions))?.ImplementationInstance;
-
-        if (registered is not MembershipAuthorizationOptions options)
-        {
-            options = new MembershipAuthorizationOptions();
-            services.AddSingleton(options);
-        }
-
-        configure?.Invoke(options);
-        return services;
-    }
-
-    /// <summary>
-    /// Register <see cref="MembershipAuthorizationProvider{TUser}"/> as the
-    /// <see cref="IAuthorizationProvider"/> — role checks pass on tenant-scoped membership roles
-    /// <em>or</em> global ASP.NET Identity roles (platform roles). Requires the host's Identity
-    /// registration (<c>UserManager&lt;TUser&gt;</c> resolvable).
-    /// </summary>
-    /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
-    /// <param name="services">The service collection to mutate.</param>
-    /// <returns>The same service collection, to enable chaining.</returns>
-    /// <example>
-    /// The generic overload adds the user's global ASP.NET Core Identity roles to the membership roles:
-    /// <code>
-    /// services.AddMembershipAuthorization&lt;ApplicationUser&gt;();
-    /// </code>
-    /// </example>
-    public static IServiceCollection AddMembershipAuthorization<TUser>(this IServiceCollection services)
-        where TUser : class
-        => services.AddMembershipAuthorization<TUser>(configure: null);
-
-    /// <summary>
-    /// Register <see cref="MembershipAuthorizationProvider{TUser}"/> as the
-    /// <see cref="IAuthorizationProvider"/>, naming the roles that resolve in the actor's own tenant.
-    /// </summary>
-    /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
-    /// <param name="services">The service collection to mutate.</param>
-    /// <param name="configure">Callback to name the roles resolved in the actor's own tenant.</param>
-    /// <returns>The same service collection, to enable chaining.</returns>
-    public static IServiceCollection AddMembershipAuthorization<TUser>(
-        this IServiceCollection services,
-        Action<MembershipAuthorizationOptions>? configure)
-        where TUser : class
-    {
-        services.AddMembershipAuthorizationOptions(configure);
-        services.TryAddScoped<IAuthorizationProvider, MembershipAuthorizationProvider<TUser>>();
-        return services;
-    }
+        => services.ConfigureMembershipAuthorizationOptions(configure, nameof(AddMembershipAuthorizationOptions));
 
     /// <summary>
     /// Register <see cref="MembershipCrossTenantAuthorizer"/> as the
@@ -346,7 +354,8 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="InvalidOperationException">
     /// A <see cref="PermissionCatalog"/> is already registered, but as a factory or a type rather than
-    /// as an instance, so there is nothing this call can add to.
+    /// as an instance, so there is nothing this call can add to — or the host was already built from
+    /// <paramref name="services"/>, which is read-only, and the catalog it reads would change under it.
     /// </exception>
     /// <example>
     /// The catalog is the vocabulary: granting a permission it does not declare throws at start-up
@@ -425,7 +434,8 @@ public static class IdentityDirectoryServiceCollectionExtensions
     /// <returns>The same service collection, to enable chaining.</returns>
     /// <exception cref="InvalidOperationException">
     /// A <see cref="SettingCatalog"/> is already registered, but as a factory or a type rather than as
-    /// an instance, so there is nothing this call can add to.
+    /// an instance, so there is nothing this call can add to — or the host was already built from
+    /// <paramref name="services"/>, which is read-only, and the catalog it reads would change under it.
     /// </exception>
     /// <example>
     /// Declares each setting with its default, whether it inherits down the scope chain, and whether it
@@ -569,9 +579,29 @@ public static class IdentityDirectoryServiceCollectionExtensions
         return services;
     }
 
+    private static IServiceCollection ConfigureMembershipAuthorizationOptions(
+        this IServiceCollection services,
+        Action<MembershipAuthorizationOptions>? configure,
+        string registration)
+    {
+        services.RefuseOnceBuilt(registration, "membership authorization options");
+        var registered = services.FirstOrDefault(service =>
+            service.ServiceType == typeof(MembershipAuthorizationOptions))?.ImplementationInstance;
+
+        if (registered is not MembershipAuthorizationOptions options)
+        {
+            options = new MembershipAuthorizationOptions();
+            services.AddSingleton(options);
+        }
+
+        configure?.Invoke(options);
+        return services;
+    }
+
     private static TCatalog GetOrAddCatalog<TCatalog>(this IServiceCollection services, string registration)
         where TCatalog : class, new()
     {
+        services.RefuseOnceBuilt(registration, typeof(TCatalog).Name);
         var registered = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(TCatalog) && !descriptor.IsKeyedService);
         if (registered is null)
         {
@@ -584,5 +614,20 @@ public static class IdentityDirectoryServiceCollectionExtensions
                ?? throw new InvalidOperationException(
                    $"The registered {typeof(TCatalog).Name} is a factory or a type registration, so {registration} " +
                    $"has no instance to add to. Declare the catalog through {registration} only, or register it as an instance.");
+    }
+
+    /// <summary>
+    /// Refuses a registration that would add to an instance the host already reads: once the host was built
+    /// from <paramref name="services"/>, the collection is read-only and the instance is live.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><paramref name="services"/> is read-only.</exception>
+    private static void RefuseOnceBuilt(this IServiceCollection services, string registration, string changed)
+    {
+        if (services.IsReadOnly)
+        {
+            throw new InvalidOperationException(
+                $"{registration} was called after the host was built: the service collection is read-only, and the " +
+                $"{changed} the running host reads would change under it. Call {registration} while the host is being configured.");
+        }
     }
 }

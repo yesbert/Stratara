@@ -65,6 +65,10 @@ public static class SagaServiceCollectionExtensions
     /// implementations and registers each as a scoped <see cref="ISaga"/>.
     /// </summary>
     /// <typeparam name="T">Any type from the assembly to scan.</typeparam>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <example>
     /// Discover and register every <see cref="ISaga"/> in the saga assembly:
     /// <code>

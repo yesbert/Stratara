@@ -34,6 +34,10 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional runner settings for this work, applied over the host's settings for every singleton work.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the works the
+    /// running host runs would change under it.
+    /// </exception>
     /// <example>
     /// <code>
     /// builder.Services.AddStrataraSingletonWork&lt;NightlyCleanupWork&gt;(options => options.KeepAlivePeriod = TimeSpan.FromMinutes(5));
@@ -58,7 +62,10 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
     /// <param name="configure">Optional runner settings for this work, applied over the host's settings for every singleton work.</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="name"/> is <see langword="null"/>, empty or white space.</exception>
-    /// <exception cref="InvalidOperationException"><typeparamref name="TWork"/> is already registered under another name.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="TWork"/> is already registered under another name, or the host was already built from
+    /// <paramref name="services"/>, which is read-only, and the works the running host runs would change under it.
+    /// </exception>
     /// <example>
     /// <code>
     /// builder.Services.AddStrataraSingletonWork&lt;OutboxDrainWork&gt;(OutboxDrainWork.WorkName);
@@ -74,6 +81,7 @@ public static class OrleansSingletonWorkServiceCollectionExtensions
     private static IServiceCollection Add<TWork>(IServiceCollection services, string? name, Action<SingletonWorkOptions>? configure)
         where TWork : class, ISingletonWork
     {
+        Stratara.Orleans.Hosting.BuiltHostGuard.Refuse(services, nameof(AddStrataraSingletonWork), "works the running host runs");
         services.AddOptions<SingletonWorkOptions>();
         services.AddOptions<OutboxDrainOptions>();
         Stratara.Orleans.Hosting.OrleansOptionsValidator.Register<SingletonWorkOptions>(services);

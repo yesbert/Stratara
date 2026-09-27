@@ -32,6 +32,10 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// Off, the bus never sees bundles; on, both paths run and the projections still read the store.
     /// </param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the roles the
+    /// running silo publishes would change under it.
+    /// </exception>
     /// <example>
     /// <code>
     /// builder.AddEventProjectionServices();
@@ -47,6 +51,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         Action<ProjectionGrainOptions>? configure = null,
         bool hybrid = false)
     {
+        BuiltHostGuard.Refuse(services, nameof(AddStrataraProjectionGrains), "roles the running silo publishes");
         var options = services.AddOptions<ProjectionGrainOptions>();
         if (configure is not null)
         {
@@ -75,6 +80,10 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// <param name="configure">Optional settings.</param>
     /// <param name="hybrid">Whether bundles are still published through the previously registered dispatcher.</param>
     /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the roles the
+    /// running silo publishes would change under it.
+    /// </exception>
     /// <example>
     /// <code>
     /// builder.AddSagaServices();
@@ -90,6 +99,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         Action<SagaGrainOptions>? configure = null,
         bool hybrid = false)
     {
+        BuiltHostGuard.Refuse(services, nameof(AddStrataraSagaGrains), "roles the running silo publishes");
         var options = services.AddOptions<SagaGrainOptions>();
         if (configure is not null)
         {
