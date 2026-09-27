@@ -156,26 +156,34 @@ internal sealed class SagaProcessGrain(IServiceScopeFactory scopeFactory) : Grai
         }
 
         // After the append: a kill before this leaves timers of a completed process, which the owner check drops.
-        if (state.Completed && !committed)
+        if (state.Completed)
+        {
+            await CancelTimersOfCompletedAsync(timers, owner, committed, services, cancellationToken);
+        }
+    }
+
+    private async Task CancelTimersOfCompletedAsync(IDurableTimers timers, string owner, bool committed, IServiceProvider services, CancellationToken cancellationToken)
+    {
+        if (!committed)
         {
             // Nothing was committed by this step, so a failure here fails it and running it again is harmless.
             await timers.CancelAllAsync(owner, cancellationToken);
+            return;
         }
-        else if (state.Completed)
+
+        // With the step's token: the timer owner may be deactivating with the silo, and a call to it without one
+        // would wait for its response timeout instead of ending with the step's budget.
+        try
         {
-            // With the step's token: the timer owner may be deactivating with the silo, and a call to it without one
-            // would wait for its response timeout instead of ending with the step's budget.
-            try
-            {
-                await timers.CancelAllAsync(owner, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-            }
-            catch (Exception ex)
-            {
-                services.GetRequiredService<ILogger<SagaProcessGrain>>().LogSagaStepAftermathFailed(ex, this.GetPrimaryKeyString());
-            }
+            await timers.CancelAllAsync(owner, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The step's budget ran out; the owner check drops the timers this left.
+        }
+        catch (Exception ex)
+        {
+            services.GetRequiredService<ILogger<SagaProcessGrain>>().LogSagaStepAftermathFailed(ex, this.GetPrimaryKeyString());
         }
     }
 

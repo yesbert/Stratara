@@ -28,8 +28,10 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
         }
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        for (var attempt = 1; ; attempt++)
+        var attempt = 0;
+        while (true)
         {
+            attempt++;
             var missing = await MissingAsync(context, projection, wanted, cancellationToken);
             if (missing.Count == 0)
             {

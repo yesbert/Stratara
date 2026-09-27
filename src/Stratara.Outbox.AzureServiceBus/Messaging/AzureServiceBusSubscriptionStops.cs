@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Stratara.Outbox.AzureServiceBus.Diagnostics.Extensions;
@@ -95,6 +96,9 @@ internal sealed class AzureServiceBusSubscriptionStops : IHostedLifecycleService
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    [SuppressMessage("Major Code Smell", "S6966:Awaitable method should be used",
+        Justification = "Cancelled synchronously on purpose: this can run inside the host token's own cancellation, and " +
+                        "the host's stop must have ended before a later callback of that token starts a subscription's stop.")]
     public async Task StoppedAsync(CancellationToken cancellationToken)
     {
         try

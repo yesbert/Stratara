@@ -54,9 +54,13 @@ public sealed class RegistrationAfterBuildTests
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
 
-        Registration[registration](builder.Services);
-        Registration[registration](builder.Services);
+        var refused = Record.Exception(() =>
+        {
+            Registration[registration](builder.Services);
+            Registration[registration](builder.Services);
+        });
 
+        Assert.Null(refused);
         using var host = builder.Build();
     }
 
