@@ -147,13 +147,15 @@ public sealed class PartitionCounterBackfillTests(PostgreSqlFixture postgres)
     /// <summary>
     /// Two streams whose sequence numbers run against their versions, one early in the partition and one where the
     /// first backfill batch would end between its versions: both are positioned in version order, the second after
-    /// the batch was extended, and the portable reader returns both in version order.
+    /// the batch was extended, and the portable reader returns both in version order. A batch covers the store's next
+    /// thousand entries per partition, so with every entry in one partition the first batch ends inside the second
+    /// stream.
     /// </summary>
     [Fact]
     public async Task Inverted_streams_are_positioned_in_version_order_with_and_without_a_batch_boundary_between_them()
     {
         const int bucketId = 8;
-        const int fillers = 995;
+        const int fillers = 1_000 * PartitionCount - 5;
         var connectionString = postgres.ConnectionStringFor(Database + "_inverted");
         await using var store = await PocStore<PocCommitOrderWriteDbContext>.CreateAsync(connectionString, Configure, maintainCounter: false);
         await using (var context = await store.CreateContextAsync())
@@ -187,6 +189,48 @@ public sealed class PartitionCounterBackfillTests(PostgreSqlFixture postgres)
         Assert.Equal([1L, 2L, 3L], read.Where(e => e.Entry.StreamId == early).Select(e => e.Entry.Version));
         Assert.Equal([1L, 2L, 3L], read.Where(e => e.Entry.StreamId == straddling).Select(e => e.Entry.Version));
         Assert.Equal(Enumerable.Range(1, read.Count).Select(i => (long)i), read.Select(e => e.Position));
+    }
+
+    /// <summary>
+    /// Scenario <em>The write context filters entries by tenant</em>: the entries of two tenants, one tenant's stream
+    /// numbered against its versions, in a store whose write context hides every tenant's entries from a query without a
+    /// session. The backfill positions all of them, in append order with the inverted stream in version order.
+    /// </summary>
+    [Fact]
+    public async Task A_write_context_that_filters_entries_by_tenant_has_every_tenants_entries_positioned()
+    {
+        const int bucketId = 8;
+        var connectionString = postgres.ConnectionStringFor(Database + "_tenant_filtered");
+        await using var store = await PocStore<TenantFilteredWriteDbContext>.CreateAsync(connectionString, Configure);
+        var inverted = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        await using (var context = await store.CreateContextAsync())
+        {
+            await context.Set<EventStreamEntry>().IgnoreQueryFilters().ExecuteDeleteAsync();
+            await context.Database.ExecuteSqlRawAsync("UPDATE partition_position SET position = 0");
+        }
+
+        foreach (var (stream, version, tenant) in new[] { (Guid.NewGuid(), 1L, first), (inverted, 2L, first), (inverted, 1L, first), (Guid.NewGuid(), 1L, second) })
+        {
+            await using var context = await store.CreateContextAsync();
+            context.Set<EventStreamEntry>().Add(PocStore<TenantFilteredWriteDbContext>.NewEntry(stream, version, bucketId, tenant));
+            await context.SaveChangesAsync();
+        }
+
+        await using (var context = await store.CreateContextAsync())
+        {
+            Assert.Empty(await context.Set<EventStreamEntry>().ToListAsync());
+            Assert.Equal(4, await PartitionCounterBackfill.RunAsync(context, store.Options));
+
+            var positioned = await context.Set<EventStreamEntry>().IgnoreQueryFilters()
+                .OrderBy(e => e.SequenceNumber)
+                .Select(e => new { e.StreamId, e.Version, e.TenantId, Position = EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) })
+                .ToListAsync();
+            Assert.Equal([1L, 3L, 2L, 4L], positioned.Select(e => e.Position));
+            Assert.Equal([1L, 2L], positioned.Where(e => e.StreamId == inverted).OrderBy(e => e.Position).Select(e => e.Version));
+            Assert.Equal([first, second], positioned.Select(e => e.TenantId).Distinct());
+        }
     }
 
     private static async Task AppendOneByOneAsync(PocStore<PocCommitOrderWriteDbContext> store, int bucketId, Guid tenantId, params (Guid Stream, long Version)[] entries)

@@ -65,26 +65,28 @@ public static class PartitionCounterBackfill
     /// </summary>
     private static async Task<int> RunPartitionAsync(DbContext context, string? statement, int partition, int partitionCount, CancellationToken cancellationToken)
     {
+        if (!await Unpositioned(context, new Batch(partition, partitionCount, 0, 0)).AnyAsync(cancellationToken))
+        {
+            return 0;
+        }
+
         var positioned = 0;
         var from = 0L;
-        while (true)
+        while (await PositionBatchAsync(context, statement, partition, partitionCount, from, cancellationToken) is { } batch)
         {
-            var batch = await PositionBatchAsync(context, statement, partition, partitionCount, from, cancellationToken);
-            if (batch.Count == 0)
-            {
-                return positioned;
-            }
-
             positioned += batch.Count;
             from = batch.Last;
         }
+
+        return positioned;
     }
 
     /// <summary>
-    /// Positions the oldest entries after <paramref name="from"/> that have none, and says where it ended — so the
-    /// batch after it starts there instead of walking everything this one positioned.
+    /// Positions the partition's unpositioned entries among the next entries of the store after
+    /// <paramref name="from"/>, and says where it ended — so the batch after it starts there instead of walking
+    /// everything this one covered — or <see langword="null"/> where no entry follows.
     /// </summary>
-    private static async Task<(int Count, long Last)> PositionBatchAsync(DbContext context, string? statement, int partition, int partitionCount, long from, CancellationToken cancellationToken)
+    private static async Task<(int Count, long Last)?> PositionBatchAsync(DbContext context, string? statement, int partition, int partitionCount, long from, CancellationToken cancellationToken)
     {
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         var counter = await LockCounterAsync(context, partition, cancellationToken);
@@ -93,7 +95,7 @@ public static class PartitionCounterBackfill
         if (await BoundAsync(context, range, cancellationToken) is not { } bound)
         {
             await transaction.CommitAsync(cancellationToken);
-            return (0, from);
+            return null;
         }
 
         range = range with { To = bound };
@@ -107,45 +109,96 @@ public static class PartitionCounterBackfill
             : await PositionAllAsync(context, statement, range, counter, cancellationToken);
 
         await context.Set<PartitionPosition>()
+            .IgnoreQueryFilters()
             .Where(c => c.Partition == partition)
             .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, counter + count), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return (count, range.To);
     }
 
+    /// <summary>
+    /// Every entry of the store, whatever query filters the context declares: a filter that hides entries from the
+    /// application does not hide them from the backfill, and the positioning statement is not filtered either.
+    /// </summary>
+    private static IQueryable<EventStreamEntry> Entries(DbContext context) =>
+        context.Set<EventStreamEntry>().AsNoTracking().IgnoreQueryFilters();
+
     /// <summary>The partition's entries without a position.</summary>
     private static IQueryable<EventStreamEntry> Unpositioned(DbContext context, Batch range) =>
-        context.Set<EventStreamEntry>().AsNoTracking()
+        Entries(context)
             .Where(e => e.BucketId % range.PartitionCount == range.Partition
                         && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null);
 
-    /// <summary>The sequence number the batch ends at before it is extended, or <see langword="null"/> where nothing is left to position.</summary>
-    private static Task<long?> BoundAsync(DbContext context, Batch range, CancellationToken cancellationToken) =>
-        Unpositioned(context, range)
+    /// <summary>
+    /// The sequence number the batch ends at before it is extended, or <see langword="null"/> where no entry follows:
+    /// the partition's thousandth entry among the store's next entries after the start — as many as hold a thousand of
+    /// one partition's where the partitions share them evenly — or the last of those where the partition has fewer
+    /// there. Both are read within a range of the key and without asking which entries are positioned, so neither
+    /// reads past that range whatever the database estimates of how many entries a partition holds or how many are
+    /// positioned, and a batch holds at most a thousand of its partition's entries before it is extended.
+    /// </summary>
+    private static async Task<long?> BoundAsync(DbContext context, Batch range, CancellationToken cancellationToken)
+    {
+        var window = await Entries(context)
             .Where(e => e.SequenceNumber > range.From)
             .OrderBy(e => e.SequenceNumber)
             .Select(e => e.SequenceNumber)
-            .Take(UpdateBatchSize)
+            .Take(UpdateBatchSize * range.PartitionCount)
             .MaxAsync(sequenceNumber => (long?)sequenceNumber, cancellationToken);
+        if (window is not { } end)
+        {
+            return null;
+        }
+
+        var partitionEnd = await Entries(context)
+            .Where(e => e.SequenceNumber > range.From && e.SequenceNumber <= end && e.BucketId % range.PartitionCount == range.Partition)
+            .OrderBy(e => e.SequenceNumber)
+            .Select(e => (long?)e.SequenceNumber)
+            .Skip(UpdateBatchSize - 1)
+            .FirstOrDefaultAsync(cancellationToken);
+        return partitionEnd ?? end;
+    }
 
     /// <summary>
     /// The highest sequence number beyond the batch of an unpositioned entry whose stream appears in the batch at a
     /// higher version, or <see langword="null"/> where no stream of the batch continues below its top beyond it.
     /// </summary>
+    /// <remarks>
+    /// Each batch starts where the one before it ended, so every stream's versions at or before the batch's start form
+    /// a prefix of the stream: the search is bounded below by the stream's highest version under the top at or before
+    /// the start, and reads only what lies between that and the top instead of the stream's whole past. The tops and
+    /// the floors are each kept a derived table of their own, so the database takes a stream's floor once and bounds its
+    /// index scan by it rather than evaluating it again for every candidate entry.
+    /// </remarks>
     private static Task<long?> FindStragglerAsync(DbContext context, Batch range, CancellationToken cancellationToken)
     {
+        var entries = Entries(context);
         var tops = Unpositioned(context, range)
             .Where(e => e.SequenceNumber > range.From && e.SequenceNumber <= range.To)
             .GroupBy(e => new { e.BucketId, e.StreamId })
-            .Select(g => new { g.Key.BucketId, g.Key.StreamId, Top = g.Max(e => e.Version) });
+            .Select(g => new { g.Key.BucketId, g.Key.StreamId, Top = g.Max(e => e.Version) })
+            .Distinct()
+            .Select(t => new
+            {
+                t.BucketId,
+                t.StreamId,
+                t.Top,
+                Floor = entries
+                    .Where(e => e.BucketId == t.BucketId && e.StreamId == t.StreamId && e.Version < t.Top
+                                && e.SequenceNumber <= range.From)
+                    .OrderByDescending(e => e.Version)
+                    .Select(e => (long?)e.Version)
+                    .FirstOrDefault() ?? long.MinValue,
+            })
+            .Distinct();
 
         return Unpositioned(context, range)
             .Where(e => e.SequenceNumber > range.To)
             .Join(tops,
                 e => new { e.BucketId, e.StreamId },
                 t => new { t.BucketId, t.StreamId },
-                (e, t) => new { e.SequenceNumber, e.Version, t.Top })
-            .Where(x => x.Version < x.Top)
+                (e, t) => new { e.SequenceNumber, e.Version, t.Top, t.Floor })
+            .Where(x => x.Version < x.Top && x.Version > x.Floor)
             .MaxAsync(x => (long?)x.SequenceNumber, cancellationToken);
     }
 
@@ -166,6 +219,7 @@ public static class PartitionCounterBackfill
             var sequenceNumber = versions[(slots[i].BucketId, slots[i].StreamId)].Dequeue();
             var position = counter + i + 1;
             await context.Set<EventStreamEntry>()
+                .IgnoreQueryFilters()
                 .Where(e => e.SequenceNumber == sequenceNumber)
                 .ExecuteUpdateAsync(set => set.SetProperty(e => EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn), position), cancellationToken);
         }
@@ -195,6 +249,7 @@ public static class PartitionCounterBackfill
     private static async Task<long> LockCounterAsync(DbContext context, int partition, CancellationToken cancellationToken)
     {
         var locked = await context.Set<PartitionPosition>()
+            .IgnoreQueryFilters()
             .Where(c => c.Partition == partition)
             .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, c => c.Position), cancellationToken);
         if (locked == 0)
@@ -204,7 +259,7 @@ public static class PartitionCounterBackfill
             context.ChangeTracker.Clear();
         }
 
-        return await context.Set<PartitionPosition>().AsNoTracking()
+        return await context.Set<PartitionPosition>().AsNoTracking().IgnoreQueryFilters()
             .Where(c => c.Partition == partition)
             .Select(c => c.Position)
             .SingleAsync(cancellationToken);

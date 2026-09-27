@@ -247,7 +247,8 @@ partitions whose positions overlap, the framework offers no renumbering, and a h
 count lower than the store's counters. The portable reader is verified on PostgreSQL, and on SQLite through the test host of `Stratara.Testing.Orleans`; on PostgreSQL the
 native reader is the one to use. A store that already holds entries is positioned once, after migrating and before the first
 start, with `PartitionCounterBackfill.RunAsync`; the host refuses to start while an entry without a
-position remains. Running the backfill again changes nothing.
+position remains. Running the backfill again changes nothing. The backfill reads the store past any query filter
+the write context declares, so a context with tenant query filters does not hide entries from it.
 
 The backfill never moves a position it did not hand out: unpositioned entries take the positions after the
 last one of their partition, so a checkpoint written before a backfill stays true and the reader resumes from
