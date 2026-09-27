@@ -96,6 +96,10 @@ retries on failure.
   and `SavedChanges` handlers run before the commit.
 - **During a rolling upgrade of an Orleans cluster,** silos of the two versions cannot read each other's
   validation failures; such a call fails with a serialization failure until every silo is upgraded.
+- **Register everything before the host is built.** A framework registration that adds to what is already
+  registered — the catalogs, the membership options, the trusted types, the Orleans roles and singleton
+  works — throws `InvalidOperationException` when called on `builder.Services` after `Build()`, instead of
+  changing the running host.
 - New types and members are additive; no existing public signature changes.
 
 ### Added

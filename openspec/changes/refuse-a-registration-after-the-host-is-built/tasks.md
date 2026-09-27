@@ -33,6 +33,6 @@
 
 ## 4. Verification
 
-- [ ] 4.1 `./scripts/local-gauntlet.sh` green
+- [x] 4.1 `./scripts/local-gauntlet.sh` green
 - [x] 4.2 `openspec validate refuse-a-registration-after-the-host-is-built --strict`
-- [ ] 4.3 Independent review before the merge
+- [x] 4.3 Independent review before the merge
