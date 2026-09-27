@@ -8,7 +8,11 @@ namespace Stratara.Orleans.IntegrationTests.Fixtures;
 /// it: <c>EnsureCreated</c> only builds a schema into an empty database, so two contexts with
 /// different models must not share one. The connection limit is raised because a run of every
 /// test class — the analysis workflow's, or a local one — holds more connections at once than
-/// PostgreSQL's default of 100 allows.
+/// PostgreSQL's default of 100 allows. The pools close a connection after seconds idle rather than
+/// Npgsql's five minutes: every test class leaves pools behind for databases it no longer uses, and
+/// kept for five minutes those alone reach the limit, so that a later test fails for want of a
+/// connection. A connection still held by the code under test is not idle to its pool and stays
+/// counted.
 /// </summary>
 public sealed class PostgreSqlFixture : IAsyncLifetime
 {
@@ -27,7 +31,11 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await _container.StartAsync();
-        ConnectionString = _container.GetConnectionString();
+        ConnectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
+        {
+            ConnectionIdleLifetime = 5,
+            ConnectionPruningInterval = 1,
+        }.ConnectionString;
     }
 
     public async ValueTask DisposeAsync()

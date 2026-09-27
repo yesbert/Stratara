@@ -65,7 +65,7 @@ public static class PartitionCounterBackfill
     /// </summary>
     private static async Task<int> RunPartitionAsync(DbContext context, string? statement, int partition, int partitionCount, CancellationToken cancellationToken)
     {
-        if (!await Unpositioned(context, new Batch(partition, partitionCount, 0, 0)).AnyAsync(cancellationToken))
+        if (!await Unpositioned(context, partition, partitionCount).AnyAsync(cancellationToken))
         {
             return 0;
         }
@@ -123,11 +123,23 @@ public static class PartitionCounterBackfill
     private static IQueryable<EventStreamEntry> Entries(DbContext context) =>
         context.Set<EventStreamEntry>().AsNoTracking().IgnoreQueryFilters();
 
-    /// <summary>The partition's entries without a position.</summary>
-    private static IQueryable<EventStreamEntry> Unpositioned(DbContext context, Batch range) =>
+    /// <summary>The partition's entries without a position, with a test the position's index can answer.</summary>
+    private static IQueryable<EventStreamEntry> Unpositioned(DbContext context, int partition, int partitionCount) =>
+        Entries(context)
+            .Where(e => e.BucketId % partitionCount == partition
+                        && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null);
+
+    /// <summary>
+    /// The partition's entries without a position, for a query that reads them within a range of the key. A position
+    /// is never 0, and the test is written so that the database cannot answer it from the position's index: once its
+    /// statistics show part of the store positioned, PostgreSQL would otherwise combine that index with the key's and
+    /// read every unpositioned entry — and every entry this run positioned, until the table is vacuumed — for each
+    /// batch.
+    /// </summary>
+    private static IQueryable<EventStreamEntry> UnpositionedByKey(DbContext context, Batch range) =>
         Entries(context)
             .Where(e => e.BucketId % range.PartitionCount == range.Partition
-                        && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null);
+                        && (EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) ?? 0) == 0);
 
     /// <summary>
     /// The sequence number the batch ends at before it is extended, or <see langword="null"/> where no entry follows:
@@ -173,7 +185,7 @@ public static class PartitionCounterBackfill
     private static Task<long?> FindStragglerAsync(DbContext context, Batch range, CancellationToken cancellationToken)
     {
         var entries = Entries(context);
-        var tops = Unpositioned(context, range)
+        var tops = UnpositionedByKey(context, range)
             .Where(e => e.SequenceNumber > range.From && e.SequenceNumber <= range.To)
             .GroupBy(e => new { e.BucketId, e.StreamId })
             .Select(g => new { g.Key.BucketId, g.Key.StreamId, Top = g.Max(e => e.Version) })
@@ -192,7 +204,7 @@ public static class PartitionCounterBackfill
             })
             .Distinct();
 
-        return Unpositioned(context, range)
+        return UnpositionedByKey(context, range)
             .Where(e => e.SequenceNumber > range.To)
             .Join(tops,
                 e => new { e.BucketId, e.StreamId },
@@ -205,7 +217,7 @@ public static class PartitionCounterBackfill
     /// <summary>Positions the batch one entry at a time, on a provider the set-based statement is not written for.</summary>
     private static async Task<int> PositionEachAsync(DbContext context, Batch range, long counter, CancellationToken cancellationToken)
     {
-        var slots = await Unpositioned(context, range)
+        var slots = await UnpositionedByKey(context, range)
             .Where(e => e.SequenceNumber > range.From && e.SequenceNumber <= range.To)
             .OrderBy(e => e.SequenceNumber)
             .Select(e => new { e.SequenceNumber, e.BucketId, e.StreamId, e.Version })
@@ -227,7 +239,10 @@ public static class PartitionCounterBackfill
         return slots.Count;
     }
 
-    /// <summary>Positions the batch with one statement on PostgreSQL, and reads back how many it positioned.</summary>
+    /// <summary>
+    /// Positions the batch with one statement on PostgreSQL, and reads back how many it positioned. The statement tests
+    /// for a missing position as <see cref="UnpositionedByKey"/> does, so it reads the batch by the key alone.
+    /// </summary>
     private static async Task<int> PositionAllAsync(DbContext context, string statement, Batch range, long counter, CancellationToken cancellationToken)
     {
         await using var command = context.Database.GetDbConnection().CreateCommand();
@@ -302,7 +317,7 @@ public static class PartitionCounterBackfill
                            row_number() OVER (PARTITION BY {{bucket}}, {{stream}} ORDER BY {{sequence}}) AS slot,
                            row_number() OVER (PARTITION BY {{bucket}}, {{stream}} ORDER BY {{version}}) AS version_rank
                     FROM {{target}}
-                    WHERE {{sequence}} > @from AND {{sequence}} <= @to AND {{bucket}} % @partitions = @partition AND {{position}} IS NULL
+                    WHERE {{sequence}} > @from AND {{sequence}} <= @to AND {{bucket}} % @partitions = @partition AND COALESCE({{position}}, 0) = 0
                 ), placed AS (
                     SELECT by_version.{{sequence}} AS placed_sequence, by_slot.ordinal
                     FROM batch AS by_version
