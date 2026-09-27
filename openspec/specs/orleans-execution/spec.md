@@ -357,7 +357,9 @@ resolved for the entry, so that a service that takes its tenant or its user when
 one read of the store MAY return entries recorded under several sessions, and each SHALL be applied
 as it would have been had it arrived on its own. A commit SHALL
 wake the readers of the partitions it touched; a wake-up that is lost costs latency and never a
-fact, because a poll reads the store regardless. A committed fact SHALL reach every projection and
+fact, because a poll reads the store regardless. Appending SHALL work, and every append SHALL be
+positioned for the reader, whatever execution strategy the host's write context uses — one that retries on
+failure included, where a transient failure SHALL run the append again as a whole. A committed fact SHALL reach every projection and
 saga whatever dies after the commit. Two rebuilds of one projection SHALL NOT interleave: the
 projection's readers SHALL resume only when every rebuild that paused them has finished, and a
 rebuild requested while a full replay is active SHALL be refused with a message that says so. A full
@@ -402,6 +404,13 @@ from being woken.
 - **WHEN** a transaction with the lower sequence number commits after one with a higher one
 - **THEN** no reader skips the late committer — verified on the PostgreSQL store with the native
   reader and on any relational store with the portable reader
+
+#### Scenario: A write context retries on failure
+
+- **WHEN** a host's write context uses an execution strategy that retries on failure and the host keeps
+  the partition positions for the portable reader
+- **THEN** an append is saved and positioned — verified on SQLite with a retrying strategy through the
+  framework's unit of work, where before every append failed
 
 #### Scenario: A projection is rebuilt
 
