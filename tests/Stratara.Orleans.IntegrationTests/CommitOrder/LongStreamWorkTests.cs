@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing;
 using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
@@ -17,7 +18,11 @@ namespace Stratara.Orleans.IntegrationTests.CommitOrder;
 /// backfills walk it in batches far smaller than the stream: each returns or prepares every stream in version order,
 /// and the rows it reads from the event table — index entries and heap rows alike, counted by the server — stay
 /// within a small multiple of the rows the table holds. A search for a batch's lower versions that re-read the long
-/// stream's past in every batch reads many times more.
+/// stream's past in every batch reads many times more. The backfills run with the column they fill indexed and their
+/// statistics refreshed as they go, as autovacuum refreshes them during a long run: a batch that asked that index for
+/// the entries still to prepare would read all of them — and the ones already prepared, until the table is vacuumed —
+/// once the statistics show part of the store prepared. The native backfill's index is created before it runs,
+/// earlier than the migration guide creates it, because that is the harder case.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class LongStreamWorkTests(PostgreSqlFixture postgres)
@@ -75,7 +80,12 @@ public sealed class LongStreamWorkTests(PostgreSqlFixture postgres)
         var connection = context.Database.GetDbConnection();
 
         var before = await RowsReadAsync(connection);
-        var positioned = await PartitionCounterBackfill.RunAsync(context, store.Options, TestContext.Current.CancellationToken);
+        int positioned;
+        await using (new StatisticsRefresh(postgres.ConnectionStringFor("poc_long_stream_portable")))
+        {
+            positioned = await PartitionCounterBackfill.RunAsync(context, store.Options, TestContext.Current.CancellationToken);
+        }
+
         var rowsRead = await RowsReadAsync(connection) - before;
 
         Assert.Equal(Entries, positioned);
@@ -97,9 +107,15 @@ public sealed class LongStreamWorkTests(PostgreSqlFixture postgres)
         var connection = context.Database.GetDbConnection();
         await CountAsync(connection, $"ALTER TABLE {Table} DROP COLUMN commit_transaction_id");
         await CountAsync(connection, $"ALTER TABLE {Table} ADD COLUMN commit_transaction_id xid8 NULL");
+        await CountAsync(connection, $"CREATE INDEX ix_{Table}_commit_transaction_id ON {Table} (commit_transaction_id)");
 
         var before = await RowsReadAsync(connection);
-        var stamped = await CommitTransactionIdBackfill.RunAsync(context, StampBatch, TestContext.Current.CancellationToken);
+        int stamped;
+        await using (new StatisticsRefresh(postgres.ConnectionStringFor("poc_long_stream_native")))
+        {
+            stamped = await CommitTransactionIdBackfill.RunAsync(context, StampBatch, TestContext.Current.CancellationToken);
+        }
+
         var rowsRead = await RowsReadAsync(connection) - before;
 
         Assert.Equal(Entries, stamped);
@@ -166,6 +182,33 @@ public sealed class LongStreamWorkTests(PostgreSqlFixture postgres)
             WHERE t.oid = '{Table}'::regclass
             GROUP BY t.oid
             """);
+    }
+
+    /// <summary>Analyzes the event table over a connection of its own, again and again, until disposed.</summary>
+    private sealed class StatisticsRefresh : IAsyncDisposable
+    {
+        private readonly CancellationTokenSource _stop = new();
+        private readonly Task _refreshing;
+
+        public StatisticsRefresh(string connectionString) => _refreshing = RefreshAsync(connectionString, _stop.Token);
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stop.CancelAsync();
+            await _refreshing;
+            _stop.Dispose();
+        }
+
+        private static async Task RefreshAsync(string connectionString, CancellationToken stop)
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync(CancellationToken.None);
+            while (!stop.IsCancellationRequested)
+            {
+                await CountAsync(connection, $"ANALYZE {Table}");
+                await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+            }
+        }
     }
 
     private static async Task<long> CountAsync(DbConnection connection, string sql)

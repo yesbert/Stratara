@@ -115,7 +115,13 @@ public static class CommitTransactionIdBackfill
         return value is null or DBNull ? null : Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 
-    /// <summary>The statements, with the table and columns named as the context's model maps them.</summary>
+    /// <summary>
+    /// The statements, with the table and columns named as the context's model maps them. No entry carries transaction
+    /// 0, and each test for a missing commit record is written so that the database cannot answer it from the column's
+    /// index: where the index exists while the backfill runs and the statistics show part of the store stamped,
+    /// PostgreSQL would otherwise combine it with the key's and read every unstamped entry — and every entry this run
+    /// stamped, until the table is vacuumed — for each batch.
+    /// </summary>
     private static class Statement
     {
         /// <exception cref="InvalidOperationException">The model maps no event stream table, or lacks the commit-order column.</exception>
@@ -153,7 +159,7 @@ public static class CommitTransactionIdBackfill
 
             var stamp = $$"""
                 UPDATE {{from}} SET {{transaction}} = pg_current_xact_id()
-                WHERE {{transaction}} IS NULL AND {{sequence}} > @from AND {{sequence}} <= @to
+                WHERE COALESCE({{transaction}}, '0'::xid8) = '0'::xid8 AND {{sequence}} > @from AND {{sequence}} <= @to
                 """;
 
             var straggler = $$"""
@@ -167,14 +173,14 @@ public static class CommitTransactionIdBackfill
                                LIMIT 1), -9223372036854775808) AS floor
                     FROM (
                         SELECT {{bucket}}, {{stream}}, max({{version}}) AS highest FROM {{from}}
-                        WHERE {{transaction}} IS NULL AND {{sequence}} > @from AND {{sequence}} <= @to
+                        WHERE COALESCE({{transaction}}, '0'::xid8) = '0'::xid8 AND {{sequence}} > @from AND {{sequence}} <= @to
                         GROUP BY {{bucket}}, {{stream}}
                     ) AS batch
                 ) AS bounds
                 JOIN {{from}} AS later
                   ON later.{{bucket}} = bounds.{{bucket}} AND later.{{stream}} = bounds.{{stream}}
                  AND later.{{version}} > bounds.floor AND later.{{version}} < bounds.highest
-                WHERE later.{{transaction}} IS NULL AND later.{{sequence}} > @to
+                WHERE COALESCE(later.{{transaction}}, '0'::xid8) = '0'::xid8 AND later.{{sequence}} > @to
                 """;
 
             return (bound, straggler, stamp);
