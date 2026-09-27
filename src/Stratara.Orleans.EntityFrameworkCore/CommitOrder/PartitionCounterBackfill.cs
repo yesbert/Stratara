@@ -65,6 +65,11 @@ public static class PartitionCounterBackfill
     /// </summary>
     private static async Task<int> RunPartitionAsync(DbContext context, string? statement, int partition, int partitionCount, CancellationToken cancellationToken)
     {
+        if (!await Unpositioned(context, new Batch(partition, partitionCount, 0, 0)).AnyAsync(cancellationToken))
+        {
+            return 0;
+        }
+
         var positioned = 0;
         var from = 0L;
         while (await PositionBatchAsync(context, statement, partition, partitionCount, from, cancellationToken) is { } batch)
@@ -104,6 +109,7 @@ public static class PartitionCounterBackfill
             : await PositionAllAsync(context, statement, range, counter, cancellationToken);
 
         await context.Set<PartitionPosition>()
+            .IgnoreQueryFilters()
             .Where(c => c.Partition == partition)
             .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, counter + count), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -124,19 +130,34 @@ public static class PartitionCounterBackfill
                         && EF.Property<long?>(e, CommitOrderSchema.PartitionPositionColumn) == null);
 
     /// <summary>
-    /// The sequence number the batch ends at before it is extended — the last of the store's next entries after the
-    /// start, as many as hold a batch's worth of one partition's where the partitions share them evenly — or
-    /// <see langword="null"/> where no entry follows. The window is taken over every entry in sequence order, not over
-    /// the partition's unpositioned ones, so finding it is a range of the key whatever the database estimates of how
-    /// many entries a partition holds or how many are positioned.
+    /// The sequence number the batch ends at before it is extended, or <see langword="null"/> where no entry follows:
+    /// the partition's thousandth entry among the store's next entries after the start — as many as hold a thousand of
+    /// one partition's where the partitions share them evenly — or the last of those where the partition has fewer
+    /// there. Both are read within a range of the key and without asking which entries are positioned, so neither
+    /// reads past that range whatever the database estimates of how many entries a partition holds or how many are
+    /// positioned, and a batch holds at most a thousand of its partition's entries before it is extended.
     /// </summary>
-    private static Task<long?> BoundAsync(DbContext context, Batch range, CancellationToken cancellationToken) =>
-        Entries(context)
+    private static async Task<long?> BoundAsync(DbContext context, Batch range, CancellationToken cancellationToken)
+    {
+        var window = await Entries(context)
             .Where(e => e.SequenceNumber > range.From)
             .OrderBy(e => e.SequenceNumber)
             .Select(e => e.SequenceNumber)
             .Take(UpdateBatchSize * range.PartitionCount)
             .MaxAsync(sequenceNumber => (long?)sequenceNumber, cancellationToken);
+        if (window is not { } end)
+        {
+            return null;
+        }
+
+        var partitionEnd = await Entries(context)
+            .Where(e => e.SequenceNumber > range.From && e.SequenceNumber <= end && e.BucketId % range.PartitionCount == range.Partition)
+            .OrderBy(e => e.SequenceNumber)
+            .Select(e => (long?)e.SequenceNumber)
+            .Skip(UpdateBatchSize - 1)
+            .FirstOrDefaultAsync(cancellationToken);
+        return partitionEnd ?? end;
+    }
 
     /// <summary>
     /// The highest sequence number beyond the batch of an unpositioned entry whose stream appears in the batch at a
@@ -167,7 +188,7 @@ public static class PartitionCounterBackfill
                                 && e.SequenceNumber <= range.From)
                     .OrderByDescending(e => e.Version)
                     .Select(e => (long?)e.Version)
-                    .FirstOrDefault() ?? 0L,
+                    .FirstOrDefault() ?? long.MinValue,
             })
             .Distinct();
 
@@ -228,6 +249,7 @@ public static class PartitionCounterBackfill
     private static async Task<long> LockCounterAsync(DbContext context, int partition, CancellationToken cancellationToken)
     {
         var locked = await context.Set<PartitionPosition>()
+            .IgnoreQueryFilters()
             .Where(c => c.Partition == partition)
             .ExecuteUpdateAsync(set => set.SetProperty(c => c.Position, c => c.Position), cancellationToken);
         if (locked == 0)
@@ -237,7 +259,7 @@ public static class PartitionCounterBackfill
             context.ChangeTracker.Clear();
         }
 
-        return await context.Set<PartitionPosition>().AsNoTracking()
+        return await context.Set<PartitionPosition>().AsNoTracking().IgnoreQueryFilters()
             .Where(c => c.Partition == partition)
             .Select(c => c.Position)
             .SingleAsync(cancellationToken);

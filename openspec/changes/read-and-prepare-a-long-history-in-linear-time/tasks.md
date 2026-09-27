@@ -38,8 +38,8 @@
 - [x] 3.1 `IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync` remarks: the version order holds from `0`
   and from the highest sequence number of a returned result
   (`src/Stratara.Abstractions/Abstractions/EventSourcing/IEventStreamRepository.cs`)
-- [x] 3.2 `CommitTransactionIdBackfill.RunAsync`'s `batchSize`: the least a batch stamps, extended past a stream's
-  inverted run; the class summary says the same
+- [x] 3.2 `CommitTransactionIdBackfill.RunAsync`'s `batchSize`: the consecutive entries a batch covers at least,
+  extended past a stream's inverted run; the class summary says the same
 - [x] 3.3 `CHANGELOG.md` under `[4.4.0]` → Fixed: both defects, in the consumer's terms
 
 ## 4. The replay end to end
@@ -51,9 +51,19 @@
 - [x] 4.2 The same over the PostgreSQL store
   (`tests/Stratara.Orleans.IntegrationTests/Projections/ProjectionReplayStreamOrderTests.cs`); same counter-check
 
-## 5. Verification
+## 5. Review follow-ups
 
-- [ ] 5.1 `./scripts/local-gauntlet.sh` green
-- [ ] 5.2 `tests/Stratara.Orleans.IntegrationTests` green
-- [x] 5.3 `openspec validate read-and-prepare-a-long-history-in-linear-time --strict`
-- [ ] 5.4 Independent review before the merge
+- [x] 5.0a A portable batch holds at most 1,000 of its partition's entries before it is extended: the bound is the
+  partition's thousandth entry within the key window, read without asking which entries are positioned
+  (`PartitionCounterBackfill.BoundAsync`); a partition without an unpositioned entry is skipped before its walk
+- [x] 5.0b A version-0 straggler is found: the floor's default is the lowest version, not `0`
+  (`EventStreamRepositoryStreamOrderTests.A_stream_that_starts_at_version_zero_is_extended_to_its_first_version`)
+- [x] 5.0c The walk condition is stated as a walk from `0` in the remarks and the CHANGELOG; the counter rows the
+  backfill locks and updates ignore query filters too
+
+## 6. Verification
+
+- [ ] 6.1 `./scripts/local-gauntlet.sh` green
+- [ ] 6.2 `tests/Stratara.Orleans.IntegrationTests` green
+- [x] 6.3 `openspec validate read-and-prepare-a-long-history-in-linear-time --strict`
+- [ ] 6.4 Independent review before the merge

@@ -20,12 +20,17 @@ positioning statement is raw SQL and unfiltered. The per-entry path's `ExecuteUp
 **Goals:**
 
 - Per batch, work proportional to the batch plus the entries it is extended by, whatever a stream holds outside it.
-- Identical results: the same ranges, the same order, the same positions and stamps.
+- Identical results for a walk as documented, from `0` and each range after the one before: the same order, the
+  same positions and stamps. A native rerun over a partially stamped store may group the remaining entries
+  differently; see the window decision.
 - The portable backfill sees every entry, on every provider path.
 
 **Non-Goals:**
 
-- Changing where a batch ends, the extension rule, or the public signatures.
+- Changing the extension rule or the public signatures.
+- Walking the store once for all partitions in the portable backfill. Each partition walks the key range on its own,
+  as it did before whenever the plan was good, so the portable backfill reads in proportion to the history times the
+  partition count. That is linear in the history, which is what this change is about.
 - Rewriting or revisiting history prepared by an earlier release (the spec forbids it).
 - Query filters anywhere but the portable backfill. The review found one operation that was inconsistent with
   itself: the portable backfill read through the filters but positioned without them. The framework's other
@@ -107,11 +112,15 @@ batch size for the native backfill, and 1,000 × the partition count for the por
 the unprepared entries of the window (of its partition) and is extended by stragglers as before. Positions and stamps
 do not change: batch boundaries only group, and the extension keeps every stream's inverted run inside one batch.
 
-*Consequences:* a portable batch holds about 1,000 entries of its partition rather than exactly 1,000. A window can
-hold none of a partition's entries and positions nothing, and each partition still walks the whole key range, as it
-did before whenever the plan was good. A second run over a prepared store walks it once instead of stopping at the
-first query. The native backfill's `batchSize` becomes the number of consecutive entries a batch covers. During the
-documented migration, where nothing is stamped yet, that is the number it stamps.
+*Consequences:* within the window, the portable batch ends at its partition's thousandth entry, found in the same key
+range and again without asking which entries are positioned. A batch therefore holds at most 1,000 of its partition's
+entries before it is extended, however unevenly the partitions share the store: a partition holding most of the
+history does not position 16,000 entries under its counter lock at the default count. A window can hold none of a
+partition's entries and positions nothing. A partition without an unpositioned entry is skipped before its walk, so
+a second run over a prepared store asks once per partition. The native backfill's `batchSize` becomes the number of consecutive entries a batch covers. During the
+documented migration, where nothing is stamped yet, that is the number it stamps, and the batches are the ones 4.3.1
+cut. A rerun over a partially stamped store groups what is left by windows over the whole key range, so its groups,
+and the order between streams inside them, can differ from 4.3.1's. No guarantee depends on that grouping.
 
 *Evidence:* the counted-rows tests (portable 30.4 → 5.7 rows per entry, native 253.6 → 4.7). The benchmark: native
 backfill 78.5 s → 19.8 s, portable 51.9 s → 49.2 s.
@@ -137,7 +146,13 @@ the repository does not have.
   where the old search visibly re-reads the long stream. It bounds rows touched per entry, so a plan regression
   fails it.
 - [A consumer calls the stream-order read from an arbitrary position] → That was never ordered, and the result is
-  still every entry of a contiguous range. The remarks now say so.
+  still every entry of a contiguous range. The remarks now say so. The batches it returns from such a position can
+  differ from 4.3.1's: the review's probe saw 929 of 18,104 arbitrary-start calls differ.
+- [An entry becomes visible behind a replay on a live store] → A save that commits after the replay has read past
+  one of its entries was already lost to that replay, before this change as after. The bounded search can order the
+  rest of that save differently. A replay runs while nothing appends, as documented.
+- [A version below 1] → The framework numbers versions from 1, but an imported history may start at 0. The floor's
+  default is therefore the lowest `long`, not `0`, so a version-0 straggler is found as before.
 - [Many short streams in one batch: one extra index probe per stream] → The probe is `O(log n)`, about 12 µs on the
   benchmark store, and it replaces a range scan that cost at least as much. The benchmark in tasks.md records before
   and after.

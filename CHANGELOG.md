@@ -400,9 +400,10 @@ retries on failure.
   reads only the versions that can still lie beyond the batch. Where both backfills end a batch is now
   found from the event table's key alone, so a database that misestimates how much history is left no
   longer rescans the rest of the table for every batch. Measured again on the same store: replay 9.7 s,
-  native backfill 19.8 s, portable backfill 49 s against 52 s. Results are unchanged.
-  `IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync` now documents that its order holds for a
-  walk from the start: from `0`, or after the highest sequence number of a result it returned.
+  native backfill 19.8 s, portable backfill 49 s against 52 s. A replay and a backfill run as documented
+  return and prepare exactly what they did. `IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync`
+  now documents that its order holds for a walk from the start: from `0`, and from there after the highest
+  sequence number of each result.
 - **The portable reader's backfill positions every entry, whatever query filters the write context
   declares.** It read the store through the context's filters, so on a write context with tenant query
   filters (`ApplyGlobalTenantQueryFilters`) and no session it positioned nothing. Under a session it

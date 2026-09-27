@@ -35,8 +35,9 @@ The owner ruled on 2026-09-26 that 4.4.0 is not released while a known bug is op
 - The replay's read states when its order holds: from the start of the store, or after the highest sequence
   number of a result it returned. That was always the condition, and the replay worker already reads that way;
   the bounded search relies on it too.
-- The native backfill's batch size is documented as what it is: the least a batch stamps. A batch that would
-  end inside a stream's inverted run grows until it does not.
+- The native backfill's batch size is documented as what it is: the number of consecutive entries a batch
+  covers at least, stamping those without a commit record. A batch that would end inside a stream's inverted run
+  grows until it does not.
 - A replay over a real store whose sequence numbers run against its versions is tested end to end, from the
   replay worker down to the store, on SQLite and on PostgreSQL. So far only the store's read was tested there,
   and the worker only against a substitute.

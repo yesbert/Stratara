@@ -96,6 +96,20 @@ public class EventStreamRepositoryStreamOrderTests
     }
 
     [Fact]
+    public async Task A_stream_that_starts_at_version_zero_is_extended_to_its_first_version()
+    {
+        await using var ctx = CreateContext();
+        var stream = Guid.NewGuid();
+        await ctx.Set<EventStreamEntry>().AddRangeAsync(Entry(10, stream, 2), Entry(11, stream, 1), Entry(12, stream, 0));
+        await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var repo = new EventStreamRepository(ctx);
+
+        var batch = await repo.GetManyAfterSequenceInStreamOrderAsync(0, 2, TestContext.Current.CancellationToken);
+
+        Assert.Equal([0L, 1L, 2L], batch.Select(e => e.Version));
+    }
+
+    [Fact]
     public async Task Two_inverted_streams_keep_the_interleaving_the_sequence_gives_them()
     {
         await using var ctx = CreateContext();

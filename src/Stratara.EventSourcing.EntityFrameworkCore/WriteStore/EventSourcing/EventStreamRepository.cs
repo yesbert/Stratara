@@ -129,7 +129,7 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
                                 && e.SequenceNumber <= afterSequenceNumber)
                     .OrderByDescending(e => e.Version)
                     .Select(e => (long?)e.Version)
-                    .FirstOrDefault() ?? 0L,
+                    .FirstOrDefault() ?? long.MinValue,
             })
             .Distinct();
 

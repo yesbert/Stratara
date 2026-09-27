@@ -164,7 +164,7 @@ public static class CommitTransactionIdBackfill
                                WHERE earlier.{{bucket}} = batch.{{bucket}} AND earlier.{{stream}} = batch.{{stream}}
                                  AND earlier.{{version}} < batch.highest AND earlier.{{sequence}} <= @from
                                ORDER BY earlier.{{version}} DESC
-                               LIMIT 1), 0) AS floor
+                               LIMIT 1), -9223372036854775808) AS floor
                     FROM (
                         SELECT {{bucket}}, {{stream}}, max({{version}}) AS highest FROM {{from}}
                         WHERE {{transaction}} IS NULL AND {{sequence}} > @from AND {{sequence}} <= @to
