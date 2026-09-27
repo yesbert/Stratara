@@ -84,6 +84,10 @@ public static class ProjectionServiceCollectionExtensions
     /// <typeparam name="T">A marker type that lives in the assembly to scan (typically a per-project <c>IMarker</c> interface).</typeparam>
     /// <param name="services">The service collection to register against.</param>
     /// <returns>The service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <example>
     /// Discover and register every <see cref="IProjection"/> in the projections assembly:
     /// <code>
@@ -94,7 +98,7 @@ public static class ProjectionServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddProjectionsFromAssemblyContaining<T>(this IServiceCollection services)
     {
-        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services, nameof(AddProjectionsFromAssemblyContaining));
         var assembly = typeof(T).Assembly;
 
         foreach (var type in assembly.GetTypes()

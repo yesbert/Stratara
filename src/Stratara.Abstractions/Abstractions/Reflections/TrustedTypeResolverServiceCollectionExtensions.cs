@@ -26,6 +26,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// No resolver is registered yet and the host was already built from <paramref name="services"/>,
+    /// which is read-only.
+    /// </exception>
     /// <example>
     /// Idempotent. The assembly-scanning registrations call it, so a host that uses them does not:
     /// <code>
@@ -34,7 +38,11 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddTrustedTypeResolver(this IServiceCollection services)
     {
-        GetOrAddResolver(services);
+        if (RegisteredResolver(services) is null)
+        {
+            GetOrAddResolver(services, nameof(AddTrustedTypeResolver));
+        }
+
         return services;
     }
 
@@ -46,6 +54,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <typeparam name="T">The type to add to the allowlist.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <example>
     /// For a type that is produced but never handled — a snapshot type whose aggregate has no
     /// projection or saga to anchor the automatic scan:
@@ -55,7 +67,7 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddTrustedType<T>(this IServiceCollection services)
     {
-        var resolver = GetOrAddResolver(services);
+        var resolver = GetOrAddResolver(services, nameof(AddTrustedType));
         resolver.Register(typeof(T));
         return services;
     }
@@ -70,6 +82,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <typeparam name="T">A marker type from the assembly to scan.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <remarks>
     /// For each discovered aggregate, every public instance method named <c>Apply</c> that takes
     /// a single parameter contributes its parameter type to the allowlist — the payload type for an
@@ -86,7 +102,7 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddAggregatesFromAssemblyContaining<T>(this IServiceCollection services)
     {
-        var resolver = GetOrAddResolver(services);
+        var resolver = GetOrAddResolver(services, nameof(AddAggregatesFromAssemblyContaining));
         foreach (var aggregateType in DiscoverAggregateTypes(typeof(T).Assembly))
         {
             resolver.Register(aggregateType);
@@ -104,6 +120,10 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// <typeparam name="T">A marker type from the assembly that contains the aggregates and their events.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Use this in a host that only needs to <em>deserialize</em> event payloads coming off the message
@@ -129,7 +149,7 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddDomainEventTypesFromAssemblyContaining<T>(this IServiceCollection services)
     {
-        var resolver = GetOrAddResolver(services);
+        var resolver = GetOrAddResolver(services, nameof(AddDomainEventTypesFromAssemblyContaining));
         foreach (var aggregateType in DiscoverAggregateTypes(typeof(T).Assembly))
         {
             RegisterApplyEventParameters(resolver, aggregateType);
@@ -167,11 +187,34 @@ public static class TrustedTypeResolverServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The shared resolver instance, created and registered on first call.</returns>
-    public static TrustedTypeResolver GetOrAddResolver(IServiceCollection services)
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
+    public static TrustedTypeResolver GetOrAddResolver(IServiceCollection services) =>
+        GetOrAddResolver(services, nameof(GetOrAddResolver));
+
+    /// <summary>
+    /// Retrieves the shared <see cref="TrustedTypeResolver"/> singleton for the registration named
+    /// <paramref name="registration"/>, which is about to add types to it.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="registration">The registration that adds to the resolver, named in the error a built host gets.</param>
+    /// <returns>The shared resolver instance, created and registered on first call.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
+    public static TrustedTypeResolver GetOrAddResolver(IServiceCollection services, string registration)
     {
-        var existing = services.FirstOrDefault(s =>
-            s.ServiceType == typeof(ITrustedTypeResolver) && s.ImplementationInstance is TrustedTypeResolver);
-        if (existing?.ImplementationInstance is TrustedTypeResolver registered)
+        if (services.IsReadOnly)
+        {
+            throw new InvalidOperationException(
+                $"{registration} was called after the host was built: the service collection is read-only, and the " +
+                $"types the running host trusts would change under it. Call {registration} while the host is being configured.");
+        }
+
+        if (RegisteredResolver(services) is { } registered)
         {
             return registered;
         }
@@ -181,4 +224,8 @@ public static class TrustedTypeResolverServiceCollectionExtensions
         services.AddSingleton<ITrustedTypeResolver>(resolver);
         return resolver;
     }
+
+    private static TrustedTypeResolver? RegisteredResolver(IServiceCollection services) =>
+        services.FirstOrDefault(s => s.ServiceType == typeof(ITrustedTypeResolver) && s.ImplementationInstance is TrustedTypeResolver)
+            ?.ImplementationInstance as TrustedTypeResolver;
 }

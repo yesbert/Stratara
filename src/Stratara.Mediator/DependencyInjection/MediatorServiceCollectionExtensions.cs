@@ -154,6 +154,10 @@ public static class MediatorServiceCollectionExtensions
     /// <typeparam name="T">A marker type from the assembly to scan. Typically <c>Program</c> or the application's marker interface.</typeparam>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only: the types the
+    /// running host trusts would change under it.
+    /// </exception>
     /// <example>
     /// Register every command handler in the host's assembly via a marker interface
     /// so domain assemblies are scanned without referencing concrete types here:
@@ -165,7 +169,7 @@ public static class MediatorServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddCommandHandlersFromAssemblyContaining<T>(this IServiceCollection services)
     {
-        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services);
+        var resolver = TrustedTypeResolverServiceCollectionExtensions.GetOrAddResolver(services, nameof(AddCommandHandlersFromAssemblyContaining));
         var assembly = typeof(T).Assembly;
 
         foreach (var type in assembly

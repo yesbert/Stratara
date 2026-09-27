@@ -96,6 +96,10 @@ retries on failure.
   and `SavedChanges` handlers run before the commit.
 - **During a rolling upgrade of an Orleans cluster,** silos of the two versions cannot read each other's
   validation failures; such a call fails with a serialization failure until every silo is upgraded.
+- **Register everything before the host is built.** A framework registration that adds to what is already
+  registered — the catalogs, the membership options, the trusted types, the Orleans roles and singleton
+  works — throws `InvalidOperationException` when called on `builder.Services` after `Build()`, instead of
+  changing the running host.
 - New types and members are additive; no existing public signature changes.
 
 ### Added
@@ -409,6 +413,18 @@ retries on failure.
   declares.** It read the store through the context's filters, so on a write context with tenant query
   filters (`ApplyGlobalTenantQueryFilters`) and no session it positioned nothing. Under a session it
   decided where each batch ended from that tenant's entries alone.
+
+- **A registration made after the host was built is refused instead of changing the running host.**
+  `AddPermissionCatalog`, `AddSettingCatalog`, `AddMembershipAuthorization`,
+  `AddMembershipAuthorizationOptions`, the trusted-type registrations (`AddTrustedTypeResolver`,
+  `AddTrustedType<T>`, the assembly scans for aggregates, events, command handlers, projections and sagas),
+  `AddStrataraAggregateGrains`, `AddStrataraProjectionGrains`, `AddStrataraSagaGrains`,
+  `AddStrataraDurableTimers` and `AddStrataraSingletonWork` add to an instance registered earlier. Called
+  on `builder.Services` after `Build()`, the ones that found their instance changed what the running host
+  was already reading, racing its readers; the others failed with the service collection's generic
+  read-only error. They now fail with an `InvalidOperationException` that names the registration; a call
+  that would change nothing still succeeds. `GetOrAddResolver` has an overload that takes the name of the
+  registration calling it.
 
 ## [4.3.1] — 2026-09-25
 
