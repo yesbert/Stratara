@@ -63,7 +63,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 `./scripts/local-gauntlet.sh` green
-- [ ] 6.2 `tests/Stratara.Orleans.IntegrationTests` green
+- [x] 6.1 `./scripts/local-gauntlet.sh` green
+- [x] 6.2 `tests/Stratara.Orleans.IntegrationTests` green
 - [x] 6.3 `openspec validate read-and-prepare-a-long-history-in-linear-time --strict`
-- [ ] 6.4 Independent review before the merge
+- [x] 6.4 Independent review before the merge
