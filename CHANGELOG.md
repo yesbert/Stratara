@@ -127,6 +127,14 @@ retries on failure.
   read model.
   `AddProjectionsFromAssemblyContaining<T>()` trusts the two deletion facts for a declaring projection.
 
+### Changed
+
+- **`IEventStreamRepository`, `ISnapshotRepository` and `IEventChainRepository` read every tenant's rows,
+  whatever query filters the write context declares.** A consumer who calls them directly through a write
+  context filtered by tenant now gets every tenant's entries, snapshots and anchors, not only the ambient
+  tenant's. Keeping tenants apart is the entrance guard's job; a filter on the write context applies to the
+  consumer's own queries.
+
 ### Fixed
 
 - **A framework exception keeps its type between silos.** Orleans carries an exception from one silo
@@ -426,12 +434,15 @@ retries on failure.
   that would change nothing still succeeds. `GetOrAddResolver` has an overload that takes the name of the
   registration calling it.
 
-- **The framework's work across the store sees every tenant when the write context filters by tenant.**
+- **The framework's work on its store sees every tenant when the write context filters by tenant.**
   Event entries, snapshots, hash-chain anchors and the command log are tenant-scoped, so
   `ApplyGlobalTenantQueryFilters` on the write context filtered them too. Work that runs without a session
   then saw nothing: the commit-order readers returned no entries, the portable reader's start check passed
-  over unpositioned entries, a replay emptied the read models and applied nothing, and the hash chain hashed
-  nothing. That work now reads past the filters. A read about one stream still goes through them.
+  over unpositioned entries, a replay emptied the read models and applied nothing, the hash chain hashed
+  nothing, and a saga process's liveness check found no process and dropped its timers. A stream holding
+  events of two owners was half read under one owner's session, snapshotted wrong, and refused that
+  owner's next append. Every read the framework makes of its store now goes past the write context's
+  query filters; a filter declared there applies to the consumer's own queries only.
 
 ## [4.3.1] — 2026-09-25
 

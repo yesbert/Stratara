@@ -142,7 +142,7 @@ app.UseExceptionHandler();
 The entrance guard covers requests. It does not cover a query that reaches your database context some
 other way: a background job, a projection helper, a repository method a handler calls with the wrong
 id. The second layer, the tenant query filter, is independent on purpose. It constrains **every**
-query a tenant-scoped context issues, including the ones the guard never saw.
+query your code issues through a tenant-scoped context, including the ones the guard never saw.
 
 Two declarations and one call switch it on:
 
@@ -192,11 +192,14 @@ rows. Entity Framework Core's own `IgnoreQueryFilters()` still switches the filt
 query, so treat that call the way you would treat any cross-tenant operation.
 
 The framework's own store entities — event entries, snapshots, hash-chain anchors and the command log — are
-tenant-scoped too, so calling `ApplyGlobalTenantQueryFilters(this)` on your write context filters them as well.
-What the framework asks about one stream then goes through the filter: whether it exists, its entries, its version
-and its snapshots. That is the second layer doing its job. The framework's work across the store does not, because
-it runs without a session on behalf of every tenant: the commit-order readers and the portable reader's start check,
-a replay's reads, the hash chain, and the backfills. That work always sees every tenant's entries.
+tenant-scoped too, so calling `ApplyGlobalTenantQueryFilters(this)` on your write context declares the filter on them
+as well. It then applies to your own queries of those entities, and to nothing the framework does with its store. The
+event store is one history: a stream's version and owner are decided across all its entries, a stream may hold events
+of more than one owner, and the framework reads the store without a session on behalf of every tenant — its readers,
+a replay, the hash chain, the backfills, a process's timeouts. Every read the framework makes of it therefore goes past
+**every** query filter you declare on those entities, not only the tenant filter. Keeping one tenant away from
+another's stream is the entrance guard's job; the filter on your read contexts is the second layer for your read
+models.
 
 ## Related
 

@@ -1,4 +1,4 @@
-# Let the framework's store-wide work see every tenant
+# Let the framework's work on its store see every tenant
 
 > **Status:** approved
 
@@ -18,16 +18,24 @@ session, so the filter matches no tenant, and it silently sees nothing:
 The portable backfill had the same defect and is fixed by `read-and-prepare-a-long-history-in-linear-time`. The owner
 decided on 2026-09-27 that the rest is a bug to fix before 4.4.0, not a configuration to forbid or merely document.
 
+The independent review then showed that the framework also reads single streams without a session. A saga
+process's liveness check and its timeout both do this, so the filter reported live processes as dead and dropped
+their timers. A stream may also hold events of two owners (`AppendOnBehalfOfAsync`). Under one owner's session such
+a stream was half read, snapshotted wrong for good, and refused every later append with a `ConcurrencyException`.
+The owner decided on 2026-09-27 that the framework reads its store past the filters everywhere.
+
 ## What Changes
 
-- The framework's work across the store ignores the write context's query filters. That covers both commit-order
-  readers and the portable reader's start check, the replay's reads, and the hash chain: its reads of unhashed and
-  preceding entries, of the last hashed entry, and of its anchors.
-- A read about one stream keeps the consumer's filters: existence, first entry, version, the stream's entries and its
-  snapshots. Those run under a session and are the reads the filter exists for.
-- The store-wide members of `IEventStreamRepository` and `IEventChainRepository` document that they read every
-  tenant's entries.
-- The tenant-isolation guide says what a filter on the write context reaches and what it does not.
+- Every read the framework makes of its own store ignores the write context's query filters: event entries,
+  snapshots and hash-chain anchors, whether across the store or about one stream. That covers the event stream and
+  snapshot repositories, both commit-order readers and the portable reader's start check, and the hash chain's anchor
+  read. A filter the consumer declares on the write context applies to the consumer's own queries only.
+- **Behaviour change** for a consumer who calls `IEventStreamRepository`, `ISnapshotRepository` or
+  `IEventChainRepository` directly through a write context that filters by tenant: the repositories return every
+  tenant's entries, snapshots and anchors, not the ambient tenant's.
+- The three repository contracts document it.
+- The tenant-isolation guide says what a filter on the write context reaches, and that keeping tenants apart is
+  the entrance guard's job.
 
 ## Capabilities
 
@@ -36,15 +44,16 @@ decided on 2026-09-27 that the rest is a bug to fix before 4.4.0, not a configur
 ### Modified Capabilities
 
 - `tenant-isolation`: *Tenant-scoped rows are filtered at the database as well as at the entrance*. The framework's
-  own work across the store sees every tenant's entries whatever filters the write context declares, and a query
-  about one stream keeps them.
+  reads of its own store see every entry whatever filters the write context declares. The filter applies to the
+  consumer's own queries.
 
 ## Impact
 
-- `Stratara.EventSourcing.EntityFrameworkCore`: `EventStreamRepository` (store-wide members), `EventChainRepository`.
+- `Stratara.EventSourcing.EntityFrameworkCore`: `EventStreamRepository`, `SnapshotRepository`, `EventChainRepository`.
 - `Stratara.Orleans.EntityFrameworkCore`: `PortableCounterReader`, `PortableCounterStartupCheck`,
   `PostgresTransactionIdReader`.
-- `Stratara.Abstractions`: remarks on `IEventStreamRepository` and `IEventChainRepository`.
+- `Stratara.Abstractions`: remarks on `IEventStreamRepository`, `ISnapshotRepository` and `IEventChainRepository`.
 - `docs/guides/enforce-tenant-isolation.md`.
-- Tests: `Stratara.WriteStore.Tests`, `Stratara.Testing.Orleans.Tests`, `Stratara.Orleans.IntegrationTests`.
+- Tests: `Stratara.WriteStore.Tests`, `Stratara.Testing.Orleans.Tests`, `Stratara.Testing.EntityFrameworkCore.Tests`,
+  `Stratara.Orleans.IntegrationTests`.
 - `CHANGELOG.md` under the open `[4.4.0]`.

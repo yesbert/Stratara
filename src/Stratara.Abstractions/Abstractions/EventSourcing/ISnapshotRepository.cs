@@ -5,6 +5,7 @@ namespace Stratara.Abstractions.EventSourcing;
 /// <summary>
 /// Repository over the <c>snapshot</c> table — periodic state captures that let the
 /// aggregation service skip replaying every event from the start of a stream.
+/// Reads return every tenant's snapshots, whatever query filters the underlying context declares.
 /// </summary>
 public interface ISnapshotRepository
 {

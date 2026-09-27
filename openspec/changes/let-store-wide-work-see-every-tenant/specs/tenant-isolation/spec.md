@@ -7,15 +7,18 @@ tenant of its database context, so that a read reaching the store without passin
 guard still cannot return another tenant's rows.
 
 The two layers are independent on purpose: the entrance guard covers requests, and the query filter
-covers every query the context issues, including ones the guard never saw.
+covers every query the consumer's code issues through the context, including ones the guard never saw.
 
-The framework's own work across the store is not such a query: reading the store in commit order and
-checking it at start, replaying it, chaining its hashes and preparing its history run without a
-session, on behalf of every tenant. That work SHALL see every tenant's entries whatever query filters
-the consumer's write context declares, so that declaring the filter there never silently empties a
-reader, a replay or the hash chain. A query the framework makes about one stream — whether it exists,
-its first entry, its version, its entries, its snapshots — SHALL keep the filters the context
-declares.
+The framework's own event store is not such a query. Its events, snapshots and hash-chain anchors
+are one history: a stream's version and owner are decided across all its entries, a stream may hold
+events of more than one owner, and the framework reads the store without a session on behalf of
+every tenant — in commit order and at start, for a replay, for the hash chain, to prepare its
+history, and for work on one stream such as a process's timeout. The framework's reads of its store
+SHALL therefore see every entry whatever query filters the consumer's write context declares, so
+that declaring the filter there never silently empties a reader, a replay or the hash chain, drops
+a timer, or leaves a stream half read. A filter declared on the write context SHALL apply to the
+consumer's own queries of those entities only. Keeping one tenant from another tenant's stream is
+the entrance guard's.
 
 #### Scenario: A tenant-scoped entity is queried
 
@@ -37,8 +40,10 @@ declares.
   every tenant's entries and anchors — verified on SQLite for the portable reader, its start check
   and the reads of the replay and the hash chain, and on PostgreSQL for the native reader
 
-#### Scenario: A stream is read through a filtered write context
+#### Scenario: One stream is worked on through a filtered write context
 
-- **WHEN** the framework reads one stream through a write context that declares the tenant query
-  filter, under a session of another tenant
-- **THEN** the stream's entries are not returned, as for any query through that context
+- **WHEN** the framework works on one stream through a write context that declares the tenant query
+  filter — without a session, or under the session of one of the stream's owners, for a stream
+  holding events of two owners
+- **THEN** it finds the stream, rebuilds it from every entry and snapshot, snapshots it in full, and
+  appends to it at its true version — verified on SQLite

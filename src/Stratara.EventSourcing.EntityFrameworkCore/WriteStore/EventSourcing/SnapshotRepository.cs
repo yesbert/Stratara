@@ -9,7 +9,8 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing;
 /// <summary>
 /// EF Core-backed <see cref="ISnapshotRepository"/> over the <c>snapshot</c> table. Reads
 /// return the latest snapshot at or before a target version; new snapshots are inserted via
-/// the surrounding unit of work.
+/// the surrounding unit of work. Reads see every tenant's snapshots, whatever query filters the
+/// context declares, as the reads of the stream they shorten do.
 /// </summary>
 /// <param name="context">The write-store DbContext that hosts the snapshot table.</param>
 internal sealed class SnapshotRepository(IWriteDbContext context) : ISnapshotRepository
@@ -19,7 +20,7 @@ internal sealed class SnapshotRepository(IWriteDbContext context) : ISnapshotRep
     {
         var versionIndependentName = aggregateTypeName.GetVersionIndependentTypeName();
         var prefix = versionIndependentName + ",";
-        return context.Set<Snapshot>().AsNoTracking()
+        return context.Set<Snapshot>().AsNoTracking().IgnoreQueryFilters()
             .Where(e => e.StreamId == streamId
                         && (!toVersion.HasValue || e.Version <= toVersion)
                         && (e.AggregateTypeName == versionIndependentName || e.AggregateTypeName.StartsWith(prefix)))
@@ -32,7 +33,7 @@ internal sealed class SnapshotRepository(IWriteDbContext context) : ISnapshotRep
     {
         var versionIndependentName = aggregateTypeName.GetVersionIndependentTypeName();
         var prefix = versionIndependentName + ",";
-        return await context.Set<Snapshot>().AsNoTracking()
+        return await context.Set<Snapshot>().AsNoTracking().IgnoreQueryFilters()
             .Where(e => e.StreamId == streamId
                         && (e.AggregateTypeName == versionIndependentName || e.AggregateTypeName.StartsWith(prefix)))
             .OrderByDescending(e => e.Version)

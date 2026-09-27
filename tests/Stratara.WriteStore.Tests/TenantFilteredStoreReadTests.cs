@@ -9,11 +9,10 @@ using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing;
 namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.Tests;
 
 /// <summary>
-/// Scenarios <em>The write context declares the tenant filter</em> and <em>A stream is read through a filtered write
-/// context</em>, for the reads a replay and the hash chain make. The write context filters every tenant-scoped entity
-/// to its ambient tenant, as the tenant-isolation guide switches the filter on, and the store holds the entries and
-/// anchors of two tenants. The reads across the store see both tenants whatever the ambient tenant; a read about one
-/// stream sees only the ambient tenant's.
+/// Scenarios <em>The write context declares the tenant filter</em> and <em>One stream is worked on through a filtered
+/// write context</em>, for the repositories. The write context filters every tenant-scoped entity to its ambient
+/// tenant, as the tenant-isolation guide switches the filter on, and the store holds the entries, snapshots and anchors
+/// of two tenants. Every read sees both tenants whatever the ambient tenant.
 /// </summary>
 public class TenantFilteredStoreReadTests
 {
@@ -42,19 +41,20 @@ public class TenantFilteredStoreReadTests
     }
 
     [Fact]
-    public async Task A_read_about_one_stream_keeps_the_filter()
+    public async Task A_read_about_one_stream_sees_every_owner_whatever_the_session()
     {
         await using var context = await CreateStoreAsync();
         context.TenantId = First;
         var entries = new EventStreamRepository(context);
+        var snapshots = new SnapshotRepository(context);
         var ct = TestContext.Current.CancellationToken;
 
-        Assert.True(await entries.StreamExistsAsync(FirstStream, ct));
-        Assert.False(await entries.StreamExistsAsync(SecondStream, ct));
-        Assert.Null(await entries.GetFirstOrDefaultAsync(SecondStream, ct));
-        Assert.Equal(0L, await entries.GetVersionOrDefaultAsync(SecondStream, ct));
-        Assert.Empty(await entries.GetManyAsync(SecondStream, cancellationToken: ct));
-        Assert.Equal(2L, (await entries.GetManyAfterSequenceAsync(0, 10, ct)).Count(e => e.TenantId == Second));
+        Assert.True(await entries.StreamExistsAsync(SecondStream, ct));
+        Assert.Equal(1L, (await entries.GetFirstOrDefaultAsync(SecondStream, ct))?.Version);
+        Assert.Equal(2L, await entries.GetVersionOrDefaultAsync(SecondStream, ct));
+        Assert.Equal([1L, 2L], (await entries.GetManyAsync(SecondStream, cancellationToken: ct)).Select(e => e.Version));
+        Assert.Equal(2L, (await snapshots.GetAsync(SecondStream, "TestAggregate", cancellationToken: ct))?.Version);
+        Assert.Equal(2L, await snapshots.GetLatestVersionOrDefaultAsync(SecondStream, "TestAggregate", ct));
     }
 
     /// <summary>
@@ -75,6 +75,17 @@ public class TenantFilteredStoreReadTests
             Entry(3, First, FirstStream, 2, hashed: false),
             Entry(4, Second, SecondStream, 1, hashed: false));
         context.Set<EventChainAnchor>().AddRange(Anchor(First, 1), Anchor(Second, 2));
+        context.Set<Snapshot>().Add(new Snapshot
+        {
+            Id = Guid.NewGuid(),
+            StreamId = SecondStream,
+            Version = 2,
+            AggregateTypeName = "TestAggregate",
+            DataJson = "{}",
+            Timestamp = DateTimeOffset.UtcNow,
+            BucketId = 3,
+            TenantId = Second,
+        });
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         context.ChangeTracker.Clear();
         return context;
