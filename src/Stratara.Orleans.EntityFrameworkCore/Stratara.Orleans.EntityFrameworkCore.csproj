@@ -17,6 +17,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Compile Include="..\Shared\EntityFrameworkCore\ConflictIgnoringInsert.cs" Link="Shared\ConflictIgnoringInsert.cs"/>
+    </ItemGroup>
+
+    <ItemGroup>
         <InternalsVisibleTo Include="Stratara.Orleans.Tests"/>
         <InternalsVisibleTo Include="Stratara.Orleans.IntegrationTests"/>
         <InternalsVisibleTo Include="Stratara.Orleans.Benchmarks"/>

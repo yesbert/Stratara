@@ -1,7 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
+using Stratara.EntityFrameworkCore;
 using Stratara.Projections.Abstractions;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
@@ -13,20 +11,14 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
 {
     private const int MaxInsertAttempts = 3;
 
-    /// <summary>The providers whose insert can skip a row that is already there: PostgreSQL and SQLite.</summary>
-    private static readonly HashSet<string> ProvidersIgnoringAConflict = new(StringComparer.Ordinal)
-    {
-        "Npgsql.EntityFrameworkCore.PostgreSQL",
-        "Microsoft.EntityFrameworkCore.Sqlite",
-    };
-
     /// <inheritdoc/>
     /// <remarks>
     /// Two deliveries of one projection may forget the same tenant at once — the two deletion facts of a tenant arrive
-    /// in two bundles. On PostgreSQL and SQLite the rows are inserted in one statement that skips a row already there,
-    /// so the statement does not fail and nothing is logged as an error; the tenants are inserted in order, so two
-    /// statements that share some of them cannot wait on each other, and the statement runs under the context's
-    /// execution strategy, since running it again changes nothing. On any other provider the rows that are missing
+    /// in two bundles. On PostgreSQL and SQLite the rows are inserted with an insert that skips a row already there, so
+    /// no statement fails and nothing is logged as an error; the tenants are inserted in order, so two inserts that share
+    /// some of them cannot wait on each other, and the insert runs under the context's execution strategy, since running
+    /// it again changes nothing. A table a consumer widened with columns the rows do not carry is written as on any
+    /// other provider. There the rows that are missing
     /// are inserted; when a concurrent writer inserts some of them first, the save fails as a whole, EF Core logs the
     /// failed statement, and the rows still missing are inserted again, a bounded number of times. A conflict that
     /// outlasts the attempts propagates so the fact is applied again.
@@ -43,14 +35,10 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
         }
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        if (context.Database.ProviderName is { } provider && ProvidersIgnoringAConflict.Contains(provider))
+        var rows = wanted.Select(tenantId => new ForgottenTenant { Projection = projection, TenantId = tenantId }).ToList();
+        if (ConflictIgnoringInsert.CanInsert(context, rows))
         {
-            var statement = InsertIgnoringAConflict(context, wanted.Count);
-            object[] arguments = [projection, .. wanted.Cast<object>()];
-            await context.Database.CreateExecutionStrategy().ExecuteAsync(
-                (Context: context, Statement: statement, Arguments: arguments),
-                static (state, token) => state.Context.Database.ExecuteSqlRawAsync(state.Statement, state.Arguments, token),
-                cancellationToken);
+            await ConflictIgnoringInsert.InsertAsync(context, rows, cancellationToken);
             return;
         }
 
@@ -104,27 +92,4 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
             .ToListAsync(cancellationToken);
         return wanted.Except(present).ToList();
     }
-
-    /// <summary>
-    /// The insert of one row per tenant, with the table and columns named as the context's model maps them. The
-    /// projection is argument 0, the tenants follow it. The statement is a format string, so a brace in a name is doubled.
-    /// </summary>
-    private static string InsertIgnoringAConflict(TContext context, int tenants)
-    {
-        var entity = context.Model.FindEntityType(typeof(ForgottenTenant))
-                     ?? throw new InvalidOperationException($"The model of {context.GetType().Name} has no {nameof(ForgottenTenant)}.");
-        var tableName = entity.GetTableName()
-                        ?? throw new InvalidOperationException($"{nameof(ForgottenTenant)} is not mapped to a table in {context.GetType().Name}.");
-        var table = StoreObjectIdentifier.Table(tableName, entity.GetSchema());
-        var sql = context.GetService<ISqlGenerationHelper>();
-
-        string Column(string property) => Literal(sql.DelimitIdentifier(entity.FindProperty(property)?.GetColumnName(table)
-                                                                        ?? throw new InvalidOperationException($"{nameof(ForgottenTenant)}.{property} is not mapped in {context.GetType().Name}.")));
-
-        var rows = string.Join(", ", Enumerable.Range(1, tenants).Select(tenant => $"({{0}}, {{{tenant}}})"));
-        return $"INSERT INTO {Literal(sql.DelimitIdentifier(tableName, entity.GetSchema()))} ({Column(nameof(ForgottenTenant.Projection))}, {Column(nameof(ForgottenTenant.TenantId))}) " +
-               $"VALUES {rows} ON CONFLICT DO NOTHING";
-    }
-
-    private static string Literal(string name) => name.Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal);
 }

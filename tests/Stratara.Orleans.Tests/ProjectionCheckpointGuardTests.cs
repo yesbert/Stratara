@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.Projections;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
@@ -14,7 +17,8 @@ namespace Stratara.Orleans.Tests;
 /// reset, which returns the row to the beginning under the resetting host's own reader whatever wrote it, so a
 /// rebuild or a replay recovers from the refusal inside the running cluster (scenarios <em>A stale activation writes
 /// a checkpoint</em>, <em>A checkpoint is written under another reader's name</em>, <em>A read model is rebuilt after
-/// the partition count changed</em>).
+/// the partition count changed</em>). A writer whose first insert loses to another's takes the other's row over, or is
+/// refused, without a failed statement in the log.
 /// </summary>
 public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
 {
@@ -138,13 +142,58 @@ public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
     public async Task A_first_checkpoint_whose_insert_loses_to_another_writer_writes_nothing_and_the_winner_stands()
     {
         var winner = Store();
+        var logs = new LogCapture();
         var loser = new ProjectionCheckpointStore<CheckpointContext>(
-            new ContextFactory(_connection, new BeforeTheFirstSave(() => winner.CreateAsync("View", 2, Reader, 30))));
+            new ContextFactory(_connection, new BeforeTheFirstInsert(() => winner.CreateAsync("View", 2, Reader, 30)), logs));
 
         var created = await loser.CreateAsync("View", 2, Reader, 50);
 
         Assert.False(created);
         Assert.Equal(30, await winner.FindAsync("View", 2, Reader));
+        Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task A_replacement_whose_first_insert_loses_to_another_writer_takes_the_row_over()
+    {
+        var winner = Store();
+        var logs = new LogCapture();
+        var loser = new ProjectionCheckpointStore<CheckpointContext>(
+            new ContextFactory(_connection, new BeforeTheFirstInsert(() => winner.CreateAsync("View", 2, Reader, 30)), logs));
+
+        await loser.SetAsync("View", 2, Reader, 50);
+
+        Assert.Equal(50, await winner.GetAsync("View", 2, Reader));
+        Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task A_first_advance_whose_insert_loses_to_another_writer_is_refused_naming_both_positions()
+    {
+        var winner = Store();
+        var logs = new LogCapture();
+        var loser = new ProjectionCheckpointStore<CheckpointContext>(
+            new ContextFactory(_connection, new BeforeTheFirstInsert(() => winner.CreateAsync("View", 2, Reader, 30)), logs));
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => loser.AdvanceAsync("View", 2, Reader, 0, 50));
+
+        Assert.Contains("is at 30, not at 0", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(30, await winner.GetAsync("View", 2, Reader));
+        Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task A_reset_whose_insert_loses_to_another_writer_takes_the_row_over_under_its_own_reader()
+    {
+        var winner = Store();
+        var logs = new LogCapture();
+        var loser = new ProjectionCheckpointStore<CheckpointContext>(
+            new ContextFactory(_connection, new BeforeTheFirstInsert(() => winner.CreateAsync("View", 2, "postgres-transaction-id/16", 30)), logs));
+
+        await loser.ResetAsync("View", 2, Reader);
+
+        Assert.Equal(0, await winner.GetAsync("View", 2, Reader));
+        Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Error);
     }
 
     [Fact]
@@ -162,8 +211,10 @@ public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
 
     public sealed class CheckpointContext(DbContextOptions<CheckpointContext> options) : ReadDbContext<CheckpointContext>(options);
 
-    private sealed class ContextFactory(SqliteConnection connection, IInterceptor? interceptor = null) : IDbContextFactory<CheckpointContext>
+    private sealed class ContextFactory(SqliteConnection connection, IInterceptor? interceptor = null, ILoggerProvider? logs = null) : IDbContextFactory<CheckpointContext>
     {
+        private readonly ILoggerFactory? _loggerFactory = logs is null ? null : LoggerFactory.Create(builder => builder.AddProvider(logs));
+
         public CheckpointContext CreateDbContext()
         {
             var options = new DbContextOptionsBuilder<CheckpointContext>().UseSqlite(connection);
@@ -172,24 +223,61 @@ public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
                 options.AddInterceptors(interceptor);
             }
 
+            if (_loggerFactory is not null)
+            {
+                options.UseLoggerFactory(_loggerFactory);
+            }
+
             return new CheckpointContext(options.Options);
         }
     }
 
-    /// <summary>Lets another writer commit first, once, just before the intercepted context saves.</summary>
-    private sealed class BeforeTheFirstSave(Func<Task> other) : SaveChangesInterceptor
+    /// <summary>Lets another writer commit first, once, just before the intercepted context's first insert runs.</summary>
+    private sealed class BeforeTheFirstInsert(Func<Task> other) : DbCommandInterceptor
     {
-        private bool _done;
+        private int _done;
 
-        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
-            if (!_done)
+            await OtherFirstAsync(command);
+            return result;
+        }
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            await OtherFirstAsync(command);
+            return result;
+        }
+
+        private async Task OtherFirstAsync(DbCommand command)
+        {
+            if (command.CommandText.TrimStart().StartsWith("INSERT", StringComparison.OrdinalIgnoreCase) && Interlocked.Exchange(ref _done, 1) == 0)
             {
-                _done = true;
                 await other();
             }
+        }
+    }
 
-            return result;
+    private sealed class LogCapture : ILoggerProvider
+    {
+        public ConcurrentQueue<(LogLevel Level, int EventId, string Message)> Entries { get; } = new();
+
+        public ILogger CreateLogger(string categoryName) => new Capture(Entries);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Capture(ConcurrentQueue<(LogLevel Level, int EventId, string Message)> entries) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                entries.Enqueue((logLevel, eventId.Id, formatter(state, exception)));
         }
     }
 

@@ -122,6 +122,39 @@ public sealed class ForgottenTenantStoreTests : IDisposable
         Assert.Equal(2, await context.Set<ForgottenTenant>().CountAsync());
     }
 
+    [Fact]
+    public async Task A_table_a_consumer_widened_with_a_column_the_row_does_not_carry_is_still_written()
+    {
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        var options = new DbContextOptionsBuilder<WidenedReadContext>().UseSqlite(connection).Options;
+        await using (var context = new WidenedReadContext(options))
+        {
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        }
+
+        var store = new ForgottenTenantStore<WidenedReadContext>(new WidenedContextFactory(options));
+        var tenant = Guid.CreateVersion7();
+
+        await store.ForgetAsync("Entries", [tenant], TestContext.Current.CancellationToken);
+
+        Assert.True(await store.HasForgottenAsync("Entries", tenant, TestContext.Current.CancellationToken));
+    }
+
+    private sealed class WidenedReadContext(DbContextOptions<WidenedReadContext> options) : ReadDbContext<WidenedReadContext>(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<ForgottenTenant>().Property<int>("Revision");
+        }
+    }
+
+    private sealed class WidenedContextFactory(DbContextOptions<WidenedReadContext> options) : IDbContextFactory<WidenedReadContext>
+    {
+        public WidenedReadContext CreateDbContext() => new(options);
+    }
+
     /// <summary>Runs the store's insert once before the store does, as a concurrent writer of the same row would.</summary>
     private sealed class OtherWriterFirst : DbCommandInterceptor
     {
