@@ -30,8 +30,8 @@ internal static class ConflictIgnoringInsert
     /// <summary>
     /// Whether <see cref="InsertAsync{TEntity}"/> can write these rows: the provider can skip a row that is already there,
     /// and every column of the table takes its value from a property the rows carry. A table that shares its rows with
-    /// another entity type, or maps shadow, complex or owned properties, is left to <c>SaveChanges</c>, and so is a row
-    /// whose store-generated property still holds its sentinel.
+    /// another entity type, an entity split across tables, and shadow, complex or owned properties are left to
+    /// <c>SaveChanges</c>, and so is a row whose store-generated property still holds its sentinel.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
     /// <param name="context">The context to write through.</param>
@@ -48,15 +48,18 @@ internal static class ConflictIgnoringInsert
         }
 
         var schema = entityType.GetSchema();
+        var table = StoreObjectIdentifier.Table(tableName, schema);
         var sharesItsTable = context.Model.GetEntityTypes()
             .Any(other => other != entityType && other.GetTableName() == tableName && other.GetSchema() == schema);
-        if (sharesItsTable || entityType.GetComplexProperties().Any() || entityType.GetNavigations().Any(navigation => navigation.TargetEntityType.IsOwned()))
+        if (sharesItsTable || entityType.GetMappingFragments().Any() || entityType.GetComplexProperties().Any()
+            || entityType.GetNavigations().Any(navigation => navigation.TargetEntityType.IsOwned()))
         {
             return false;
         }
 
         var properties = entityType.GetProperties().ToList();
-        return properties.All(property => !property.IsShadowProperty() && property.GetBeforeSaveBehavior() == PropertySaveBehavior.Save)
+        return properties.All(property => !property.IsShadowProperty() && property.GetBeforeSaveBehavior() == PropertySaveBehavior.Save
+                                          && property.GetColumnName(table) is not null)
                && entities.All(entity => properties
                    .Where(property => property.ValueGenerated != ValueGenerated.Never)
                    .All(property => !Equals(property.GetGetter().GetClrValue(entity), property.Sentinel)));

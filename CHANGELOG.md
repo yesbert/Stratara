@@ -22,9 +22,9 @@ applies to the entire NuGet family.
   deletion facts arrive in two bundles, so two deliveries of one projection can record the same tenant
   at once. The losing insert was caught and the tenant recorded all the same, but EF Core had already
   logged the failed statement at Error (`20102` and `10000`), so a customer deletion could leave two
-  errors in a projection worker's log. On PostgreSQL and SQLite the tenants are now recorded in one
-  statement that skips a row already there; on other providers the store still retries, and EF Core
-  still logs the statement that lost.
+  errors in a projection worker's log. On PostgreSQL and SQLite the tenants are now recorded with an
+  insert that skips a row already there; on other providers the store still retries, and EF Core still
+  logs the statement that lost.
 - **A projection checkpoint's first write, and an API key two hosts import at once, leave no error in
   the log.** Two activations of one reader that overlap during a failover can both write a partition's
   first checkpoint, and hosts that seed the same key as they boot import it at once. The writer whose

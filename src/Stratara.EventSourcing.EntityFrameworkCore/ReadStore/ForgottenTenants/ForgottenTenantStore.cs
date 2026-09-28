@@ -14,10 +14,11 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
     /// <inheritdoc/>
     /// <remarks>
     /// Two deliveries of one projection may forget the same tenant at once — the two deletion facts of a tenant arrive
-    /// in two bundles. On PostgreSQL and SQLite the rows are inserted in one statement that skips a row already there,
-    /// so the statement does not fail and nothing is logged as an error; the tenants are inserted in order, so two
-    /// statements that share some of them cannot wait on each other, and the statement runs under the context's
-    /// execution strategy, since running it again changes nothing. On any other provider the rows that are missing
+    /// in two bundles. On PostgreSQL and SQLite the rows are inserted with an insert that skips a row already there, so
+    /// no statement fails and nothing is logged as an error; the tenants are inserted in order, so two inserts that share
+    /// some of them cannot wait on each other, and the insert runs under the context's execution strategy, since running
+    /// it again changes nothing. A table a consumer widened with columns the rows do not carry is written as on any
+    /// other provider. There the rows that are missing
     /// are inserted; when a concurrent writer inserts some of them first, the save fails as a whole, EF Core logs the
     /// failed statement, and the rows still missing are inserted again, a bounded number of times. A conflict that
     /// outlasts the attempts propagates so the fact is applied again.

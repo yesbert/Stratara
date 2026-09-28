@@ -9,8 +9,9 @@ namespace Stratara.Orleans.EntityFrameworkCore.Projections;
 /// <remarks>
 /// Two activations of one reader may write the first checkpoint of a partition at once, while a failover overlaps them.
 /// On PostgreSQL and SQLite a first write is one insert that skips a row already there, so the writer that loses finds
-/// the other's row without a failed statement in the log. On any other provider the losing insert fails, EF Core logs
-/// the failed statement, and the writer then finds the other's row.
+/// the other's row without a failed statement in the log. On any other provider, and on a checkpoint table a consumer
+/// widened with columns the row does not carry, the losing insert fails, EF Core logs the failed statement, and the
+/// writer then finds the other's row.
 /// </remarks>
 /// <typeparam name="TContext">A read context derived from the framework's read context, which declares the checkpoint table.</typeparam>
 public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TContext> contextFactory) : IProjectionCheckpointStore

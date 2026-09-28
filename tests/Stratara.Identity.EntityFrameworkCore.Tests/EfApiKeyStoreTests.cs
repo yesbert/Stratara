@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
+using System.Transactions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -29,7 +30,7 @@ public class EfApiKeyStoreTests
         private readonly IServiceScope _scope;
         private readonly List<IServiceScope> _otherHosts = [];
 
-        public ApiKeyFixture(IInterceptor? interceptor = null, ILoggerProvider? logs = null)
+        public ApiKeyFixture(IInterceptor? interceptor = null, ILoggerProvider? logs = null, bool allowAmbientTransactions = false)
         {
             _connection = new SqliteConnection("DataSource=:memory:");
             _connection.Open();
@@ -47,6 +48,11 @@ public class EfApiKeyStoreTests
                 if (loggerFactory is not null)
                 {
                     o.UseLoggerFactory(loggerFactory);
+                }
+
+                if (allowAmbientTransactions)
+                {
+                    o.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.AmbientTransactionWarning));
                 }
             });
             services.AddSingleton<TimeProvider>(Clock);
@@ -240,6 +246,22 @@ public class EfApiKeyStoreTests
         await using var other = fixture.OtherHostContext();
         Assert.True(await other.Set<ActiveTenantEntry>().AnyAsync(entry => entry.UserId == userId));
         Assert.Single(await other.Set<ApiKeyEntry>().Where(key => key.TenantId == tenantId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task An_import_inside_a_transaction_of_the_callers_joins_it()
+    {
+        using var fixture = new ApiKeyFixture(allowAmbientTransactions: true);
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+
+        using (var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+        {
+            await fixture.Store.ImportAsync(new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", ["Admin"]));
+            scope.Complete();
+        }
+
+        Assert.NotNull(await fixture.Store.ValidateAsync(rawKey));
     }
 
     [Fact]
