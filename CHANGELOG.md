@@ -16,6 +16,18 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.1`._
+
+## [4.4.1] — 2026-09-28
+
+A release about errors that were not errors. Where two writers insert the same row at once — two
+deliveries forgetting a deleted tenant, two activations writing a partition's first checkpoint, two
+hosts importing one API key — the framework already recovered, but EF Core had logged the losing
+statement at Error first; on PostgreSQL and SQLite the insert now skips a row that is already there.
+And a RabbitMQ bus whose broker went away first no longer reports a warning for every subscription it
+stops, nor a failed handler for a message it merely could not acknowledge. No migration and no
+configuration change is needed.
+
 ### Fixed
 
 - **Forgetting a deleted tenant leaves no error in the log when two deliveries race.** A tenant's two
@@ -4363,7 +4375,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.1...main
+[4.4.1]: https://github.com/yesbert/Stratara/releases/tag/v4.4.1
 [4.4.0]: https://github.com/yesbert/Stratara/releases/tag/v4.4.0
 [4.3.1]: https://github.com/yesbert/Stratara/releases/tag/v4.3.1
 [4.3.0]: https://github.com/yesbert/Stratara/releases/tag/v4.3.0
