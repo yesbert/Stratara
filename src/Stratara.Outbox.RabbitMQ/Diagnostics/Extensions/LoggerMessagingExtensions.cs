@@ -94,17 +94,32 @@ public static partial class LoggerMessagingExtensions
     public static partial void LogSubscriptionCleanup(this ILogger logger, string subscription);
 
     /// <summary>
-    /// Logs that a stopping RabbitMQ subscription found its channel already closed — the connection or the broker went
-    /// away first — so there was no consumer left to cancel.
+    /// Logs that a stopping RabbitMQ subscription found its connection already closed — the broker went away first — so
+    /// there was no consumer left to cancel.
     /// </summary>
     /// <param name="logger">The logger.</param>
     /// <param name="subscription">Identifier of the subscription being cleaned up.</param>
-    /// <param name="exception">The exception the cancel raised on the closed channel.</param>
+    /// <param name="exception">The exception the cancel raised on the closed connection.</param>
     [LoggerMessage(
         EventId = LogEvents.Messaging.SubscriptionAlreadyClosed,
         Level = LogLevel.Debug,
-        Message = "RabbitMQ subscription {Subscription} was already closed when it stopped; there was no consumer left to cancel.")]
+        Message = "RabbitMQ subscription {Subscription} had lost its connection when it stopped; there was no consumer left to cancel.")]
     public static partial void LogSubscriptionAlreadyClosed(this ILogger logger, string subscription, Exception exception);
+
+    /// <summary>
+    /// Logs that a RabbitMQ delivery could not be settled because its channel had closed — the connection or the broker
+    /// went away while the handler ran. The broker hands the message back and delivers it again, whether or not the
+    /// handler completed.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="topic">The topic the message was published to.</param>
+    /// <param name="subscription">Identifier of the subscription that received it.</param>
+    /// <param name="exception">The exception the settlement or the handler raised on the closed channel.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Messaging.MessageNotSettledChannelClosed,
+        Level = LogLevel.Information,
+        Message = "A message on {Topic} for {Subscription} could not be settled because its channel had closed; the broker delivers it again.")]
+    public static partial void LogMessageNotSettledChannelClosed(this ILogger logger, string topic, string subscription, Exception exception);
 
     /// <summary>Logs that the RabbitMQ subscription cleanup did not succeed cleanly.</summary>
     /// <param name="logger">The logger.</param>
