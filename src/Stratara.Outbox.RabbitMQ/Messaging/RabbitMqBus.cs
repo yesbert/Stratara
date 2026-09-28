@@ -488,6 +488,12 @@ internal sealed class RabbitMqBus(
             {
                 await channel.BasicCancelAsync(consumerTag, false, settle.Token);
             }
+            catch (AlreadyClosedException ex)
+            {
+                // The channel closed before the stop — the connection or the broker went away first — and a closed
+                // channel has no consumer left to cancel, which is where the stop was going.
+                logger.LogSubscriptionAlreadyClosed(subscription, ex);
+            }
             catch (Exception ex)
             {
                 logger.LogSubscriptionCleanupFailed(subscription, ex);

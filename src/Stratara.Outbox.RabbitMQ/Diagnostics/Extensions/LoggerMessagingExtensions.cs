@@ -93,6 +93,19 @@ public static partial class LoggerMessagingExtensions
         Message = "Cleaning up RabbitMQ subscription {Subscription}.")]
     public static partial void LogSubscriptionCleanup(this ILogger logger, string subscription);
 
+    /// <summary>
+    /// Logs that a stopping RabbitMQ subscription found its channel already closed — the connection or the broker went
+    /// away first — so there was no consumer left to cancel.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="subscription">Identifier of the subscription being cleaned up.</param>
+    /// <param name="exception">The exception the cancel raised on the closed channel.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Messaging.SubscriptionAlreadyClosed,
+        Level = LogLevel.Debug,
+        Message = "RabbitMQ subscription {Subscription} was already closed when it stopped; there was no consumer left to cancel.")]
+    public static partial void LogSubscriptionAlreadyClosed(this ILogger logger, string subscription, Exception exception);
+
     /// <summary>Logs that the RabbitMQ subscription cleanup did not succeed cleanly.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="subscription">Identifier of the subscription being cleaned up.</param>

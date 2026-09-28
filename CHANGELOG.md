@@ -16,7 +16,15 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.0`._
+### Fixed
+
+- **A RabbitMQ subscription whose broker is already gone stops without a warning.** When a stack stops
+  its broker before its hosts, a stopping subscription's cancel met a channel that had already closed,
+  and every subscription of every host logged `108_107` at Warning — new in 4.4.0, which made a
+  subscription cancel its consumer before it closes. A closed channel has no consumer left to cancel,
+  which is where the stop was going, so this is now logged at Debug as `108_007`
+  (`LogEvents.Messaging.SubscriptionAlreadyClosed`). A cancel that fails on an open channel still
+  warns.
 
 ## [4.4.0] — 2026-09-27
 

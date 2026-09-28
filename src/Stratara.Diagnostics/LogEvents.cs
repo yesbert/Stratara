@@ -170,6 +170,8 @@ public static class LogEvents
         public const int ConcurrencyConflictRequeued = 108_105;
         /// <summary>Subscription cleanup started after a cancellation request.</summary>
         public const int SubscriptionCleanup = 108_006;
+        /// <summary>A stopping subscription found its channel already closed, so no consumer was left to cancel (debug).</summary>
+        public const int SubscriptionAlreadyClosed = 108_007;
         /// <summary>Subscription cleanup failed (warning).</summary>
         public const int SubscriptionCleanupFailed = 108_107;
         /// <summary>RabbitMQ fallback to default guest/guest credentials (warning).</summary>
