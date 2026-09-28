@@ -12,7 +12,8 @@ namespace Stratara.Orleans.IntegrationTests.Projections;
 
 /// <summary>
 /// Two deliveries of one projection forget the same tenant at once — the two deletion facts of a tenant arrive in two
-/// bundles. On PostgreSQL the tenant is recorded once, and neither writer leaves an error in the log.
+/// bundles. On PostgreSQL the tenant is recorded once, and neither writer leaves an error in the log, whatever order
+/// each names the tenants in.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class ForgottenTenantRaceTests(PostgreSqlFixture postgres)
@@ -43,7 +44,9 @@ public sealed class ForgottenTenantRaceTests(PostgreSqlFixture postgres)
         var logs = new LogCapture();
         var store = new ForgottenTenantStore<PocReadDbContext>(new ContextFactory(ConnectionString, logs));
 
-        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => store.ForgetAsync(projection, tenants, TestContext.Current.CancellationToken)));
+        // Each writer names the tenants in an order of its own, as two deletion facts listing the same tenants may.
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(writer =>
+            store.ForgetAsync(projection, tenants.OrderBy(tenant => HashCode.Combine(writer, tenant)).ToList(), TestContext.Current.CancellationToken)));
 
         Assert.Equal(tenants.Order(), (await ForgottenAsync(plain, projection)).Order());
         Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Error);

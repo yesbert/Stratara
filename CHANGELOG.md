@@ -23,8 +23,8 @@ applies to the entire NuGet family.
   at once. The losing insert was caught and the tenant recorded all the same, but EF Core had already
   logged the failed statement at Error (`20102` and `10000`), so a customer deletion could leave two
   errors in a projection worker's log. On PostgreSQL and SQLite the tenants are now recorded in one
-  statement that skips a row already there; on other providers the store still retries, and the
-  provider still logs the statement that lost.
+  statement that skips a row already there; on other providers the store still retries, and EF Core
+  still logs the statement that lost.
 
 ## [4.4.0] — 2026-09-27
 
