@@ -488,6 +488,13 @@ internal sealed class RabbitMqBus(
             {
                 await channel.BasicCancelAsync(consumerTag, false, settle.Token);
             }
+            catch (OperationInterruptedException ex) when (!connection.IsOpen)
+            {
+                // The broker went away before the stop, or while the cancel waited for its reply, and a closed connection
+                // has no consumer left to cancel, which is where the stop was going. A channel the broker closed on an
+                // open connection still warns: that subscription had stopped consuming without anyone asking it to.
+                logger.LogSubscriptionAlreadyClosed(subscription, ex);
+            }
             catch (Exception ex)
             {
                 logger.LogSubscriptionCleanupFailed(subscription, ex);
@@ -561,6 +568,13 @@ internal sealed class RabbitMqBus(
             // failure: the framework requeues the message for the next consumer rather than dead-letter it. The broker
             // counts the delivery like any other.
             await channel.BasicNackAsync(args.DeliveryTag, false, true, CancellationToken.None);
+        }
+        catch (OperationInterruptedException closed) when (!channel.IsOpen)
+        {
+            // The channel closed under the delivery — typically the acknowledgement of a handler that completed while the
+            // broker went away. Nothing can settle the message on it any more, and the broker delivers it again; that is
+            // not a failed handler.
+            logger.LogMessageNotSettledChannelClosed(topic, subscription, closed);
         }
         catch (Exception e)
         {
