@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Abstractions.ApiKeys;
 using Stratara.Abstractions.Multitenancy;
+using Stratara.EntityFrameworkCore;
 
 namespace Stratara.Identity.EntityFrameworkCore;
 
@@ -27,6 +29,12 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// <see cref="ImportAsync"/> is the same write path for a key the caller already holds. It accepts
 /// only values in the canonical <see cref="ApiKeyFormat"/>, which is what keeps the unsalted digest
 /// defensible for imported keys too.
+/// </para>
+/// <para>
+/// Hosts that seed the same key as they boot import it at once. On PostgreSQL and SQLite the import
+/// inserts the key with a statement that skips a key already there, so the host that loses adopts
+/// the winner's row without a failed statement in the log; on any other provider the losing insert
+/// fails, EF Core logs the failed statement, and the host then adopts the winner's row.
 /// </para>
 /// </remarks>
 internal sealed class EfApiKeyStore<TContext>(
@@ -107,6 +115,19 @@ internal sealed class EfApiKeyStore<TContext>(
             ExpiresAt = request.ExpiresAt,
         };
         var membership = MachineMembershipFor(entry);
+
+        if (ConflictIgnoringInsert.IsSupported(context))
+        {
+            if (!await InsertUnlessKnownAsync(context, entry, membership, cancellationToken))
+            {
+                var winner = await FindByHashAsync(context, hashedKey, cancellationToken)
+                             ?? throw new InvalidOperationException("The imported key was stored by another writer and removed again before this one could adopt it; import it again.");
+                return await AdoptExistingAsync(context, winner, request, cancellationToken);
+            }
+
+            ApiKeyStoreLog.KeyImported(_logger, entry.Id, entry.TenantId);
+            return ToDescriptor(entry);
+        }
 
         context.Set<ApiKeyEntry>().Add(entry);
         context.Set<TenantMembershipEntry>().Add(membership);
@@ -215,6 +236,52 @@ internal sealed class EfApiKeyStore<TContext>(
         await lease.Context.Set<ApiKeyEntry>()
             .Where(e => e.UserId == userId)
             .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Inserts the key and its membership together, unless another writer stored the key first; says whether this one
+    /// did. Runs in the context's transaction where one is open, and otherwise in its own, as one unit of the context's
+    /// execution strategy.
+    /// </summary>
+    private static async Task<bool> InsertUnlessKnownAsync(
+        TContext context, ApiKeyEntry entry, TenantMembershipEntry membership, CancellationToken cancellationToken)
+    {
+        if (context.Database.CurrentTransaction is not null)
+        {
+            return await InsertBothAsync(context, entry, membership, cancellationToken);
+        }
+
+        return await context.Database.CreateExecutionStrategy().ExecuteAsync(
+            (Context: context, Entry: entry, Membership: membership),
+            static async (state, token) =>
+            {
+                await using var transaction = await state.Context.Database.BeginTransactionAsync(token);
+                if (!await InsertBothAsync(state.Context, state.Entry, state.Membership, token))
+                {
+                    return false;
+                }
+
+                await transaction.CommitAsync(token);
+                return true;
+            },
+            static async (state, token) =>
+            {
+                var stored = await state.Context.Set<ApiKeyEntry>().AsNoTracking().AnyAsync(e => e.Id == state.Entry.Id, token);
+                return new ExecutionResult<bool>(stored, stored);
+            },
+            cancellationToken);
+    }
+
+    private static async Task<bool> InsertBothAsync(
+        TContext context, ApiKeyEntry entry, TenantMembershipEntry membership, CancellationToken cancellationToken)
+    {
+        if (await ConflictIgnoringInsert.InsertAsync(context, [entry], cancellationToken) == 0)
+        {
+            return false;
+        }
+
+        await ConflictIgnoringInsert.InsertAsync(context, [membership], cancellationToken);
+        return true;
     }
 
     private static Task<ApiKeyEntry?> FindByHashAsync(

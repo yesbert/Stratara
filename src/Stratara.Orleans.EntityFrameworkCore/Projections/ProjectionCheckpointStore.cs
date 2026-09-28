@@ -1,10 +1,17 @@
 using Stratara.Abstractions.Projections;
 using Microsoft.EntityFrameworkCore;
+using Stratara.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
 
 namespace Stratara.Orleans.EntityFrameworkCore.Projections;
 
 /// <summary>Checkpoints in the read store, one row per projection and partition.</summary>
+/// <remarks>
+/// Two activations of one reader may write the first checkpoint of a partition at once, while a failover overlaps them.
+/// On PostgreSQL and SQLite a first write is one insert that skips a row already there, so the writer that loses finds
+/// the other's row without a failed statement in the log. On any other provider the losing insert fails, EF Core logs
+/// the failed statement, and the writer then finds the other's row.
+/// </remarks>
 /// <typeparam name="TContext">A read context derived from the framework's read context, which declares the checkpoint table.</typeparam>
 public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TContext> contextFactory) : IProjectionCheckpointStore
     where TContext : DbContext
@@ -39,7 +46,13 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
             return false;
         }
 
-        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });
+        var row = new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader };
+        if (ConflictIgnoringInsert.IsSupported(context))
+        {
+            return await ConflictIgnoringInsert.InsertAsync(context, [row], cancellationToken) == 1;
+        }
+
+        context.Set<ProjectionCheckpoint>().Add(row);
         try
         {
             await context.SaveChangesAsync(cancellationToken);
@@ -173,7 +186,18 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
             return;
         }
 
-        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = 0, Reader = reader });
+        var row = new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = 0, Reader = reader };
+        if (ConflictIgnoringInsert.IsSupported(context))
+        {
+            if (await ConflictIgnoringInsert.InsertAsync(context, [row], cancellationToken) == 0 && !await ResetRowAsync(context, projection, partition, reader, cancellationToken))
+            {
+                throw new InvalidOperationException(Vanished(projection, partition));
+            }
+
+            return;
+        }
+
+        context.Set<ProjectionCheckpoint>().Add(row);
         try
         {
             await context.SaveChangesAsync(cancellationToken);
@@ -201,7 +225,19 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
 
     private static async Task InsertAsync(TContext context, string projection, int partition, string reader, long? expected, long position, CancellationToken cancellationToken)
     {
-        context.Set<ProjectionCheckpoint>().Add(new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader });
+        var row = new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader };
+        if (ConflictIgnoringInsert.IsSupported(context))
+        {
+            if (await ConflictIgnoringInsert.InsertAsync(context, [row], cancellationToken) == 0
+                && !await TakeOverTheWinnersRowAsync(context, projection, partition, reader, expected, position, cancellationToken))
+            {
+                throw new InvalidOperationException(Vanished(projection, partition));
+            }
+
+            return;
+        }
+
+        context.Set<ProjectionCheckpoint>().Add(row);
         try
         {
             await context.SaveChangesAsync(cancellationToken);
@@ -209,21 +245,38 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         catch (DbUpdateException)
         {
             context.ChangeTracker.Clear();
-            if (await UpdateAsync(context, projection, partition, reader, expected, position, cancellationToken))
+            if (!await TakeOverTheWinnersRowAsync(context, projection, partition, reader, expected, position, cancellationToken))
             {
-                return;
+                throw;
             }
-
-            if (await FindRowAsync(context, projection, partition, cancellationToken) is { } found)
-            {
-                throw new InvalidOperationException(expected is { } from
-                    ? Refusal(projection, partition, found, reader, from)
-                    : Refusal(projection, partition, found.Reader, reader));
-            }
-
-            throw;
         }
     }
+
+    /// <summary>
+    /// Holds the row another writer inserted first to the same condition the insert's writer stood under: it is updated
+    /// where the condition holds, the write is refused naming what differs where the row stands otherwise, and
+    /// <see langword="false"/> says the row is gone again.
+    /// </summary>
+    private static async Task<bool> TakeOverTheWinnersRowAsync(TContext context, string projection, int partition, string reader, long? expected, long position,
+        CancellationToken cancellationToken)
+    {
+        if (await UpdateAsync(context, projection, partition, reader, expected, position, cancellationToken))
+        {
+            return true;
+        }
+
+        if (await FindRowAsync(context, projection, partition, cancellationToken) is { } found)
+        {
+            throw new InvalidOperationException(expected is { } from
+                ? Refusal(projection, partition, found, reader, from)
+                : Refusal(projection, partition, found.Reader, reader));
+        }
+
+        return false;
+    }
+
+    private static string Vanished(string projection, int partition) =>
+        $"The checkpoint of {projection}/{partition} was inserted by another writer and removed again before this one could take it over; the reader reads the checkpoint again.";
 
     private static Task<ProjectionCheckpoint?> FindRowAsync(TContext context, string projection, int partition, CancellationToken cancellationToken) =>
         context.Set<ProjectionCheckpoint>().AsNoTracking()

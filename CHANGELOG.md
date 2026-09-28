@@ -25,6 +25,15 @@ applies to the entire NuGet family.
   errors in a projection worker's log. On PostgreSQL and SQLite the tenants are now recorded in one
   statement that skips a row already there; on other providers the store still retries, and EF Core
   still logs the statement that lost.
+- **A projection checkpoint's first write, and an API key two hosts import at once, leave no error in
+  the log.** Two activations of one reader that overlap during a failover can both write a partition's
+  first checkpoint, and hosts that seed the same key as they boot import it at once. The writer whose
+  insert lost recovered — it took the other's checkpoint over, or adopted the other's key — but EF Core
+  had already logged the failed statement at Error. On PostgreSQL and SQLite the insert now skips a row
+  that is already there, as the record of forgotten tenants does; on other providers the writer still
+  recovers, and EF Core still logs the statement that lost. An imported key and its membership are
+  still written together, in one transaction that runs as one unit of the context's execution
+  strategy.
 - **A RabbitMQ subscription whose broker is already gone stops without a warning.** When a stack stops
   its broker before its hosts, a stopping subscription's cancel met a connection that had already
   closed, or that closed while the cancel waited for its reply, and every subscription of every host

@@ -1,7 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
+using Stratara.EntityFrameworkCore;
 using Stratara.Projections.Abstractions;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
@@ -12,13 +10,6 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
     where TContext : DbContext
 {
     private const int MaxInsertAttempts = 3;
-
-    /// <summary>The providers whose insert can skip a row that is already there: PostgreSQL and SQLite.</summary>
-    private static readonly HashSet<string> ProvidersIgnoringAConflict = new(StringComparer.Ordinal)
-    {
-        "Npgsql.EntityFrameworkCore.PostgreSQL",
-        "Microsoft.EntityFrameworkCore.Sqlite",
-    };
 
     /// <inheritdoc/>
     /// <remarks>
@@ -43,14 +34,9 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
         }
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        if (context.Database.ProviderName is { } provider && ProvidersIgnoringAConflict.Contains(provider))
+        if (ConflictIgnoringInsert.IsSupported(context))
         {
-            var statement = InsertIgnoringAConflict(context, wanted.Count);
-            object[] arguments = [projection, .. wanted.Cast<object>()];
-            await context.Database.CreateExecutionStrategy().ExecuteAsync(
-                (Context: context, Statement: statement, Arguments: arguments),
-                static (state, token) => state.Context.Database.ExecuteSqlRawAsync(state.Statement, state.Arguments, token),
-                cancellationToken);
+            await ConflictIgnoringInsert.InsertAsync(context, wanted.Select(tenantId => new ForgottenTenant { Projection = projection, TenantId = tenantId }).ToList(), cancellationToken);
             return;
         }
 
@@ -104,27 +90,4 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
             .ToListAsync(cancellationToken);
         return wanted.Except(present).ToList();
     }
-
-    /// <summary>
-    /// The insert of one row per tenant, with the table and columns named as the context's model maps them. The
-    /// projection is argument 0, the tenants follow it. The statement is a format string, so a brace in a name is doubled.
-    /// </summary>
-    private static string InsertIgnoringAConflict(TContext context, int tenants)
-    {
-        var entity = context.Model.FindEntityType(typeof(ForgottenTenant))
-                     ?? throw new InvalidOperationException($"The model of {context.GetType().Name} has no {nameof(ForgottenTenant)}.");
-        var tableName = entity.GetTableName()
-                        ?? throw new InvalidOperationException($"{nameof(ForgottenTenant)} is not mapped to a table in {context.GetType().Name}.");
-        var table = StoreObjectIdentifier.Table(tableName, entity.GetSchema());
-        var sql = context.GetService<ISqlGenerationHelper>();
-
-        string Column(string property) => Literal(sql.DelimitIdentifier(entity.FindProperty(property)?.GetColumnName(table)
-                                                                        ?? throw new InvalidOperationException($"{nameof(ForgottenTenant)}.{property} is not mapped in {context.GetType().Name}.")));
-
-        var rows = string.Join(", ", Enumerable.Range(1, tenants).Select(tenant => $"({{0}}, {{{tenant}}})"));
-        return $"INSERT INTO {Literal(sql.DelimitIdentifier(tableName, entity.GetSchema()))} ({Column(nameof(ForgottenTenant.Projection))}, {Column(nameof(ForgottenTenant.TenantId))}) " +
-               $"VALUES {rows} ON CONFLICT DO NOTHING";
-    }
-
-    private static string Literal(string name) => name.Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal);
 }

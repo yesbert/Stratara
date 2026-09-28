@@ -1,6 +1,10 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.ApiKeys;
 using Stratara.Abstractions.Multitenancy;
 using Xunit;
@@ -23,14 +27,28 @@ public class EfApiKeyStoreTests
         private readonly SqliteConnection _connection;
         private readonly ServiceProvider _provider;
         private readonly IServiceScope _scope;
+        private readonly List<IServiceScope> _otherHosts = [];
 
-        public ApiKeyFixture()
+        public ApiKeyFixture(IInterceptor? interceptor = null, ILoggerProvider? logs = null)
         {
             _connection = new SqliteConnection("DataSource=:memory:");
             _connection.Open();
 
+            var loggerFactory = logs is null ? null : LoggerFactory.Create(builder => builder.AddProvider(logs));
             var services = new ServiceCollection();
-            services.AddDbContext<TestDirectoryDbContext>(o => o.UseSqlite(_connection));
+            services.AddDbContext<TestDirectoryDbContext>(o =>
+            {
+                o.UseSqlite(_connection);
+                if (interceptor is not null)
+                {
+                    o.AddInterceptors(interceptor);
+                }
+
+                if (loggerFactory is not null)
+                {
+                    o.UseLoggerFactory(loggerFactory);
+                }
+            });
             services.AddSingleton<TimeProvider>(Clock);
             services.AddTenantMembershipStore<TestDirectoryDbContext>();
             services.AddApiKeyStore<TestDirectoryDbContext>();
@@ -48,8 +66,17 @@ public class EfApiKeyStoreTests
 
         public ITenantMembershipStore Memberships { get; }
 
+        /// <summary>The store another host would use: a scope and a context of its own over the same database.</summary>
+        public IApiKeyStore OtherHostStore()
+        {
+            var scope = _provider.CreateScope();
+            _otherHosts.Add(scope);
+            return scope.ServiceProvider.GetRequiredService<IApiKeyStore>();
+        }
+
         public void Dispose()
         {
+            _otherHosts.ForEach(scope => scope.Dispose());
             _scope.Dispose();
             _provider.Dispose();
             _connection.Dispose();
@@ -167,6 +194,26 @@ public class EfApiKeyStoreTests
         Assert.NotNull(membership);
         Assert.Equal(MembershipStatus.Active, membership.Status);
         Assert.Equal(["Admin"], membership.Roles);
+    }
+
+    [Fact]
+    public async Task A_host_whose_import_loses_to_another_host_adopts_the_winners_key_without_an_error()
+    {
+        var logs = new LogCapture();
+        var anotherHostFirst = new AnotherHostFirst();
+        using var fixture = new ApiKeyFixture(anotherHostFirst, logs);
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+        ApiKeyDescriptor? winner = null;
+        anotherHostFirst.Other = async () => winner = await fixture.OtherHostStore().ImportAsync(new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", ["Admin"]));
+
+        var adopted = await fixture.Store.ImportAsync(new ApiKeyImportRequest(rawKey, tenantId, "bootstrap", ["Admin"]));
+
+        Assert.NotNull(winner);
+        Assert.Equal(winner.Id, adopted.Id);
+        Assert.Single(await fixture.Store.GetForTenantAsync(tenantId));
+        Assert.NotNull(await fixture.Memberships.GetMembershipAsync(winner.Id, tenantId));
+        Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Error);
     }
 
     [Fact]
@@ -315,5 +362,45 @@ public class EfApiKeyStoreTests
 
         Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
         Assert.NotNull(await fixture.Store.ValidateAsync(machine.RawKey));
+    }
+
+    /// <summary>Lets another host import first, once, just before the intercepted host starts writing the key.</summary>
+    private sealed class AnotherHostFirst : DbTransactionInterceptor
+    {
+        private int _done;
+
+        public Func<Task> Other { get; set; } = () => Task.CompletedTask;
+
+        public override async ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(DbConnection connection, TransactionStartingEventData eventData,
+            InterceptionResult<DbTransaction> result, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _done, 1) == 0)
+            {
+                await Other();
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class LogCapture : ILoggerProvider
+    {
+        public ConcurrentQueue<(LogLevel Level, int EventId, string Message)> Entries { get; } = new();
+
+        public ILogger CreateLogger(string categoryName) => new Capture(Entries);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Capture(ConcurrentQueue<(LogLevel Level, int EventId, string Message)> entries) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                entries.Enqueue((logLevel, eventId.Id, formatter(state, exception)));
+        }
     }
 }
