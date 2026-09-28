@@ -18,6 +18,13 @@ applies to the entire NuGet family.
 
 ### Fixed
 
+- **Forgetting a deleted tenant leaves no error in the log when two deliveries race.** A tenant's two
+  deletion facts arrive in two bundles, so two deliveries of one projection can record the same tenant
+  at once. The losing insert was caught and the tenant recorded all the same, but EF Core had already
+  logged the failed statement at Error (`20102` and `10000`), so a customer deletion could leave two
+  errors in a projection worker's log. On PostgreSQL and SQLite the tenants are now recorded in one
+  statement that skips a row already there; on other providers the store still retries, and EF Core
+  still logs the statement that lost.
 - **A RabbitMQ subscription whose broker is already gone stops without a warning.** When a stack stops
   its broker before its hosts, a stopping subscription's cancel met a connection that had already
   closed, or that closed while the cancel waited for its reply, and every subscription of every host
