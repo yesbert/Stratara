@@ -66,12 +66,23 @@ public class EfApiKeyStoreTests
 
         public ITenantMembershipStore Memberships { get; }
 
+        /// <summary>The context the store in <see cref="Store"/> writes through.</summary>
+        public TestDirectoryDbContext Context => _scope.ServiceProvider.GetRequiredService<TestDirectoryDbContext>();
+
         /// <summary>The store another host would use: a scope and a context of its own over the same database.</summary>
         public IApiKeyStore OtherHostStore()
         {
             var scope = _provider.CreateScope();
             _otherHosts.Add(scope);
             return scope.ServiceProvider.GetRequiredService<IApiKeyStore>();
+        }
+
+        /// <summary>A context of another scope over the same database, to read what was saved.</summary>
+        public TestDirectoryDbContext OtherHostContext()
+        {
+            var scope = _provider.CreateScope();
+            _otherHosts.Add(scope);
+            return scope.ServiceProvider.GetRequiredService<TestDirectoryDbContext>();
         }
 
         public void Dispose()
@@ -214,6 +225,21 @@ public class EfApiKeyStoreTests
         Assert.Single(await fixture.Store.GetForTenantAsync(tenantId));
         Assert.NotNull(await fixture.Memberships.GetMembershipAsync(winner.Id, tenantId));
         Assert.DoesNotContain(logs.Entries, entry => entry.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task An_import_on_a_context_with_unsaved_changes_saves_them_with_the_key()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        fixture.Context.Set<ActiveTenantEntry>().Add(new ActiveTenantEntry { UserId = userId, TenantId = tenantId });
+
+        await fixture.Store.ImportAsync(new ApiKeyImportRequest(ApiKeyFormat.CreateRawKey(), tenantId, "bootstrap", ["Admin"]));
+
+        await using var other = fixture.OtherHostContext();
+        Assert.True(await other.Set<ActiveTenantEntry>().AnyAsync(entry => entry.UserId == userId));
+        Assert.Single(await other.Set<ApiKeyEntry>().Where(key => key.TenantId == tenantId).ToListAsync());
     }
 
     [Fact]

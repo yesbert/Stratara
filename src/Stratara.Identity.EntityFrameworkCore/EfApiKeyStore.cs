@@ -31,10 +31,13 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// defensible for imported keys too.
 /// </para>
 /// <para>
-/// Hosts that seed the same key as they boot import it at once. On PostgreSQL and SQLite the import
-/// inserts the key with a statement that skips a key already there, so the host that loses adopts
-/// the winner's row without a failed statement in the log; on any other provider the losing insert
-/// fails, EF Core logs the failed statement, and the host then adopts the winner's row.
+/// Hosts that seed the same key as they boot import it at once. On PostgreSQL and SQLite, where the
+/// import is the only write on its context — nothing else tracked, no transaction of the caller's —
+/// it inserts the key and its membership in a transaction of its own with statements that skip a key
+/// already there, so the host that loses adopts the winner's row without a failed statement in the
+/// log. Those statements bypass <c>SaveChanges</c> and its interceptors. Everywhere else the import
+/// saves through <c>SaveChanges</c>, as before: the losing insert fails, EF Core logs the failed
+/// statement, and the host then adopts the winner's row.
 /// </para>
 /// </remarks>
 internal sealed class EfApiKeyStore<TContext>(
@@ -116,7 +119,8 @@ internal sealed class EfApiKeyStore<TContext>(
         };
         var membership = MachineMembershipFor(entry);
 
-        if (ConflictIgnoringInsert.IsSupported(context))
+        if (!ConflictIgnoringInsert.InCallersTransaction(context) && !context.ChangeTracker.HasChanges()
+            && ConflictIgnoringInsert.CanInsert(context, [entry]) && ConflictIgnoringInsert.CanInsert(context, [membership]))
         {
             if (!await InsertUnlessKnownAsync(context, entry, membership, cancellationToken))
             {
@@ -239,19 +243,12 @@ internal sealed class EfApiKeyStore<TContext>(
     }
 
     /// <summary>
-    /// Inserts the key and its membership together, unless another writer stored the key first; says whether this one
-    /// did. Runs in the context's transaction where one is open, and otherwise in its own, as one unit of the context's
-    /// execution strategy.
+    /// Inserts the key and its membership together, in a transaction of its own that runs as one unit of the context's
+    /// execution strategy, unless another writer stored the key first; says whether this one did.
     /// </summary>
-    private static async Task<bool> InsertUnlessKnownAsync(
-        TContext context, ApiKeyEntry entry, TenantMembershipEntry membership, CancellationToken cancellationToken)
-    {
-        if (context.Database.CurrentTransaction is not null)
-        {
-            return await InsertBothAsync(context, entry, membership, cancellationToken);
-        }
-
-        return await context.Database.CreateExecutionStrategy().ExecuteAsync(
+    private static Task<bool> InsertUnlessKnownAsync(
+        TContext context, ApiKeyEntry entry, TenantMembershipEntry membership, CancellationToken cancellationToken) =>
+        context.Database.CreateExecutionStrategy().ExecuteAsync(
             (Context: context, Entry: entry, Membership: membership),
             static async (state, token) =>
             {
@@ -270,7 +267,6 @@ internal sealed class EfApiKeyStore<TContext>(
                 return new ExecutionResult<bool>(stored, stored);
             },
             cancellationToken);
-    }
 
     private static async Task<bool> InsertBothAsync(
         TContext context, ApiKeyEntry entry, TenantMembershipEntry membership, CancellationToken cancellationToken)

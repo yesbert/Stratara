@@ -34,9 +34,10 @@ internal sealed class ForgottenTenantStore<TContext>(IDbContextFactory<TContext>
         }
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        if (ConflictIgnoringInsert.IsSupported(context))
+        var rows = wanted.Select(tenantId => new ForgottenTenant { Projection = projection, TenantId = tenantId }).ToList();
+        if (ConflictIgnoringInsert.CanInsert(context, rows))
         {
-            await ConflictIgnoringInsert.InsertAsync(context, wanted.Select(tenantId => new ForgottenTenant { Projection = projection, TenantId = tenantId }).ToList(), cancellationToken);
+            await ConflictIgnoringInsert.InsertAsync(context, rows, cancellationToken);
             return;
         }
 

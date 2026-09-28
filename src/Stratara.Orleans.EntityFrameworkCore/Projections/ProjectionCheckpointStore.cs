@@ -47,7 +47,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         }
 
         var row = new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader };
-        if (ConflictIgnoringInsert.IsSupported(context))
+        if (ConflictIgnoringInsert.CanInsert(context, [row]))
         {
             return await ConflictIgnoringInsert.InsertAsync(context, [row], cancellationToken) == 1;
         }
@@ -121,7 +121,10 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
     /// loses to the key updates the row the other inserted instead of failing. A row held under another
     /// reader is refused, as a read under it is.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">The checkpoint was written under a different reader.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The checkpoint was written under a different reader, or another writer inserted it and removed it again before this
+    /// write could take it over.
+    /// </exception>
     public async Task SetAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -178,6 +181,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
     /// every partition count, so a rebuild or a replay on a host that reads under a new name takes the row over
     /// instead of being refused by the guard its own message asks the operator to clear.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">Another writer inserted the checkpoint and removed it again before the reset could take it over.</exception>
     public async Task ResetAsync(string projection, int partition, string reader, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -187,7 +191,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         }
 
         var row = new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = 0, Reader = reader };
-        if (ConflictIgnoringInsert.IsSupported(context))
+        if (ConflictIgnoringInsert.CanInsert(context, [row]))
         {
             if (await ConflictIgnoringInsert.InsertAsync(context, [row], cancellationToken) == 0 && !await ResetRowAsync(context, projection, partition, reader, cancellationToken))
             {
@@ -226,7 +230,7 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
     private static async Task InsertAsync(TContext context, string projection, int partition, string reader, long? expected, long position, CancellationToken cancellationToken)
     {
         var row = new ProjectionCheckpoint { Projection = projection, Partition = partition, Position = position, Reader = reader };
-        if (ConflictIgnoringInsert.IsSupported(context))
+        if (ConflictIgnoringInsert.CanInsert(context, [row]))
         {
             if (await ConflictIgnoringInsert.InsertAsync(context, [row], cancellationToken) == 0
                 && !await TakeOverTheWinnersRowAsync(context, projection, partition, reader, expected, position, cancellationToken))
