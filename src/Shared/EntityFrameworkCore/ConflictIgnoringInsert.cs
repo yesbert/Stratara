@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Transactions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -115,6 +116,10 @@ internal static class ConflictIgnoringInsert
         return inserted;
     }
 
+    [SuppressMessage("Security Hotspot", "S2077:Formatting SQL queries is security-sensitive",
+        Justification = "The statement is composed of the table and column names the context's model maps, each delimited by the " +
+                        "provider and with braces doubled, and one placeholder per value; every value is bound as a DbParameter. " +
+                        "Nothing a caller supplies reaches the SQL text.")]
     private static async Task<int> InsertChunkAsync<TEntity>(DbContext context, string into, List<(IProperty Property, string Name)> columns, TEntity[] entities,
         CancellationToken cancellationToken)
         where TEntity : class
