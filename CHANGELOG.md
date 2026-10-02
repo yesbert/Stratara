@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.2`._
+
+## [4.4.2] — 2026-10-02
+
 A release about a flag that cost too much. Every host sharing the replay coordination state over Redis
 asked Redis, with a blocking round trip on the calling thread, whether a replay was active — and the
 Orleans execution model asked on every hot path, eight to ten times per command on a host with three
@@ -4414,7 +4418,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.1...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.2...main
+[4.4.2]: https://github.com/yesbert/Stratara/releases/tag/v4.4.2
 [4.4.1]: https://github.com/yesbert/Stratara/releases/tag/v4.4.1
 [4.4.0]: https://github.com/yesbert/Stratara/releases/tag/v4.4.0
 [4.3.1]: https://github.com/yesbert/Stratara/releases/tag/v4.3.1
