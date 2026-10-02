@@ -16,7 +16,44 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.1`._
+A release about a flag that cost too much. Every host sharing the replay coordination state over Redis
+asked Redis, with a blocking round trip on the calling thread, whether a replay was active — and the
+Orleans execution model asked on every hot path, eight to ten times per command on a host with three
+projections, inside grain turns. On a two-core host that was enough to starve the thread pool and time
+the Redis connection out, surfacing as failed catch-ups, lagging read models and failed grain
+registrations although no replay ever ran. The answer now comes from memory. No migration is needed;
+one optional setting is new.
+
+### Fixed
+
+- **No path waits on Redis to learn whether a replay is active.** The Redis-backed replay state answers
+  `IsReplayActive` from a field. A change made in the host itself is seen there at once; a change made
+  elsewhere — a replay that began or ended in another host, or a marking that lapsed — is announced over
+  a channel beside the replay-request channel and seen within its latency, and every host re-reads the
+  marking every `ProjectionReplay:RefreshSeconds` regardless, as the safety net for a lost announcement.
+  The Orleans execution model's command dispatcher, bundle dispatcher, store readers and drain, and the
+  bus dispatchers, make no Redis call for it any more. Nothing changes for a host without Redis, whose
+  state was in process already, nor for a host that registers its own `IProjectionReplayState`.
+
+### Added
+
+- **`ProjectionReplayOptions.RefreshSeconds`** (default 5), read from the `ProjectionReplay` section
+  like the lease. It bounds how long a host answers from a replay marking that changed elsewhere where the
+  announcement was lost. Refused when the host starts at zero or below, and at or above
+  `LeaseSeconds`, with an `OptionsValidationException` naming `ProjectionReplay:RefreshSeconds`.
+- **Log events `104_015` and `104_016`.** A host that cannot refresh the replay marking from Redis says
+  so once at Warning and keeps its last answer; `104_016` at Information says it reads the marking again.
+
+### Changed
+
+- **A host that cannot reach Redis keeps its last answer about the replay.** Before, every dispatch and
+  every catch-up on such a host failed with the connection's exception. Now they proceed on what the host
+  last learned — initially that no replay is active — and the loss is logged once. The replay stays
+  correct regardless: on the Orleans execution model the readers are paused by the rebuild and the
+  replay themselves, and apply the store from the beginning once more when the replay ends.
+- **Rolling upgrade.** A host on a release before this one announces nothing when it starts or ends a
+  replay, so a host on this release sees that replay at the refresh period rather than at once. The
+  marking, its key and its lease are unchanged, so the two releases share one replay state.
 
 ## [4.4.1] — 2026-09-28
 

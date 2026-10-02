@@ -8,11 +8,19 @@ namespace Stratara.Abstractions.Projections;
 /// <remarks>
 /// Implementations should be process-singleton and thread-safe; the replay handshake
 /// crosses worker boundaries via the <see cref="SubscribeToReplayRequestAsync"/> +
-/// <see cref="RequestReplay"/> channel.
+/// <see cref="RequestReplay"/> channel. <see cref="IsReplayActive"/> is read on every dispatch,
+/// every publication and every catch-up, so an implementation answers it from memory and never
+/// waits on a shared store for it; a marking shared between hosts is learned asynchronously, within
+/// a bounded period.
 /// </remarks>
 public interface IProjectionReplayState
 {
-    /// <summary><c>true</c> while a replay is in progress; <c>false</c> in steady-state.</summary>
+    /// <summary>
+    /// <c>true</c> while a replay is in progress; <c>false</c> in steady-state. Answered from the
+    /// host's memory: a change made through this instance is seen at once, a change made in another
+    /// host sharing the marking within the refresh period the host configures, and a host that cannot
+    /// reach the shared store keeps its last answer.
+    /// </summary>
     bool IsReplayActive { get; }
 
     /// <summary>Mark the replay as started.</summary>

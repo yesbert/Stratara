@@ -152,7 +152,7 @@ its model drifts from its migrations unnoticed until it meets a real database. S
 | Extension | What it does |
 |---|---|
 | `services.AddRedisOutboxLock()` | Replaces the no-op `NullOutboxLock` with the Redis-backed one, which is what makes **more than one outbox-worker replica** safe. Needs an `IConnectionMultiplexer` — `AddCaching()` from `Stratara.Infrastructure` registers one. Lease it via `OutboxOptions.LockLeaseSeconds` |
-| `services.AddProjectionReplayState()` | Registers the projection-replay state — shared over Redis where an `IConnectionMultiplexer` is registered, held in process otherwise (warning `104_012`) — **and** `ProjectionReplayOptions`, read from the `ProjectionReplay` section (a lease of zero or less fails the start), so the replay marking is leased (`LeaseSeconds`, default 300) rather than outliving a crashed replay. Idempotent |
+| `services.AddProjectionReplayState()` | Registers the projection-replay state — shared over Redis where an `IConnectionMultiplexer` is registered, held in process otherwise (warning `104_012`) — **and** `ProjectionReplayOptions`, read from the `ProjectionReplay` section (a lease of zero or less fails the start, and so does a refresh period of zero or less or not below the lease), so the replay marking is leased (`LeaseSeconds`, default 300) rather than outliving a crashed replay. Whether a replay is active is answered from memory, never by a round trip; a marking changed elsewhere is seen at the announcement, and within `RefreshSeconds` (default 5) at the latest. Idempotent |
 
 ## Orleans execution model (`Stratara.Orleans`, `Stratara.Orleans.EntityFrameworkCore`)
 

@@ -89,6 +89,71 @@ public class ProjectionReplayOptionsBindingTests
     }
 
     [Fact]
+    public async Task AddProjectionReplayState_RefreshOfZeroInTheSection_FailsTheStartNamingTheSetting()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ProjectionReplay:RefreshSeconds"] = "0",
+        });
+        builder.Services.AddProjectionReplayState();
+        using var host = builder.Build();
+
+        var ex = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("ProjectionReplay:RefreshSeconds", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AddProjectionReplayState_NegativeRefreshInCode_FailsTheStartNamingTheSetting()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddProjectionReplayState();
+        builder.Services.Configure<ProjectionReplayOptions>(o => o.RefreshSeconds = -1);
+        using var host = builder.Build();
+
+        var ex = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("ProjectionReplay:RefreshSeconds", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AddProjectionReplayState_RefreshNotBelowTheLease_FailsTheStartNamingBoth()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddProjectionReplayState();
+        builder.Services.Configure<ProjectionReplayOptions>(o =>
+        {
+            o.LeaseSeconds = 10;
+            o.RefreshSeconds = 10;
+        });
+        using var host = builder.Build();
+
+        var ex = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("ProjectionReplay:RefreshSeconds", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("ProjectionReplay:LeaseSeconds", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AddProjectionReplayState_RefreshBelowTheLease_StartsTheHost()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddProjectionReplayState();
+        builder.Services.Configure<ProjectionReplayOptions>(o =>
+        {
+            o.LeaseSeconds = 2;
+            o.RefreshSeconds = 1;
+        });
+        using var host = builder.Build();
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, host.Services.GetRequiredService<IOptions<ProjectionReplayOptions>>().Value.RefreshSeconds);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task AddProjectionReplayState_DefaultLease_StartsTheHost()
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
@@ -97,7 +162,9 @@ public class ProjectionReplayOptionsBindingTests
 
         await host.StartAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(300, host.Services.GetRequiredService<IOptions<ProjectionReplayOptions>>().Value.LeaseSeconds);
+        var options = host.Services.GetRequiredService<IOptions<ProjectionReplayOptions>>().Value;
+        Assert.Equal(300, options.LeaseSeconds);
+        Assert.Equal(5, options.RefreshSeconds);
         await host.StopAsync(TestContext.Current.CancellationToken);
     }
 
