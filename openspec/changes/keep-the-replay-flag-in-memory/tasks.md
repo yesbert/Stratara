@@ -38,6 +38,18 @@
   coordination store, a shared marking's change seen within the refresh period; the class remarks say
   the channel is a wake-up and the refresh the guarantee.
 
+## 3b. Found in review
+
+- [x] 3b.1 Round 1 of the review of #187: a refresh whose read was in flight when the host made a transition
+  of its own could write the stale value over it — a generation counter moves before every local transition
+  and a refresh discards a read the generation overtook
+  (`tests/Stratara.Outbox.RabbitMQ.Tests/Projections/ProjectionReplayStateTests.cs`,
+  `A_refresh_in_flight_during_the_hosts_own_activation_does_not_overwrite_it` and the deactivation twin,
+  red without the counter); a subscription that cannot be established no longer shares the refresh's
+  failure flag, so a working refresh does not report a recovery every tick — it has its own pair,
+  `104_017`/`104_018` (`A_subscription_that_cannot_be_established_is_logged_once_and_does_not_touch_the_refresh_log`,
+  `A_refresh_that_fails_is_logged_once_per_stretch_and_its_recovery_once`).
+
 ## 4. Documentation
 
 - [x] 4.1 `docs/guides/write-a-projection.md`, the lease section (around line 355): `RefreshSeconds`

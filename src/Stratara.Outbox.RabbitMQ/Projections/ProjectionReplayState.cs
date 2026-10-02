@@ -25,9 +25,12 @@ namespace Stratara.Outbox.RabbitMQ.Projections;
 /// when a message arrives on the state channel, which <see cref="Activate"/>, <see cref="Deactivate"/>
 /// and <see cref="SetFailed"/> publish to. The message is a wake-up, not the truth: a refresh reads the
 /// marking itself, so two transitions in quick succession cannot leave the field behind the marking.
-/// A transition made through this instance is seen in it at once. Until the first refresh has
-/// completed the field says that no replay is active; a refresh that fails keeps the field, is logged
-/// once per failing stretch, and the next one that succeeds is logged too.
+/// A transition made through this instance is seen in it at once, and a refresh whose read was in
+/// flight when that transition happened is discarded rather than written over it. Until the first
+/// refresh has completed the field says that no replay is active; a refresh that fails keeps the
+/// field, is logged once per failing stretch, and the next one that succeeds is logged too. A state
+/// channel that cannot be subscribed to is tried again on every tick and logged the same way, apart
+/// from the refresh: the marking is then seen on the period only.
 /// </para>
 /// <para>
 /// The active marking and the progress counters are held on the lease configured by
@@ -61,8 +64,10 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     private readonly Task _loop;
 
     private volatile bool _active;
+    private int _generation;
     private ChannelMessageQueue? _subscription;
     private bool _refreshFailing;
+    private bool _subscribeFailing;
 
     public ProjectionReplayState(
         IConnectionMultiplexer redis,
@@ -94,8 +99,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var db = _redis.GetDatabase();
         db.KeyDelete(ErrorKey);
         db.StringSet(CacheKey, Active, _lease);
-        _active = true;
-        Announce();
+        Transition(active: true);
     }
 
     /// <inheritdoc/>
@@ -103,8 +107,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     {
         var db = _redis.GetDatabase();
         db.KeyDelete([CacheKey, ProcessedKey, TotalKey, ErrorKey]);
-        _active = false;
-        Announce();
+        Transition(active: false);
     }
 
     /// <inheritdoc/>
@@ -113,8 +116,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var db = _redis.GetDatabase();
         db.KeyDelete(CacheKey);
         db.StringSet(ErrorKey, errorMessage);
-        _active = false;
-        Announce();
+        Transition(active: false);
     }
 
     /// <inheritdoc/>
@@ -181,8 +183,17 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         _stopping.Dispose();
     }
 
-    /// <summary>Tells every host sharing the store that the marking changed; the hosts read it themselves.</summary>
-    private void Announce() => _redis.GetSubscriber().Publish(RedisChannel.Literal(StateChannel), StateChanged);
+    /// <summary>
+    /// Records a transition this instance made: the generation moves first, so a refresh whose read was in flight
+    /// finds it changed and discards what it read; then the field, then the announcement to every host sharing the
+    /// store, which read the marking themselves.
+    /// </summary>
+    private void Transition(bool active)
+    {
+        Interlocked.Increment(ref _generation);
+        _active = active;
+        _redis.GetSubscriber().Publish(RedisChannel.Literal(StateChannel), StateChanged);
+    }
 
     /// <summary>
     /// One refresh at once, then one per period. A subscription that could not be established is tried again on each
@@ -222,10 +233,21 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
             var queue = await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(StateChannel));
             queue.OnMessage(_ => OnStateChangedAsync());
             _subscription = queue;
+            if (_subscribeFailing)
+            {
+                _subscribeFailing = false;
+                _logger?.LogProjectionReplayStateSubscribed();
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            RecordRefreshFailure(exception);
+            if (_subscribeFailing)
+            {
+                return;
+            }
+
+            _subscribeFailing = true;
+            _logger?.LogProjectionReplayStateSubscriptionFailed(exception);
         }
     }
 
@@ -242,16 +264,23 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     }
 
     /// <summary>
-    /// Reads the marking and sets the field to it. Refreshes are serialised, so a read that began earlier cannot land
-    /// after a later one; a refresh that fails keeps the field and is logged once per failing stretch.
+    /// Reads the marking and sets the field to it, unless this instance made a transition while the read was in
+    /// flight: what was read may predate that transition, and the next refresh reads again. Refreshes are serialised,
+    /// so a read that began earlier cannot land after a later one; a refresh that fails keeps the field and is logged
+    /// once per failing stretch.
     /// </summary>
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         await _refreshing.WaitAsync(cancellationToken);
         try
         {
+            var generation = Volatile.Read(ref _generation);
             var value = await _redis.GetDatabase().StringGetAsync(CacheKey);
-            _active = value == Active;
+            if (Volatile.Read(ref _generation) == generation)
+            {
+                _active = value == Active;
+            }
+
             if (_refreshFailing)
             {
                 _refreshFailing = false;

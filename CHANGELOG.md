@@ -41,8 +41,10 @@ one optional setting is new.
   like the lease. It bounds how long a host answers from a replay marking that changed elsewhere where the
   announcement was lost. Refused when the host starts at zero or below, and at or above
   `LeaseSeconds`, with an `OptionsValidationException` naming `ProjectionReplay:RefreshSeconds`.
-- **Log events `104_015` and `104_016`.** A host that cannot refresh the replay marking from Redis says
-  so once at Warning and keeps its last answer; `104_016` at Information says it reads the marking again.
+- **Log events `104_015` to `104_018`.** A host that cannot refresh the replay marking from Redis says
+  so once at Warning (`104_015`) and keeps its last answer; `104_016` at Information says it reads the
+  marking again. A host that cannot subscribe to the marking's announcements says so once at Warning
+  (`104_017`), sees a change on the refresh period only, and `104_018` says it is subscribed again.
 
 ### Changed
 

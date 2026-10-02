@@ -75,9 +75,18 @@ seconds is one `GET` — negligible against the eight to ten per command the cha
   seconds late publishes the commands the first replayed batches provoke, which *Publication is
   suppressed while a replay is active* exists to prevent. The channel makes the usual case immediate.
 
-**Refreshes are serialised, and the refresh is asynchronous end to end.** The timer loop and the
-subscriber's handler both call one `RefreshAsync`, which takes a `SemaphoreSlim(1, 1)` and uses
-`StringGetAsync`; an older read can therefore not land after a newer one. The loop is a
+**Refreshes are serialised, the refresh is asynchronous end to end, and a transition of the host's
+own outranks a read in flight.** The timer loop and the subscriber's handler both call one
+`RefreshAsync`, which takes a `SemaphoreSlim(1, 1)` and uses `StringGetAsync`; an older read can
+therefore not land after a newer one. A read that was in flight when `Activate`, `Deactivate` or
+`SetFailed` ran on this instance may predate that transition, so each transition moves a generation
+counter before it sets the field, and a refresh writes the field only where the generation is the one
+it captured before its read; otherwise it discards what it read, and the next refresh reads again
+(found by the review of #187; `ProjectionReplayStateTests` in the unit tests holds the read open with
+a controlled connection). A subscription that cannot be established is a failure of its own — the
+marking is still refreshed on the period — and is logged once per failing stretch (`104_017`,
+`104_018`) apart from the refresh's pair, so a refresh that works does not report a recovery the
+subscription never had. The loop is a
 `PeriodicTimer` over the registered `TimeProvider`, started by the constructor and held in a field —
 no `Task.Run`, no thread — and the class becomes `IAsyncDisposable`: disposal cancels the loop, awaits
 it and unsubscribes. The container disposes the singleton it created through the factory. A service

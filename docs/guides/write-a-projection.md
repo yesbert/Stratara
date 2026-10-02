@@ -391,8 +391,10 @@ subscribed to, and the way a marking that lapsed is noticed. Set it in the same 
 zero or below and at or above the lease, naming `ProjectionReplay:RefreshSeconds`. Until a host has first
 read the marking it answers that no replay is active. A host that cannot reach Redis keeps its last
 answer rather than failing the dispatch that asked, logs `104_015` once, and `104_016` when it can read
-the marking again. A host on a release before 4.4.2 announces nothing, so a replay it starts is seen by
-a newer host at the refresh period rather than at once.
+the marking again; a host that cannot subscribe to the announcements logs `104_017` once, sees a change
+on the refresh period only until `104_018` says it is subscribed again, and keeps refreshing meanwhile.
+A host on a release before 4.4.2 announces nothing, so a replay it starts is seen by a newer host at
+the refresh period rather than at once.
 
 One thing a version bump does not do for you: a marking that is *already* stuck from before you
 adopted the lease was written without an expiry and does not gain one. Clear it once — an explicit
