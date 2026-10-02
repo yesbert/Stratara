@@ -387,7 +387,27 @@ stopped with its silo) explains a second run of a command or a timer after a dep
 recorded command whose signature does not verify) mean the record was altered or the key differs; alert on them. Worth routing to a
 dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded
 commands back and once when it releases them — a command that waits for the length of a replay is waiting, not
-lost. The whole band is listed in the [log events schema](../reference/log-events-schema.md).
+lost; `104_015` and `104_016` from the replay state, logged once when the host can no longer refresh
+the replay marking from Redis and answers from what it last knew, and once when it can again; and
+`104_017` and `104_018`, logged once when the host cannot subscribe to the marking's announcements
+and sees a change on the refresh period only, and once when it is subscribed again. The whole band is
+listed in the [log events schema](../reference/log-events-schema.md).
+
+## The replay marking costs no round trip
+
+The model asks whether a full replay is active on every path that matters: once per dispatched command,
+once per commit before the readers are nudged, at the start of every catch-up and before every batch a
+store reader applies, and once per drain pass. None of those asks Redis. The answer comes from the
+host's memory and is refreshed asynchronously — at once when another host announces a change over the
+shared connection, and every `ProjectionReplay:RefreshSeconds` (default 5) regardless, which is also how
+a marking that lapsed is noticed. A host can hold the model to that: a `RedisTimeoutException` on
+`GET stratara:projection:replay:active` under load is a sign of a release before 4.4.2, where every
+one of those reads was a blocking round trip and a two-core host could starve its thread pool on them.
+What the model does with the answer is unchanged: a replay holds recorded commands back, skips the
+wake-ups and suspends the readers, and the readers' pausers hold them regardless of the flag. A host
+that cannot reach Redis keeps its last answer and logs `104_015` once; `104_016` says it reads the
+marking again. A host that cannot subscribe to the announcements logs `104_017` once and sees a change
+on the refresh period only until `104_018` says it is subscribed again.
 
 ## Reset what the model keeps
 

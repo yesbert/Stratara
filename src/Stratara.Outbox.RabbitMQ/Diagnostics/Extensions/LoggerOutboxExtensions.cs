@@ -103,4 +103,52 @@ public static partial class LoggerOutboxExtensions
         Level = LogLevel.Warning,
         Message = "A projection-replay request subscriber failed. The other subscribers were notified.")]
     public static partial void LogProjectionReplayRequestSubscriberFailed(this ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logs, once per failing stretch, that the host could not refresh what it knows of the replay
+    /// marking from the shared coordination store. The host keeps its last answer until a refresh
+    /// succeeds again.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">What the refresh failed with.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayRefreshFailed,
+        Level = LogLevel.Warning,
+        Message = "The replay marking could not be refreshed from Redis; the host keeps its last answer until a refresh succeeds.")]
+    public static partial void LogProjectionReplayRefreshFailed(this ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logs that the host refreshed what it knows of the replay marking again after a failing
+    /// stretch.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayRefreshRecovered,
+        Level = LogLevel.Information,
+        Message = "The replay marking is refreshed from Redis again.")]
+    public static partial void LogProjectionReplayRefreshRecovered(this ILogger logger);
+
+    /// <summary>
+    /// Logs, once per failing stretch, that the host could not subscribe to the channel on which a
+    /// change of the replay marking is announced. The marking is still refreshed on the period, so a
+    /// change is seen within it rather than at once; the subscription is tried again on every tick.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">What the subscription failed with.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayStateSubscriptionFailed,
+        Level = LogLevel.Warning,
+        Message = "The replay marking's announcement channel could not be subscribed to; a change of the marking is seen on the refresh period only until it can.")]
+    public static partial void LogProjectionReplayStateSubscriptionFailed(this ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logs that the host subscribed to the replay marking's announcement channel again after a
+    /// failing stretch.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayStateSubscribed,
+        Level = LogLevel.Information,
+        Message = "The replay marking's announcement channel is subscribed to again.")]
+    public static partial void LogProjectionReplayStateSubscribed(this ILogger logger);
 }

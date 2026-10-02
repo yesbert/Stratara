@@ -49,6 +49,7 @@ Every bindable options type, the section it binds from, and the default each key
 | Key | Type | Default |
 |---|---|---|
 | `ProjectionReplay:LeaseSeconds` | `Int32` | `300` |
+| `ProjectionReplay:RefreshSeconds` | `Int32` | `5` |
 
 ### `Projections` — Stratara.Projections.Services.ProjectionOptions
 
@@ -248,6 +249,7 @@ configures nothing.
 | `stratara:projection:replay:error` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:processed` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:request` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:state` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:total` | cache key | ProjectionReplayState |
 | `stratara:setting:` | cache key | EncryptingSettingStore |
 | `stratara:tenant_id` | claim type | StrataraClaimTypes |

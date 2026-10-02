@@ -100,6 +100,14 @@ public static class LogEvents
         public const int ProjectionReplayRequestSubscriberFailed = 104_013;
         /// <summary>A projection that forgets deleted tenants passed over a fact of a tenant it has seen deleted.</summary>
         public const int ProjectionForgottenTenantFactPassedOver = 104_014;
+        /// <summary>The host could not refresh what it knows of the replay marking from the shared coordination store and keeps its last answer (warning, once per failing stretch).</summary>
+        public const int ProjectionReplayRefreshFailed = 104_015;
+        /// <summary>The host refreshed what it knows of the replay marking again after a failing stretch (information).</summary>
+        public const int ProjectionReplayRefreshRecovered = 104_016;
+        /// <summary>The host could not subscribe to the replay marking's announcements and sees a change of the marking on the refresh period only (warning, once per failing stretch).</summary>
+        public const int ProjectionReplayStateSubscriptionFailed = 104_017;
+        /// <summary>The host subscribed to the replay marking's announcements again after a failing stretch (information).</summary>
+        public const int ProjectionReplayStateSubscribed = 104_018;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>

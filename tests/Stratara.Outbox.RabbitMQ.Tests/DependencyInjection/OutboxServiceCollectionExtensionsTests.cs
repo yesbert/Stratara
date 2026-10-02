@@ -100,6 +100,36 @@ public class OutboxServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task AddProjectionReplayState_RedisState_IsStoppedWithTheProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+        services.AddProjectionReplayState();
+        var sp = services.BuildServiceProvider();
+        var state = Assert.IsType<ProjectionReplayState>(sp.GetRequiredService<IProjectionReplayState>());
+        await state.FirstRefresh;
+        Assert.False(state.IsReplayActive);
+
+        await sp.DisposeAsync();
+
+        Assert.True(state.IsStopped);
+    }
+
+    [Fact]
+    public void AddProjectionReplayState_RedisState_SurvivesASynchronousDisposeOfTheProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+        services.AddProjectionReplayState();
+        var sp = services.BuildServiceProvider();
+        var state = Assert.IsType<ProjectionReplayState>(sp.GetRequiredService<IProjectionReplayState>());
+
+        sp.Dispose();
+
+        Assert.False(state.IsReplayActive);
+    }
+
+    [Fact]
     public void AddProjectionReplayState_ConsumerStateRegisteredBefore_Wins()
     {
         var services = new ServiceCollection();

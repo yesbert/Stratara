@@ -27,4 +27,17 @@ public sealed class ProjectionReplayOptions
     /// value of zero or less is refused when the host starts. Defaults to 300.
     /// </summary>
     public int LeaseSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// Seconds between two refreshes of what this host knows of the replay marking. The marking is
+    /// answered from the host's memory, never by a round trip to the coordination store; a change
+    /// made elsewhere — a replay that began or ended in another host, or a marking that lapsed — is
+    /// announced over the coordination store's channel and seen within its latency, and this period
+    /// bounds how long a host stays wrong where that announcement is lost or has not reached it yet.
+    /// A longer value costs staleness in that case; a shorter one costs one read per host per period.
+    /// Must be greater than zero and below <see cref="LeaseSeconds"/>, since a refresh slower than the
+    /// lease could miss a whole replay; a value outside that is refused when the host starts. Defaults
+    /// to 5.
+    /// </summary>
+    public int RefreshSeconds { get; set; } = 5;
 }

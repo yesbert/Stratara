@@ -53,10 +53,13 @@ public static class OutboxServiceCollectionExtensions
     /// The choice is made when the state is first resolved, not when this method runs, so the order
     /// of <c>AddCaching()</c> and the composites does not matter. With a Redis connection the replay
     /// marking, its progress and the replay-request channel are shared by every host on that
-    /// connection, and a replay requested in one suppresses publication in all of them. Without one
-    /// they live in this process only — a replay requested here suppresses publication here only —
-    /// and the host records that once at start-up as a warning (event <c>104_012</c>). A host that
-    /// registers its own <see cref="IProjectionReplayState"/> keeps it.
+    /// connection, and a replay requested in one suppresses publication in all of them. Whether a
+    /// replay is active is answered from the host's memory either way — no dispatch, publication or
+    /// catch-up waits on Redis for it — and a marking that changed in another host is seen within
+    /// <see cref="ProjectionReplayOptions.RefreshSeconds"/> at the latest, usually at once. Without a
+    /// Redis connection the state lives in this process only — a replay requested here suppresses
+    /// publication here only — and the host records that once at start-up as a warning (event
+    /// <c>104_012</c>). A host that registers its own <see cref="IProjectionReplayState"/> keeps it.
     /// </para>
     /// <para>
     /// Also registers <see cref="ProjectionReplayOptions"/>, read from the <c>ProjectionReplay</c>
@@ -71,7 +74,8 @@ public static class OutboxServiceCollectionExtensions
     /// <para>
     /// A <see cref="ProjectionReplayOptions.LeaseSeconds"/> of zero or less is refused when the host
     /// starts, with an <see cref="OptionsValidationException"/> naming
-    /// <c>ProjectionReplay:LeaseSeconds</c>.
+    /// <c>ProjectionReplay:LeaseSeconds</c>; so is a <see cref="ProjectionReplayOptions.RefreshSeconds"/>
+    /// of zero or less, or at or above the lease, naming <c>ProjectionReplay:RefreshSeconds</c>.
     /// </para>
     /// </remarks>
     /// <example>
@@ -99,7 +103,11 @@ public static class OutboxServiceCollectionExtensions
         var redis = serviceProvider.GetService<IConnectionMultiplexer>();
         if (redis is not null)
         {
-            return new ProjectionReplayState(redis, options);
+            return new ProjectionReplayState(
+                redis,
+                options,
+                serviceProvider.GetRequiredService<TimeProvider>(),
+                serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<ProjectionReplayState>());
         }
 
         var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<InProcessProjectionReplayState>();

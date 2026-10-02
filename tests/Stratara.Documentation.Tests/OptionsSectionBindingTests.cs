@@ -44,6 +44,8 @@ public class OptionsSectionBindingTests
             b => b.Services.AddOutboxDispatcher()),
         Case<ProjectionReplayOptions>("AddEventProjectionServices()", "LeaseSeconds", "617",
             b => b.AddEventProjectionServices()),
+        Case<ProjectionReplayOptions>("AddProjectionReplayState(), the refresh", "RefreshSeconds", "17",
+            b => b.Services.AddProjectionReplayState()),
 
         Case<OutboxOptions>("AddOutboxDispatcher()", "BatchSize", "617",
             b => b.Services.AddOutboxDispatcher()),
