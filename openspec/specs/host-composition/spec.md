@@ -210,7 +210,8 @@ effect without code. Where the host's services carry no configuration, the regis
 succeed with the defaults. A value the host configures in code after the registration SHALL take
 precedence over the section. A setting whose value cannot work SHALL be refused when the host starts,
 with a message naming the setting, rather than accepted and failing later; the projection replay's
-lease period SHALL be refused at zero or below.
+lease period SHALL be refused at zero or below, and the period at which a host refreshes what it knows
+of the replay marking SHALL be refused at zero or below and at or above the lease.
 
 #### Scenario: The session context is configured in the application settings
 
@@ -232,6 +233,11 @@ lease period SHALL be refused at zero or below.
 #### Scenario: The replay lease is zero
 
 - **WHEN** a host configures a replay lease of zero seconds
+- **THEN** the host fails to start with a message naming the setting
+
+#### Scenario: The replay refresh period is not below the lease
+
+- **WHEN** a host configures a replay refresh period of zero seconds, or one at or above the lease
 - **THEN** the host fails to start with a message naming the setting
 
 #### Scenario: No configuration is registered

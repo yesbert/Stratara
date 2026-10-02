@@ -31,7 +31,8 @@ store's channel and, as the safety net, through a periodic asynchronous refresh.
   the lease; refused when the host starts at zero or below, or at or above the lease.
 - A host that cannot reach the coordination store keeps the last answer it had — before, the paths that
   asked failed with the connection's exception. The loss and the recovery are logged once each
-  (`104_015`, `104_016`).
+  (`104_015`, `104_016`); a host that cannot subscribe to the marking's announcements, and sees a change
+  on the refresh period only, logs that once as well (`104_017`, `104_018`).
 - Until the host first learns the marking, it answers that no replay is active.
 - The interface and its call sites are unchanged. The in-process state, and a host's own
   `IProjectionReplayState`, are not touched.
@@ -63,10 +64,12 @@ _None._
 - `src/Stratara.Outbox.RabbitMQ/DependencyInjection/OutboxServiceCollectionExtensions.cs` — the
   registration hands the state its clock and logger.
 - `src/Stratara.Outbox.RabbitMQ/Diagnostics/Extensions/LoggerOutboxExtensions.cs`,
-  `src/Stratara.Diagnostics/LogEvents.cs` — `104_015`, `104_016`.
+  `src/Stratara.Diagnostics/LogEvents.cs` — `104_015` to `104_018`.
 - `src/Stratara.Abstractions/Abstractions/Projections/IProjectionReplayState.cs` — the documentation of
   `IsReplayActive` states what an implementation promises.
 - `tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Projections/ProjectionReplayStateTests.cs`,
+  `tests/Stratara.Outbox.RabbitMQ.Tests/Projections/ProjectionReplayStateTests.cs` (new, on a controlled
+  connection),
   `tests/Stratara.Outbox.RabbitMQ.Tests/DependencyInjection/ProjectionReplayOptionsBindingTests.cs`,
   `tests/Stratara.Documentation.Tests/OptionsSectionBindingTests.cs`.
 - `docs/guides/write-a-projection.md`, `docs/guides/operate-the-orleans-execution-model.md`,
