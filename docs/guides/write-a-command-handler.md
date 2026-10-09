@@ -116,6 +116,45 @@ public sealed class OpenAccountInTenantHandler(IEventSource events) : ICommandHa
 
 Every later append to that stream lands in the same tenant, whoever's session makes it.
 
+When the event does not carry the owner — a record an operator creates for a customer's tenant, a
+platform-owned record created under any session — state it at creation instead:
+
+<!-- stratara-snippet-ignore: narrative fragment - the event source, the aggregate and the ids come from the surrounding handler -->
+```csharp
+await events.CreateOnBehalfOfAsync<PhoneNumberBlock>(
+    blockId,
+    new PhoneNumberBlockReserved(blockId, range),
+    new EventSubject(platformTenantId),
+    ct);
+```
+
+`CreateOnBehalfOfAsync` fails like `CreateAsync` when the stream exists, and like `AppendOnBehalfOfAsync`
+when the subject names no tenant. The stated owner is the stream's owner from then on.
+
+### When the session would decide a new stream's owner
+
+The fifth candidate is the one that goes wrong quietly. A first event that states no owner and carries
+none takes the session's tenant — right when a tenant's user creates a record in their own tenant, wrong
+when an operator creates one for somebody else, and nothing fails either way. A host can decide:
+
+```json
+{
+  "EventSourcing": {
+    "NewStreamOwnerFromSession": "Warn"
+  }
+}
+```
+
+| Value | A new stream's first event that would take its owner from the session |
+|---|---|
+| `Allow` (default) | is recorded for the session's tenant, as before |
+| `Warn` | is recorded for the session's tenant, and `102_104` (Warning) names the stream, the event type and the tenant — once per stream created |
+| `Refuse` | fails before anything is staged, naming the stream, the event type and the ways to state an owner |
+
+The setting touches nothing else: an owner stated with `CreateOnBehalfOfAsync` or `AppendOnBehalfOfAsync`,
+a creation event that carries a tenant, and every append to a stream that already exists behave as
+without it. Run `Warn` in a lower environment until the log stays quiet, then `Refuse`.
+
 ### Appending on behalf of another subject
 
 When an event genuinely belongs to someone other than the resolved owner, say so — never obtain it

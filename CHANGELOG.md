@@ -60,6 +60,16 @@ applies to the entire NuGet family.
   `Stratara.Projections` for another store; without one registered a replay behaves as before. The copy costs one
   more read of the read store before the replay and the disk to hold it twice while it runs.
 
+- **A new stream's owner can be stated at creation.** `IEventSource.CreateOnBehalfOfAsync<TAggregate>(streamId,
+  @event, subject)` creates the stream with the owner the subject states, which every later event keeps. Until
+  now the explicit route existed for appends only, and at creation the owner had to come from an
+  `IAggregateCreationEvent` or the session. A default implementation built on `ExistsAsync` and
+  `AppendOnBehalfOfAsync` keeps implementations outside the framework compiling.
+- **`EventSourcing:NewStreamOwnerFromSession`** — `Allow` (default), `Warn` or `Refuse` — decides what happens when
+  a new stream's first event would take its owner from the session: as before, as before plus a warning `102_104`,
+  or a refusal before anything is staged. Stated owners, creation events that carry a tenant, and appends to
+  existing streams are untouched.
+
 ### Fixed
 
 - **One replay request starts one replay.** Every host that runs the replay worker subscribes to the

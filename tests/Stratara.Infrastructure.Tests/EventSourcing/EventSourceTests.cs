@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Stratara.Contracts.Session;
+using Stratara.Diagnostics;
 using Stratara.Domain;
 using Stratara.Domain.Multitenancy;
 using Stratara.Infrastructure.EventSourcing;
@@ -815,6 +817,135 @@ public class EventSourceTests
         await _eventSource.SaveChangesAsync();
 
         Assert.Equal(_tenantId, Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId);
+    }
+
+    [Fact]
+    public async Task CreateOnBehalfOfAsync_RecordsTheStatedOwnerForTheStreamsLaterEvents()
+    {
+        var streamId = Guid.NewGuid();
+        var owner = new EventSubject(Guid.NewGuid(), Guid.NewGuid());
+
+        await Events.CreateOnBehalfOfAsync<TestAggregate>(streamId, new TestCreated("Stated"), owner);
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Later"));
+        await _eventSource.SaveChangesAsync();
+
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.All(entries, entry =>
+        {
+            Assert.Equal(owner.TenantId, entry.TenantId);
+            Assert.Equal(owner.UserId, entry.UserId);
+        });
+        Assert.Equal([1L, 2L], entries.Select(e => e.Version));
+    }
+
+    [Fact]
+    public async Task CreateOnBehalfOfAsync_OnAnExistingStream_FailsNamingTheStream()
+    {
+        var streamId = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Events.CreateOnBehalfOfAsync<TestAggregate>(streamId, new TestCreated("Again"), new EventSubject(Guid.NewGuid())));
+
+        Assert.Contains(streamId.ToString(), ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateOnBehalfOfAsync_WithAnEmptyTenant_FailsAndStagesNothing()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            Events.CreateOnBehalfOfAsync<TestAggregate>(Guid.NewGuid(), new TestCreated("Nobody"), new EventSubject(Guid.Empty)));
+        await _eventSource.SaveChangesAsync();
+
+        Assert.All(_capturedAddRangeCalls, Assert.Empty);
+    }
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Warn_RecordsTheSessionOwnerAndLogs102104Once()
+    {
+        var logger = new RecordingEventSourceLogger();
+        var eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Warn, logger);
+        var streamId = Guid.NewGuid();
+
+        await eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Created"));
+        await eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Renamed"));
+        await eventSource.SaveChangesAsync();
+
+        Assert.All(Assert.Single(_capturedAddRangeCalls), entry => Assert.Equal(_tenantId, entry.TenantId));
+        var warning = Assert.Single(logger.Entries, entry => entry.EventId == LogEvents.EventStore.NewStreamOwnerTakenFromSession);
+        Assert.Equal(LogLevel.Warning, warning.Level);
+        Assert.Contains(streamId.ToString(), warning.Message, StringComparison.Ordinal);
+        Assert.Contains(_tenantId.ToString(), warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Refuse_FailsBeforeStaging()
+    {
+        var eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Refuse);
+        var streamId = Guid.NewGuid();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Created")));
+        await eventSource.SaveChangesAsync();
+
+        Assert.Contains(streamId.ToString(), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(TestCreated), ex.Message, StringComparison.Ordinal);
+        Assert.Contains("CreateOnBehalfOfAsync", ex.Message, StringComparison.Ordinal);
+        Assert.All(_capturedAddRangeCalls, Assert.Empty);
+    }
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Refuse_LeavesStatedOwnersCreationEventsAndExistingStreamsAlone()
+    {
+        IEventSource eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Refuse);
+        var stated = Guid.NewGuid();
+        var created = Guid.NewGuid();
+        var existing = Guid.NewGuid();
+        var existingOwner = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(existing, existingOwner);
+
+        await eventSource.CreateOnBehalfOfAsync<TestAggregate>(stated, new TestCreated("Stated"), new EventSubject(Guid.NewGuid()));
+        await eventSource.CreateAsync<Tenant>(created, new TenantCreated(created, Guid.NewGuid(), "Acme", "de-DE", true, DateTimeOffset.UtcNow));
+        await eventSource.AppendAsync<TestAggregate>(existing, new TestRenamed("Existing"));
+        await eventSource.SaveChangesAsync();
+
+        Assert.Equal(3, Assert.Single(_capturedAddRangeCalls).Count);
+    }
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Refuse_AnExistingStreamWithoutARecordedTenant_StillTakesTheSession()
+    {
+        var eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Refuse);
+        var streamId = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, Guid.Empty);
+
+        await eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Legacy"));
+        await eventSource.SaveChangesAsync();
+
+        Assert.Equal(_tenantId, Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId);
+    }
+
+    private EventSource EventSourceWithPolicy(NewStreamOwnerPolicy policy, ILogger<EventSource>? logger = null) =>
+        new(
+            _snapshotServiceMock.Object,
+            _unitOfWorkMock.Object,
+            _sessionContextProviderMock.Object,
+            _outboxDispatcherMock.Object,
+            _serializerMock.Object,
+            [new PostgresUniqueViolationDetector()],
+            logger: logger,
+            options: Options.Create(new EventSourcingOptions { NewStreamOwnerFromSession = policy }));
+
+    private sealed class RecordingEventSourceLogger : ILogger<EventSource>
+    {
+        public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
     }
 
     [Fact]
