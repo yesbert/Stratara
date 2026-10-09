@@ -154,6 +154,7 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
         Guid? replayId;
         await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
+            await context.Database.OpenConnectionAsync(cancellationToken);
             replayId = await ReadMarkerAsync(context, cancellationToken);
         }
 

@@ -185,6 +185,7 @@ public sealed class ReplayRestoreTests(PostgreSqlFixture postgres, RabbitMqFixtu
         });
         builder.AddEventProjectionServices();
         builder.Services
+            .AddOutboxDispatcher()
             .AddEventSourcing()
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(postgres.ConnectionStringFor($"{store}_read"))
