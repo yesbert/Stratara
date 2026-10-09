@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client.Exceptions;
@@ -7,6 +9,8 @@ using Stratara.Outbox.RabbitMQ.Messaging;
 using Stratara.Outbox.RabbitMQ.IntegrationTests.Fixtures;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Messaging;
+using Stratara.Diagnostics;
+using Stratara.Shared.Messaging;
 
 namespace Stratara.Outbox.RabbitMQ.IntegrationTests.Messaging;
 
@@ -131,6 +135,118 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
 
         var seenByEstablished = await established.Task.WaitAsync(TimeSpan.FromSeconds(30), cts.Token);
         Assert.Equal("both-must-see-this", seenByEstablished.Payload);
+    }
+
+    [Fact]
+    public async Task EnsureSubscriptionAsync_OverABacklogWithNoConsumer_Logs108114WithTheCount()
+    {
+        var (bus, logger, topic, subscription) = UnconsumedProbe(threshold: 5);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        await PublishAsync(bus, topic, 6, cts.Token);
+
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+
+        var warning = Assert.Single(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
+        Assert.Equal(LogLevel.Warning, warning.Level);
+        Assert.Contains(subscription, warning.Message, StringComparison.Ordinal);
+        Assert.Contains("holds 6 messages", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EnsureSubscriptionAsync_WithAConsumerAttached_ReportsNothing()
+    {
+        var (bus, logger, topic, subscription) = UnconsumedProbe(threshold: 5, prefetch: 1);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var release = new TaskCompletionSource();
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, _ => release.Task, cts.Token);
+        await PublishAsync(bus, topic, 10, cts.Token);
+
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        release.TrySetResult();
+
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
+    }
+
+    [Fact]
+    public async Task EnsureSubscriptionAsync_BelowTheThreshold_ReportsNothing()
+    {
+        var (bus, logger, topic, subscription) = UnconsumedProbe(threshold: 5);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        await PublishAsync(bus, topic, 3, cts.Token);
+
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
+    }
+
+    [Fact]
+    public async Task EnsureSubscriptionAsync_WithTheThresholdAtZero_ReportsNothing()
+    {
+        var (bus, logger, topic, subscription) = UnconsumedProbe(threshold: 0);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        await PublishAsync(bus, topic, 6, cts.Token);
+
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_OverABacklog_ReportsNothingAndDeliversIt()
+    {
+        var (bus, logger, topic, subscription) = UnconsumedProbe(threshold: 5);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        await PublishAsync(bus, topic, 6, cts.Token);
+        var received = 0;
+        var all = new TaskCompletionSource();
+
+        await bus.SubscribeAsync<TestMessage>(topic, subscription, _ =>
+        {
+            if (Interlocked.Increment(ref received) == 6)
+            {
+                all.TrySetResult();
+            }
+
+            return Task.CompletedTask;
+        }, cts.Token);
+
+        await all.Task.WaitAsync(cts.Token);
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
+    }
+
+    private (RabbitMqBus Bus, RecordingBusLogger Logger, string Topic, string Subscription) UnconsumedProbe(int threshold, int prefetch = 16)
+    {
+        var logger = new RecordingBusLogger();
+        var bus = new RabbitMqBus(logger, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()),
+            Options.Create(new MessageRetryOptions()),
+            Options.Create(new MessagingOptions { UnconsumedSubscriptionWarningThreshold = threshold, PrefetchCount = prefetch }));
+        return (bus, logger, $"test-topic-{Guid.NewGuid():N}", $"worker-{Guid.NewGuid():N}");
+    }
+
+    private static async Task PublishAsync(RabbitMqBus bus, string topic, int count, CancellationToken cancellationToken)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            await bus.PublishAsync(topic, new TestMessage($"backlog-{i}"), cancellationToken);
+        }
+    }
+
+    private sealed class RecordingBusLogger : ILogger<RabbitMqBus>
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, int EventId, string Message)> _entries = new();
+
+        public IReadOnlyCollection<(LogLevel Level, int EventId, string Message)> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            _entries.Enqueue((logLevel, eventId.Id, formatter(state, exception)));
     }
 
     /// <summary>

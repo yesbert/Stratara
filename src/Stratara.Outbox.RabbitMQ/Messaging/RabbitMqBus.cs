@@ -117,6 +117,7 @@ internal sealed class RabbitMqBus(
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
     private readonly ushort _prefetchCount = (ushort)(messagingOptions?.Value ?? new MessagingOptions()).PrefetchCount;
+    private readonly int _unconsumedWarningThreshold = (messagingOptions?.Value ?? new MessagingOptions()).UnconsumedSubscriptionWarningThreshold;
     private readonly RabbitMqSubscriptionStops _stops = subscriptionStops ?? new(NullLogger<RabbitMqSubscriptionStops>.Instance);
     private IConnection? _publishConnection;
     private IChannel? _publishChannel;
@@ -252,7 +253,11 @@ internal sealed class RabbitMqBus(
         await using var connection = await factory.CreateConnectionAsync(cancellationToken);
         await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
-        await DeclareAndBindAsync(connection, channel, topic, subscription, cancellationToken);
+        var declared = await DeclareAndBindAsync(connection, channel, topic, subscription, cancellationToken);
+        if (declared is { ConsumerCount: 0 } && _unconsumedWarningThreshold > 0 && declared.MessageCount >= _unconsumedWarningThreshold)
+        {
+            logger.LogUnconsumedSubscription(subscription, topic, declared.MessageCount);
+        }
     }
 
     private static bool IsClientSubscription(string subscription) =>
@@ -271,7 +276,9 @@ internal sealed class RabbitMqBus(
     // rejects a redeclaration whose properties differ, so a drift here would surface as a channel
     // error on whichever path ran second. The one difference tolerated is the delivery limit an
     // earlier deployment's bounds declared; see DeclareWorkerQueueAsync.
-    private async Task DeclareAndBindAsync(IConnection connection, IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
+    // The worker queue's declaration answers how many messages it holds and how many consumers it has; establishing a
+    // subscription reports a backlog nobody consumes from that answer.
+    private async Task<QueueDeclareOk?> DeclareAndBindAsync(IConnection connection, IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
     {
         await channel.ExchangeDeclareAsync(topic, ExchangeType.Fanout, cancellationToken: cancellationToken);
 
@@ -279,7 +286,7 @@ internal sealed class RabbitMqBus(
         {
             await channel.QueueDeclareAsync(subscription, durable: false, exclusive: true, autoDelete: true, cancellationToken: cancellationToken);
             await channel.QueueBindAsync(subscription, topic, string.Empty, cancellationToken: cancellationToken);
-            return;
+            return null;
         }
 
         var deadLetterQueue = DeadLetterQueueName(subscription);
@@ -287,8 +294,9 @@ internal sealed class RabbitMqBus(
             arguments: QuorumQueueArguments(), cancellationToken: cancellationToken);
 
         var queue = WorkerQueueName(subscription);
-        await DeclareWorkerQueueAsync(connection, queue, deadLetterQueue, subscription, cancellationToken);
+        var declared = await DeclareWorkerQueueAsync(connection, queue, deadLetterQueue, subscription, cancellationToken);
         await channel.QueueBindAsync(queue, topic, string.Empty, cancellationToken: cancellationToken);
+        return declared;
     }
 
     /// <summary>
@@ -303,14 +311,13 @@ internal sealed class RabbitMqBus(
     /// Any other refusal still fails the declaration: a queue of that name with another type or
     /// another dead-letter route would lose the messages a handler cannot take.
     /// </summary>
-    private async Task DeclareWorkerQueueAsync(IConnection connection, string queue, string deadLetterQueue, string subscription, CancellationToken cancellationToken)
+    private async Task<QueueDeclareOk> DeclareWorkerQueueAsync(IConnection connection, string queue, string deadLetterQueue, string subscription, CancellationToken cancellationToken)
     {
         var declaring = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
         try
         {
-            await declaring.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false,
+            return await declaring.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false,
                 arguments: WorkerQueueArguments(deadLetterQueue), cancellationToken: cancellationToken);
-            return;
         }
         catch (OperationInterruptedException refused) when (IsDeliveryLimitMismatch(refused))
         {
@@ -324,7 +331,7 @@ internal sealed class RabbitMqBus(
         // The queue exists, or the refusal would have been a different one; a passive declaration
         // confirms it without comparing arguments, and fails loudly if it was deleted in between.
         await using var confirming = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
-        await confirming.QueueDeclarePassiveAsync(queue, cancellationToken);
+        return await confirming.QueueDeclarePassiveAsync(queue, cancellationToken);
     }
 
     /// <summary>

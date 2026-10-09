@@ -167,6 +167,20 @@ public static partial class LoggerMessagingExtensions
         Message = "Worker queue {Queue} of subscription {Subscription} already exists with other arguments than the current retry bounds declare (x-delivery-limit {DeliveryLimit}) and is used as it is. Broker reply: {BrokerReply}")]
     public static partial void LogWorkerQueueDeclaredWithOtherArguments(this ILogger logger, string subscription, string queue, int deliveryLimit, string brokerReply);
 
+    /// <summary>
+    /// Logs that a subscription being established holds a backlog and has no consumer attached: it keeps what is
+    /// published to it until something consumes it, so a subscription whose worker is not deployed grows without end.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="subscription">The subscription.</param>
+    /// <param name="topic">The topic the subscription is bound to.</param>
+    /// <param name="messageCount">How many messages the subscription holds.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Messaging.UnconsumedSubscription,
+        Level = LogLevel.Warning,
+        Message = "Subscription {Subscription} on topic {Topic} holds {MessageCount} messages and no consumer is attached. An established subscription keeps what is published to it until something consumes it; if its worker is retired, delete the subscription.")]
+    public static partial void LogUnconsumedSubscription(this ILogger logger, string subscription, string topic, long messageCount);
+
     /// <summary>Logs that disposing the publish channel / connection before a recreate failed; the recreate proceeds anyway.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="exception">The cleanup exception.</param>

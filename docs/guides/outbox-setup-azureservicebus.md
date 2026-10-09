@@ -67,6 +67,11 @@ It is not left unimplemented by oversight, and it should not be "fixed" into a m
 the credentials a running host holds are data-plane credentials, and creating entities from them is a
 different permission and a different lifecycle.
 
+For the same reason the framework reports nothing about a subscription that holds a backlog and has no
+consumer — the warning the RabbitMQ bus logs as `108_114` when it establishes one. A subscription
+whose worker is retired keeps accumulating messages here too; watch its active message count in Azure
+Monitor, and set the subscription's time-to-live or delete it when the worker goes.
+
 ## Durable bundles
 
 The commit-to-publish window and the `Outbox:DurableBundles` option that closes it are
