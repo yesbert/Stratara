@@ -51,11 +51,83 @@ internal sealed class ProjectionReplayWorker(
     private readonly ResiliencePipeline _batchPipeline = pipelineProvider.GetPipeline(ResilienceNames.ProjectionReplayBatch);
     private readonly ConcurrentDictionary<Guid, Task> _running = new();
 
+    /// <summary>
+    /// How often the replay renews its marking while it prepares — preserves the read models, empties them, counts the
+    /// events — since none of those steps reports progress, and the copy alone can outlast the lease.
+    /// </summary>
+    internal static readonly TimeSpan PreparationRenewal = TimeSpan.FromSeconds(10);
+
+    /// <summary>How often a host checks again for a preserved state a replay marked active still owned at its start.</summary>
+    internal static readonly TimeSpan AbandonedCheckInterval = TimeSpan.FromSeconds(30);
+
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var abandoned = await RestoreAbandonedReadModelsAsync(stoppingToken);
         await replayState.SubscribeToReplayRequestAsync(
             requestId => TrackAsync(requestId, stoppingToken), stoppingToken);
+        if (abandoned == AbandonedPreservation.StillOwned)
+        {
+            await CheckAbandonedReadModelsAgainAsync(stoppingToken);
+        }
+    }
+
+    /// <summary>
+    /// Where the host keeps the read models a replay empties, restores a state left by a replay whose host stopped —
+    /// before the host takes requests, so a request cannot preserve the partial read models in its place. A failure here
+    /// is logged and does not stop the host: the preserved state is kept, and the next start tries again.
+    /// </summary>
+    private async Task<AbandonedPreservation> RestoreAbandonedReadModelsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        if (scope.ServiceProvider.GetService<IReadModelPreservation>() is not { } preservation)
+        {
+            return AbandonedPreservation.NoneKept;
+        }
+
+        try
+        {
+            var found = await preservation.RestoreAbandonedAsync(cancellationToken);
+            if (found == AbandonedPreservation.Restored)
+            {
+                logger.LogAbandonedReadModelsRestored();
+            }
+
+            return found;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return AbandonedPreservation.NoneKept;
+        }
+        catch (Exception ex)
+        {
+            logger.LogReadModelRestoreFailed(ex);
+            return AbandonedPreservation.NoneKept;
+        }
+    }
+
+    /// <summary>
+    /// A host that restarted within its own dead replay's lease found that replay still marked active. Once the marking
+    /// lapses the preserved state is abandoned, so the host checks again until it is restored, dropped, or taken over
+    /// by a replay that ends it itself.
+    /// </summary>
+    private async Task CheckAbandonedReadModelsAgainAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(AbandonedCheckInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (await RestoreAbandonedReadModelsAsync(cancellationToken) != AbandonedPreservation.StillOwned)
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host shutdown: the preserved state is kept for the next start.
+        }
     }
 
     /// <summary>
@@ -96,9 +168,11 @@ internal sealed class ProjectionReplayWorker(
 
     /// <summary>
     /// Runs the replay a request asks for, if this host claims the request: a request every host receives, or one
-    /// that arrives while another replay is active, starts nothing here. The replay ends in exactly one completion —
-    /// succeeded, failed with its message, or interrupted because the host stops — which keeps its outcome. Nothing
-    /// here may escape: the coordination store invokes the callback where an exception would end the process.
+    /// that arrives while another replay is active, starts nothing here. Where the host keeps the read models, they are
+    /// preserved before anything is emptied, restored after a failure and dropped after a success; a replay its host
+    /// stops leaves them for the next start. The replay ends in exactly one completion — succeeded, failed with its
+    /// message, or interrupted because the host stops — which keeps its outcome. Nothing here may escape: the
+    /// coordination store invokes the callback where an exception would end the process.
     /// </summary>
     private async Task RunRequestedReplayAsync(Guid requestId, CancellationToken cancellationToken)
     {
@@ -120,9 +194,35 @@ internal sealed class ProjectionReplayWorker(
 
         logger.LogProjectionReplayStarted();
         var tally = new ReplayTally();
+        using var preservationScope = scopeFactory.CreateScope();
+        var preservation = preservationScope.ServiceProvider.GetService<IReadModelPreservation>();
+        var preserved = false;
         try
         {
-            await RunReplayAsync(tally, cancellationToken);
+            long totalEvents;
+            using (var preparing = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                var renewing = RenewWhilePreparingAsync(preparing.Token);
+                try
+                {
+                    if (preservation is not null)
+                    {
+                        await preservation.PreserveAsync(requestId, cancellationToken);
+                        preserved = true;
+                        logger.LogReadModelsPreserved(requestId);
+                    }
+
+                    totalEvents = await PrepareAsync(cancellationToken);
+                }
+                finally
+                {
+                    await preparing.CancelAsync();
+                    await renewing;
+                }
+            }
+
+            replayState.SetProgress(0, totalEvents);
+            await ReplayEventsAsync(tally, totalEvents, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -132,7 +232,11 @@ internal sealed class ProjectionReplayWorker(
         catch (Exception ex)
         {
             logger.LogProjectionReplayFailed(ex);
-            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
+            var restored = preserved && preservation is not null && await RestoreAsync(preservation, requestId);
+            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message))
+            {
+                ReadModelsRestored = restored,
+            });
             return;
         }
 
@@ -142,8 +246,44 @@ internal sealed class ProjectionReplayWorker(
             return;
         }
 
+        if (preserved && preservation is not null)
+        {
+            await DiscardAsync(preservation, requestId);
+        }
+
         logger.LogProjectionReplayCompleted(tally.Replayed);
         Complete(new ReplayCompletion(requestId, ReplayResult.Succeeded, tally.Replayed));
+    }
+
+    private async Task<bool> RestoreAsync(IReadModelPreservation preservation, Guid requestId)
+    {
+        try
+        {
+            var restored = await preservation.RestoreAsync(requestId, CancellationToken.None);
+            if (restored)
+            {
+                logger.LogReadModelsRestored(requestId);
+            }
+
+            return restored;
+        }
+        catch (Exception ex)
+        {
+            logger.LogReadModelRestoreFailed(ex);
+            return false;
+        }
+    }
+
+    private async Task DiscardAsync(IReadModelPreservation preservation, Guid requestId)
+    {
+        try
+        {
+            await preservation.DiscardAsync(requestId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogPreservedReadModelsNotDiscarded(ex, requestId);
+        }
     }
 
     private void Interrupted(Guid requestId, ReplayTally tally)
@@ -169,7 +309,8 @@ internal sealed class ProjectionReplayWorker(
             ? message
             : message[..MaxFailureMessageLength] + "…";
 
-    private async Task RunReplayAsync(ReplayTally tally, CancellationToken cancellationToken)
+    /// <summary>Empties the records of forgotten tenants and the read models, and counts the events to replay.</summary>
+    private async Task<long> PrepareAsync(CancellationToken cancellationToken)
     {
         using (var truncateScope = scopeFactory.CreateScope())
         {
@@ -179,10 +320,34 @@ internal sealed class ProjectionReplayWorker(
             logger.LogProjectionViewsTruncated();
         }
 
-        var totalEvents = await GetTotalEventCountAsync(cancellationToken);
-        replayState.SetProgress(0, totalEvents);
+        return await GetTotalEventCountAsync(cancellationToken);
+    }
 
-        await ReplayEventsAsync(tally, totalEvents, cancellationToken);
+    /// <summary>
+    /// Renews the marking every <see cref="PreparationRenewal"/> until the preparation ends. A renewal that fails is
+    /// passed over: the next one tries again, and the refresh reports a coordination store that is away.
+    /// </summary>
+    private async Task RenewWhilePreparingAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(PreparationRenewal);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                try
+                {
+                    replayState.SetProgress(0, 0);
+                }
+                catch (Exception renewalFailed) when (renewalFailed is not OperationCanceledException)
+                {
+                    _ = renewalFailed;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The preparation ended; the replay renews the marking with its progress from here.
+        }
     }
 
     /// <summary>

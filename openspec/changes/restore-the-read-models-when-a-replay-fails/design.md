@@ -52,8 +52,10 @@ aside, once back on failure) and holding a second copy on disk for the replay's 
 
 **One consistent snapshot, in one transaction.** `PreserveAsync` opens a `REPEATABLE READ` transaction,
 creates every copy in a dedicated schema (`ReadModelRestoreOptions.Schema`, default `stratara_replay`,
-tables named `<schema>__<table>`), and inserts a marker row `(replay_id, preserved_at, tables)` in the same
-transaction. A store reader writes its view rows and its checkpoint in one transaction, so the snapshot
+tables named `<schema>__<table>`, shortened with a hash past PostgreSQL's 63-byte identifier limit), and records
+the marker row `(replay_id, preserved_at)` and one row per copy `(position, source, copy)` in the same
+transaction. The restore reads what to write back from those rows, not from the model, so a model changed in
+between cannot make it miss a copy. A store reader writes its view rows and its checkpoint in one transaction, so the snapshot
 pairs them; the forgotten-tenant record is copied before the worker clears it. Preservation is the first
 thing the worker does after `TryActivate`, before `ClearAsync` and the truncator, and the worker renews the
 lease right after it (`SetProgress(0, 0)`), because preservation precedes the first progress report.
@@ -95,8 +97,10 @@ request id in the same step that checks it.
   operator acts, which is the situation F-021 describes.
 
 **The abstraction is `IReadModelPreservation` in `Stratara.Projections`.** Four members:
-`PreserveAsync(Guid replayId, ct)`, `RestoreAsync(Guid replayId, ct)`, `DiscardAsync(Guid replayId, ct)`,
-`RestoreAbandonedAsync(ct)`. Optional: the worker resolves it with `GetService` and, without it, does
+`PreserveAsync(Guid replayId, ct)`, `Task<bool> RestoreAsync(Guid replayId, ct)` (false when no copy is kept for
+that replay — another host restored it first), `DiscardAsync(Guid replayId, ct)`, `Task<bool> RestoreAbandonedAsync(ct)`.
+The outcome flag travels on `ReplayCompletion.ReadModelsRestored`, an `init` property of the record
+`keep-the-outcome-of-the-last-replay` introduced for exactly this. Optional: the worker resolves it with `GetService` and, without it, does
 exactly what it does today. `AddReadModelRestore<TReadContext>()` in `Stratara.EventSourcing.EntityFrameworkCore`
 registers the PostgreSQL implementation and binds `ReadModelRestoreOptions` (section
 `ProjectionReplay:Restore`).
@@ -126,3 +130,25 @@ Opt-in: `services.AddReadModelRestore<AppReadDbContext>()`. The `stratara_replay
 use; the database user needs `CREATE` on the database (or the schema created beforehand and named in
 options). No migration of the consumer's read context. Rollback is removing the registration; a leftover
 copy schema is inert and can be dropped.
+
+## Revised in review (PR #192)
+
+- **References to a table outside the set** no longer read as a cycle: only references whose child *and* parent
+  are preserved order the write-back; a parent the replay never empties needs no order.
+- **The marking is renewed while the replay prepares.** Preserving, emptying and counting report no progress, and
+  the copy alone can outlast the lease; the worker renews every ten seconds until the batches begin.
+- **The advisory lock is taken before the snapshot.** `PreserveAsync` takes a session lock on its connection and
+  only then begins the repeatable-read transaction, so its marker read sees whatever a concurrent restore committed.
+  The worker also checks for an abandoned copy *before* it subscribes for requests.
+- **A host restarted within its own replay's lease** finds that replay still marked active; `RestoreAbandonedAsync`
+  now reports `StillOwned` and the worker checks again every thirty seconds until the copy is restored, dropped or
+  taken over.
+- **A copy whose replay succeeded is never handed to the next replay**: `PreserveAsync` drops it and copies anew.
+- **Shared read stores:** the lock key derives from the preservation schema, and the guide tells deployments sharing
+  a read store to give each its own schema.
+- **Copy names** are the table's position and name, unique however alike the names are; table existence is read in
+  one catalog query.
+- *Not changed:* the scenarios that name the Redis-backed coordination store do so because `openspec/config.yaml`
+  requires a scenario to say where a guarantee was verified. The identifier quoting stays local to the class; the
+  provider's `ISqlGenerationHelper` would need a context in every static helper for the same result.
+

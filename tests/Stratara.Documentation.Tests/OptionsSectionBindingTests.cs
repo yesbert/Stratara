@@ -8,6 +8,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Session;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Replay;
+using Stratara.Testing.Orleans;
 using Stratara.Identity.AspNetCore.Authentication;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.Projections;
@@ -71,6 +73,9 @@ public class OptionsSectionBindingTests
             b => b.Services.AddWriteStore(b.Configuration)),
         Case<EventSourcingOptions>("AddEventSourcing()", "AppendAgainstAggregatedVersion", "True",
             b => b.Services.AddEventSourcing()),
+
+        Case<ReadModelRestoreOptions>("AddReadModelRestore<TReadContext>()", "Schema", "bound_replay_copies",
+            b => b.Services.AddReadModelRestore<StrataraTestReadDbContext>()),
 
         Case<ProjectionOptions>("AddProjectionHandling(configuration)", "BatchSize", "617",
             b => b.Services.AddProjectionHandling(b.Configuration)),

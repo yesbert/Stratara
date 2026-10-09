@@ -49,6 +49,17 @@ applies to the entire NuGet family.
   all four have default implementations, so an implementation outside the framework still compiles and
   behaves as before.
 
+- **A failed replay can restore the read models it emptied.** `AddReadModelRestore<TReadContext>()`
+  (PostgreSQL, `Stratara.EventSourcing.EntityFrameworkCore`) copies every table the read context maps — the read
+  models, the projection checkpoints and the record of forgotten tenants, as one snapshot — before a replay empties
+  anything. A replay that fails writes the copy back in one transaction (`104_022`), one that succeeds drops it, and
+  one whose host stopped leaves it for the next host that starts, which writes it back (`104_023`). A replay then
+  ends in the rebuilt read models or exactly the ones it started from, so starting one no longer risks an empty read
+  store. `ReplayOutcome.ReadModelsRestored` says it happened. Settings come from `ProjectionReplay:Restore`
+  (`Schema`, `ExcludedTables`, `AdditionalTables`, `CommandTimeout`). New abstraction `IReadModelPreservation` in
+  `Stratara.Projections` for another store; without one registered a replay behaves as before. The copy costs one
+  more read of the read store before the replay and the disk to hold it twice while it runs.
+
 ### Fixed
 
 - **One replay request starts one replay.** Every host that runs the replay worker subscribes to the

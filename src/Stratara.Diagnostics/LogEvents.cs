@@ -114,6 +114,16 @@ public static class LogEvents
         public const int ProjectionReplayInterrupted = 104_020;
         /// <summary>The outcome of a replay could not be recorded in the coordination state; its marking lapses with its lease (error).</summary>
         public const int ProjectionReplayOutcomeNotRecorded = 104_121;
+        /// <summary>The read models a replay is about to empty were preserved, or a state preserved for an unfinished replay was kept (information).</summary>
+        public const int ReadModelsPreserved = 104_021;
+        /// <summary>A failed replay restored the read models to their state before it began (warning).</summary>
+        public const int ReadModelsRestored = 104_022;
+        /// <summary>A state preserved by a replay whose host stopped was restored when a host started (warning).</summary>
+        public const int AbandonedReadModelsRestored = 104_023;
+        /// <summary>The state preserved for a replay that succeeded could not be dropped; it is dropped when a host next starts (warning).</summary>
+        public const int PreservedReadModelsNotDiscarded = 104_025;
+        /// <summary>A failed replay could not restore the read models, or a host could not restore an abandoned preserved state; the state is kept (error).</summary>
+        public const int ReadModelRestoreFailed = 104_124;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>

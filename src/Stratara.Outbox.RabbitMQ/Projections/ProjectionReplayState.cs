@@ -200,7 +200,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
                 completion.Result.ToString(),
                 completion.ErrorMessage ?? string.Empty,
                 failed ? Yes : No,
-                No,
+                completion.ReadModelsRestored ? Yes : No,
             ]);
         Transition(active: false);
     }
@@ -451,7 +451,10 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
             DateTimeOffset.FromUnixTimeMilliseconds(endedAt),
             replayed,
             result,
-            string.IsNullOrEmpty(error) ? null : error);
+            string.IsNullOrEmpty(error) ? null : error)
+        {
+            ReadModelsRestored = fields.GetValueOrDefault("restored") == Yes,
+        };
     }
 
     private void RecordRefreshFailure(Exception exception)

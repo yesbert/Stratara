@@ -399,6 +399,144 @@ public class ProjectionReplayWorkerTests
         Assert.DoesNotContain(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ProjectionReplayBatchFailed);
     }
 
+    [Fact]
+    public async Task ReplayCallback_WithPreservation_PreservesBeforeClearingForgottenTenantsAndTruncating()
+    {
+        var harness = new Harness();
+        var order = new List<string>();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.PreserveAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("preserve")).Returns(Task.CompletedTask);
+        harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("truncate")).Returns(Task.CompletedTask);
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Equal(["preserve", "truncate"], order);
+        preservation.Verify(p => p.DiscardAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Once);
+        preservation.Verify(p => p.RestoreAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ReadModelsPreserved);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_WithPreservation_FailureRestoresAndCompletesWithReadModelsRestored()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.RestoreAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("truncate failed"));
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        preservation.Verify(p => p.RestoreAsync(It.IsAny<Guid>(), CancellationToken.None), Times.Once);
+        harness.ReplayState.Verify(
+            s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Failed && c.ReadModelsRestored)),
+            Times.Once);
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ReadModelsRestored);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_WithPreservation_CancellationLeavesTheCopy()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await harness.StopWorkerAsync();
+                throw new OperationCanceledException();
+            });
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        preservation.Verify(p => p.RestoreAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        preservation.Verify(p => p.DiscardAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.ReplayState.Verify(s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Interrupted)), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_PreservationFails_NothingIsTruncatedAndTheReplayFails()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.PreserveAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("a table outside references one inside"));
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+        preservation.Verify(p => p.RestoreAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.ReplayState.Verify(
+            s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Failed && !c.ReadModelsRestored && c.ErrorMessage!.Contains("outside"))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_RestoreFails_CompletesWithoutReadModelsRestoredAndLogs()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.RestoreAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("columns changed"));
+        harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("truncate failed"));
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(
+            s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Failed && !c.ReadModelsRestored)),
+            Times.Once);
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ReadModelRestoreFailed);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithPreservation_RestoresAnAbandonedCopyOnce()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(AbandonedPreservation.Restored);
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: false);
+
+        preservation.Verify(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.AbandonedReadModelsRestored);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithPreservation_ChecksForAnAbandonedCopyBeforeTakingRequests()
+    {
+        var harness = new Harness();
+        var order = new List<string>();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("check")).ReturnsAsync(AbandonedPreservation.NoneKept);
+        harness.ReplayState
+            .Setup(s => s.SubscribeToReplayRequestAsync(It.IsAny<Func<Guid, Task>>(), It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("subscribe")).Returns(Task.CompletedTask);
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: false);
+
+        Assert.Equal(["check", "subscribe"], order);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithoutPreservation_TouchesNothingAtStart()
+    {
+        var harness = new Harness();
+
+        await harness.RunAsync(triggerReplay: false);
+
+        Assert.DoesNotContain(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.AbandonedReadModelsRestored);
+    }
+
     private const int FastRetryAttempts = 5;
 
     private static ResiliencePipeline FastRetryPipeline() =>
