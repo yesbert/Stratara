@@ -46,7 +46,7 @@
   `…_CompletesAsFailedWithTheMessage`); the harness mock runs the interface's defaults (`CallBase`); new:
   `ReplayCallback_HappyPath_CompletesAsSucceededWithTheReplayedCount`,
   `ReplayCallback_ARequestThisHostDoesNotClaim_RunsNothing`.
-- [ ] 4.2 The hand-written doubles (`tests/Stratara.Projections.Tests/Services/ProjectionReplayStreamOrderTests.cs`
+- [x] 4.2 The hand-written doubles (`tests/Stratara.Projections.Tests/Services/ProjectionReplayStreamOrderTests.cs`
   `AwaitedReplayState`, its Orleans twin, `tests/Stratara.Orleans.IntegrationTests/Aggregates/ResumedOnceInOrderTests.cs`
   `SwitchedReplay`) compile unchanged and their tests stay green.
 
@@ -60,7 +60,9 @@
 
 ## 6. Verify
 
-- [ ] 6.1 `openspec validate keep-the-outcome-of-the-last-replay --strict`.
-- [ ] 6.2 `./scripts/local-gauntlet.sh` green.
-- [ ] 6.3 `dotnet test tests/Stratara.Outbox.RabbitMQ.IntegrationTests` and
-  `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker).
+- [x] 6.1 `openspec validate keep-the-outcome-of-the-last-replay --strict`.
+- [x] 6.2 `./scripts/local-gauntlet.sh` green.
+- [x] 6.3 `dotnet test tests/Stratara.Outbox.RabbitMQ.IntegrationTests` green (76 facts) and, of
+  `tests/Stratara.Orleans.IntegrationTests`, every class that drives a replay — `ProjectionReplayStreamOrderTests`,
+  `ResumedOnceInOrderTests`, `ReplayWithStoreReadersTests`, `TenantPerEntryTests` — green (27 facts, Docker). The
+  whole Orleans suite runs once on the tip of the series before its last change merges.

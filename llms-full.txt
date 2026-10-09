@@ -247,9 +247,13 @@ configures nothing.
 | `notifications` | topic | MessagingIdentifier |
 | `stratara:outbox:lock` | cache key | RedisOutboxLock |
 | `stratara:projection:replay:active` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:claimed:` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:error` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:last` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:processed` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:request` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:request-id` | cache key | ProjectionReplayState |
+| `stratara:projection:replay:started` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:state` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:total` | cache key | ProjectionReplayState |
 | `stratara:setting:` | cache key | EncryptingSettingStore |
