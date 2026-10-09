@@ -67,7 +67,7 @@ public class ProjectionReplayStateTests(RedisFixture redis)
 
         Assert.True(sut.TryActivate(requestId));
         sut.SetProgress(730, 730);
-        sut.Complete(new ReplayCompletion(ReplayResult.Succeeded, 730));
+        sut.Complete(new ReplayCompletion(requestId, ReplayResult.Succeeded, 730));
 
         var progress = sut.GetProgress();
         Assert.False(progress.IsActive);
@@ -86,9 +86,10 @@ public class ProjectionReplayStateTests(RedisFixture redis)
         await redis.FlushAsync();
         await using var sut = await StartSutAsync();
 
-        sut.TryActivate(Guid.NewGuid());
+        var requestId = Guid.NewGuid();
+        sut.TryActivate(requestId);
         sut.SetProgress(40, 100);
-        sut.Complete(new ReplayCompletion(ReplayResult.Failed, 40, "projection X exploded"));
+        sut.Complete(new ReplayCompletion(requestId, ReplayResult.Failed, 40, "projection X exploded"));
 
         var progress = sut.GetProgress();
         Assert.False(progress.IsActive);
@@ -131,7 +132,7 @@ public class ProjectionReplayStateTests(RedisFixture redis)
         var requestId = Guid.NewGuid();
 
         Assert.True(first.TryActivate(requestId));
-        first.Complete(new ReplayCompletion(ReplayResult.Succeeded, 2));
+        first.Complete(new ReplayCompletion(requestId, ReplayResult.Succeeded, 2));
 
         Assert.False(late.TryActivate(requestId));
         Assert.False(late.GetProgress().IsActive);
@@ -151,6 +152,39 @@ public class ProjectionReplayStateTests(RedisFixture redis)
         var progress = second.GetProgress();
         Assert.True(progress.IsActive);
         Assert.Equal(running, progress.RequestId);
+    }
+
+    [Fact]
+    public async Task Complete_OfAReplayThatOutlivedItsLease_LeavesTheNextReplayRunning()
+    {
+        await redis.FlushAsync();
+        await using var outlivedHost = await StartSutAsync();
+        await using var nextHost = await StartSutAsync();
+        var outlived = Guid.NewGuid();
+        outlivedHost.TryActivate(outlived);
+        await redis.Connection.GetDatabase().KeyDeleteAsync(ActiveKey);
+        var next = Guid.NewGuid();
+        Assert.True(nextHost.TryActivate(next));
+
+        outlivedHost.Complete(new ReplayCompletion(outlived, ReplayResult.Succeeded, 5));
+
+        var progress = nextHost.GetProgress();
+        Assert.True(progress.IsActive);
+        Assert.Equal(next, progress.RequestId);
+        Assert.Equal(outlived, progress.LastReplay!.RequestId);
+    }
+
+    [Fact]
+    public async Task SetProgress_RenewsTheLeaseOfTheRunningRequestsIdentity()
+    {
+        await redis.FlushAsync();
+        await using var sut = await StartSutAsync(leaseSeconds: 60);
+        sut.TryActivate(Guid.NewGuid());
+        await redis.Connection.GetDatabase().KeyExpireAsync("stratara:projection:replay:request-id", TimeSpan.FromSeconds(5));
+
+        sut.SetProgress(1, 2);
+
+        Assert.True(TimeToLive("stratara:projection:replay:request-id") > TimeSpan.FromSeconds(30));
     }
 
     [Fact]

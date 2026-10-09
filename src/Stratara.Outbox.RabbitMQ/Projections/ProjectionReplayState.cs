@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -57,13 +58,12 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     private const string Channel = "stratara:projection:replay:request";
     private const string StateChannel = "stratara:projection:replay:state";
     private const string RequestIdKey = "stratara:projection:replay:request-id";
-    private const string StartedKey = "stratara:projection:replay:started";
     private const string LastKey = "stratara:projection:replay:last";
     private const string ClaimKeyPrefix = "stratara:projection:replay:claimed:";
     private const string StateChanged = "changed";
     private const string Active = "true";
-    private const string Failed = "1";
-    private const string NotFailed = "0";
+    private const string Yes = "1";
+    private const string No = "0";
     private static readonly TimeSpan ClaimRetention = TimeSpan.FromDays(1);
 
     /// <summary>
@@ -75,18 +75,33 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     private const string TryActivateScript = """
         if not redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1]) then return 0 end
         if not redis.call('SET', KEYS[2], 'true', 'NX', 'PX', ARGV[2]) then return -1 end
-        redis.call('DEL', KEYS[3], KEYS[6], KEYS[7])
+        redis.call('DEL', KEYS[3], KEYS[5], KEYS[6])
         redis.call('SET', KEYS[4], ARGV[3], 'PX', ARGV[2])
-        redis.call('SET', KEYS[5], ARGV[4], 'PX', ARGV[2])
         return 1
         """;
 
-    /// <summary>Writes the outcome and ends the replay's marking, its counters and its identity in one step.</summary>
+    /// <summary>
+    /// Writes the outcome and, while the marking still belongs to the completing request, ends the marking, its
+    /// counters and its identity, in one step. A replay that outlived its lease while another request started records
+    /// its outcome and leaves the other replay running.
+    /// </summary>
     private const string CompleteScript = """
         redis.call('DEL', KEYS[1])
-        redis.call('HSET', KEYS[1], 'requestId', ARGV[1], 'startedAt', ARGV[2], 'endedAt', ARGV[3], 'replayed', ARGV[4], 'result', ARGV[5], 'error', ARGV[6])
-        redis.call('DEL', KEYS[2], KEYS[3], KEYS[4], KEYS[5], KEYS[6])
-        if ARGV[7] == '1' then redis.call('SET', KEYS[7], ARGV[6]) else redis.call('DEL', KEYS[7]) end
+        redis.call('HSET', KEYS[1], 'requestId', ARGV[1], 'startedAt', ARGV[2], 'endedAt', ARGV[3], 'replayed', ARGV[4], 'result', ARGV[5], 'error', ARGV[6], 'restored', ARGV[8])
+        local running = redis.call('GET', KEYS[5])
+        if running == false or running == ARGV[1] then
+            redis.call('DEL', KEYS[2], KEYS[3], KEYS[4], KEYS[5])
+        end
+        if ARGV[7] == '1' then redis.call('SET', KEYS[6], ARGV[6]) else redis.call('DEL', KEYS[6]) end
+        return 1
+        """;
+
+    /// <summary>Records the counters and renews the marking's lease, its identity's and the counters' in one round trip.</summary>
+    private const string SetProgressScript = """
+        redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[3])
+        redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[3])
+        redis.call('PEXPIRE', KEYS[3], ARGV[3])
+        redis.call('PEXPIRE', KEYS[4], ARGV[3])
         return 1
         """;
 
@@ -103,8 +118,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
 
     private volatile bool _active;
     private int _generation;
-    private Guid _requestId;
-    private DateTimeOffset _startedAt;
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _startedAt = new();
     private ChannelMessageQueue? _subscription;
     private bool _refreshFailing;
     private bool _subscribeFailing;
@@ -139,8 +153,8 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var db = _redis.GetDatabase();
         db.KeyDelete(ErrorKey);
         db.StringSet(CacheKey, Active, _lease);
-        _requestId = Guid.Empty;
-        _startedAt = _timeProvider.GetUtcNow();
+        db.StringSet(RequestIdKey, Guid.Empty.ToString("N"), _lease);
+        _startedAt[Guid.Empty] = _timeProvider.GetUtcNow();
         Transition(active: true);
     }
 
@@ -150,8 +164,8 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var startedAt = _timeProvider.GetUtcNow();
         var claimed = (int)_redis.GetDatabase().ScriptEvaluate(
             TryActivateScript,
-            [ClaimKeyPrefix + requestId.ToString("N"), CacheKey, ErrorKey, RequestIdKey, StartedKey, ProcessedKey, TotalKey],
-            [(long)ClaimRetention.TotalSeconds, (long)_lease.TotalMilliseconds, requestId.ToString("N"), startedAt.ToUnixTimeMilliseconds()]);
+            [ClaimKeyPrefix + requestId.ToString("N"), CacheKey, ErrorKey, RequestIdKey, ProcessedKey, TotalKey],
+            [(long)ClaimRetention.TotalSeconds, (long)_lease.TotalMilliseconds, requestId.ToString("N")]);
 
         if (claimed < 0)
         {
@@ -163,8 +177,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
             return false;
         }
 
-        _requestId = requestId;
-        _startedAt = startedAt;
+        _startedAt[requestId] = startedAt;
         Transition(active: true);
         return true;
     }
@@ -173,18 +186,21 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public void Complete(ReplayCompletion completion)
     {
         ArgumentNullException.ThrowIfNull(completion);
+        var endedAt = _timeProvider.GetUtcNow();
+        var startedAt = _startedAt.TryRemove(completion.RequestId, out var started) ? started : endedAt;
         var failed = completion.Result == ReplayResult.Failed;
         _redis.GetDatabase().ScriptEvaluate(
             CompleteScript,
-            [LastKey, CacheKey, ProcessedKey, TotalKey, RequestIdKey, StartedKey, ErrorKey],
+            [LastKey, CacheKey, ProcessedKey, TotalKey, RequestIdKey, ErrorKey],
             [
-                _requestId.ToString("N"),
-                _startedAt.ToUnixTimeMilliseconds(),
-                _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                completion.RequestId.ToString("N"),
+                startedAt.ToUnixTimeMilliseconds(),
+                endedAt.ToUnixTimeMilliseconds(),
                 completion.ReplayedEvents,
                 completion.Result.ToString(),
                 completion.ErrorMessage ?? string.Empty,
-                failed ? Failed : NotFailed,
+                failed ? Yes : No,
+                No,
             ]);
         Transition(active: false);
     }
@@ -193,7 +209,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public void Deactivate()
     {
         var db = _redis.GetDatabase();
-        db.KeyDelete([CacheKey, ProcessedKey, TotalKey, ErrorKey, RequestIdKey, StartedKey]);
+        db.KeyDelete([CacheKey, ProcessedKey, TotalKey, ErrorKey, RequestIdKey]);
         Transition(active: false);
     }
 
@@ -201,7 +217,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public void SetFailed(string errorMessage)
     {
         var db = _redis.GetDatabase();
-        db.KeyDelete([CacheKey, ProcessedKey, TotalKey, RequestIdKey, StartedKey]);
+        db.KeyDelete([CacheKey, ProcessedKey, TotalKey, RequestIdKey]);
         db.StringSet(ErrorKey, errorMessage);
         Transition(active: false);
     }
@@ -209,12 +225,10 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     /// <inheritdoc/>
     public void SetProgress(long processedEvents, long totalEvents)
     {
-        var db = _redis.GetDatabase();
-        db.StringSet(ProcessedKey, processedEvents, _lease);
-        db.StringSet(TotalKey, totalEvents, _lease);
-        db.KeyExpire(CacheKey, _lease);
-        db.KeyExpire(RequestIdKey, _lease);
-        db.KeyExpire(StartedKey, _lease);
+        _redis.GetDatabase().ScriptEvaluate(
+            SetProgressScript,
+            [ProcessedKey, TotalKey, CacheKey, RequestIdKey],
+            [processedEvents, totalEvents, (long)_lease.TotalMilliseconds]);
     }
 
     /// <inheritdoc/>
@@ -229,7 +243,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var total = isActive && values[2].HasValue ? (long)values[2] : 0;
         var percentage = total > 0 ? (int)(processed * 100 / total) : 0;
         var errorMessage = values[3].HasValue ? (string?)values[3] : null;
-        Guid? requestId = isActive && Guid.TryParse((string?)values[4], out var running) ? running : null;
+        Guid? requestId = isActive && Guid.TryParse((string?)values[4], out var running) && running != Guid.Empty ? running : null;
 
         return new ReplayProgress(isActive, processed, total, percentage, errorMessage)
         {
@@ -250,9 +264,11 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
 
     /// <inheritdoc/>
     /// <remarks>
-    /// A request published by a host of an earlier release carries no identity; it is run under a new one, which
-    /// each receiving host draws for itself — so until every host is upgraded such a request can still start a
-    /// replay in each of them.
+    /// A request published by a host of an earlier release carries no identity; each receiving host runs it under one
+    /// it draws for itself, so the claim cannot tell the hosts' copies apart — the marking still lets one of them run at
+    /// a time, but a host that receives the request after that replay ended runs it again. A host of an earlier
+    /// release claims nothing and runs every request it receives, so upgrade every host that runs the replay worker
+    /// before relying on one request starting one replay.
     /// </remarks>
     public async Task SubscribeToReplayRequestAsync(Func<Guid, Task> onReplayRequested, CancellationToken cancellationToken = default)
     {

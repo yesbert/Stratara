@@ -434,9 +434,15 @@ shutdown is not a replay error — but its outcome says `Interrupted`, not `Succ
 `RequestReplay()` draws one. Every host that runs the replay worker receives the request, but only the
 first to claim it runs it, and a host that receives it after the replay has already ended finds it
 claimed. A request that arrives while another replay is running starts nothing and logs `104_019`: a
-second replay would empty what the first is rebuilding. Hosts on a release before this one publish
-requests without an identity, which each receiving host runs under one of its own — until every host
-is upgraded, such a request can still start a replay in each of them.
+second replay would empty what the first is rebuilding. A replay that outlived its lease — its host
+stalled long enough for another request to start — records its outcome when it ends and leaves the
+other replay's marking alone.
+
+During a rolling upgrade the guarantee holds only between upgraded hosts. A host on an earlier release
+claims nothing and runs every request it receives; and a request it publishes carries no identity, so
+upgraded hosts cannot tell their copies apart and one that receives it after the replay ended runs it
+again. Upgrade every host that runs the replay worker before relying on one request starting one
+replay.
 
 Reading and requesting a replay from an admin endpoint takes a few lines; the guard on them is yours,
 because the framework has none:
@@ -455,7 +461,9 @@ app.MapPost("/admin/projections/replay", (IProjectionReplayState replay) =>
 ```
 
 A client that polls after its request waits until `RequestId` or `LastReplay.RequestId` names its id;
-the first means running, the second means ended, with `Result` saying how.
+the first means running, the second means ended, with `Result` saying how. If its first poll finds
+another replay running — `IsActive` with a different `RequestId` — its request was not run (`104_019`
+in the claiming host's log): request again once that replay has ended.
 
 What the endpoint sees follows the registration described under
 [What the framework does not do](#what-the-framework-does-not-do): with the shared Redis connection

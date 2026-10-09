@@ -117,3 +117,24 @@ A version bump. Rolling upgrade: until every host runs the new version, a reques
 still start one replay per new host (legacy payload), and old hosts ignore the claim. Rollback leaves the
 `…:last`, `…:claimed:*`, `…:request-id` and `…:started` keys behind, which the old version never reads;
 the claims expire on their own.
+
+## Revised in review (PR #191)
+
+- **The claim and the completion cannot escape.** The Redis subscription invokes the worker's callback as an
+  `async void` handler, so an exception from `TryActivate` or `Complete` would end the process. Both are caught;
+  a failed claim logs `104_109`, a failed completion `104_121`.
+- **`ReplayCompletion` names its request**, and the completion ends the marking only while it still belongs to that
+  request (`CompleteScript` compares `…:request-id`; the in-process state compares its field). A replay that outlived
+  its lease while another request started records its outcome and leaves the other running. The start time is kept
+  per request in memory, so the unread `…:started` key is gone.
+- **Only the host stopping interrupts.** `OperationCanceledException` counts as an interruption only when the
+  stopping token is cancelled; a replay that reached the end of the store is `Succeeded` even if the host begins to
+  stop right after; the worker's `StopAsync` waits, within the shutdown timeout, for running replays to record
+  their outcome before the host disposes the coordination store.
+- **`SetProgress` is one round trip** (a script setting both counters and renewing the marking's and the identity's
+  lease).
+- **A refused request** is recorded as `104_019`; a polling client recognises it by finding another replay running
+  on its first poll (guide). Recording it in the coordination state was rejected: it would displace the last
+  outcome a client is waiting for.
+- **Rolling upgrade, corrected:** the marking still lets only one upgraded host run a legacy request at a time; the
+  real exposure is hosts of the earlier release, which claim nothing.

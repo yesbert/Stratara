@@ -174,6 +174,54 @@ public class ProjectionReplayWorkerTests
     }
 
     [Fact]
+    public async Task ReplayCallback_ACancellationNotFromTheHost_IsAFailure()
+    {
+        var harness = new Harness();
+        harness.ViewTruncator
+            .Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("a provider timed out"));
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(
+            s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Failed && c.ErrorMessage!.Contains("timed out"))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_TryActivateThrows_IsLoggedAndRunsNothing()
+    {
+        var harness = new Harness();
+        harness.ReplayState.Setup(s => s.TryActivate(It.IsAny<Guid>())).Throws(new InvalidOperationException("redis is away"));
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ProjectionReplayFailed);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_CompleteThrows_IsLoggedAndDoesNotEscape()
+    {
+        var harness = new Harness();
+        harness.ReplayState.Setup(s => s.Complete(It.IsAny<ReplayCompletion>())).Throws(new InvalidOperationException("redis is away"));
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ProjectionReplayOutcomeNotRecorded);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_CompletesWithTheRequestsIdentity()
+    {
+        var harness = new Harness();
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.Complete(It.Is<ReplayCompletion>(c => c.RequestId == Guid.Empty)), Times.Once);
+    }
+
+    [Fact]
     public async Task ReplayCallback_CancelledBetweenBatches_CompletesAsInterruptedAndDoesNotLogCompleted()
     {
         var harness = new Harness();
@@ -214,7 +262,11 @@ public class ProjectionReplayWorkerTests
         var harness = new Harness();
         harness.ViewTruncator
             .Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new OperationCanceledException());
+            .Returns(async () =>
+            {
+                await harness.StopWorkerAsync();
+                throw new OperationCanceledException();
+            });
 
         await harness.RunAsync(triggerReplay: true);
 
@@ -331,7 +383,11 @@ public class ProjectionReplayWorkerTests
             .ReturnsAsync([entry]);
         harness.ProjectionManager
             .Setup(m => m.HandleAsync(It.IsAny<IReadOnlyList<IEvent>>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new OperationCanceledException());
+            .Returns(async () =>
+            {
+                await harness.StopWorkerAsync();
+                throw new OperationCanceledException();
+            });
 
         await harness.RunAsync(triggerReplay: true);
 
@@ -554,8 +610,15 @@ public class ProjectionReplayWorkerTests
 
         private ProjectionReplayWorker? _worker;
 
-        /// <summary>Stops the worker from inside a replay, as a host shutting down would.</summary>
-        public Task StopWorkerAsync() => _worker?.StopAsync(CancellationToken.None) ?? Task.CompletedTask;
+        /// <summary>
+        /// Stops the worker from inside a replay, as a host shutting down would: the stop cancels at once and then waits
+        /// for the running replay — this one — so it is not awaited here.
+        /// </summary>
+        public Task StopWorkerAsync()
+        {
+            _ = _worker?.StopAsync(CancellationToken.None);
+            return Task.CompletedTask;
+        }
 
         public Harness(ResiliencePipeline? batchPipeline = null)
         {

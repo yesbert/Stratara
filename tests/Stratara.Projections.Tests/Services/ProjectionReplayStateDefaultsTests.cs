@@ -65,9 +65,9 @@ public class ProjectionReplayStateDefaultsTests
         var state = new EarlierReplayState();
         IProjectionReplayState replay = state;
 
-        replay.Complete(new ReplayCompletion(ReplayResult.Succeeded, 1));
-        replay.Complete(new ReplayCompletion(ReplayResult.Interrupted, 1));
-        replay.Complete(new ReplayCompletion(ReplayResult.Failed, 1, "boom"));
+        replay.Complete(new ReplayCompletion(Guid.NewGuid(), ReplayResult.Succeeded, 1));
+        replay.Complete(new ReplayCompletion(Guid.NewGuid(), ReplayResult.Interrupted, 1));
+        replay.Complete(new ReplayCompletion(Guid.NewGuid(), ReplayResult.Failed, 1, "boom"));
 
         Assert.Equal(["Deactivate", "Deactivate", "SetFailed:boom"], state.Calls);
     }

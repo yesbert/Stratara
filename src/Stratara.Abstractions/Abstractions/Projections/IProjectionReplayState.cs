@@ -96,12 +96,14 @@ public interface IProjectionReplayState
     }
 
     /// <summary>
-    /// Mark the replay this instance activated as ended and keep its outcome, readable through
+    /// Mark the replay of <see cref="ReplayCompletion.RequestId"/> as ended and keep its outcome, readable through
     /// <see cref="ReplayProgress.LastReplay"/> until the next replay ends.
     /// </summary>
     /// <remarks>
-    /// The default implementation calls <see cref="SetFailed"/> for a failure and <see cref="Deactivate"/>
-    /// otherwise, and keeps no outcome.
+    /// The marking is ended only while it still belongs to that request: a replay that outlived its lease, while
+    /// another request started, records its outcome and leaves the other replay's marking alone. The default
+    /// implementation calls <see cref="SetFailed"/> for a failure and <see cref="Deactivate"/> otherwise, and keeps
+    /// no outcome.
     /// </remarks>
     /// <param name="completion">How the replay ended.</param>
     void Complete(ReplayCompletion completion)
@@ -154,10 +156,11 @@ public enum ReplayResult
 }
 
 /// <summary>How a replay ended, as the replaying worker reports it to <see cref="IProjectionReplayState.Complete"/>.</summary>
+/// <param name="RequestId">The identity of the request the replay ran, as given to <see cref="IProjectionReplayState.TryActivate"/>.</param>
 /// <param name="Result">How the replay ended.</param>
 /// <param name="ReplayedEvents">How many events the replay had applied when it ended.</param>
 /// <param name="ErrorMessage">The failure's message, for <see cref="ReplayResult.Failed"/>; <see langword="null"/> otherwise.</param>
-public sealed record ReplayCompletion(ReplayResult Result, long ReplayedEvents, string? ErrorMessage = null);
+public sealed record ReplayCompletion(Guid RequestId, ReplayResult Result, long ReplayedEvents, string? ErrorMessage = null);
 
 /// <summary>The outcome of a replay that has ended.</summary>
 /// <param name="RequestId">The identity of the request the replay ran.</param>

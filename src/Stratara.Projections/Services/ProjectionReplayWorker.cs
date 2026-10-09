@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -48,22 +49,71 @@ internal sealed class ProjectionReplayWorker(
 
     private readonly ProjectionOptions _options = options.Value;
     private readonly ResiliencePipeline _batchPipeline = pipelineProvider.GetPipeline(ResilienceNames.ProjectionReplayBatch);
+    private readonly ConcurrentDictionary<Guid, Task> _running = new();
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await replayState.SubscribeToReplayRequestAsync(
-            requestId => RunRequestedReplayAsync(requestId, stoppingToken), stoppingToken);
+            requestId => TrackAsync(requestId, stoppingToken), stoppingToken);
+    }
+
+    /// <summary>
+    /// Waits, within the host's shutdown timeout, for a replay that is running to record that it was interrupted:
+    /// the subscription returned long ago, so without this the host would dispose the coordination store while the
+    /// replay still writes its outcome to it.
+    /// </summary>
+    /// <param name="cancellationToken">Signals that the host's shutdown timeout has passed.</param>
+    /// <returns>A task that completes once every running replay has ended, or the timeout has passed.</returns>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken);
+        try
+        {
+            await Task.WhenAll(_running.Values).WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The shutdown timeout passed; the replay's marking lapses with its lease.
+        }
+    }
+
+    private async Task TrackAsync(Guid requestId, CancellationToken cancellationToken)
+    {
+        var key = Guid.NewGuid();
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _running[key] = ended.Task;
+        try
+        {
+            await RunRequestedReplayAsync(requestId, cancellationToken);
+        }
+        finally
+        {
+            _running.TryRemove(key, out _);
+            ended.TrySetResult();
+        }
     }
 
     /// <summary>
     /// Runs the replay a request asks for, if this host claims the request: a request every host receives, or one
     /// that arrives while another replay is active, starts nothing here. The replay ends in exactly one completion —
-    /// succeeded, failed with its message, or interrupted because the host stops — which keeps its outcome.
+    /// succeeded, failed with its message, or interrupted because the host stops — which keeps its outcome. Nothing
+    /// here may escape: the coordination store invokes the callback where an exception would end the process.
     /// </summary>
     private async Task RunRequestedReplayAsync(Guid requestId, CancellationToken cancellationToken)
     {
-        if (!replayState.TryActivate(requestId))
+        bool claimed;
+        try
+        {
+            claimed = replayState.TryActivate(requestId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogProjectionReplayFailed(ex);
+            return;
+        }
+
+        if (!claimed)
         {
             return;
         }
@@ -74,32 +124,44 @@ internal sealed class ProjectionReplayWorker(
         {
             await RunReplayAsync(tally, cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Interrupted(tally);
+            Interrupted(requestId, tally);
             return;
         }
         catch (Exception ex)
         {
             logger.LogProjectionReplayFailed(ex);
-            replayState.Complete(new ReplayCompletion(ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
+            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
             return;
         }
 
-        if (cancellationToken.IsCancellationRequested)
+        if (!tally.ReachedTheEnd)
         {
-            Interrupted(tally);
+            Interrupted(requestId, tally);
             return;
         }
 
         logger.LogProjectionReplayCompleted(tally.Replayed);
-        replayState.Complete(new ReplayCompletion(ReplayResult.Succeeded, tally.Replayed));
+        Complete(new ReplayCompletion(requestId, ReplayResult.Succeeded, tally.Replayed));
     }
 
-    private void Interrupted(ReplayTally tally)
+    private void Interrupted(Guid requestId, ReplayTally tally)
     {
         logger.LogProjectionReplayInterrupted(tally.Replayed);
-        replayState.Complete(new ReplayCompletion(ReplayResult.Interrupted, tally.Replayed));
+        Complete(new ReplayCompletion(requestId, ReplayResult.Interrupted, tally.Replayed));
+    }
+
+    private void Complete(ReplayCompletion completion)
+    {
+        try
+        {
+            replayState.Complete(completion);
+        }
+        catch (Exception ex)
+        {
+            logger.LogProjectionReplayOutcomeNotRecorded(ex, completion.RequestId);
+        }
     }
 
     private static string TruncateFailureMessage(string message) =>
@@ -164,6 +226,7 @@ internal sealed class ProjectionReplayWorker(
 
             if (batch.Count == 0)
             {
+                tally.ReachedTheEnd = true;
                 break;
             }
 
@@ -239,6 +302,8 @@ internal sealed class ProjectionReplayWorker(
     private sealed class ReplayTally
     {
         public long Replayed { get; set; }
+
+        public bool ReachedTheEnd { get; set; }
     }
 
     private sealed record ReplayedBatch(int Count, long LastSequence)

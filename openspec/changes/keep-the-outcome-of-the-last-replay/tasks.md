@@ -50,6 +50,16 @@
   `AwaitedReplayState`, its Orleans twin, `tests/Stratara.Orleans.IntegrationTests/Aggregates/ResumedOnceInOrderTests.cs`
   `SwitchedReplay`) compile unchanged and their tests stay green.
 
+## 4b. Found in review
+
+- [x] 4b.1 Round 1 of the review of #191: claim and completion failures caught (`ReplayCallback_TryActivateThrows_IsLoggedAndRunsNothing`,
+  `ReplayCallback_CompleteThrows_IsLoggedAndDoesNotEscape`, log `104_121`); `ReplayCompletion.RequestId` and a
+  completion that ends only its own marking (`Complete_OfAReplayThatOutlivedItsLease_LeavesTheNextReplayRunning`, in
+  `InProcessProjectionReplayStateTests` and the Redis `ProjectionReplayStateTests`); interruption only on host stop
+  (`ReplayCallback_ACancellationNotFromTheHost_IsAFailure`), a completed store not mislabelled, `StopAsync` waits for
+  running replays; `SetProgress` in one script (`SetProgress_RenewsTheLeaseOfTheRunningRequestsIdentity`); the unread
+  `…:started` key removed; the refused-request detection and the rolling-upgrade note corrected in the guide.
+
 ## 5. Documentation
 
 - [x] 5.1 `docs/guides/write-a-projection.md`, *Watch a replay* (around line 403): the table gets the

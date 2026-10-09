@@ -56,9 +56,16 @@ applies to the entire NuGet family.
   a full replay in every such host at once, all emptying and rebuilding the same read store, and two
   requests in quick succession did the same within one host. A request is now claimed atomically with the
   replay's marking; the other hosts pass it over, a host that receives it after the replay ended finds it
-  claimed, and a request that arrives while a replay is running starts nothing and logs `104_019`.
+  claimed, and a request that arrives while a replay is running starts nothing and logs `104_019`. A replay that
+  outlived its lease while another started records its outcome without ending the other's marking. **Rolling
+  upgrade:** a host on an earlier release claims nothing and runs every request it receives, and its requests carry
+  no identity — upgrade every host that runs the replay worker before relying on this.
 - **A replay stopped by its host ends as interrupted.** A replay cancelled between two batches logged
-  `104_006` "completed" with its partial count. It now ends as `Interrupted` and logs `104_020`.
+  `104_006` "completed" with its partial count. It now ends as `Interrupted` and logs `104_020`, and the host's
+  stop waits, within its shutdown timeout, for the replay to record that. A cancellation that does not come from
+  the host stopping — a provider's own timeout — now ends the replay as `Failed` with its message, where it was
+  silently treated as a shutdown. A failure to claim a request or to record an outcome is logged (`104_109`,
+  `104_121`) instead of escaping the coordination store's callback.
 - **The Redis-backed replay state reports `0` of `0` after a failure,** as the in-process one and the guide
   always did; it kept showing the failed run's counters until their lease ran out.
 

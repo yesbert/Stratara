@@ -41,6 +41,7 @@ internal sealed class InProcessProjectionReplayState(
     private string? _error;
     private Guid? _requestId;
     private DateTimeOffset _startedAt;
+    private readonly Dictionary<Guid, DateTimeOffset> _startedAtByRequest = [];
     private ReplayOutcome? _lastReplay;
 
     /// <inheritdoc/>
@@ -90,6 +91,7 @@ internal sealed class InProcessProjectionReplayState(
             _total = 0;
             _requestId = requestId;
             _startedAt = timeProvider.GetUtcNow();
+            _startedAtByRequest[requestId] = _startedAt;
             _activeUntil = _startedAt + _lease;
             return true;
         }
@@ -101,15 +103,19 @@ internal sealed class InProcessProjectionReplayState(
         ArgumentNullException.ThrowIfNull(completion);
         lock (_gate)
         {
+            var startedAt = _startedAtByRequest.Remove(completion.RequestId, out var started) ? started : _startedAt;
             _lastReplay = new ReplayOutcome(
-                _requestId ?? Guid.Empty,
-                _startedAt,
+                completion.RequestId,
+                startedAt,
                 timeProvider.GetUtcNow(),
                 completion.ReplayedEvents,
                 completion.Result,
                 completion.ErrorMessage);
             _error = completion.Result == ReplayResult.Failed ? completion.ErrorMessage : null;
-            EndReplay();
+            if (_requestId is null || _requestId == completion.RequestId)
+            {
+                EndReplay();
+            }
         }
     }
 
