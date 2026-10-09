@@ -313,4 +313,103 @@ public class AggregationServiceTests
 
         _eventStreamRepoMock.Verify(r => r.GetManyAsync(streamId, 26L, It.IsAny<long?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task AnUnboundedRead_RecordsTheHighestVersionRead()
+    {
+        var versions = new AggregatedStreamVersions();
+        var service = ServiceRecordingInto(versions);
+        var streamId = Guid.NewGuid();
+        ArrangeStream(streamId, snapshot: null, Entry(streamId, 1), Entry(streamId, 3), Entry(streamId, 2));
+
+        await service.AggregateAsync<TestAggregate>(streamId);
+
+        Assert.True(versions.TryGet(streamId, out var version));
+        Assert.Equal(3, version);
+    }
+
+    [Fact]
+    public async Task ABoundedRead_RecordsNothing()
+    {
+        var versions = new AggregatedStreamVersions();
+        var service = ServiceRecordingInto(versions);
+        var streamId = Guid.NewGuid();
+        ArrangeStream(streamId, snapshot: null, Entry(streamId, 1));
+
+        await service.AggregateAsync<TestAggregate>(streamId, toVersion: 1);
+
+        Assert.False(versions.TryGet(streamId, out _));
+    }
+
+    [Fact]
+    public async Task AReadOfAMissingStream_RecordsZero()
+    {
+        var versions = new AggregatedStreamVersions();
+        var service = ServiceRecordingInto(versions);
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await service.AggregateAsync<TestAggregate>(streamId);
+
+        Assert.True(versions.TryGet(streamId, out var version));
+        Assert.Equal(0, version);
+    }
+
+    [Fact]
+    public async Task AReadThatEndsAtASnapshot_RecordsTheSnapshotsVersion()
+    {
+        var versions = new AggregatedStreamVersions();
+        var service = ServiceRecordingInto(versions);
+        var streamId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var snapshot = new Snapshot
+        {
+            Id = Guid.NewGuid(),
+            StreamId = streamId,
+            Version = 10,
+            AggregateTypeName = typeof(TestAggregate).AssemblyQualifiedName!,
+            DataJson = "{}",
+            BucketId = 1,
+            TenantId = tenantId,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+        _serializerMock.Setup(s => s.DeserializeAsync(snapshot.DataJson, typeof(TestAggregate), tenantId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TestAggregate());
+        ArrangeStream(streamId, snapshot);
+
+        await service.AggregateAsync<TestAggregate>(streamId);
+
+        Assert.True(versions.TryGet(streamId, out var version));
+        Assert.Equal(10, version);
+    }
+
+    private AggregationService ServiceRecordingInto(AggregatedStreamVersions versions) =>
+        new(_unitOfWorkMock.Object, _eventMapperFactoryMock.Object, _serializerMock.Object,
+            AggregateEventSelectorTests.PassThrough(), versions);
+
+    private void ArrangeStream(Guid streamId, Snapshot? snapshot, params EventStreamEntry[] entries)
+    {
+        _eventStreamRepoMock.Setup(r => r.StreamExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _snapshotRepoMock.Setup(r => r.GetAsync(streamId, It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(snapshot);
+        _eventStreamRepoMock.Setup(r => r.GetManyAsync(streamId, It.IsAny<long?>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(entries);
+        _eventMapperFactoryMock.Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<IEvent>());
+    }
+
+    private static EventStreamEntry Entry(Guid streamId, long version) => new()
+    {
+        Id = Guid.NewGuid(),
+        StreamId = streamId,
+        Version = version,
+        EventTypeName = "TestCreated",
+        AggregateTypeName = "TestAggregate",
+        DataJson = "{}",
+        BucketId = 1,
+        TenantId = Guid.Empty,
+        ActorTenantId = Guid.Empty,
+        ActorUserId = Guid.Empty,
+        Timestamp = DateTimeOffset.UtcNow
+    };
 }

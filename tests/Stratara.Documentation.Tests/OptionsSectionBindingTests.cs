@@ -67,8 +67,10 @@ public class OptionsSectionBindingTests
         Case<BusEnvelopeIntegrityOptions>("AddBusEnvelopeIntegrity(configuration)", "Mode", "Permissive",
             b => b.Services.AddBusEnvelopeIntegrity(b.Configuration)),
 
-        Case<EventSourcingOptions>("AddWriteStore(configuration)", null, null,
+        Case<EventSourcingOptions>("AddWriteStore(configuration)", "AppendAgainstAggregatedVersion", "True",
             b => b.Services.AddWriteStore(b.Configuration)),
+        Case<EventSourcingOptions>("AddEventSourcing()", "AppendAgainstAggregatedVersion", "True",
+            b => b.Services.AddEventSourcing()),
 
         Case<ProjectionOptions>("AddProjectionHandling(configuration)", "BatchSize", "617",
             b => b.Services.AddProjectionHandling(b.Configuration)),

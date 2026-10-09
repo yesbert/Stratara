@@ -16,7 +16,26 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.2`._
+### Added
+
+- **An append can be made on the condition of the version the handler read.** `AppendAsync` numbers an
+  event after whatever the stream holds when the append is made, so a write that landed between a
+  handler's read and its append went unnoticed and the handler's fact was recorded after it — after a
+  stream's end, for example, which then stops every later projection replay. `IEventSource` gains
+  `AppendAtVersionAsync<TAggregate>(streamId, expectedVersion, @event)` and
+  `AppendRangeAtVersionAsync<TAggregate>(streamId, expectedVersion, events)`: if another writer has moved
+  the stream past `expectedVersion`, `SaveChangesAsync` throws `ConcurrencyException` and records nothing,
+  and the bus redelivers as for any conflict. A version the stream has not reached is refused at the
+  append with `ArgumentOutOfRangeException`. The members have default implementations that throw
+  `NotSupportedException`, so an implementation of `IEventSource` outside the framework still compiles.
+- **`EventSourcing:AppendAgainstAggregatedVersion`** (default `false`). With it on, an append to a stream
+  the handler rebuilt through `IAggregationService.AggregateAsync` in the same scope is made on the
+  condition of the version that rebuild saw — every read-then-write handler gets the protection without a
+  code change. A rebuild bounded with `toVersion` sets no condition; a rebuild that found no stream expects
+  it still not to exist. `AddEventSourcing()` now reads the `EventSourcing` section itself;
+  `AddWriteStore(configuration)` still does too. The cost: a handler appending to a stream another writer
+  touches concurrently gets a conflict where it used to succeed, and on the `IMediator` path the caller
+  sees it.
 
 ## [4.4.2] — 2026-10-02
 

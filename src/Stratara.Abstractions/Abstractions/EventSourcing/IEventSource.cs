@@ -103,6 +103,80 @@ public interface IEventSource
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
 
     /// <summary>
+    /// Append an event on the condition that the stream is still at <paramref name="expectedVersion"/>,
+    /// the version the caller decided on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The event is numbered <paramref name="expectedVersion"/> + 1. If another writer has moved the
+    /// stream past <paramref name="expectedVersion"/> by the time of the save,
+    /// <see cref="SaveChangesAsync"/> throws <see cref="ConcurrencyException"/> and records nothing of
+    /// the batch, so a fact decided on the stream's earlier state is never recorded after one that
+    /// contradicts it. Without the condition, <see cref="AppendAsync{TAggregate}"/> numbers the event
+    /// after whatever the stream holds when the append is made.
+    /// </para>
+    /// <para>
+    /// A caller without a version of its own reads one with <see cref="GetCurrentVersionAsync"/>
+    /// before it reads the state it decides on; a write that lands in between then surfaces as a
+    /// conflict rather than going unnoticed. A host can apply the same condition to every append that
+    /// follows a rebuild through <see cref="IAggregationService"/> with the
+    /// <c>EventSourcing:AppendAgainstAggregatedVersion</c> option. The event takes the stream's owner,
+    /// as in <see cref="AppendAsync{TAggregate}"/>.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TAggregate">The aggregate type.</typeparam>
+    /// <param name="streamId">The stream id.</param>
+    /// <param name="expectedVersion">
+    /// The version the caller read; <c>0</c> for a stream that is expected not to exist yet.
+    /// </param>
+    /// <param name="event">The event payload.</param>
+    /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <returns>A task that completes once the event is staged.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="expectedVersion"/> is negative, or above the stream's current version — a
+    /// version the stream has not reached, which would leave a gap in its versions.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Events for the stream are already staged in this batch, and <paramref name="expectedVersion"/>
+    /// is not the version they end at.
+    /// </exception>
+    /// <exception cref="NotSupportedException">The implementation does not support conditional appends.</exception>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
+    Task AppendAtVersionAsync<TAggregate>(Guid streamId, long expectedVersion, object @event,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new() =>
+        AppendRangeAtVersionAsync<TAggregate>(streamId, expectedVersion, [@event], cancellationToken);
+
+    /// <summary>
+    /// Append multiple events in order, on the condition that the stream is still at
+    /// <paramref name="expectedVersion"/>.
+    /// </summary>
+    /// <remarks>
+    /// The events are numbered from <paramref name="expectedVersion"/> + 1 onward, and the condition is
+    /// the one <see cref="AppendAtVersionAsync{TAggregate}"/> describes.
+    /// </remarks>
+    /// <typeparam name="TAggregate">The aggregate type.</typeparam>
+    /// <param name="streamId">The stream id.</param>
+    /// <param name="expectedVersion">
+    /// The version the caller read; <c>0</c> for a stream that is expected not to exist yet.
+    /// </param>
+    /// <param name="events">The events to append, in order.</param>
+    /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <returns>A task that completes once the events are staged.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="expectedVersion"/> is negative, or above the stream's current version.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Events for the stream are already staged in this batch, and <paramref name="expectedVersion"/>
+    /// is not the version they end at.
+    /// </exception>
+    /// <exception cref="NotSupportedException">The implementation does not support conditional appends.</exception>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
+    Task AppendRangeAtVersionAsync<TAggregate>(Guid streamId, long expectedVersion, IEnumerable<object> events,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new() =>
+        throw new NotSupportedException(
+            $"{GetType().Name} does not support appending on the condition of an expected version.");
+
+    /// <summary>
     /// Append an event with an explicit Subject (data owner), overriding every other source — the
     /// stream's recorded owner, a creation event's tenant and the session — for this one event.
     /// </summary>

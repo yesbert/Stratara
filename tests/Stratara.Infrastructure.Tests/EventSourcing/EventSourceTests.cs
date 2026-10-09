@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Stratara.Contracts.Session;
 using Stratara.Domain;
@@ -183,6 +184,109 @@ public class EventSourceTests
 
         _eventStreamRepoMock.Verify(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task AppendAtVersion_AboveTheHead_IsRefusedAndStagesNothing()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(3L);
+
+        var ex = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 5, new TestRenamed("Ahead")));
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Contains("version 3", ex.Message);
+        Assert.All(_capturedAddRangeCalls, Assert.Empty);
+    }
+
+    [Fact]
+    public async Task AppendAtVersion_ASecondExpectationForAStagedStream_IsRefused()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(3L);
+
+        await _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("First"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("Contradicting")));
+        await _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 4, new TestRenamed("Following"));
+        await _eventSource.SaveChangesAsync();
+
+        var entries = Assert.Single(_capturedAddRangeCalls);
+        Assert.Equal([4L, 5L], entries.Select(e => e.Version));
+    }
+
+    [Fact]
+    public async Task AppendAtVersion_BelowTheHead_IsStagedAtTheExpectedVersion()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(5L);
+
+        await _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("Late"));
+        await _eventSource.SaveChangesAsync();
+
+        var entry = Assert.Single(Assert.Single(_capturedAddRangeCalls));
+        Assert.Equal(4, entry.Version);
+    }
+
+    [Fact]
+    public async Task AppendAgainstAggregatedVersion_On_DoesNotQueryTheHead()
+    {
+        var streamId = Guid.NewGuid();
+        var versions = new AggregatedStreamVersions();
+        versions.Record(streamId, 7);
+        var eventSource = EventSourceWith(versions, appendAgainstAggregatedVersion: true);
+
+        await eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Decided"));
+        await eventSource.SaveChangesAsync();
+
+        var entry = Assert.Single(Assert.Single(_capturedAddRangeCalls));
+        Assert.Equal(8, entry.Version);
+        _eventStreamRepoMock.Verify(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AppendAgainstAggregatedVersion_Off_NumbersAfterTheHead()
+    {
+        var streamId = Guid.NewGuid();
+        var versions = new AggregatedStreamVersions();
+        versions.Record(streamId, 7);
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(9L);
+        var eventSource = EventSourceWith(versions, appendAgainstAggregatedVersion: false);
+
+        await eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Decided"));
+        await eventSource.SaveChangesAsync();
+
+        var entry = Assert.Single(Assert.Single(_capturedAddRangeCalls));
+        Assert.Equal(10, entry.Version);
+    }
+
+    [Fact]
+    public async Task AFailedSave_ClearsTheRememberedReadVersions()
+    {
+        var streamId = Guid.NewGuid();
+        var versions = new AggregatedStreamVersions();
+        versions.Record(streamId, 7);
+        var eventSource = EventSourceWith(versions, appendAgainstAggregatedVersion: true);
+        _transactionMock.Setup(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("store unavailable"));
+
+        await eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Decided"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => eventSource.SaveChangesAsync());
+
+        Assert.False(versions.TryGet(streamId, out _));
+    }
+
+    private EventSource EventSourceWith(AggregatedStreamVersions versions, bool appendAgainstAggregatedVersion) =>
+        new(
+            _snapshotServiceMock.Object,
+            _unitOfWorkMock.Object,
+            _sessionContextProviderMock.Object,
+            _outboxDispatcherMock.Object,
+            _serializerMock.Object,
+            [new PostgresUniqueViolationDetector()],
+            aggregatedVersions: versions,
+            options: Options.Create(new EventSourcingOptions { AppendAgainstAggregatedVersion = appendAgainstAggregatedVersion }));
 
     [Fact]
     public async Task SaveChangesAsync_PersistsAllBufferedEvents()

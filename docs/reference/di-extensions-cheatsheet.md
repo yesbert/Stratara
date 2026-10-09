@@ -39,7 +39,7 @@ that dispatches commands but runs no worker, a test host, a migration runner.
 | Extension | What it does |
 |---|---|
 | `services.AddMediator()` | `IMediator` as a scoped service |
-| `services.AddEventSourcing()` | The core event-sourcing services (event source, aggregation, snapshots) as scoped, plus the default trusted-type resolver |
+| `services.AddEventSourcing()` | The core event-sourcing services (event source, aggregation, snapshots) as scoped, plus the default trusted-type resolver. Reads the `EventSourcing` section (`AppendAgainstAggregatedVersion`) |
 | `services.AddMapping()` | The mapper the event-sourcing stack uses to materialize typed events from persisted rows |
 | `services.AddSessionContext()` | The scoped session context and its accessor. Pair with `app.UseMiddleware<SessionContextMiddleware>()` in an ASP.NET host |
 | `services.AddIdentity()` | The scoped identity accessors that resolve from the ambient session context |

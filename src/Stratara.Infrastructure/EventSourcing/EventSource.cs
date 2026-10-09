@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Stratara.Contracts.Messages;
 using Stratara.Contracts.Session;
 using Stratara.Abstractions.Domain;
@@ -52,8 +53,11 @@ internal sealed partial class EventSource(
     ISecureJsonSerializer serializer,
     IEnumerable<IStoreConflictDetector> conflictDetectors,
     IBusEnvelopeSigner? signer = null,
-    ILogger<EventSource>? logger = null) : IEventSource
+    ILogger<EventSource>? logger = null,
+    AggregatedStreamVersions? aggregatedVersions = null,
+    IOptions<EventSourcingOptions>? options = null) : IEventSource
 {
+    private readonly bool _appendAgainstAggregatedVersion = options?.Value.AppendAgainstAggregatedVersion ?? false;
     private readonly List<EventStreamEntry> _eventStreamEntries = [];
     private readonly Dictionary<Guid, long> _streamVersions = new();
 
@@ -110,6 +114,49 @@ internal sealed partial class EventSource(
     public Task AppendRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new() =>
         AppendRangeCoreAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task AppendAtVersionAsync<TAggregate>(Guid streamId, long expectedVersion, object @event,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new() =>
+        AppendRangeAtVersionAsync<TAggregate>(streamId, expectedVersion, [@event], cancellationToken);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The stream is numbered from <paramref name="expectedVersion"/> instead of from its head. A writer
+    /// that moved the stream past it occupies <paramref name="expectedVersion"/> + 1, so the store's
+    /// uniqueness of a stream's versions refuses the save and it surfaces as
+    /// <see cref="ConcurrencyException"/>; a version above the head would collide with nothing and is
+    /// refused here instead.
+    /// </remarks>
+    public async Task AppendRangeAtVersionAsync<TAggregate>(Guid streamId, long expectedVersion, IEnumerable<object> events,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new()
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+
+        if (_streamVersions.TryGetValue(streamId, out var stagedVersion))
+        {
+            if (stagedVersion != expectedVersion)
+            {
+                throw new InvalidOperationException(
+                    $"Events for stream {streamId} are already staged up to version {stagedVersion} in this batch; " +
+                    $"an append expecting version {expectedVersion} contradicts them.");
+            }
+        }
+        else
+        {
+            var head = await ReadHeadAsync(streamId, cancellationToken);
+            if (expectedVersion > head)
+            {
+                throw new ArgumentOutOfRangeException(nameof(expectedVersion), expectedVersion,
+                    $"Stream {streamId} is at version {head}; an append cannot expect version {expectedVersion}, " +
+                    "which the stream has not reached.");
+            }
+
+            _streamVersions[streamId] = expectedVersion;
+        }
+
+        await AddEventsToStreamAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
+    }
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentException">
@@ -249,6 +296,7 @@ internal sealed partial class EventSource(
         _eventStreamEntries.Clear();
         _streamVersions.Clear();
         _streamSubjects.Clear();
+        aggregatedVersions?.Clear();
     }
 
     /// <summary>
@@ -287,12 +335,20 @@ internal sealed partial class EventSource(
     {
         if (!_streamVersions.ContainsKey(streamId))
         {
-            await using var transaction = await unitOfWork.StartAsync(cancellationToken);
-            var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
-            _streamVersions[streamId] = await eventStreamRepository.GetVersionOrDefaultAsync(streamId, cancellationToken);
+            _streamVersions[streamId] =
+                _appendAgainstAggregatedVersion && aggregatedVersions is not null && aggregatedVersions.TryGet(streamId, out var readVersion)
+                    ? readVersion
+                    : await ReadHeadAsync(streamId, cancellationToken);
         }
 
         await AddEventsToStreamAsync<TAggregate>(streamId, events, statedSubject, cancellationToken);
+    }
+
+    private async Task<long> ReadHeadAsync(Guid streamId, CancellationToken cancellationToken)
+    {
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
+        return await eventStreamRepository.GetVersionOrDefaultAsync(streamId, cancellationToken);
     }
 
     private async Task AddEventsToStreamAsync<TAggregate>(Guid streamId, IEnumerable<object> events,

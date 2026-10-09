@@ -11,9 +11,10 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class WriteStoreServiceCollectionExtensions
 {
     /// <summary>
-    /// Binds <c>EventSourcingOptions</c> from the <c>EventSourcing</c> configuration section. The
-    /// options carry no settings today; the section is reserved for write-side settings. How often an
-    /// aggregate is snapshotted is not configuration: it is the registered <c>ISnapshotStrategy</c>.
+    /// Binds <c>EventSourcingOptions</c> from the <c>EventSourcing</c> configuration section, the
+    /// section for write-side settings. <c>AddEventSourcing()</c> binds the same section, so a host
+    /// that calls both reads it once either way. How often an aggregate is snapshotted is not
+    /// configuration: it is the registered <c>ISnapshotStrategy</c>.
     /// </summary>
     /// <param name="services">The service collection to register options on.</param>
     /// <param name="configuration">The host configuration providing the options section.</param>
