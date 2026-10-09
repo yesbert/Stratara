@@ -102,6 +102,14 @@ public interface IEventSource
     async Task CreateOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
+        if (subject.TenantId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant. " +
+                "Supply a Subject with a tenant id, or use CreateAsync to let the Subject be resolved.",
+                nameof(subject));
+        }
+
         if (await ExistsAsync(streamId, cancellationToken))
         {
             throw new InvalidOperationException(

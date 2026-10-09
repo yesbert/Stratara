@@ -63,7 +63,7 @@ public static class LogEvents
         /// A new stream's first event took its owner from the session, and the host asked to be warned of it
         /// (warning, once per stream created).
         /// </summary>
-        public const int NewStreamOwnerTakenFromSession = 102_104;
+        public const int NewStreamOwnerTakenFromSession = 102_007;
     }
 
     /// <summary>Validation event-IDs (103_000s).</summary>

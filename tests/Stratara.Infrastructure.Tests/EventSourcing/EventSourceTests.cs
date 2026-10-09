@@ -861,7 +861,7 @@ public class EventSourceTests
     }
 
     [Fact]
-    public async Task NewStreamOwnerFromSession_Warn_RecordsTheSessionOwnerAndLogs102104Once()
+    public async Task NewStreamOwnerFromSession_Warn_RecordsTheSessionOwnerAndLogs102007Once()
     {
         var logger = new RecordingEventSourceLogger();
         var eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Warn, logger);
@@ -923,6 +923,48 @@ public class EventSourceTests
         await eventSource.SaveChangesAsync();
 
         Assert.Equal(_tenantId, Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId);
+    }
+
+    [Fact]
+    public async Task CreateOnBehalfOfAsync_AfterARefusedCreateInTheSameScope_Succeeds()
+    {
+        IEventSource eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Refuse);
+        var streamId = Guid.NewGuid();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Refused")));
+
+        await eventSource.CreateOnBehalfOfAsync<TestAggregate>(streamId, new TestCreated("Stated"), new EventSubject(Guid.NewGuid()));
+        await eventSource.SaveChangesAsync();
+
+        Assert.Equal(1, Assert.Single(Assert.Single(_capturedAddRangeCalls)).Version);
+    }
+
+    [Fact]
+    public async Task CreateAsync_AfterCreateOnBehalfOfInOneBatch_IsRefused()
+    {
+        var streamId = Guid.NewGuid();
+        await Events.CreateOnBehalfOfAsync<TestAggregate>(streamId, new TestCreated("Stated"), new EventSubject(Guid.NewGuid()));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _eventSource.CreateAsync<TestAggregate>(streamId, new TestCreated("Again")));
+    }
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Refuse_AnAppendExpectingVersionZeroOnAnExistingStreamWithoutATenant_TakesTheSession()
+    {
+        IEventSource eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Refuse);
+        var streamId = Guid.NewGuid();
+        GivenAnExistingStreamOwnedBy(streamId, Guid.Empty);
+
+        await eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 0, new TestRenamed("Stale"));
+
+        Assert.Equal(_tenantId, await StagedTenantAsync(eventSource));
+    }
+
+    private async Task<Guid> StagedTenantAsync(IEventSource eventSource)
+    {
+        await eventSource.SaveChangesAsync();
+        return Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId;
     }
 
     private EventSource EventSourceWithPolicy(NewStreamOwnerPolicy policy, ILogger<EventSource>? logger = null) =>

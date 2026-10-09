@@ -29,7 +29,7 @@ whether a new stream may take its owner from the session at all.
   `ExistsAsync` and `AppendOnBehalfOfAsync`, so an implementer outside the framework gets correct
   behaviour without change.
 - **`EventSourcingOptions.NewStreamOwnerFromSession`** (section `EventSourcing`): `Allow` (default — as
-  today), `Warn` (as today, plus a warning `102_104` naming the stream, the event and the session's tenant),
+  today), `Warn` (as today, plus a warning `102_007` naming the stream, the event and the session's tenant),
   or `Refuse` (the append fails before anything is staged, naming the stream, the event and the three ways
   to state an owner). It applies only to the first event of a stream that does not exist yet, and only when
   the session is what would decide the owner — a stated subject, a creation event carrying a tenant, and
@@ -56,7 +56,7 @@ _None._
   `ResolveSubjectAsync` learns whether the stream is new and applies the policy.
 - `src/Stratara.Shared/EventSourcing/EventSourcingOptions.cs` — `NewStreamOwnerFromSession` and the enum
   `NewStreamOwnerPolicy`.
-- `src/Stratara.Diagnostics/LogEvents.cs` — `102_104` (`NewStreamOwnerTakenFromSession`), and the
+- `src/Stratara.Diagnostics/LogEvents.cs` — `102_007` (`NewStreamOwnerTakenFromSession`), and the
   event source's source-generated logger method.
 - `docs/guides/write-a-command-handler.md` (the owner chain, around line 70), `CHANGELOG.md`.
 - Builds on `append-against-the-version-a-handler-read`, which makes `AddEventSourcing()` bind the

@@ -74,7 +74,7 @@ A handler that writes events appends them through `IEventSource` and commits the
 simply the one in the caller's session**. The store takes, for each event, the first of these that
 names a tenant:
 
-1. the subject you stated for that event with `AppendOnBehalfOfAsync`;
+1. the subject you stated for that event with `AppendOnBehalfOfAsync`, or for the stream's first event with `CreateOnBehalfOfAsync`;
 2. the owner already resolved for the same stream earlier in the same batch;
 3. the owner recorded on the stream's first event — its tenant, and its user where one was recorded;
 4. the `TenantId` the event carries itself, when it implements `IAggregateCreationEvent`;
@@ -148,7 +148,7 @@ when an operator creates one for somebody else, and nothing fails either way. A 
 | Value | A new stream's first event that would take its owner from the session |
 |---|---|
 | `Allow` (default) | is recorded for the session's tenant, as before |
-| `Warn` | is recorded for the session's tenant, and `102_104` (Warning) names the stream, the event type and the tenant — once per stream created |
+| `Warn` | is recorded for the session's tenant, and `102_007` (Warning) names the stream, the event type and the tenant — once per stream created |
 | `Refuse` | fails before anything is staged, naming the stream, the event type and the ways to state an owner |
 
 The setting touches nothing else: an owner stated with `CreateOnBehalfOfAsync` or `AppendOnBehalfOfAsync`,

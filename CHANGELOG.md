@@ -66,7 +66,7 @@ applies to the entire NuGet family.
   `IAggregateCreationEvent` or the session. A default implementation built on `ExistsAsync` and
   `AppendOnBehalfOfAsync` keeps implementations outside the framework compiling.
 - **`EventSourcing:NewStreamOwnerFromSession`** — `Allow` (default), `Warn` or `Refuse` — decides what happens when
-  a new stream's first event would take its owner from the session: as before, as before plus a warning `102_104`,
+  a new stream's first event would take its owner from the session: as before, as before plus a warning `102_007`,
   or a refusal before anything is staged. Stated owners, creation events that carry a tenant, and appends to
   existing streams are untouched.
 
