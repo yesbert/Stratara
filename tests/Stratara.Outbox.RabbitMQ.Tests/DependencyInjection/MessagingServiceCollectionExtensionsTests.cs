@@ -100,4 +100,27 @@ public class MessagingServiceCollectionExtensionsTests
 
         Assert.Contains("Messaging:PrefetchCount", refused.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task AddMessaging_RefusesANegativeUnconsumedSubscriptionWarningThresholdAtStart()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Messaging:UnconsumedSubscriptionWarningThreshold"] = "-1" });
+        builder.AddMessaging();
+        using var host = builder.Build();
+
+        var refused = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("Messaging:UnconsumedSubscriptionWarningThreshold", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AddMessaging_ReadsTheUnconsumedSubscriptionWarningThreshold()
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Messaging:UnconsumedSubscriptionWarningThreshold"] = "250" });
+        builder.AddMessaging();
+
+        Assert.Equal(250, builder.Services.BuildServiceProvider().GetRequiredService<IOptions<MessagingOptions>>().Value.UnconsumedSubscriptionWarningThreshold);
+    }
 }

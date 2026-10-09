@@ -218,6 +218,8 @@ public static class LogEvents
         public const int WorkerQueueDeclaredWithOtherArguments = 108_112;
         /// <summary>A handler committed its events but could not publish them; the message is acknowledged so it is not run twice (error).</summary>
         public const int CommittedEventsNotPublished = 108_113;
+        /// <summary>An established subscription holds a backlog and no consumer is attached to it (warning, when it is established again).</summary>
+        public const int UnconsumedSubscription = 108_114;
     }
 
     /// <summary>Aggregate-update event-IDs (109_000s).</summary>

@@ -70,6 +70,12 @@ applies to the entire NuGet family.
   or a refusal before anything is staged. Stated owners, creation events that carry a tenant, and appends to
   existing streams are untouched.
 
+- **A subscription nobody consumes is reported.** An established subscription keeps what is published to it until
+  something consumes it, so one whose worker is never deployed, or was retired, grows without end — and until now
+  nothing said so. On RabbitMQ, `EnsureSubscriptionAsync` logs `108_114` at Warning when the subscription already
+  holds at least `Messaging:UnconsumedSubscriptionWarningThreshold` messages (default 10 000; 0 turns it off) and
+  no consumer is attached. Nothing is capped or discarded, and no queue is declared with different arguments.
+
 ### Fixed
 
 - **One replay request starts one replay.** Every host that runs the replay worker subscribes to the

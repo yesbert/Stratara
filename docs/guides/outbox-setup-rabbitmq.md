@@ -132,6 +132,29 @@ Three things worth knowing:
   publish, so it makes no attempt to guess. If your host runs every worker in one process and nothing
   publishes before the host is serving, you may not need it at all.
 
+**What it costs.** Once a subscription is established, messages published to it are kept until
+something consumes them — where before they were dropped. If you establish a subscription for a
+worker you then never deploy, or later retire, its queue grows. That is the trade this makes
+deliberately: a fact kept somewhere you must clear is better than a fact silently gone.
+
+So you hear about it: when `EnsureSubscriptionAsync` finds that the subscription already holds at
+least `Messaging:UnconsumedSubscriptionWarningThreshold` messages (default `10000`) and no consumer is
+attached, it logs `108_114` at Warning, naming the subscription, the topic and the count. Every host
+that establishes the subscription says so at its next start. `0` turns the warning off; a negative
+value is refused when the host starts. Subscribing reports nothing — a backlog met by an attaching
+handler is a worker catching up.
+
+The count covers the whole queue: a subscription established for several topics is reported once for
+each, with the same count.
+
+The framework does not cap or expire the queue, and a broker policy is no way to do it either. The
+worker queue is declared with `x-overflow: reject-publish`, which a policy cannot override, so a length
+limit makes the broker refuse publications to the full queue — on a shared topic they go back through
+the outbox and are delivered again to every other subscription. A time-to-live only moves the growth to
+the dead-letter queue. When a worker is retired for good, **stop establishing its subscription** in the
+publishing hosts and then delete `<subscription>.v2` and `<subscription>.dead-letter`; deleting the queue
+alone does not last, because the next `EnsureSubscriptionAsync` declares it again.
+
 ### How many consumers a worker opens
 
 The projection worker and the saga worker each open several consumers on their subscription — one
@@ -153,11 +176,6 @@ A value that is not a positive number — including leaving the key out — mean
 processor. `1` gives a worker that applies every bundle in the order the transport delivers it, at
 the cost of the parallelism; it is the right setting for a host that needs strict order, and the
 wrong one for a host that only needs the per-aggregate guarantee, which it already has.
-
-**What it costs.** Once a subscription is established, messages published to it are kept until
-something consumes them — where before they were dropped. If you establish a subscription for a
-worker you then never deploy, its queue grows. That is the trade this makes deliberately: a fact kept
-somewhere you must clear is better than a fact silently gone.
 
 Client subscriptions (`default-*`) are refused: they are declared exclusive and auto-deleting, so a
 queue established ahead of its consumer would be removed the moment the declaring channel closed.

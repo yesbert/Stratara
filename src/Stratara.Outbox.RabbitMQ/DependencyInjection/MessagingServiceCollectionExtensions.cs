@@ -47,6 +47,8 @@ public static class MessagingServiceCollectionExtensions
             .AddOptions<MessagingOptions>().Bind(builder.Configuration.GetSection(MessagingOptions.SectionName))
             .Validate(options => options.PrefetchCount is >= 1 and <= ushort.MaxValue,
                 "Messaging:PrefetchCount must be between 1 and 65535: a subscription holds that many messages at most, and none would take none.")
+            .Validate(options => options.UnconsumedSubscriptionWarningThreshold >= 0,
+                "Messaging:UnconsumedSubscriptionWarningThreshold must be zero or more: zero turns the warning off.")
             .ValidateOnStart();
         builder.Services
             .AddOptions<BusEnvelopeJsonOptions>().Bind(builder.Configuration.GetSection(BusEnvelopeJsonOptions.SectionName));
