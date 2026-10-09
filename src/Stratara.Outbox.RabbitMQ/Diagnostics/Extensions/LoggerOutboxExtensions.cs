@@ -105,6 +105,18 @@ public static partial class LoggerOutboxExtensions
     public static partial void LogProjectionReplayRequestSubscriberFailed(this ILogger logger, Exception exception);
 
     /// <summary>
+    /// Logs that a replay request was claimed while another replay was active, and started nothing: a second
+    /// replay would empty what the running one is rebuilding.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="requestId">The identity of the request that was not run.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayRequestNotRun,
+        Level = LogLevel.Information,
+        Message = "Projection replay request {RequestId} was not run: another replay is active.")]
+    public static partial void LogProjectionReplayRequestNotRun(this ILogger logger, Guid requestId);
+
+    /// <summary>
     /// Logs, once per failing stretch, that the host could not refresh what it knows of the replay
     /// marking from the shared coordination store. The host keeps its last answer until a refresh
     /// succeeds again.

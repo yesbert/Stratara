@@ -60,7 +60,7 @@ _None._
 - `src/Stratara.Abstractions/Abstractions/Projections/IProjectionReplayState.cs` — `ReplayOutcome`,
   `ReplayResult`, the two `ReplayProgress` properties, and four members with default implementations:
   `RequestReplay(Guid)`, `SubscribeToReplayRequestAsync(Func<Guid, Task>, …)`, `TryActivate(Guid)`,
-  `Complete(ReplayResult, long, string?)`.
+  `Complete(ReplayCompletion)`.
 - `src/Stratara.Outbox.RabbitMQ/Projections/ProjectionReplayState.cs` — the request id on the channel,
   the claim, the outcome key, `GetProgress`.
 - `src/Stratara.Outbox.RabbitMQ/Projections/InProcessProjectionReplayState.cs` — the same in memory.

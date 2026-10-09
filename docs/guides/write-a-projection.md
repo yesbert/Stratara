@@ -402,33 +402,60 @@ deactivation, or let the next replay's own completion clear it.
 
 ## Watch a replay
 
-A replay publishes how far it has got, and records why it stopped when it fails, so an operator can
-tell "still running" from "stopped part way". `IProjectionReplayState.GetProgress()` returns a
+A replay publishes how far it has got, records why it stopped when it fails, and keeps how it ended
+after it ended, so an operator can tell "still running" from "stopped part way" — and a replay that
+finished between two polls from one that never ran. `IProjectionReplayState.GetProgress()` returns a
 `ReplayProgress`:
 
-| Member | While running | After a failure | After success, or before any replay |
+| Member | While running | After it ended | Before any replay |
 |---|---|---|---|
 | `IsActive` | `true` | `false` | `false` |
 | `ProcessedEvents` / `TotalEvents` | events applied so far / events to replay | `0` / `0` | `0` / `0` |
 | `Percentage` | `0`–`100`, derived from the two counts | `0` | `0` |
-| `ErrorMessage` | `null` | the failure's message | `null` |
+| `RequestId` | the request the replay runs | `null` | `null` |
+| `ErrorMessage` | `null` | the failure's message after a failure, otherwise `null` | `null` |
+| `LastReplay` | the previous replay's outcome, if any | this replay's outcome | `null` |
+
+`LastReplay` is a `ReplayOutcome`: the request's id, `StartedAt` and `EndedAt` by the replaying host's
+clock, `ReplayedEvents`, `Result` — `Succeeded`, `Failed`, or `Interrupted` when the host stopped — and
+the failure's `ErrorMessage`. It is kept until the next replay **ends**, so it is still readable while
+that one runs. The counters read `0` once a replay has ended on either coordination state; how far it
+got is `LastReplay.ReplayedEvents`.
 
 The total is published once the read models are truncated, so a replay that is still truncating
 reports `0` of `0`. A total of zero yields a percentage of `0`, never a division failure. A failure
-message longer than 500 characters is truncated rather than stored whole, and it stays readable until
-the next replay starts. A replay interrupted by **host shutdown** is not recorded as a failure —
-shutdown is not a replay error, so it leaves no message behind.
+message longer than 500 characters is truncated rather than stored whole, and `ErrorMessage` keeps it
+until the next replay starts. A replay interrupted by **host shutdown** is not recorded as a failure —
+shutdown is not a replay error — but its outcome says `Interrupted`, not `Succeeded`, and it logs
+`104_020`.
 
-Reading and requesting a replay from an admin endpoint takes two lines; the guard on them is yours,
+**One request, one replay.** A request carries an identity: pass your own to
+`RequestReplay(Guid requestId)` and look for it in `RequestId` and `LastReplay.RequestId`;
+`RequestReplay()` draws one. Every host that runs the replay worker receives the request, but only the
+first to claim it runs it, and a host that receives it after the replay has already ended finds it
+claimed. A request that arrives while another replay is running starts nothing and logs `104_019`: a
+second replay would empty what the first is rebuilding. Hosts on a release before this one publish
+requests without an identity, which each receiving host runs under one of its own — until every host
+is upgraded, such a request can still start a replay in each of them.
+
+Reading and requesting a replay from an admin endpoint takes a few lines; the guard on them is yours,
 because the framework has none:
 
 ```csharp
 app.MapGet("/admin/projections/replay", (IProjectionReplayState replay) => replay.GetProgress())
     .RequireAuthorization("PlatformAdmin");
 
-app.MapPost("/admin/projections/replay", (IProjectionReplayState replay) => replay.RequestReplay())
+app.MapPost("/admin/projections/replay", (IProjectionReplayState replay) =>
+    {
+        var requestId = Guid.CreateVersion7();
+        replay.RequestReplay(requestId);
+        return Results.Accepted(value: new { requestId });
+    })
     .RequireAuthorization("PlatformAdmin");
 ```
+
+A client that polls after its request waits until `RequestId` or `LastReplay.RequestId` names its id;
+the first means running, the second means ended, with `Result` saying how.
 
 What the endpoint sees follows the registration described under
 [What the framework does not do](#what-the-framework-does-not-do): with the shared Redis connection

@@ -32,8 +32,10 @@ namespace Stratara.Projections.Services;
 /// <see cref="ResilienceNames.ProjectionReplayBatch"/> policy: a failed attempt disposes its scope and the
 /// batch is applied again from its first entry in a new one, so a passing failure such as a read-store
 /// timeout does not end the replay. Once the attempts are exhausted the failure ends the replay as an
-/// unretried one would. Failures truncate the message to 500 characters and surface via
-/// <see cref="IProjectionReplayState.SetFailed"/> so consumer-side dashboards can display the cause.
+/// unretried one would. A request runs only if this host claims it through
+/// <see cref="IProjectionReplayState.TryActivate"/>, and the replay ends in one
+/// <see cref="IProjectionReplayState.Complete"/> — succeeded, failed with its message truncated to 500 characters,
+/// or interrupted by the host stopping — so consumer-side dashboards can read its outcome after it ended.
 /// </remarks>
 internal sealed class ProjectionReplayWorker(
     ILogger<ProjectionReplayWorker> logger,
@@ -50,22 +52,54 @@ internal sealed class ProjectionReplayWorker(
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await replayState.SubscribeToReplayRequestAsync(async () =>
+        await replayState.SubscribeToReplayRequestAsync(
+            requestId => RunRequestedReplayAsync(requestId, stoppingToken), stoppingToken);
+    }
+
+    /// <summary>
+    /// Runs the replay a request asks for, if this host claims the request: a request every host receives, or one
+    /// that arrives while another replay is active, starts nothing here. The replay ends in exactly one completion —
+    /// succeeded, failed with its message, or interrupted because the host stops — which keeps its outcome.
+    /// </summary>
+    private async Task RunRequestedReplayAsync(Guid requestId, CancellationToken cancellationToken)
+    {
+        if (!replayState.TryActivate(requestId))
         {
-            try
-            {
-                await RunReplayAsync(stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // Host shutdown — let the worker exit cleanly without surfacing as a replay failure.
-            }
-            catch (Exception ex)
-            {
-                logger.LogProjectionReplayFailed(ex);
-                replayState.SetFailed(TruncateFailureMessage(ex.Message));
-            }
-        }, stoppingToken);
+            return;
+        }
+
+        logger.LogProjectionReplayStarted();
+        var tally = new ReplayTally();
+        try
+        {
+            await RunReplayAsync(tally, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            Interrupted(tally);
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogProjectionReplayFailed(ex);
+            replayState.Complete(new ReplayCompletion(ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            Interrupted(tally);
+            return;
+        }
+
+        logger.LogProjectionReplayCompleted(tally.Replayed);
+        replayState.Complete(new ReplayCompletion(ReplayResult.Succeeded, tally.Replayed));
+    }
+
+    private void Interrupted(ReplayTally tally)
+    {
+        logger.LogProjectionReplayInterrupted(tally.Replayed);
+        replayState.Complete(new ReplayCompletion(ReplayResult.Interrupted, tally.Replayed));
     }
 
     private static string TruncateFailureMessage(string message) =>
@@ -73,30 +107,20 @@ internal sealed class ProjectionReplayWorker(
             ? message
             : message[..MaxFailureMessageLength] + "…";
 
-    private async Task RunReplayAsync(CancellationToken cancellationToken)
+    private async Task RunReplayAsync(ReplayTally tally, CancellationToken cancellationToken)
     {
-        replayState.Activate();
-        logger.LogProjectionReplayStarted();
-
-        try
+        using (var truncateScope = scopeFactory.CreateScope())
         {
-            using var truncateScope = scopeFactory.CreateScope();
             await ClearForgottenTenantsAsync(truncateScope.ServiceProvider, cancellationToken);
             var viewTruncator = truncateScope.ServiceProvider.GetRequiredService<IProjectionViewTruncator>();
             await viewTruncator.TruncateAllAsync(cancellationToken);
             logger.LogProjectionViewsTruncated();
-
-            var totalEvents = await GetTotalEventCountAsync(cancellationToken);
-            replayState.SetProgress(0, totalEvents);
-
-            var totalReplayed = await ReplayEventsAsync(totalEvents, cancellationToken);
-
-            logger.LogProjectionReplayCompleted(totalReplayed);
         }
-        finally
-        {
-            replayState.Deactivate();
-        }
+
+        var totalEvents = await GetTotalEventCountAsync(cancellationToken);
+        replayState.SetProgress(0, totalEvents);
+
+        await ReplayEventsAsync(tally, totalEvents, cancellationToken);
     }
 
     /// <summary>
@@ -130,10 +154,9 @@ internal sealed class ProjectionReplayWorker(
         return await eventStreamRepository.GetMaxSequenceNumberAsync(cancellationToken);
     }
 
-    private async Task<long> ReplayEventsAsync(long totalEvents, CancellationToken cancellationToken)
+    private async Task ReplayEventsAsync(ReplayTally tally, long totalEvents, CancellationToken cancellationToken)
     {
         long afterSequence = 0;
-        long totalReplayed = 0;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -145,13 +168,11 @@ internal sealed class ProjectionReplayWorker(
             }
 
             afterSequence = batch.LastSequence;
-            totalReplayed += batch.Count;
+            tally.Replayed += batch.Count;
 
-            replayState.SetProgress(totalReplayed, totalEvents);
+            replayState.SetProgress(tally.Replayed, totalEvents);
             logger.LogProjectionReplayBatchPublished(batch.Count, afterSequence);
         }
-
-        return totalReplayed;
     }
 
     private async Task<ReplayedBatch> ReplayBatchWithRetryAsync(long afterSequence, CancellationToken cancellationToken)
@@ -212,6 +233,12 @@ internal sealed class ProjectionReplayWorker(
         }
 
         return new ReplayedBatch(entries.Count, entries.Max(entry => entry.SequenceNumber));
+    }
+
+    /// <summary>How many events the running replay has applied, readable after it ends however it ends.</summary>
+    private sealed class ReplayTally
+    {
+        public long Replayed { get; set; }
     }
 
     private sealed record ReplayedBatch(int Count, long LastSequence)

@@ -51,8 +51,10 @@ to return an id is a binary break for every compiled caller. Instead:
   subscribes `() => onReplayRequested(Guid.Empty)` through the existing member. The overloads differ in the
   lambda's arity, so no existing call becomes ambiguous.
 - `bool TryActivate(Guid requestId)` — default: `if (IsReplayActive) return false; Activate(); return true;`
-- `void Complete(ReplayResult result, long replayedEvents, string? errorMessage = null)` — default:
-  `SetFailed` for `Failed`, `Deactivate` otherwise.
+- `void Complete(ReplayCompletion completion)` — default: `SetFailed` for `Failed`, `Deactivate` otherwise.
+  `ReplayCompletion` is a sealed record `(ReplayResult Result, long ReplayedEvents, string? ErrorMessage)`
+  rather than three parameters, so `restore-the-read-models-when-a-replay-fails` can add what it reports as
+  an `init` property without another overload (revised during implementation).
 `Activate`, `Deactivate` and `SetFailed` stay: a consumer's reset endpoint calls `Deactivate` today.
 - *Alternative:* a new `IProjectionReplayCoordinator` beside the state. Rejected: two abstractions for one
   state machine, and every host would need both registered.
@@ -92,8 +94,8 @@ a different id and the double run persists until every host is upgraded. Documen
 upgrade note.
 
 **Interrupted is decided in the worker.** `OperationCanceledException`, or the loop leaving with the token
-cancelled, ends as `Complete(Interrupted, replayedSoFar)` and logs `104_020` instead of `104_006`. A
-failure ends as `Complete(Failed, replayedSoFar, message)`; the `finally` no longer calls `Deactivate`, so
+cancelled, ends as `Complete(new ReplayCompletion(Interrupted, replayedSoFar))` and logs `104_020` instead of `104_006`. A
+failure ends as `Complete(new ReplayCompletion(Failed, replayedSoFar, message))`; the `finally` no longer calls `Deactivate`, so
 the outcome is written once, by whichever ending happened. The replayed count is tracked in the worker
 across batches so a failure can report it.
 

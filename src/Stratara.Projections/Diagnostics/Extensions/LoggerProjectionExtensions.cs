@@ -88,6 +88,15 @@ public static partial class LoggerProjectionExtensions
         Message = "Projection replay completed: {TotalEvents} events replayed.")]
     public static partial void LogProjectionReplayCompleted(this ILogger logger, long totalEvents);
 
+    /// <summary>Logs that a projection replay ended because its host stopped. It is not a failure.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="replayedEvents">The number of events the replay had applied when it ended.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayInterrupted,
+        Level = LogLevel.Information,
+        Message = "Projection replay interrupted by the host stopping after {ReplayedEvents} events. The read models are partly rebuilt; request the replay again.")]
+    public static partial void LogProjectionReplayInterrupted(this ILogger logger, long replayedEvents);
+
     /// <summary>Logs that all projection views have been truncated as part of a replay.</summary>
     /// <param name="logger">The logger.</param>
     [LoggerMessage(
