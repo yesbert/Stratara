@@ -118,7 +118,7 @@ Use the `ResilienceNames` constants rather than the literal pipeline strings.
 
 | Extension | Bus |
 |---|---|
-| `builder.AddMessaging()` | RabbitMQ — extends `IHostApplicationBuilder`, and is what the worker composites call. Binds `Messaging` (with `PrefetchCount`, validated at start-up), `BusEnvelopeJson` and `MessageRetry` (the redelivery bounds, validated at start-up); the host waits for stopping subscriptions when it stops |
+| `builder.AddMessaging()` | RabbitMQ — extends `IHostApplicationBuilder`, and is what the worker composites call. Binds `Messaging` (with `PrefetchCount` and `UnconsumedSubscriptionWarningThreshold`, both validated at start-up), `BusEnvelopeJson` and `MessageRetry` (the redelivery bounds, validated at start-up); the host waits for stopping subscriptions when it stops |
 | `services.AddAzureServiceBus(connectionString)` | Azure Service Bus (connection-string); the host waits for stopping subscriptions when it stops |
 | `services.AddAzureServiceBusWithManagedIdentity(...)` | Azure Service Bus (DefaultAzureCredential); the host waits for stopping subscriptions when it stops |
 

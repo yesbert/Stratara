@@ -138,18 +138,22 @@ worker you then never deploy, or later retire, its queue grows. That is the trad
 deliberately: a fact kept somewhere you must clear is better than a fact silently gone.
 
 So you hear about it: when `EnsureSubscriptionAsync` finds that the subscription already holds at
-least `Messaging:UnconsumedSubscriptionWarningThreshold` messages (default 10 000) and no consumer is
+least `Messaging:UnconsumedSubscriptionWarningThreshold` messages (default `10000`) and no consumer is
 attached, it logs `108_114` at Warning, naming the subscription, the topic and the count. Every host
 that establishes the subscription says so at its next start. `0` turns the warning off; a negative
 value is refused when the host starts. Subscribing reports nothing — a backlog met by an attaching
 handler is a worker catching up.
 
-The framework does not cap or expire the queue. A length limit with the queue's `reject-publish`
-overflow refuses publications to the full queue, which on a shared topic sends them back through the
-outbox and delivers them again to every other subscription; dropping the oldest message discards
-facts, which a durable subscription never does; a time-to-live only moves the growth to the
-dead-letter queue. If you want a bound anyway, set it as a RabbitMQ policy on the queue — that is an
-operator's decision about what may be lost, and it needs no redeclaration.
+The count covers the whole queue: a subscription established for several topics is reported once for
+each, with the same count.
+
+The framework does not cap or expire the queue, and a broker policy is no way to do it either. The
+worker queue is declared with `x-overflow: reject-publish`, which a policy cannot override, so a length
+limit makes the broker refuse publications to the full queue — on a shared topic they go back through
+the outbox and are delivered again to every other subscription. A time-to-live only moves the growth to
+the dead-letter queue. When a worker is retired for good, **stop establishing its subscription** in the
+publishing hosts and then delete `<subscription>.v2` and `<subscription>.dead-letter`; deleting the queue
+alone does not last, because the next `EnsureSubscriptionAsync` declares it again.
 
 ### How many consumers a worker opens
 

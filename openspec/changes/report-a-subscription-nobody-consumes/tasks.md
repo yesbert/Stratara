@@ -29,6 +29,16 @@
   `tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Messaging/RabbitMqDeadLetterTests.cs`
   `BoundsChangeOnAnExistingSubscription_…` (line 565) still green — the tolerated-limit path reports too.
 
+## 3b. Found in review
+
+- [x] 3b.1 A review before the PR: the tolerated-limit path is proven to report
+  (`EnsureSubscriptionAsync_OnAQueueDeclaredWithEarlierBounds_StillReportsTheBacklog`); the warning and the guide say to
+  stop establishing a retired subscription before deleting it, since the next `EnsureSubscriptionAsync` declares it
+  again; the guide no longer offers a broker policy as a bound (the queue's `reject-publish` argument wins over a policy);
+  the guide says a subscription established for several topics is reported once per topic; the declaration helper
+  returns a non-null result and the bus keeps one resolved `MessagingOptions`; the cheatsheet's `AddMessaging()` row
+  names the validated threshold. Reporting only at establishment, not periodically, stays as the design's non-goal.
+
 ## 4. Documentation
 
 - [x] 4.1 `docs/guides/outbox-setup-rabbitmq.md`: move *What it costs* (lines 157–160) under *Establish
@@ -40,6 +50,6 @@
 
 ## 5. Verify
 
-- [ ] 5.1 `openspec validate report-a-subscription-nobody-consumes --strict`.
-- [ ] 5.2 `./scripts/local-gauntlet.sh` green.
-- [ ] 5.3 `dotnet test tests/Stratara.Outbox.RabbitMQ.IntegrationTests` green (Docker).
+- [x] 5.1 `openspec validate report-a-subscription-nobody-consumes --strict`.
+- [x] 5.2 `./scripts/local-gauntlet.sh` green.
+- [x] 5.3 `dotnet test tests/Stratara.Outbox.RabbitMQ.IntegrationTests` green (Docker) — 84/84.

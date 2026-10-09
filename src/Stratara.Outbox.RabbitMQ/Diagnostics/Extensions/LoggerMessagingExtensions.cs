@@ -178,7 +178,7 @@ public static partial class LoggerMessagingExtensions
     [LoggerMessage(
         EventId = LogEvents.Messaging.UnconsumedSubscription,
         Level = LogLevel.Warning,
-        Message = "Subscription {Subscription} on topic {Topic} holds {MessageCount} messages and no consumer is attached. An established subscription keeps what is published to it until something consumes it; if its worker is retired, delete the subscription.")]
+        Message = "Subscription {Subscription}, established for topic {Topic}, holds {MessageCount} messages and no consumer is attached. An established subscription keeps what is published to it until something consumes it; if its worker is retired, stop establishing the subscription and delete it.")]
     public static partial void LogUnconsumedSubscription(this ILogger logger, string subscription, string topic, long messageCount);
 
     /// <summary>Logs that disposing the publish channel / connection before a recreate failed; the recreate proceeds anyway.</summary>

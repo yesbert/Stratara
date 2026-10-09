@@ -116,8 +116,7 @@ internal sealed class RabbitMqBus(
     private readonly BusEnvelopeJsonOptions _envelopeOptions = envelopeOptions.Value;
     private readonly MessageRetryPolicy _retryPolicy = new(retryOptions.Value);
     private readonly JsonSerializerOptions _deserializeOptions = BusEnvelopeJsonGuard.CreateOptions(envelopeOptions.Value.MaxDepth);
-    private readonly ushort _prefetchCount = (ushort)(messagingOptions?.Value ?? new MessagingOptions()).PrefetchCount;
-    private readonly int _unconsumedWarningThreshold = (messagingOptions?.Value ?? new MessagingOptions()).UnconsumedSubscriptionWarningThreshold;
+    private readonly MessagingOptions _messaging = messagingOptions?.Value ?? new MessagingOptions();
     private readonly RabbitMqSubscriptionStops _stops = subscriptionStops ?? new(NullLogger<RabbitMqSubscriptionStops>.Instance);
     private IConnection? _publishConnection;
     private IChannel? _publishChannel;
@@ -254,7 +253,8 @@ internal sealed class RabbitMqBus(
         await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
         var declared = await DeclareAndBindAsync(connection, channel, topic, subscription, cancellationToken);
-        if (declared is { ConsumerCount: 0 } && _unconsumedWarningThreshold > 0 && declared.MessageCount >= _unconsumedWarningThreshold)
+        var threshold = _messaging.UnconsumedSubscriptionWarningThreshold;
+        if (declared.ConsumerCount == 0 && threshold > 0 && declared.MessageCount >= threshold)
         {
             logger.LogUnconsumedSubscription(subscription, topic, declared.MessageCount);
         }
@@ -278,15 +278,15 @@ internal sealed class RabbitMqBus(
     // earlier deployment's bounds declared; see DeclareWorkerQueueAsync.
     // The worker queue's declaration answers how many messages it holds and how many consumers it has; establishing a
     // subscription reports a backlog nobody consumes from that answer.
-    private async Task<QueueDeclareOk?> DeclareAndBindAsync(IConnection connection, IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
+    private async Task<QueueDeclareOk> DeclareAndBindAsync(IConnection connection, IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
     {
         await channel.ExchangeDeclareAsync(topic, ExchangeType.Fanout, cancellationToken: cancellationToken);
 
         if (IsClientSubscription(subscription))
         {
-            await channel.QueueDeclareAsync(subscription, durable: false, exclusive: true, autoDelete: true, cancellationToken: cancellationToken);
+            var clientQueue = await channel.QueueDeclareAsync(subscription, durable: false, exclusive: true, autoDelete: true, cancellationToken: cancellationToken);
             await channel.QueueBindAsync(subscription, topic, string.Empty, cancellationToken: cancellationToken);
-            return null;
+            return clientQueue;
         }
 
         var deadLetterQueue = DeadLetterQueueName(subscription);
@@ -465,7 +465,7 @@ internal sealed class RabbitMqBus(
 
         // Bounds how many messages the broker hands this consumer ahead of the one its handler runs: whatever it holds
         // when the subscription stops goes back to the queue unhandled, counted as delivered once more.
-        await channel.BasicQosAsync(0, _prefetchCount, false, cancellationToken);
+        await channel.BasicQosAsync(0, (ushort)_messaging.PrefetchCount, false, cancellationToken);
 
         var consumer = new AsyncEventingBasicConsumer(channel);
         var running = new RunningHandlers();

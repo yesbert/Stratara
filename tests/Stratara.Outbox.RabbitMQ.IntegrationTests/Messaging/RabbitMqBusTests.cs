@@ -154,6 +154,24 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
     }
 
     [Fact]
+    public async Task EnsureSubscriptionAsync_OnAQueueDeclaredWithEarlierBounds_StillReportsTheBacklog()
+    {
+        var (earlier, _, topic, subscription) = UnconsumedProbe(threshold: 5, retry: new MessageRetryOptions { MaxDeliveryAttempts = 3, MaxConflictRequeues = 4 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await earlier.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+        await PublishAsync(earlier, topic, 6, cts.Token);
+        var logger = new RecordingBusLogger();
+        var bus = new RabbitMqBus(logger, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()),
+            Options.Create(new MessageRetryOptions { MaxDeliveryAttempts = 2, MaxConflictRequeues = 7 }),
+            Options.Create(new MessagingOptions { UnconsumedSubscriptionWarningThreshold = 5 }));
+
+        await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
+
+        Assert.Contains(logger.Entries, entry => entry.EventId == LogEvents.Messaging.WorkerQueueDeclaredWithOtherArguments);
+        Assert.Contains(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
+    }
+
+    [Fact]
     public async Task EnsureSubscriptionAsync_WithAConsumerAttached_ReportsNothing()
     {
         var (bus, logger, topic, subscription) = UnconsumedProbe(threshold: 5, prefetch: 1);
@@ -218,11 +236,12 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         Assert.DoesNotContain(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
     }
 
-    private (RabbitMqBus Bus, RecordingBusLogger Logger, string Topic, string Subscription) UnconsumedProbe(int threshold, int prefetch = 16)
+    private (RabbitMqBus Bus, RecordingBusLogger Logger, string Topic, string Subscription) UnconsumedProbe(
+        int threshold, int prefetch = 16, MessageRetryOptions? retry = null)
     {
         var logger = new RecordingBusLogger();
         var bus = new RabbitMqBus(logger, fixture.Configuration, DevHostEnv, Options.Create(new BusEnvelopeJsonOptions()),
-            Options.Create(new MessageRetryOptions()),
+            Options.Create(retry ?? new MessageRetryOptions()),
             Options.Create(new MessagingOptions { UnconsumedSubscriptionWarningThreshold = threshold, PrefetchCount = prefetch }));
         return (bus, logger, $"test-topic-{Guid.NewGuid():N}", $"worker-{Guid.NewGuid():N}");
     }
