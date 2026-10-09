@@ -48,8 +48,9 @@ public static class EventSourcingServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddEventSourcing(this IServiceCollection services)
     {
-        services.AddOptions<EventSourcingOptions>();
+        services.AddOptions<EventSourcingOptions>().ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<EventSourcingOptions>, EventSourcingOptionsBinding>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EventSourcingOptions>, EventSourcingOptionsBinding>());
         services.TryAddScoped<AggregatedStreamVersions>();
         services.AddScoped<IEventSource, EventSource>();
         services.AddScoped<IAggregationService, AggregationService>();

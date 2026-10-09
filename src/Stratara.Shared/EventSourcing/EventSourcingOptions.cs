@@ -35,4 +35,31 @@ public sealed class EventSourcingOptions
     /// </para>
     /// </remarks>
     public bool AppendAgainstAggregatedVersion { get; set; }
+
+    /// <summary>
+    /// Gets or sets what happens when the first event of a stream that does not exist yet would take its owner
+    /// from the session — no subject is stated for it, and it is not a creation event that carries a tenant.
+    /// Defaults to <see cref="NewStreamOwnerPolicy.Allow"/>.
+    /// </summary>
+    /// <remarks>
+    /// A stream keeps the owner its first event recorded, so the session decides only that first owner — but it
+    /// decides it silently, and the session belongs to whoever is acting: an operator creating a record in another
+    /// tenant keys the record's whole history to their own. <see cref="NewStreamOwnerPolicy.Warn"/> finds every
+    /// place that relies on it; <see cref="NewStreamOwnerPolicy.Refuse"/> makes it impossible. Neither affects an
+    /// event whose owner is stated, a creation event that carries a tenant, or an append to an existing stream.
+    /// </remarks>
+    public NewStreamOwnerPolicy NewStreamOwnerFromSession { get; set; } = NewStreamOwnerPolicy.Allow;
+}
+
+/// <summary>What happens when a new stream's first event would take its owner from the session.</summary>
+public enum NewStreamOwnerPolicy
+{
+    /// <summary>The session's tenant and data-owner user become the stream's owner, and nothing is recorded about it.</summary>
+    Allow,
+
+    /// <summary>The session's owner is used, and a warning names the stream, the event type and the tenant taken.</summary>
+    Warn,
+
+    /// <summary>The append fails before anything is staged, naming the stream, the event type and the ways to state an owner.</summary>
+    Refuse,
 }

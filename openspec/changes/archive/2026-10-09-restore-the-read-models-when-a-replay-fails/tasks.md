@@ -74,5 +74,7 @@
 
 - [x] 5.1 `openspec validate restore-the-read-models-when-a-replay-fails --strict`.
 - [x] 5.2 `./scripts/local-gauntlet.sh` green.
-- [ ] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker): `ReplayRestoreTests` 9/9 (which caught a
-  marker read on an unopened connection, fixed in the implementation), and the whole suite on the tip of the series.
+- [x] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker): `ReplayRestoreTests` 12/12 after the
+  review (the first run caught a marker read on an unopened connection, fixed in the implementation); the whole suite
+  on the tip of the series 189/190 — `HardKillTimerTests`' spawned host died in the runtime (an access violation while
+  looking up a resource string) while other projects were being built, and passed when run again on its own.

@@ -20,8 +20,10 @@ namespace Stratara.Abstractions.EventSourcing;
 /// to it later; a stream whose first event names no user is given none. A first event that states
 /// no owner takes the tenant and the data-owner user in the session, so an aggregate created for
 /// another tenant states that tenant on its first event by implementing
-/// <see cref="IAggregateCreationEvent"/>. A creation event names no user, so a stream it creates
-/// has none.
+/// <see cref="IAggregateCreationEvent"/>, or is created with
+/// <see cref="CreateOnBehalfOfAsync{TAggregate}"/>. A creation event names no user, so a stream it
+/// creates has none. A host can be warned of, or refuse, a first event that takes its owner from
+/// the session, with the <c>EventSourcing:NewStreamOwnerFromSession</c> option.
 /// </para>
 /// </remarks>
 /// <example>
@@ -76,6 +78,46 @@ public interface IEventSource
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task CreateRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
+
+    /// <summary>
+    /// Create a new stream with its first event, recorded for the owner <paramref name="subject"/> states; every later
+    /// event on the stream for which no owner is stated keeps it. Fails if the stream already exists.
+    /// </summary>
+    /// <remarks>
+    /// The explicit counterpart of <see cref="CreateAsync{TAggregate}"/> for an owner the event does not carry: a
+    /// record created by an operator for another tenant, or a platform-owned record created under any session. The
+    /// actor recorded with the event stays the caller's session. The default implementation checks
+    /// <see cref="ExistsAsync"/> and appends through <see cref="AppendOnBehalfOfAsync{TAggregate}"/>; it cannot see a
+    /// stream staged in the same batch but not yet saved.
+    /// </remarks>
+    /// <typeparam name="TAggregate">The aggregate type the stream represents.</typeparam>
+    /// <param name="streamId">The stream id.</param>
+    /// <param name="event">The creation event.</param>
+    /// <param name="subject">The owner to record. Its tenant id must be non-empty.</param>
+    /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <returns>A task that completes once the event is staged.</returns>
+    /// <exception cref="ArgumentException"><paramref name="subject"/> names no tenant.</exception>
+    /// <exception cref="InvalidOperationException">The stream already exists.</exception>
+    /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
+    async Task CreateOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new()
+    {
+        if (subject.TenantId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant. " +
+                "Supply a Subject with a tenant id, or use CreateAsync to let the Subject be resolved.",
+                nameof(subject));
+        }
+
+        if (await ExistsAsync(streamId, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Stream with ID {streamId} already exists. Use AppendToStream to add events.");
+        }
+
+        await AppendOnBehalfOfAsync<TAggregate>(streamId, @event, subject, cancellationToken);
+    }
 
     /// <summary>Append an event to an existing stream.</summary>
     /// <remarks>

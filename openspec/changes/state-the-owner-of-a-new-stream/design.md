@@ -46,7 +46,7 @@ yet saved in the same batch; the framework's own implementation can, and overrid
 
 **The policy applies at the session step, only for a new stream.** `ResolveSubjectAsync` gets the stream
 version being written (`streamVersion == 1` means the stream has no entry before this one, in the store or
-in the batch). At the session step: `Allow` returns the session owner; `Warn` logs `102_104` and returns
+in the batch). At the session step: `Allow` returns the session owner; `Warn` logs `102_007` and returns
 it; `Refuse` throws `InvalidOperationException`. The per-batch cache makes the step run at most once per
 stream per batch, so `Warn` logs once per created stream, not once per event. An existing stream whose
 first entry has no tenant keeps today's behaviour under every setting — that is legacy data, not a
@@ -59,9 +59,9 @@ refusal leaves `_eventStreamEntries`, `_streamVersions` and `_streamSubjects` as
 to that is the version seeded by `CreateRangeAsync` (0) before the first event; it is harmless (the save
 clears it, and a retry re-seeds it), but the test asserts nothing is staged.
 
-**Log id `102_104`, warning.** `LogEvents.EventStore` uses `_1xx` for errors and has `102_101..102_103`
-defined but unused; the next free number in that band is `102_104`. A warning sits there by the same
-convention the messaging band follows (`108_107` is a warning). Message:
+**Log id `102_007`, warning.** `LogEvents` reserves `_1xx` for errors, and the event store's own warnings
+(`102_004` to `102_006`) sit below it, so the next free number is `102_007` (revised in review: the draft took
+`102_104`, which alert rules routing `_1xx` as errors would have paged on). Message:
 "Stream {StreamId} was created by {EventType} with its owner taken from the session: tenant {TenantId}.
 State the owner with CreateOnBehalfOfAsync, AppendOnBehalfOfAsync or an IAggregateCreationEvent."
 
@@ -77,3 +77,15 @@ State the owner with CreateOnBehalfOfAsync, AppendOnBehalfOfAsync or an IAggrega
 
 Additive. A consumer that wants the guard sets `EventSourcing:NewStreamOwnerFromSession` to `Warn` in a
 lower environment, removes the sites it reports, then sets `Refuse`. Rollback is `Allow`.
+
+## Revised in review
+
+- **"New" is decided by the store, not by the version being written.** The session step learns whether the stream
+  exists from the owner lookup it already makes; `streamVersion == 1` also held for an append expecting version 0 on
+  an existing stream without a recorded tenant, which the policy must leave alone.
+- **One creation check for every creation path.** `CreateAsync`, `CreateRangeAsync` and `CreateOnBehalfOfAsync` refuse
+  a stream that exists in the store or has events staged in this batch; a version seeded by a creation the policy
+  refused before it staged anything does not count, so the remedy the refusal names works in the same scope.
+- **An undefined policy value is refused at start**, rather than behaving as `Allow` while the operator believes the
+  guard is on; the default interface implementation validates the subject before it queries the store.
+

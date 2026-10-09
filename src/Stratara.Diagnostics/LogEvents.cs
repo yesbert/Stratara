@@ -58,6 +58,12 @@ public static class LogEvents
         /// snapshot is a cache and a later save writes one (warning; information when it was cancelled).
         /// </summary>
         public const int SnapshotFailed = 102_006;
+
+        /// <summary>
+        /// A new stream's first event took its owner from the session, and the host asked to be warned of it
+        /// (warning, once per stream created).
+        /// </summary>
+        public const int NewStreamOwnerTakenFromSession = 102_007;
     }
 
     /// <summary>Validation event-IDs (103_000s).</summary>

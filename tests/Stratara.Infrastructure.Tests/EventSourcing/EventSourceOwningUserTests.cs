@@ -47,6 +47,26 @@ public class EventSourceOwningUserTests
         });
 
     [Fact]
+    public async Task CreateOnBehalfOfAsync_TheStoredEntriesCarryTheStatedTenant()
+    {
+        await using var host = CreateHost();
+        var streamId = Guid.CreateVersion7();
+        var statedTenant = Guid.NewGuid();
+
+        await host.ExecuteAsync(async events =>
+        {
+            await events.CreateOnBehalfOfAsync<OwnedProbe>(streamId, new OwnedProbeTouched(1), new EventSubject(statedTenant));
+            await events.SaveChangesAsync();
+        });
+        await AppendInALaterSaveAsync(host, streamId);
+
+        var stream = await ReadStreamAsync(host, streamId);
+        Assert.Equal(2, stream.Count);
+        Assert.All(stream, e => Assert.Equal((statedTenant, (Guid?)null), (e.TenantId, e.UserId)));
+        Assert.All(stream, e => Assert.Equal(Tenant, e.ActorTenantId));
+    }
+
+    [Fact]
     public async Task A_stream_created_for_a_user_keeps_that_user_in_every_later_save()
     {
         await using var host = CreateHost();

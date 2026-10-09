@@ -58,6 +58,7 @@ internal sealed partial class EventSource(
     IOptions<EventSourcingOptions>? options = null) : IEventSource
 {
     private readonly bool _appendAgainstAggregatedVersion = options?.Value.AppendAgainstAggregatedVersion ?? false;
+    private readonly NewStreamOwnerPolicy _newStreamOwnerFromSession = options?.Value.NewStreamOwnerFromSession ?? NewStreamOwnerPolicy.Allow;
     private readonly List<EventStreamEntry> _eventStreamEntries = [];
     private readonly Dictionary<Guid, long> _streamVersions = new();
 
@@ -93,17 +94,21 @@ internal sealed partial class EventSource(
     public async Task CreateRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
-        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
-        var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
-
-        if (await eventStreamRepository.StreamExistsAsync(streamId, cancellationToken))
-        {
-            throw new InvalidOperationException(
-                $"Stream with ID {streamId} already exists. Use AppendToStream to add events.");
-        }
-
+        await EnsureStreamIsNewAsync(streamId, cancellationToken);
         _streamVersions[streamId] = 0;
         await AddEventsToStreamAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="subject"/> names no tenant.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when a stream with the given <paramref name="streamId"/> already exists.</exception>
+    public async Task CreateOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new()
+    {
+        ThrowIfNamesNoTenant(subject, @event, streamId, "CreateAsync");
+        await EnsureStreamIsNewAsync(streamId, cancellationToken);
+        _streamVersions[streamId] = 0;
+        await AddEventsToStreamAsync<TAggregate>(streamId, [@event], subject, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -161,14 +166,7 @@ internal sealed partial class EventSource(
     public Task AppendOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
-        if (subject.TenantId == Guid.Empty)
-        {
-            throw new ArgumentException(
-                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant. " +
-                "Supply a Subject with a tenant id, or use AppendAsync to let the Subject be resolved.",
-                nameof(subject));
-        }
-
+        ThrowIfNamesNoTenant(subject, @event, streamId, "AppendAsync");
         return AppendRangeCoreAsync<TAggregate>(streamId, [@event], subject, cancellationToken);
     }
 
@@ -445,7 +443,8 @@ internal sealed partial class EventSource(
             return cachedSubject;
         }
 
-        if (await LookupStreamOwnerAsync(streamId, cancellationToken) is { } streamOwner)
+        var (exists, recordedOwner) = await LookupStreamOwnerAsync(streamId, cancellationToken);
+        if (recordedOwner is { } streamOwner)
         {
             return streamOwner;
         }
@@ -457,6 +456,11 @@ internal sealed partial class EventSource(
 
         if (session.TenantId != Guid.Empty)
         {
+            if (!exists)
+            {
+                ApplyNewStreamOwnerPolicy(streamId, @event, session);
+            }
+
             return new EventSubject(session.TenantId, session.UserId);
         }
 
@@ -466,18 +470,73 @@ internal sealed partial class EventSource(
             "or set SessionContext.TenantId before appending.");
     }
 
-    private async Task<EventSubject?> LookupStreamOwnerAsync(Guid streamId, CancellationToken cancellationToken)
+    /// <summary>
+    /// A new stream's first event is about to take its owner from the session. The host's
+    /// <see cref="EventSourcingOptions.NewStreamOwnerFromSession"/> decides whether that is allowed, warned of, or refused
+    /// — before anything is staged.
+    /// </summary>
+    private void ApplyNewStreamOwnerPolicy(Guid streamId, object @event, SessionContext session)
+    {
+        switch (_newStreamOwnerFromSession)
+        {
+            case NewStreamOwnerPolicy.Warn:
+                LogNewStreamOwnerTakenFromSession(logger ?? NullLogger<EventSource>.Instance, streamId, @event.GetType().Name, session.TenantId);
+                break;
+            case NewStreamOwnerPolicy.Refuse:
+                throw new InvalidOperationException(
+                    $"Stream {streamId} would be created by {@event.GetType().Name} with its owner taken from the session " +
+                    $"(tenant {session.TenantId}), which this host refuses. State the owner: create the stream with " +
+                    "CreateOnBehalfOfAsync, append its first event with AppendOnBehalfOfAsync, or make the event an " +
+                    "IAggregateCreationEvent that carries the tenant.");
+        }
+    }
+
+    [LoggerMessage(
+        EventId = LogEvents.EventStore.NewStreamOwnerTakenFromSession,
+        Level = LogLevel.Warning,
+        Message = "Stream {StreamId} was created by {EventType} with its owner taken from the session: tenant {TenantId}. State the owner with CreateOnBehalfOfAsync, AppendOnBehalfOfAsync or an IAggregateCreationEvent.")]
+    private static partial void LogNewStreamOwnerTakenFromSession(ILogger logger, Guid streamId, string eventType, Guid tenantId);
+
+    /// <summary>Whether the stream exists in the store, and the owner its first entry recorded, where it recorded one.</summary>
+    private async Task<(bool Exists, EventSubject? Owner)> LookupStreamOwnerAsync(Guid streamId, CancellationToken cancellationToken)
     {
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
         if (!await eventStreamRepository.StreamExistsAsync(streamId, cancellationToken))
         {
-            return null;
+            return (false, null);
         }
 
         var firstEntry = await eventStreamRepository.GetFirstOrDefaultAsync(streamId, cancellationToken);
         return firstEntry is { TenantId: var tenantId } && tenantId != Guid.Empty
-            ? new EventSubject(tenantId, firstEntry.UserId)
-            : null;
+            ? (true, new EventSubject(tenantId, firstEntry.UserId))
+            : (true, null);
+    }
+
+    /// <summary>
+    /// Refuses to create a stream that exists in the store or already has events staged in this batch. A version seeded
+    /// by a creation that was refused before it staged anything does not count.
+    /// </summary>
+    private async Task EnsureStreamIsNewAsync(Guid streamId, CancellationToken cancellationToken)
+    {
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
+        if (_eventStreamEntries.Exists(entry => entry.StreamId == streamId)
+            || await eventStreamRepository.StreamExistsAsync(streamId, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Stream with ID {streamId} already exists. Use AppendToStream to add events.");
+        }
+    }
+
+    private static void ThrowIfNamesNoTenant(EventSubject subject, object @event, Guid streamId, string resolvingAlternative)
+    {
+        if (subject.TenantId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant. " +
+                $"Supply a Subject with a tenant id, or use {resolvingAlternative} to let the Subject be resolved.",
+                nameof(subject));
+        }
     }
 }

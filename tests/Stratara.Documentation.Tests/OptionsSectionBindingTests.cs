@@ -73,6 +73,8 @@ public class OptionsSectionBindingTests
             b => b.Services.AddWriteStore(b.Configuration)),
         Case<EventSourcingOptions>("AddEventSourcing()", "AppendAgainstAggregatedVersion", "True",
             b => b.Services.AddEventSourcing()),
+        Case<EventSourcingOptions>("AddEventSourcing(), the new stream's owner", "NewStreamOwnerFromSession", "Refuse",
+            b => b.Services.AddEventSourcing()),
 
         Case<ReadModelRestoreOptions>("AddReadModelRestore<TReadContext>()", "Schema", "bound_replay_copies",
             b => b.Services.AddReadModelRestore<StrataraTestReadDbContext>()),

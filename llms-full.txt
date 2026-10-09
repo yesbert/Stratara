@@ -92,6 +92,7 @@ Every bindable options type, the section it binds from, and the default each key
 | Key | Type | Default |
 |---|---|---|
 | `EventSourcing:AppendAgainstAggregatedVersion` | `Boolean` | `false` |
+| `EventSourcing:NewStreamOwnerFromSession` | `NewStreamOwnerPolicy` | `Allow` |
 
 ### `Messaging` — Stratara.Shared.Messaging.MessagingOptions
 
