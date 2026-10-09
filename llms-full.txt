@@ -263,7 +263,6 @@ configures nothing.
 | `stratara:projection:replay:processed` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:request` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:request-id` | cache key | ProjectionReplayState |
-| `stratara:projection:replay:started` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:state` | cache key | ProjectionReplayState |
 | `stratara:projection:replay:total` | cache key | ProjectionReplayState |
 | `stratara:setting:` | cache key | EncryptingSettingStore |

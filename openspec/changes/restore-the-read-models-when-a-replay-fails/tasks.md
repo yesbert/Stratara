@@ -1,9 +1,9 @@
 ## 1. Reproduce first
 
-- [ ] 1.1 `tests/Stratara.Orleans.IntegrationTests/Projections/ReplayRestoreTests.cs` (new; the project owns
+- [x] 1.1 `tests/Stratara.Orleans.IntegrationTests/Projections/ReplayRestoreTests.cs` (new; the project owns
   the PostgreSQL container and a real read context): `A_replay_that_fails_after_truncating_leaves_the_read_models_partial_without_the_registration`
   documents today's behaviour (green on `main`) and becomes the "without the registration" fact.
-- [ ] 1.2 Same file, red until the registration exists:
+- [x] 1.2 Same file, red until the registration exists:
   `A_replay_that_fails_restores_the_views_the_checkpoints_and_the_forgotten_tenants`,
   `A_replay_that_succeeds_leaves_no_copy`,
   `A_copy_left_by_a_dead_replay_is_restored_when_the_next_host_starts`,
@@ -11,7 +11,8 @@
   `A_replay_requested_over_an_abandoned_copy_keeps_that_copy`,
   `A_foreign_key_from_outside_the_set_fails_the_replay_before_anything_is_emptied`,
   `A_restore_after_a_column_change_refuses_and_keeps_the_copy`,
-  `Identity_sequences_continue_above_the_restored_rows`.
+  `Identity_sequences_continue_above_the_restored_rows`, and the end-to-end replays through the replay worker on a
+  host composed with `AddEventProjectionServices`.
 
 ## 2. The abstraction and the worker
 
@@ -45,7 +46,7 @@
   key, cycle) and the insertion order — `tests/Stratara.EntityFrameworkCore.Tests/ReadStore/PreservedTablesTests.cs`:
   `TheSet_IncludesTheFrameworksOwnTables`, `TheSet_SkipsViewsKeylessTypesAndSqlQueries_AndNamesASharedTableOnce`,
   `TheSet_HonoursExcludedAndAdditionalTables`.
-- [ ] 3.3 `PreserveAsync` (repeatable-read snapshot, marker in the same transaction, existing marker kept and
+- [x] 3.3 `PreserveAsync` (repeatable-read snapshot, marker in the same transaction, existing marker kept and
   re-pointed), `RestoreAsync` (advisory lock, column comparison, truncate, parent-first insert with
   `OVERRIDING SYSTEM VALUE`, sequence reset, drop), `DiscardAsync`, `RestoreAbandonedAsync` — the facts of
   1.2 go green.
@@ -62,6 +63,7 @@
 
 ## 5. Verify
 
-- [ ] 5.1 `openspec validate restore-the-read-models-when-a-replay-fails --strict`.
-- [ ] 5.2 `./scripts/local-gauntlet.sh` green.
-- [ ] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker).
+- [x] 5.1 `openspec validate restore-the-read-models-when-a-replay-fails --strict`.
+- [x] 5.2 `./scripts/local-gauntlet.sh` green.
+- [ ] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker): `ReplayRestoreTests` 9/9 (which caught a
+  marker read on an unopened connection, fixed in the implementation), and the whole suite on the tip of the series.
