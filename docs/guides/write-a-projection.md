@@ -371,8 +371,13 @@ Readers still see the rebuild in progress while the replay runs; what changes is
 costs and what to know:
 
 - **Time and disk.** The copy reads the whole read store once more before the replay starts, and holds
-  it twice while the replay runs. The lease is renewed right after the copy, but
-  `ProjectionReplay:LeaseSeconds` must still outlast the copy itself.
+  it twice while the replay runs. The replay renews its marking every ten seconds while it copies, empties
+  and counts, so `ProjectionReplay:LeaseSeconds` need not outlast the copy — keep it above ten seconds.
+- **A host that restarts within its own replay's lease** finds that replay still marked active and leaves the
+  copy alone; it checks again every thirty seconds and writes the copy back once the marking has lapsed.
+- **Deployments that share a read store** give each its own `Schema`: the copy, its record and the lock that
+  serialises restores belong to the schema, so two deployments with the same one would restore each other's
+  read models.
 - **Which tables.** Every table the context maps — views, keyless types and SQL queries excluded. Add
   tables your `IProjectionViewTruncator` empties but the context does not map with `AdditionalTables`,
   and leave out mapped tables a replay does not touch with `ExcludedTables`, each as `schema.table` or

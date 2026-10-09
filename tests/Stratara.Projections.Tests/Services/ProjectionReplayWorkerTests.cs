@@ -414,7 +414,6 @@ public class ProjectionReplayWorkerTests
         await harness.RunAsync(triggerReplay: true);
 
         Assert.Equal(["preserve", "truncate"], order);
-        harness.ReplayState.Verify(s => s.SetProgress(0, 0), Times.AtLeastOnce);
         preservation.Verify(p => p.DiscardAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Once);
         preservation.Verify(p => p.RestoreAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ReadModelsPreserved);
@@ -501,13 +500,31 @@ public class ProjectionReplayWorkerTests
     {
         var harness = new Harness();
         var preservation = new Mock<IReadModelPreservation>();
-        preservation.Setup(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        preservation.Setup(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(AbandonedPreservation.Restored);
         harness.Configure = services => services.AddSingleton(preservation.Object);
 
         await harness.RunAsync(triggerReplay: false);
 
         preservation.Verify(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()), Times.Once);
         Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.AbandonedReadModelsRestored);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithPreservation_ChecksForAnAbandonedCopyBeforeTakingRequests()
+    {
+        var harness = new Harness();
+        var order = new List<string>();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("check")).ReturnsAsync(AbandonedPreservation.NoneKept);
+        harness.ReplayState
+            .Setup(s => s.SubscribeToReplayRequestAsync(It.IsAny<Func<Guid, Task>>(), It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("subscribe")).Returns(Task.CompletedTask);
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: false);
+
+        Assert.Equal(["check", "subscribe"], order);
     }
 
     [Fact]

@@ -51,6 +51,15 @@
   `OVERRIDING SYSTEM VALUE`, sequence reset, drop), `DiscardAsync`, `RestoreAbandonedAsync` — the facts of
   1.2 go green.
 
+## 3b. Found in review
+
+- [x] 3b.1 Round 1 of the review of #192 — `tests/Stratara.Orleans.IntegrationTests/Projections/ReplayRestoreTests.cs`:
+  `A_reference_to_a_table_the_replay_does_not_empty_does_not_block_the_preservation` (false cycle),
+  `A_copy_left_by_a_replay_that_succeeded_is_not_reused_for_the_next`, `A_copy_a_running_replay_owns_is_left_alone`
+  (`StillOwned`, then restored once the marking ends); `ProjectionReplayWorkerTests`:
+  `ExecuteAsync_WithPreservation_ChecksForAnAbandonedCopyBeforeTakingRequests`; the renewal during preparation and the
+  thirty-second re-check are in `ProjectionReplayWorker` without a fact of their own (both wait on real time).
+
 ## 4. Documentation
 
 - [x] 4.1 `docs/guides/write-a-projection.md`, *Replay is destructive, and it is all-or-nothing* (around

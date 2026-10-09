@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
@@ -40,45 +41,65 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
     IProjectionReplayState? replayState = null) : IReadModelPreservation
     where TContext : DbContext
 {
-    private const long LockKey = 0x5354_5241_5245_5354;
     private const int MaxIdentifierLength = 63;
 
     private readonly ReadModelRestoreOptions _options = options.Value;
 
+    /// <summary>
+    /// One lock per preservation schema: deployments that share a read store keep their copies in schemas of their own,
+    /// and must not wait on, or restore, each other's.
+    /// </summary>
+    private readonly long _lockKey = BitConverter.ToInt64(SHA256.HashData(Encoding.UTF8.GetBytes("stratara-replay:" + options.Value.Schema)), 0);
+
     /// <inheritdoc/>
+    /// <remarks>
+    /// The advisory lock is taken on the connection before the snapshot transaction begins, so the snapshot — and the
+    /// marker read under it — is taken after whoever held the lock has committed.
+    /// </remarks>
     public async Task PreserveAsync(Guid replayId, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         context.Database.SetCommandTimeout(_options.CommandTimeout);
         await context.Database.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
-
-        await LockAsync(context, cancellationToken);
-        await EnsureSchemaAsync(context, cancellationToken);
-
-        if (await ReadMarkerAsync(context, cancellationToken) is not null)
+        await ExecuteAsync(context, "SELECT pg_advisory_lock(@key)", cancellationToken, ("key", _lockKey));
+        try
         {
-            await ExecuteAsync(context, $"UPDATE {Marker} SET replay_id = @replay_id", cancellationToken, ("replay_id", replayId));
-            await transaction.CommitAsync(cancellationToken);
-            return;
-        }
+            await EnsureSchemaAsync(context, cancellationToken);
+            if (await ReadMarkerAsync(context, cancellationToken) is { } kept)
+            {
+                if (!ReplaySucceeded(kept))
+                {
+                    await ExecuteAsync(context, $"UPDATE {Marker} SET replay_id = @replay_id", cancellationToken, ("replay_id", replayId));
+                    return;
+                }
 
-        var tables = await OrderedTablesAsync(context, cancellationToken);
-        for (var position = 0; position < tables.Count; position++)
-        {
-            var table = tables[position];
-            var copy = CopyName(table);
-            await ExecuteAsync(context, $"DROP TABLE IF EXISTS {Qualified(_options.Schema, copy)}", cancellationToken);
-            await ExecuteAsync(context, $"CREATE TABLE {Qualified(_options.Schema, copy)} AS TABLE {Qualified(table.Schema, table.Name)}", cancellationToken);
+                await using var discarding = await context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+                await DropPreservedAsync(context, await ReadMappingAsync(context, cancellationToken), cancellationToken);
+                await discarding.CommitAsync(cancellationToken);
+            }
+
+            await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+            var tables = await OrderedTablesAsync(context, cancellationToken);
+            for (var position = 0; position < tables.Count; position++)
+            {
+                var table = tables[position];
+                var copy = CopyName(position, table);
+                await ExecuteAsync(context, $"DROP TABLE IF EXISTS {Qualified(_options.Schema, copy)}", cancellationToken);
+                await ExecuteAsync(context, $"CREATE TABLE {Qualified(_options.Schema, copy)} AS TABLE {Qualified(table.Schema, table.Name)}", cancellationToken);
+                await ExecuteAsync(context,
+                    $"INSERT INTO {Mapping} (position, source_schema, source_table, copy_table) VALUES (@position, @schema, @table, @copy)",
+                    cancellationToken, ("position", position), ("schema", table.Schema), ("table", table.Name), ("copy", copy));
+            }
+
             await ExecuteAsync(context,
-                $"INSERT INTO {Mapping} (position, source_schema, source_table, copy_table) VALUES (@position, @schema, @table, @copy)",
-                cancellationToken, ("position", position), ("schema", table.Schema), ("table", table.Name), ("copy", copy));
+                $"INSERT INTO {Marker} (id, replay_id, preserved_at) VALUES (1, @replay_id, now())",
+                cancellationToken, ("replay_id", replayId));
+            await transaction.CommitAsync(cancellationToken);
         }
-
-        await ExecuteAsync(context,
-            $"INSERT INTO {Marker} (id, replay_id, preserved_at) VALUES (1, @replay_id, now())",
-            cancellationToken, ("replay_id", replayId));
-        await transaction.CommitAsync(cancellationToken);
+        finally
+        {
+            await ExecuteAsync(context, "SELECT pg_advisory_unlock(@key)", CancellationToken.None, ("key", _lockKey));
+        }
     }
 
     /// <inheritdoc/>
@@ -149,7 +170,7 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
     /// any other — or none, on a coordination state that lost it — means the read models are partial, so it is
     /// restored.
     /// </remarks>
-    public async Task<bool> RestoreAbandonedAsync(CancellationToken cancellationToken = default)
+    public async Task<AbandonedPreservation> RestoreAbandonedAsync(CancellationToken cancellationToken = default)
     {
         Guid? replayId;
         await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
@@ -160,30 +181,32 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
 
         if (replayId is not { } abandoned)
         {
-            return false;
+            return AbandonedPreservation.NoneKept;
         }
 
-        var progress = replayState?.GetProgress();
-        if (progress?.IsActive == true)
+        if (replayState?.GetProgress().IsActive == true)
         {
-            return false;
+            return AbandonedPreservation.StillOwned;
         }
 
-        if (progress?.LastReplay is { Result: ReplayResult.Succeeded } last && last.RequestId == abandoned)
+        if (ReplaySucceeded(abandoned))
         {
             await DiscardAsync(abandoned, cancellationToken);
-            return false;
+            return AbandonedPreservation.Discarded;
         }
 
-        return await RestoreAsync(abandoned, cancellationToken);
+        return await RestoreAsync(abandoned, cancellationToken) ? AbandonedPreservation.Restored : AbandonedPreservation.NoneKept;
     }
+
+    private bool ReplaySucceeded(Guid replayId) =>
+        replayState?.GetProgress().LastReplay is { Result: ReplayResult.Succeeded } last && last.RequestId == replayId;
 
     private string Marker => Qualified(_options.Schema, "preservation");
 
     private string Mapping => Qualified(_options.Schema, "preserved_table");
 
-    private static Task LockAsync(DbContext context, CancellationToken cancellationToken) =>
-        ExecuteAsync(context, "SELECT pg_advisory_xact_lock(@key)", cancellationToken, ("key", LockKey));
+    private Task LockAsync(DbContext context, CancellationToken cancellationToken) =>
+        ExecuteAsync(context, "SELECT pg_advisory_xact_lock(@key)", cancellationToken, ("key", _lockKey));
 
     private async Task EnsureSchemaAsync(DbContext context, CancellationToken cancellationToken)
     {
@@ -320,13 +343,23 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
         var wanted = PreservedTables.Of(context.Model, _options);
 
         var existing = new HashSet<PreservedTable>();
-        foreach (var table in wanted)
+        await using (var command = Command(context,
+                         """
+                         SELECT n.nspname, c.relname
+                         FROM pg_class c
+                         JOIN pg_namespace n ON n.oid = c.relnamespace
+                         WHERE c.relkind IN ('r', 'p') AND n.nspname = ANY(@schemas)
+                         """,
+                         ("schemas", wanted.Select(table => table.Schema).Distinct().ToArray())))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            if (await ScalarAsync(context, "SELECT to_regclass(@table) IS NOT NULL", cancellationToken, ("table", Qualified(table.Schema, table.Name))) is true)
+            while (await reader.ReadAsync(cancellationToken))
             {
-                existing.Add(table);
+                existing.Add(new PreservedTable(reader.GetString(0), reader.GetString(1)));
             }
         }
+
+        existing.IntersectWith(wanted);
 
         var references = await ReferencesAsync(context, cancellationToken);
         if (references.FirstOrDefault(reference => existing.Contains(reference.Parent) && !existing.Contains(reference.Child)) is { Child: not null } outside)
@@ -337,7 +370,9 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
                 $"{nameof(ReadModelRestoreOptions)}.{nameof(ReadModelRestoreOptions.AdditionalTables)}, or remove the reference. Nothing was emptied.");
         }
 
-        return Order([.. wanted.Where(existing.Contains)], references.Where(reference => existing.Contains(reference.Child)).ToList());
+        return Order(
+            [.. wanted.Where(existing.Contains)],
+            references.Where(reference => existing.Contains(reference.Child) && existing.Contains(reference.Parent)).ToList());
     }
 
     private static List<PreservedTable> Order(List<PreservedTable> tables, List<(PreservedTable Child, PreservedTable Parent)> references)
@@ -394,20 +429,18 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
     }
 
     /// <summary>
-    /// The copy's name: the source's schema and table, joined; where that exceeds PostgreSQL's identifier length, a
-    /// prefix and a hash of the whole, so two long names cannot be cut to the same copy.
+    /// The copy's name: the table's position in the preservation and its name, cut to PostgreSQL's identifier length.
+    /// The position makes it unique however long or alike the names are; the name keeps it readable for an operator.
     /// </summary>
-    private static string CopyName(PreservedTable table)
+    private static string CopyName(int position, PreservedTable table)
     {
-        var name = $"{table.Schema}__{table.Name}";
-        if (Encoding.UTF8.GetByteCount(name) <= MaxIdentifierLength)
+        var name = string.Create(CultureInfo.InvariantCulture, $"{position:D3}_{table.Name}");
+        while (Encoding.UTF8.GetByteCount(name) > MaxIdentifierLength)
         {
-            return name;
+            name = name[..^1];
         }
 
-        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(name)))[..8];
-        var prefix = new string(name.TakeWhile((_, index) => Encoding.UTF8.GetByteCount(name[..(index + 1)]) <= MaxIdentifierLength - hash.Length - 1).ToArray());
-        return $"{prefix}_{hash}";
+        return name;
     }
 
     private static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";

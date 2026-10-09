@@ -81,7 +81,7 @@ public sealed class ReplayRestoreTests(PostgreSqlFixture postgres, RabbitMqFixtu
         await PreserveAsync(app.Services, Guid.NewGuid());
         await ExecuteReadSqlAsync(app.Services, "DELETE FROM poc_counter_view");
 
-        Assert.True(await RestoreAbandonedAsync(app.Services));
+        Assert.Equal(AbandonedPreservation.Restored, await RestoreAbandonedAsync(app.Services));
 
         Assert.Equal(before, await SnapshotAsync(app.Services));
         Assert.Equal(0, await PreservedCountAsync(app.Services));
@@ -97,7 +97,7 @@ public sealed class ReplayRestoreTests(PostgreSqlFixture postgres, RabbitMqFixtu
 
         var restored = await Task.WhenAll(RestoreAbandonedAsync(app.Services), RestoreAbandonedAsync(app.Services));
 
-        Assert.Single(restored, wasRestored => wasRestored);
+        Assert.Single(restored, found => found == AbandonedPreservation.Restored);
     }
 
     [Fact]
@@ -135,6 +135,57 @@ public sealed class ReplayRestoreTests(PostgreSqlFixture postgres, RabbitMqFixtu
         Assert.Equal(ReplayResult.Failed, outcome.Result);
         Assert.Contains("poc_outside_reference", outcome.ErrorMessage);
         Assert.Equal(before, await SnapshotAsync(app.Services));
+    }
+
+    [Fact]
+    public async Task A_reference_to_a_table_the_replay_does_not_empty_does_not_block_the_preservation()
+    {
+        using var app = await BuildAsync("poc_restore_lookup", restore: true, prepare: async services =>
+        {
+            await ExecuteReadSqlAsync(services, "CREATE TABLE poc_lookup (id integer PRIMARY KEY)");
+            await ExecuteReadSqlAsync(services, "INSERT INTO poc_lookup VALUES (1)");
+            await ExecuteReadSqlAsync(services, "ALTER TABLE poc_counter_totals ADD COLUMN lookup_id integer REFERENCES poc_lookup (id)");
+        });
+        await SeedAsync(app.Services, count: 1);
+
+        var outcome = await ReplayAsync(app.Services);
+
+        Assert.Equal(ReplayResult.Succeeded, outcome.Result);
+    }
+
+    [Fact]
+    public async Task A_copy_left_by_a_replay_that_succeeded_is_not_reused_for_the_next()
+    {
+        using var app = await BuildAsync("poc_restore_stale", restore: true);
+        var streams = await SeedAsync(app.Services, count: 2);
+        await ReplayAsync(app.Services);
+        var succeeded = await ReplayAsync(app.Services);
+        await PreserveAsync(app.Services, succeeded.RequestId);
+        await ExecuteReadSqlAsync(app.Services, "UPDATE poc_counter_view SET value = value + 100");
+        var current = await SnapshotAsync(app.Services);
+
+        app.Services.GetRequiredService<ProjectionProbeControl>().Poisoned.TryAdd(streams[^1], 0);
+        var failed = await ReplayAsync(app.Services);
+
+        Assert.True(failed.ReadModelsRestored);
+        Assert.Equal(current, await SnapshotAsync(app.Services));
+    }
+
+    [Fact]
+    public async Task A_copy_a_running_replay_owns_is_left_alone()
+    {
+        using var app = await BuildAsync("poc_restore_owned", restore: true);
+        await SeedAsync(app.Services, count: 1);
+        await ReplayAsync(app.Services);
+        var running = Guid.NewGuid();
+        var replay = app.Services.GetRequiredService<IProjectionReplayState>();
+        Assert.True(replay.TryActivate(running));
+        await PreserveAsync(app.Services, running);
+
+        Assert.Equal(AbandonedPreservation.StillOwned, await RestoreAbandonedAsync(app.Services));
+
+        replay.Complete(new ReplayCompletion(running, ReplayResult.Interrupted, 0));
+        Assert.Equal(AbandonedPreservation.Restored, await RestoreAbandonedAsync(app.Services));
     }
 
     [Fact]
@@ -293,7 +344,7 @@ public sealed class ReplayRestoreTests(PostgreSqlFixture postgres, RabbitMqFixtu
         await scope.ServiceProvider.GetRequiredService<IReadModelPreservation>().PreserveAsync(replayId);
     }
 
-    private static async Task<bool> RestoreAbandonedAsync(IServiceProvider services)
+    private static async Task<AbandonedPreservation> RestoreAbandonedAsync(IServiceProvider services)
     {
         await using var scope = services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<IReadModelPreservation>().RestoreAbandonedAsync();

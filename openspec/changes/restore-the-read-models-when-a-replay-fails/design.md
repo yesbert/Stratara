@@ -130,3 +130,25 @@ Opt-in: `services.AddReadModelRestore<AppReadDbContext>()`. The `stratara_replay
 use; the database user needs `CREATE` on the database (or the schema created beforehand and named in
 options). No migration of the consumer's read context. Rollback is removing the registration; a leftover
 copy schema is inert and can be dropped.
+
+## Revised in review (PR #192)
+
+- **References to a table outside the set** no longer read as a cycle: only references whose child *and* parent
+  are preserved order the write-back; a parent the replay never empties needs no order.
+- **The marking is renewed while the replay prepares.** Preserving, emptying and counting report no progress, and
+  the copy alone can outlast the lease; the worker renews every ten seconds until the batches begin.
+- **The advisory lock is taken before the snapshot.** `PreserveAsync` takes a session lock on its connection and
+  only then begins the repeatable-read transaction, so its marker read sees whatever a concurrent restore committed.
+  The worker also checks for an abandoned copy *before* it subscribes for requests.
+- **A host restarted within its own replay's lease** finds that replay still marked active; `RestoreAbandonedAsync`
+  now reports `StillOwned` and the worker checks again every thirty seconds until the copy is restored, dropped or
+  taken over.
+- **A copy whose replay succeeded is never handed to the next replay**: `PreserveAsync` drops it and copies anew.
+- **Shared read stores:** the lock key derives from the preservation schema, and the guide tells deployments sharing
+  a read store to give each its own schema.
+- **Copy names** are the table's position and name, unique however alike the names are; table existence is read in
+  one catalog query.
+- *Not changed:* the scenarios that name the Redis-backed coordination store do so because `openspec/config.yaml`
+  requires a scenario to say where a guarantee was verified. The identifier quoting stays local to the class; the
+  provider's `ISqlGenerationHelper` would need a context in every static helper for the same result.
+

@@ -58,6 +58,26 @@ public interface IReadModelPreservation
     /// whose replay succeeded but could not drop it. Hosts that start at once restore it once.
     /// </summary>
     /// <param name="cancellationToken">Cancels the check.</param>
-    /// <returns><see langword="true"/> when a state was restored.</returns>
-    Task<bool> RestoreAbandonedAsync(CancellationToken cancellationToken = default);
+    /// <returns>
+    /// What was found: nothing kept, a state restored, a state dropped, or a state a replay marked active still owns —
+    /// which the caller checks again later, because a host that restarted within its replay's lease finds that replay
+    /// still marked active.
+    /// </returns>
+    Task<AbandonedPreservation> RestoreAbandonedAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>What <see cref="IReadModelPreservation.RestoreAbandonedAsync"/> found.</summary>
+public enum AbandonedPreservation
+{
+    /// <summary>No preserved state is kept.</summary>
+    NoneKept,
+
+    /// <summary>A state left by a replay that did not finish was written back.</summary>
+    Restored,
+
+    /// <summary>A state left by a replay that succeeded was dropped.</summary>
+    Discarded,
+
+    /// <summary>A state is kept, and a replay is marked active; check again once its marking has ended or lapsed.</summary>
+    StillOwned,
 }
