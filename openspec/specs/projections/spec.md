@@ -199,6 +199,19 @@ publication resume mid-rebuild.
 Truncation is what makes a replay a rebuild rather than a re-application: without it, events would
 be applied a second time on top of state that already reflects them.
 
+A host SHALL be able to opt in to keeping the read models it is about to empty. Where it has, the replay
+SHALL take a copy of them as one consistent state — the read models, the positions of projections that
+read the store, and each projection's record of forgotten tenants, together — before it empties anything.
+A replay that fails after the copy was taken SHALL write the copy back in place of what it had rebuilt,
+as one step that readers observe either entirely or not at all, and SHALL record that it did. A replay
+that succeeds SHALL drop the copy. A replay whose host stopped before it ended SHALL leave the copy, and
+the next host with the option that starts SHALL write it back, provided no running replay owns it; when
+several such hosts start at once, exactly one SHALL do so. A replay requested while such a copy exists
+SHALL keep that copy rather than take a new one, because it holds the last complete state and what is
+in place holds a partial one. A copy that cannot be taken, or a read model outside the copy that the
+store ties to one inside it so that the copy could not be written back, SHALL fail the replay before
+anything is emptied. Readers SHALL see the rebuild in progress while it runs, as without the option.
+
 On the Orleans execution model a projection that declares how to empty its own read model MAY be
 rebuilt alone: its checkpoints are reset, its read model emptied, and its partitions re-read from the
 beginning in parallel, while every other projection keeps applying live events; a rebuild that fails
@@ -220,9 +233,41 @@ return their checkpoints to the beginning, so that they re-read what the replay 
 
 #### Scenario: A replay fails partway
 
-- **WHEN** a replay fails after truncating
+- **WHEN** a replay fails after truncating, on a host that did not opt in to keeping the read models
 - **THEN** it deactivates regardless, and the read models are left in whatever partial state the
   replay reached
+
+#### Scenario: A replay fails partway on a host that keeps the read models
+
+- **WHEN** a replay fails after truncating, on a host that opted in
+- **THEN** the read models, the store-reading positions and the records of forgotten tenants are
+  exactly as they were before the replay began, the replay deactivates, and its outcome records the
+  failure and that the read models were restored — verified on the PostgreSQL read store
+
+#### Scenario: A replay succeeds on a host that keeps the read models
+
+- **WHEN** a replay completes on a host that opted in
+- **THEN** the read models hold the rebuilt state and no copy of the previous state remains
+
+#### Scenario: A replay's host dies on a host that keeps the read models
+
+- **WHEN** the host running a replay stops before the replay ends, and a host with the option starts
+  afterwards while no replay is running
+- **THEN** that host writes the copy back, the read models are as they were before the replay began, and
+  the restoration is recorded; where several such hosts start at once, one of them writes it back
+
+#### Scenario: A replay is requested while a copy from an unfinished replay exists
+
+- **WHEN** a replay is requested on a host that opted in, and a copy left by a replay that did not
+  finish has not yet been written back
+- **THEN** the new replay keeps that copy as the state to fall back to, rather than copying the partial
+  read models
+
+#### Scenario: The copy cannot be taken
+
+- **WHEN** the copy fails, or a read model the store ties to one inside the copy is not part of it
+- **THEN** the replay fails with a message naming the cause, nothing has been emptied, and the read
+  models are as they were
 
 #### Scenario: A replay's host stops without deactivating
 
@@ -317,9 +362,9 @@ unretried failure does today.
 The retry covers a failure that passes: a read-store timeout, a dropped connection, a lock held a
 moment too long. It does not make a deterministic failure survivable, and it does not continue past
 one: an event that cannot be applied ends the replay after the attempts, and the read models are
-left as the *A replay fails partway* scenario describes. A replay is a maintenance operation; the
-fallback when one cannot complete is the backup taken before it, which is the operator's, not the
-framework's.
+left as the *A replay fails partway* scenarios describe. A replay is a maintenance operation; the
+fallback when one cannot complete is the state before it — the copy the framework keeps where the host
+opted in to it, and otherwise the backup the operator took.
 
 Re-applying a batch from its start relies on the guarantee projections already give: a second
 application of the same event converges on the same state, because delivery is at-least-once.
