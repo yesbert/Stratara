@@ -445,7 +445,11 @@ public class ProjectionReplayWorkerTests
         var harness = new Harness();
         var preservation = new Mock<IReadModelPreservation>();
         harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new OperationCanceledException());
+            .Returns(async () =>
+            {
+                await harness.StopWorkerAsync();
+                throw new OperationCanceledException();
+            });
         harness.Configure = services => services.AddSingleton(preservation.Object);
 
         await harness.RunAsync(triggerReplay: true);
