@@ -110,7 +110,10 @@ internal sealed class InProcessProjectionReplayState(
                 timeProvider.GetUtcNow(),
                 completion.ReplayedEvents,
                 completion.Result,
-                completion.ErrorMessage);
+                completion.ErrorMessage)
+            {
+                ReadModelsRestored = completion.ReadModelsRestored,
+            };
             _error = completion.Result == ReplayResult.Failed ? completion.ErrorMessage : null;
             if (_requestId is null || _requestId == completion.RequestId)
             {

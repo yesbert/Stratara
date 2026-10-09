@@ -160,7 +160,11 @@ public enum ReplayResult
 /// <param name="Result">How the replay ended.</param>
 /// <param name="ReplayedEvents">How many events the replay had applied when it ended.</param>
 /// <param name="ErrorMessage">The failure's message, for <see cref="ReplayResult.Failed"/>; <see langword="null"/> otherwise.</param>
-public sealed record ReplayCompletion(Guid RequestId, ReplayResult Result, long ReplayedEvents, string? ErrorMessage = null);
+public sealed record ReplayCompletion(Guid RequestId, ReplayResult Result, long ReplayedEvents, string? ErrorMessage = null)
+{
+    /// <summary>Whether the read models the replay emptied were restored to their state before it began.</summary>
+    public bool ReadModelsRestored { get; init; }
+}
 
 /// <summary>The outcome of a replay that has ended.</summary>
 /// <param name="RequestId">The identity of the request the replay ran.</param>
@@ -175,7 +179,14 @@ public sealed record ReplayOutcome(
     DateTimeOffset EndedAt,
     long ReplayedEvents,
     ReplayResult Result,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null)
+{
+    /// <summary>
+    /// Whether the read models were restored to their state before the replay began — after a failure, on a host that
+    /// keeps the read models a replay empties.
+    /// </summary>
+    public bool ReadModelsRestored { get; init; }
+}
 
 /// <summary>
 /// Truncates every projection view as part of a replay reset. Implementations typically

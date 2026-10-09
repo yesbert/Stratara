@@ -357,6 +357,14 @@ happened. This protection rests on the checkpoint store refusing an advance from
 the framework's store does, and a checkpoint store of your own must override
 `IProjectionCheckpointStore.AdvanceAsync` with the same guard — its default replaces the position unchecked.
 
+A host that registers `AddReadModelRestore<TReadContext>()` copies the read context's tables before a full replay
+empties anything — the checkpoints of the store readers among them, in the same snapshot as the read models — and
+writes them back when the replay fails or its host stopped (see
+[Keep the read models a failed replay would leave behind](write-a-projection.md#keep-the-read-models-a-failed-replay-would-leave-behind)).
+The readers then resume from the restored positions over the restored read models, so nothing is applied twice and
+nothing is skipped. A rebuild of one projection is not covered: it empties only that projection's read model, and a
+rebuild that fails part-way resumes from the beginning.
+
 During a rolling upgrade from 4.1.x, a rebuild or replay started from a silo still on 4.1.x pauses the readers of
 an upgraded silo for at most ten minutes — it cannot renew — and returns the checkpoints to the beginning only
 once, and one started from an upgraded silo cannot pause a reader still hosted on 4.1.x and fails naming it. Rebuild

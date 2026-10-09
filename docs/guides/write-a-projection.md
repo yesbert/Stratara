@@ -336,11 +336,72 @@ half-way leaves you with partially rebuilt read models and no active flag saying
 failure message described under [Watch a replay](#watch-a-replay). Treat a failed replay
 as "run it again", not as "it stopped safely".
 
-**A replay is a maintenance operation.** Run it in a window, after a backup of the read store. The
-retry above covers a failure that passes; it does not make a deterministic one survivable, and the
-framework does not keep the previous views for you. If a replay fails and does not complete on a
-second or third attempt, the backup is the fallback while you look for the cause — that procedure
-belongs to your operations, not to the framework.
+**A replay is a maintenance operation.** Run it in a window. The retry above covers a failure that
+passes; it does not make a deterministic one survivable. Without the registration below the
+framework does not keep the previous views for you, and a backup of the read store taken before the
+replay is the fallback while you look for the cause.
+
+### Keep the read models a failed replay would leave behind
+
+On PostgreSQL the framework can keep them for you:
+
+```csharp
+builder.Services
+    .AddNpgsqlReadDbContextFactory<AppReadDbContext>()
+    .AddReadModelRestore<AppReadDbContext>();
+```
+
+A replay on that host then ends in one of two states — the rebuilt read models, or exactly the ones it
+started from:
+
+- **Before anything is emptied**, every table `AppReadDbContext` maps is copied into a schema of its
+  own (`stratara_replay` by default), as one consistent snapshot: the read models, the projection
+  checkpoints and each projection's record of forgotten tenants together. The copy is logged
+  (`104_021`). If it cannot be taken, the replay fails before it empties anything.
+- **A replay that fails** after its batch retries writes the copy back in one transaction — readers
+  wait for it and then see the state from before the replay, never a mix — logs `104_022`, and its
+  outcome reads `Failed` with `ReadModelsRestored = true`.
+- **A replay that succeeds** drops the copy.
+- **A replay whose host stops** — killed, or shut down — leaves the copy. The next host with the
+  registration that starts while no replay is running writes it back and logs `104_023`; hosts that
+  start together do it once. A replay requested while such a copy is still there keeps it as the state
+  to fall back to, rather than copying the half-built read models.
+
+Readers still see the rebuild in progress while the replay runs; what changes is how it ends. What it
+costs and what to know:
+
+- **Time and disk.** The copy reads the whole read store once more before the replay starts, and holds
+  it twice while the replay runs. The lease is renewed right after the copy, but
+  `ProjectionReplay:LeaseSeconds` must still outlast the copy itself.
+- **Which tables.** Every table the context maps — views, keyless types and SQL queries excluded. Add
+  tables your `IProjectionViewTruncator` empties but the context does not map with `AdditionalTables`,
+  and leave out mapped tables a replay does not touch with `ExcludedTables`, each as `schema.table` or
+  as `table` in the context's default schema. A table outside the set that references one inside it
+  fails the replay before anything is emptied: the write-back could not truncate the set.
+- **Bundles already queued when the replay began** are applied to the read models after the copy was
+  taken; a write-back discards their effect. Publication is suppressed from the moment the replay is
+  active, so this is the replay's first seconds — stop the projection consumers for the replay if even
+  that is too much.
+- **A schema change between the copy and the write-back** — a migration that ran during the replay —
+  makes the write-back refuse (`104_124`) and keep the copy, rather than write rows into the wrong
+  shape.
+- **Permissions.** The copy schema is created on first use, which needs `CREATE` on the database;
+  create it beforehand and name it in `Schema` where the read store's user lacks it.
+
+The settings are read from the `ProjectionReplay:Restore` section:
+
+```json
+{
+  "ProjectionReplay": {
+    "Restore": {
+      "Schema": "stratara_replay",
+      "ExcludedTables": [ "read_store.audit_log" ],
+      "AdditionalTables": [ "read_store.raw_counters" ],
+      "CommandTimeout": "00:30:00"
+    }
+  }
+}
+```
 
 **A host that is killed does not get to mark anything.** Failing is an ending; being killed is not.
 A `SIGKILL`, a container stop, an out-of-memory kill or a reboot leaves the replay with no chance to

@@ -56,6 +56,36 @@ internal sealed class ProjectionReplayWorker(
     {
         await replayState.SubscribeToReplayRequestAsync(
             requestId => TrackAsync(requestId, stoppingToken), stoppingToken);
+        await RestoreAbandonedReadModelsAsync(stoppingToken);
+    }
+
+    /// <summary>
+    /// Where the host keeps the read models a replay empties, restores a state left by a replay whose host stopped.
+    /// A failure here is logged and does not stop the host: the preserved state is kept, and the next start tries again.
+    /// </summary>
+    private async Task RestoreAbandonedReadModelsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        if (scope.ServiceProvider.GetService<IReadModelPreservation>() is not { } preservation)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await preservation.RestoreAbandonedAsync(cancellationToken))
+            {
+                logger.LogAbandonedReadModelsRestored();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host shutdown: the preserved state is kept for the next start.
+        }
+        catch (Exception ex)
+        {
+            logger.LogReadModelRestoreFailed(ex);
+        }
     }
 
     /// <summary>
@@ -96,9 +126,11 @@ internal sealed class ProjectionReplayWorker(
 
     /// <summary>
     /// Runs the replay a request asks for, if this host claims the request: a request every host receives, or one
-    /// that arrives while another replay is active, starts nothing here. The replay ends in exactly one completion —
-    /// succeeded, failed with its message, or interrupted because the host stops — which keeps its outcome. Nothing
-    /// here may escape: the coordination store invokes the callback where an exception would end the process.
+    /// that arrives while another replay is active, starts nothing here. Where the host keeps the read models, they are
+    /// preserved before anything is emptied, restored after a failure and dropped after a success; a replay its host
+    /// stops leaves them for the next start. The replay ends in exactly one completion — succeeded, failed with its
+    /// message, or interrupted because the host stops — which keeps its outcome. Nothing here may escape: the
+    /// coordination store invokes the callback where an exception would end the process.
     /// </summary>
     private async Task RunRequestedReplayAsync(Guid requestId, CancellationToken cancellationToken)
     {
@@ -120,8 +152,19 @@ internal sealed class ProjectionReplayWorker(
 
         logger.LogProjectionReplayStarted();
         var tally = new ReplayTally();
+        using var preservationScope = scopeFactory.CreateScope();
+        var preservation = preservationScope.ServiceProvider.GetService<IReadModelPreservation>();
+        var preserved = false;
         try
         {
+            if (preservation is not null)
+            {
+                await preservation.PreserveAsync(requestId, cancellationToken);
+                preserved = true;
+                replayState.SetProgress(0, 0);
+                logger.LogReadModelsPreserved(requestId);
+            }
+
             await RunReplayAsync(tally, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -132,7 +175,11 @@ internal sealed class ProjectionReplayWorker(
         catch (Exception ex)
         {
             logger.LogProjectionReplayFailed(ex);
-            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
+            var restored = preserved && preservation is not null && await RestoreAsync(preservation, requestId);
+            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message))
+            {
+                ReadModelsRestored = restored,
+            });
             return;
         }
 
@@ -142,8 +189,44 @@ internal sealed class ProjectionReplayWorker(
             return;
         }
 
+        if (preserved && preservation is not null)
+        {
+            await DiscardAsync(preservation, requestId);
+        }
+
         logger.LogProjectionReplayCompleted(tally.Replayed);
         Complete(new ReplayCompletion(requestId, ReplayResult.Succeeded, tally.Replayed));
+    }
+
+    private async Task<bool> RestoreAsync(IReadModelPreservation preservation, Guid requestId)
+    {
+        try
+        {
+            var restored = await preservation.RestoreAsync(requestId, CancellationToken.None);
+            if (restored)
+            {
+                logger.LogReadModelsRestored(requestId);
+            }
+
+            return restored;
+        }
+        catch (Exception ex)
+        {
+            logger.LogReadModelRestoreFailed(ex);
+            return false;
+        }
+    }
+
+    private async Task DiscardAsync(IReadModelPreservation preservation, Guid requestId)
+    {
+        try
+        {
+            await preservation.DiscardAsync(requestId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogPreservedReadModelsNotDiscarded(ex, requestId);
+        }
     }
 
     private void Interrupted(Guid requestId, ReplayTally tally)

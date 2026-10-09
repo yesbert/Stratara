@@ -107,6 +107,51 @@ public static partial class LoggerProjectionExtensions
         Message = "The outcome of projection replay {RequestId} could not be recorded. Its marking lapses with its lease; the previous outcome stays readable.")]
     public static partial void LogProjectionReplayOutcomeNotRecorded(this ILogger logger, Exception exception, Guid requestId);
 
+    /// <summary>Logs that the read models a replay is about to empty were preserved.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="requestId">The identity of the request the replay runs.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ReadModelsPreserved,
+        Level = LogLevel.Information,
+        Message = "Projection replay {RequestId}: the read models are preserved and are restored if the replay fails.")]
+    public static partial void LogReadModelsPreserved(this ILogger logger, Guid requestId);
+
+    /// <summary>Logs that a failed replay restored the read models to their state before it began.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="requestId">The identity of the request the replay ran.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ReadModelsRestored,
+        Level = LogLevel.Warning,
+        Message = "Projection replay {RequestId} failed; the read models were restored to their state before it began.")]
+    public static partial void LogReadModelsRestored(this ILogger logger, Guid requestId);
+
+    /// <summary>Logs that a state preserved by a replay whose host stopped was restored.</summary>
+    /// <param name="logger">The logger.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.AbandonedReadModelsRestored,
+        Level = LogLevel.Warning,
+        Message = "A replay whose host stopped left preserved read models; they were restored to their state before that replay began.")]
+    public static partial void LogAbandonedReadModelsRestored(this ILogger logger);
+
+    /// <summary>Logs that the state preserved for a replay that succeeded could not be dropped.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">The failure.</param>
+    /// <param name="requestId">The identity of the request the replay ran.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.PreservedReadModelsNotDiscarded,
+        Level = LogLevel.Warning,
+        Message = "Projection replay {RequestId} succeeded, but the read models preserved before it could not be dropped. They are dropped, not restored, when a host next starts.")]
+    public static partial void LogPreservedReadModelsNotDiscarded(this ILogger logger, Exception exception, Guid requestId);
+
+    /// <summary>Logs that preserved read models could not be restored; the preserved state is kept.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">The failure.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ReadModelRestoreFailed,
+        Level = LogLevel.Error,
+        Message = "The preserved read models could not be restored. The preserved state is kept; the read models hold what the replay rebuilt.")]
+    public static partial void LogReadModelRestoreFailed(this ILogger logger, Exception exception);
+
     /// <summary>Logs that all projection views have been truncated as part of a replay.</summary>
     /// <param name="logger">The logger.</param>
     [LoggerMessage(

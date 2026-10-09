@@ -52,8 +52,10 @@ aside, once back on failure) and holding a second copy on disk for the replay's 
 
 **One consistent snapshot, in one transaction.** `PreserveAsync` opens a `REPEATABLE READ` transaction,
 creates every copy in a dedicated schema (`ReadModelRestoreOptions.Schema`, default `stratara_replay`,
-tables named `<schema>__<table>`), and inserts a marker row `(replay_id, preserved_at, tables)` in the same
-transaction. A store reader writes its view rows and its checkpoint in one transaction, so the snapshot
+tables named `<schema>__<table>`, shortened with a hash past PostgreSQL's 63-byte identifier limit), and records
+the marker row `(replay_id, preserved_at)` and one row per copy `(position, source, copy)` in the same
+transaction. The restore reads what to write back from those rows, not from the model, so a model changed in
+between cannot make it miss a copy. A store reader writes its view rows and its checkpoint in one transaction, so the snapshot
 pairs them; the forgotten-tenant record is copied before the worker clears it. Preservation is the first
 thing the worker does after `TryActivate`, before `ClearAsync` and the truncator, and the worker renews the
 lease right after it (`SetProgress(0, 0)`), because preservation precedes the first progress report.
@@ -95,8 +97,10 @@ request id in the same step that checks it.
   operator acts, which is the situation F-021 describes.
 
 **The abstraction is `IReadModelPreservation` in `Stratara.Projections`.** Four members:
-`PreserveAsync(Guid replayId, ct)`, `RestoreAsync(Guid replayId, ct)`, `DiscardAsync(Guid replayId, ct)`,
-`RestoreAbandonedAsync(ct)`. Optional: the worker resolves it with `GetService` and, without it, does
+`PreserveAsync(Guid replayId, ct)`, `Task<bool> RestoreAsync(Guid replayId, ct)` (false when no copy is kept for
+that replay — another host restored it first), `DiscardAsync(Guid replayId, ct)`, `Task<bool> RestoreAbandonedAsync(ct)`.
+The outcome flag travels on `ReplayCompletion.ReadModelsRestored`, an `init` property of the record
+`keep-the-outcome-of-the-last-replay` introduced for exactly this. Optional: the worker resolves it with `GetService` and, without it, does
 exactly what it does today. `AddReadModelRestore<TReadContext>()` in `Stratara.EventSourcing.EntityFrameworkCore`
 registers the PostgreSQL implementation and binds `ReadModelRestoreOptions` (section
 `ProjectionReplay:Restore`).
