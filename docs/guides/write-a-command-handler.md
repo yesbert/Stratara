@@ -216,10 +216,14 @@ Two ways close it:
 }
 ```
 
-  `AddEventSourcing()` reads the section. A rebuild bounded with `toVersion` sets no condition; a rebuild
-  that found no stream sets the condition that the stream still does not exist, so a handler that then
-  creates it conflicts with whoever created it first. Every save — successful or not — ends the
-  condition, so a handler that runs again reads again.
+  `AddEventSourcing()` reads the section. The condition is the version of the *first* rebuild of a stream
+  in the scope — a second rebuild of the same stream, by a validator or a helper, does not move it. A
+  rebuild bounded with `toVersion` sets no condition. A rebuild that found no stream sets the condition
+  that the stream still does not exist, so a handler whose `AppendAsync` writes the first event conflicts
+  with whoever created it first; `CreateAsync` refuses an existing stream with `InvalidOperationException`,
+  as it always has. A successful save ends the condition on the streams it wrote and keeps it on those
+  the handler read but has not written; a failed save ends it everywhere, so a handler that runs again
+  reads again.
 
 What the option costs: a handler that appends to a stream another writer touches concurrently now gets a
 conflict where it used to succeed. Through `ICommandOutboxDispatcher` that is a redelivery and a fresh

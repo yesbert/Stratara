@@ -69,24 +69,32 @@ above throws `ArgumentOutOfRangeException` naming stream, expected and head. A s
 to a stream already staged in the batch must name the staged head, or it throws
 `InvalidOperationException` — two different expectations for one stream in one batch are a caller's bug.
 
-**The implicit form reads nothing.** A new internal scoped `AggregatedStreamVersions`
-(`Dictionary<Guid, long>`) is injected into both services. `AggregationService` records the head of every
-read with `toVersion is null`: the last entry's version from the unfiltered list (before
-`AggregateEventSelector` drops events without an `Apply`, which is why the aggregate's last applied event
-is not the head), the snapshot's version when no entry follows it, and 0 when the stream does not exist.
-The last unbounded read wins, which is right for `ChangeSetHandler`'s bounded-then-current pair.
-`EventSource.AppendRangeCoreAsync`, when the option is on and the stream is not yet staged, seeds
-`_streamVersions` from the record instead of querying — one round trip fewer than today. A recorded 0
-means the first append collides with whoever created the stream meanwhile, at version 1.
-`ClearBatchState` clears the record, so a save — successful or failed — ends the expectation, and a
-same-scope retry re-reads.
+**The implicit form reads nothing.** A new internal scoped `AggregatedStreamVersions` is injected into both
+services. Where the option is on, `AggregationService` records the head of every read with
+`toVersion is null`: the last entry's version from the unfiltered list (before `AggregateEventSelector` drops
+events without an `Apply`, which is why the aggregate's last applied event is not the head), the snapshot's
+version when no entry follows it, and 0 when the stream does not exist. With the option off it records
+nothing, so a default host pays nothing for the feature. `EventSource.AppendRangeCoreAsync`, when the option
+is on and the stream is not yet staged, seeds `_streamVersions` from the record instead of querying — one
+round trip fewer than today. A recorded 0 means the first *append* collides with whoever created the stream
+meanwhile, at version 1; `CreateAsync` keeps its own existence check and refuses an existing stream with
+`InvalidOperationException`, as before.
+- *Revised in review (PR #190):* the first unbounded read wins (`TryAdd`), not the last. A validator or helper
+  that rebuilds the same stream again in the scope would otherwise move the expectation past the write the
+  handler's decision missed. `ChangeSetHandler`'s bounded-then-current pair is unaffected — the bounded read
+  records nothing.
+- *Revised in review:* the record is a `ConcurrentDictionary`. `SagaManager` and `ProjectionManager` run
+  handlers through `Parallel.ForEachAsync` inside one scope, and two of them may rebuild at once.
+- *Revised in review:* a successful save forgets only the streams it wrote; a failed save forgets every
+  stream. A handler that saves twice keeps the condition on a stream it read but has not written yet.
 - *Alternative:* key the expectation on the aggregate instance. Rejected: aggregates carry no version and
   no identity beyond `Id`, and a handler may append to a stream it rebuilt as another type.
 
 **The option lives in `EventSourcingOptions`, bound by `AddEventSourcing()`.** The section `EventSourcing`
 is already reserved for write-side settings (`AddWriteStore(IConfiguration)` binds it). `AddEventSourcing`
-takes no `IConfiguration`, so it uses `AddOptions<EventSourcingOptions>().BindConfiguration(...)`, the
-pattern `AddProjectionReplayState()` uses. `EventSource` takes `IOptions<EventSourcingOptions>?` and the
+takes no `IConfiguration`, so it registers an `IConfigureOptions` that reads the container's configuration
+where there is one — the pattern `AddProjectionReplayState()` uses; `BindConfiguration` would throw on a bare
+service collection such as the SQLite test host's. `EventSource` takes `IOptions<EventSourcingOptions>?` and the
 record as optional constructor parameters, so the one hand-built instance in
 `EventSourceTests.cs:51` keeps compiling.
 

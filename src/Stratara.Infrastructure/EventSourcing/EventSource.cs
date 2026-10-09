@@ -116,11 +116,6 @@ internal sealed partial class EventSource(
         AppendRangeCoreAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
 
     /// <inheritdoc/>
-    public Task AppendAtVersionAsync<TAggregate>(Guid streamId, long expectedVersion, object @event,
-        CancellationToken cancellationToken = default) where TAggregate : notnull, new() =>
-        AppendRangeAtVersionAsync<TAggregate>(streamId, expectedVersion, [@event], cancellationToken);
-
-    /// <inheritdoc/>
     /// <remarks>
     /// The stream is numbered from <paramref name="expectedVersion"/> instead of from its head. A writer
     /// that moved the stream past it occupies <paramref name="expectedVersion"/> + 1, so the store's
@@ -200,12 +195,15 @@ internal sealed partial class EventSource(
     /// </remarks>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        var saved = false;
         try
         {
             await PersistAndPublishAsync(cancellationToken);
+            saved = true;
         }
         finally
         {
+            ForgetAggregatedVersions(saved);
             ClearBatchState();
         }
     }
@@ -296,7 +294,27 @@ internal sealed partial class EventSource(
         _eventStreamEntries.Clear();
         _streamVersions.Clear();
         _streamSubjects.Clear();
-        aggregatedVersions?.Clear();
+    }
+
+    /// <summary>
+    /// A save ends the condition on the streams it wrote, and keeps it on streams the handler read but has not
+    /// written yet. A failed save ends it on every stream, so a handler that runs again reads again.
+    /// </summary>
+    private void ForgetAggregatedVersions(bool saved)
+    {
+        if (aggregatedVersions is null)
+        {
+            return;
+        }
+
+        if (saved)
+        {
+            aggregatedVersions.Forget(_streamVersions.Keys);
+        }
+        else
+        {
+            aggregatedVersions.Clear();
+        }
     }
 
     /// <summary>

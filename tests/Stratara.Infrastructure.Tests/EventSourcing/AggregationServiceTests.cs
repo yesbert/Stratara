@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Stratara.Infrastructure.EventSourcing;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
@@ -315,17 +316,47 @@ public class AggregationServiceTests
     }
 
     [Fact]
-    public async Task AnUnboundedRead_RecordsTheHighestVersionRead()
+    public async Task AnUnboundedRead_RecordsTheHeadVersionRead()
     {
         var versions = new AggregatedStreamVersions();
         var service = ServiceRecordingInto(versions);
         var streamId = Guid.NewGuid();
-        ArrangeStream(streamId, snapshot: null, Entry(streamId, 1), Entry(streamId, 3), Entry(streamId, 2));
+        ArrangeStream(streamId, snapshot: null, Entry(streamId, 1), Entry(streamId, 2), Entry(streamId, 3));
 
         await service.AggregateAsync<TestAggregate>(streamId);
 
         Assert.True(versions.TryGet(streamId, out var version));
         Assert.Equal(3, version);
+    }
+
+    [Fact]
+    public async Task ASecondReadOfTheSameStream_KeepsTheVersionTheFirstOneSaw()
+    {
+        var versions = new AggregatedStreamVersions();
+        var service = ServiceRecordingInto(versions);
+        var streamId = Guid.NewGuid();
+        ArrangeStream(streamId, snapshot: null, Entry(streamId, 1));
+        await service.AggregateAsync<TestAggregate>(streamId);
+
+        ArrangeStream(streamId, snapshot: null, Entry(streamId, 1), Entry(streamId, 2));
+        await service.AggregateAsync<TestAggregate>(streamId);
+
+        Assert.True(versions.TryGet(streamId, out var version));
+        Assert.Equal(1, version);
+    }
+
+    [Fact]
+    public async Task WithTheOptionOff_NothingIsRecorded()
+    {
+        var versions = new AggregatedStreamVersions();
+        var service = new AggregationService(_unitOfWorkMock.Object, _eventMapperFactoryMock.Object, _serializerMock.Object,
+            AggregateEventSelectorTests.PassThrough(), versions, Options.Create(new EventSourcingOptions()));
+        var streamId = Guid.NewGuid();
+        ArrangeStream(streamId, snapshot: null, Entry(streamId, 1));
+
+        await service.AggregateAsync<TestAggregate>(streamId);
+
+        Assert.False(versions.TryGet(streamId, out _));
     }
 
     [Fact]
@@ -385,7 +416,8 @@ public class AggregationServiceTests
 
     private AggregationService ServiceRecordingInto(AggregatedStreamVersions versions) =>
         new(_unitOfWorkMock.Object, _eventMapperFactoryMock.Object, _serializerMock.Object,
-            AggregateEventSelectorTests.PassThrough(), versions);
+            AggregateEventSelectorTests.PassThrough(), versions,
+            Options.Create(new EventSourcingOptions { AppendAgainstAggregatedVersion = true }));
 
     private void ArrangeStream(Guid streamId, Snapshot? snapshot, params EventStreamEntry[] entries)
     {

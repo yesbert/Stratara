@@ -11,11 +11,14 @@ is made, because accepting it would leave a gap in the stream's versions.
 
 A host SHALL be able to opt in to the same condition for every append that follows a read: where the
 option is on and the caller rebuilt a stream's aggregate in the same unit of work, an append to that
-stream SHALL be conditional on the version the rebuild saw. A rebuild bounded to an earlier version SHALL
-NOT set the condition, and a rebuild of a stream that does not exist SHALL set the condition that it
-still does not exist. A save, successful or not, SHALL clear the remembered versions, so a caller that
-runs again starts from what it reads anew. The option SHALL be off by default; without it an append SHALL
-keep numbering after whatever the stream holds when the append is made.
+stream SHALL be conditional on the version the first such rebuild saw — a later rebuild of the same
+stream in the unit of work SHALL NOT move the condition past a write the first one missed. A rebuild
+bounded to an earlier version SHALL NOT set the condition, and a rebuild of a stream that does not exist
+SHALL set the condition that it still does not exist. A successful save SHALL end the condition on the
+streams it wrote and keep it on streams the caller read but has not written; a failed save SHALL end it
+on every stream, so a caller that runs again starts from what it reads anew. Rebuilds that run in
+parallel within one unit of work SHALL remain safe. The option SHALL be off by default; without it an
+append SHALL keep numbering after whatever the stream holds when the append is made.
 
 A conditional append is what closes the window between a decision and its commit: without it a fact
 decided on a stream's earlier state is recorded after a fact that contradicts it — for example after the
@@ -49,8 +52,21 @@ stream's end — and nothing fails.
 #### Scenario: The host opts in and a handler reads a stream that does not exist
 
 - **WHEN** the option is on, a handler finds no stream, another writer creates it, and the handler then
-  appends its first event and saves
+  appends its first event with an append rather than a creation and saves
 - **THEN** the save fails with a concurrency conflict rather than continuing the other writer's stream
+
+#### Scenario: The host opts in and a handler reads a stream twice
+
+- **WHEN** the option is on, a handler rebuilds an aggregate at version N, another writer appends N+1,
+  the handler rebuilds the same aggregate again, and then appends and saves
+- **THEN** the save fails with a concurrency conflict — the condition is the version of the first rebuild
+
+#### Scenario: The host opts in and a handler saves twice
+
+- **WHEN** the option is on, a handler rebuilds two aggregates, appends to the first and saves, another
+  writer then appends to the second, and the handler appends to the second and saves
+- **THEN** the second save fails with a concurrency conflict — the first save ended the condition only on
+  the stream it wrote
 
 #### Scenario: The host opts in and a handler reads a past version
 

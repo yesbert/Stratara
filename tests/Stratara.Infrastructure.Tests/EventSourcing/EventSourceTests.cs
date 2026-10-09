@@ -192,7 +192,7 @@ public class EventSourceTests
         _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(3L);
 
         var ex = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
-            _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 5, new TestRenamed("Ahead")));
+            Events.AppendAtVersionAsync<TestAggregate>(streamId, 5, new TestRenamed("Ahead")));
         await _eventSource.SaveChangesAsync();
 
         Assert.Contains("version 3", ex.Message);
@@ -205,11 +205,11 @@ public class EventSourceTests
         var streamId = Guid.NewGuid();
         _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(3L);
 
-        await _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("First"));
+        await Events.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("First"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("Contradicting")));
-        await _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 4, new TestRenamed("Following"));
+            Events.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("Contradicting")));
+        await Events.AppendAtVersionAsync<TestAggregate>(streamId, 4, new TestRenamed("Following"));
         await _eventSource.SaveChangesAsync();
 
         var entries = Assert.Single(_capturedAddRangeCalls);
@@ -222,7 +222,7 @@ public class EventSourceTests
         var streamId = Guid.NewGuid();
         _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(5L);
 
-        await _eventSource.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("Late"));
+        await Events.AppendAtVersionAsync<TestAggregate>(streamId, 3, new TestRenamed("Late"));
         await _eventSource.SaveChangesAsync();
 
         var entry = Assert.Single(Assert.Single(_capturedAddRangeCalls));
@@ -276,6 +276,26 @@ public class EventSourceTests
 
         Assert.False(versions.TryGet(streamId, out _));
     }
+
+    [Fact]
+    public async Task ASuccessfulSave_KeepsTheConditionOnStreamsItDidNotWrite()
+    {
+        var written = Guid.NewGuid();
+        var readOnly = Guid.NewGuid();
+        var versions = new AggregatedStreamVersions();
+        versions.Record(written, 3);
+        versions.Record(readOnly, 8);
+        var eventSource = EventSourceWith(versions, appendAgainstAggregatedVersion: true);
+
+        await eventSource.AppendAsync<TestAggregate>(written, new TestRenamed("First"));
+        await eventSource.SaveChangesAsync();
+
+        Assert.False(versions.TryGet(written, out _));
+        Assert.True(versions.TryGet(readOnly, out var kept));
+        Assert.Equal(8, kept);
+    }
+
+    private IEventSource Events => _eventSource;
 
     private EventSource EventSourceWith(AggregatedStreamVersions versions, bool appendAgainstAggregatedVersion) =>
         new(

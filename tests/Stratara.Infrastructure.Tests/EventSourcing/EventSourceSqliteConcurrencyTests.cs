@@ -193,6 +193,45 @@ public class EventSourceSqliteConcurrencyTests
         Assert.Equal(3, await CurrentVersionAsync(host, streamId));
     }
 
+    [Fact]
+    public async Task AppendAgainstAggregatedVersion_ASaveOfAnotherStream_KeepsTheConditionOnTheStreamReadButNotWritten()
+    {
+        await using var host = CreateHost(appendAgainstAggregatedVersion: true);
+        var written = await CreateStreamAsync(host);
+        var readOnly = await CreateStreamAsync(host);
+
+        await using var handler = host.Services.CreateAsyncScope();
+        var aggregation = handler.ServiceProvider.GetRequiredService<IAggregationService>();
+        await aggregation.AggregateAsync<Counter>(written);
+        await aggregation.AggregateAsync<Counter>(readOnly);
+
+        var events = handler.ServiceProvider.GetRequiredService<IEventSource>();
+        await events.AppendAsync<Counter>(written, new Incremented(2));
+        await events.SaveChangesAsync();
+
+        await AppendFromAnotherWriterAsync(host, readOnly);
+
+        await events.AppendAsync<Counter>(readOnly, new Incremented(3));
+        await Assert.ThrowsAsync<ConcurrencyException>(() => events.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task AppendAgainstAggregatedVersion_ASecondReadOfTheSameStream_KeepsTheFirstReadsCondition()
+    {
+        await using var host = CreateHost(appendAgainstAggregatedVersion: true);
+        var streamId = await CreateStreamAsync(host);
+
+        await using var handler = host.Services.CreateAsyncScope();
+        var aggregation = handler.ServiceProvider.GetRequiredService<IAggregationService>();
+        await aggregation.AggregateAsync<Counter>(streamId);
+        await AppendFromAnotherWriterAsync(host, streamId);
+        await aggregation.AggregateAsync<Counter>(streamId);
+
+        var events = handler.ServiceProvider.GetRequiredService<IEventSource>();
+        await events.AppendAsync<Counter>(streamId, new Incremented(3));
+        await Assert.ThrowsAsync<ConcurrencyException>(() => events.SaveChangesAsync());
+    }
+
     private static EventStoreTestHost CreateHost(bool appendAgainstAggregatedVersion) =>
         EventStoreTestHost.Create(services =>
         {

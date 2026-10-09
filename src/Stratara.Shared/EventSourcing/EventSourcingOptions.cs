@@ -26,8 +26,10 @@ public sealed class EventSourcingOptions
     /// state.
     /// </para>
     /// <para>
-    /// A rebuild bounded to an earlier version sets no condition; a rebuild of a stream that does not
-    /// exist sets the condition that it still does not. A save, successful or not, ends the condition.
+    /// The condition is the version of the first such rebuild of the stream; a later rebuild of the same
+    /// stream in the unit of work does not move it. A rebuild bounded to an earlier version sets no
+    /// condition; a rebuild of a stream that does not exist sets the condition that it still does not. A
+    /// successful save ends the condition on the streams it wrote; a failed save ends it on every stream.
     /// The cost is that a handler appending to a stream another writer touches concurrently now sees
     /// a conflict where it used to succeed, and on the mediator path that conflict reaches the caller.
     /// </para>

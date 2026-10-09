@@ -31,8 +31,9 @@ applies to the entire NuGet family.
 - **`EventSourcing:AppendAgainstAggregatedVersion`** (default `false`). With it on, an append to a stream
   the handler rebuilt through `IAggregationService.AggregateAsync` in the same scope is made on the
   condition of the version that rebuild saw — every read-then-write handler gets the protection without a
-  code change. A rebuild bounded with `toVersion` sets no condition; a rebuild that found no stream expects
-  it still not to exist. `AddEventSourcing()` now reads the `EventSourcing` section itself;
+  code change. The condition is the version of the first rebuild of a stream in the scope; a rebuild bounded
+  with `toVersion` sets none; a rebuild that found no stream expects it still not to exist. With the option
+  off nothing is recorded. `AddEventSourcing()` now reads the `EventSourcing` section itself;
   `AddWriteStore(configuration)` still does too. The cost: a handler appending to a stream another writer
   touches concurrently gets a conflict where it used to succeed, and on the `IMediator` path the caller
   sees it.
