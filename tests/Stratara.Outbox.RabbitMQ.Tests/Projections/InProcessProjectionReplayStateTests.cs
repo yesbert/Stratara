@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Stratara.Abstractions.Projections;
 using Stratara.Diagnostics;
 using Stratara.Outbox.RabbitMQ.Projections;
 
@@ -20,6 +21,115 @@ public class InProcessProjectionReplayStateTests
             Options.Create(new ProjectionReplayOptions { LeaseSeconds = leaseSeconds }),
             clock);
         return (state, clock);
+    }
+
+    [Fact]
+    public void TryActivate_TheSameRequestTwice_RunsItOnce()
+    {
+        var (state, _) = Create();
+        var requestId = Guid.NewGuid();
+
+        Assert.True(state.TryActivate(requestId));
+        state.Complete(new ReplayCompletion(requestId, ReplayResult.Succeeded, 3));
+
+        Assert.False(state.TryActivate(requestId));
+        Assert.False(state.IsReplayActive);
+    }
+
+    [Fact]
+    public void TryActivate_WhileActive_IsRefused()
+    {
+        var (state, _) = Create();
+        var running = Guid.NewGuid();
+        Assert.True(state.TryActivate(running));
+
+        Assert.False(state.TryActivate(Guid.NewGuid()));
+
+        Assert.Equal(running, state.GetProgress().RequestId);
+    }
+
+    [Fact]
+    public void Complete_KeepsTheOutcomeUntilTheNextCompletes()
+    {
+        var (state, _) = Create();
+        var first = Guid.NewGuid();
+        state.TryActivate(first);
+        state.SetProgress(7, 7);
+        state.Complete(new ReplayCompletion(first, ReplayResult.Succeeded, 7));
+
+        state.TryActivate(Guid.NewGuid());
+
+        var whileTheNextRuns = state.GetProgress();
+        Assert.True(whileTheNextRuns.IsActive);
+        Assert.Equal(first, whileTheNextRuns.LastReplay!.RequestId);
+        Assert.Equal(ReplayResult.Succeeded, whileTheNextRuns.LastReplay.Result);
+        Assert.Equal(7, whileTheNextRuns.LastReplay.ReplayedEvents);
+    }
+
+    [Fact]
+    public void Complete_StampsStartAndEndFromTheTimeProvider()
+    {
+        var (state, clock) = Create();
+        var started = clock.Now;
+        var requestId = Guid.NewGuid();
+        state.TryActivate(requestId);
+        clock.Now = started.AddSeconds(2);
+
+        state.Complete(new ReplayCompletion(requestId, ReplayResult.Failed, 4, "boom"));
+
+        var progress = state.GetProgress();
+        Assert.False(progress.IsActive);
+        Assert.Equal(0, progress.ProcessedEvents);
+        Assert.Equal(0, progress.TotalEvents);
+        Assert.Null(progress.RequestId);
+        Assert.Equal("boom", progress.ErrorMessage);
+        Assert.Equal(started, progress.LastReplay!.StartedAt);
+        Assert.Equal(started.AddSeconds(2), progress.LastReplay.EndedAt);
+        Assert.Equal(ReplayResult.Failed, progress.LastReplay.Result);
+        Assert.Equal("boom", progress.LastReplay.ErrorMessage);
+    }
+
+    [Fact]
+    public void Complete_OfAReplayThatOutlivedItsLease_LeavesTheNextReplayRunning()
+    {
+        var (state, clock) = Create(leaseSeconds: 10);
+        var outlived = Guid.NewGuid();
+        state.TryActivate(outlived);
+        clock.Now = clock.Now.AddSeconds(11);
+        var next = Guid.NewGuid();
+        Assert.True(state.TryActivate(next));
+
+        state.Complete(new ReplayCompletion(outlived, ReplayResult.Succeeded, 5));
+
+        var progress = state.GetProgress();
+        Assert.True(progress.IsActive);
+        Assert.Equal(next, progress.RequestId);
+        Assert.Equal(outlived, progress.LastReplay!.RequestId);
+    }
+
+    [Fact]
+    public void Initially_ReportsNoOutcome()
+    {
+        var (state, _) = Create();
+
+        Assert.Null(state.GetProgress().LastReplay);
+    }
+
+    [Fact]
+    public async Task RequestReplay_WithAnId_DeliversThatId()
+    {
+        var (state, _) = Create();
+        var delivered = new TaskCompletionSource<Guid>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await state.SubscribeToReplayRequestAsync(requestId =>
+        {
+            delivered.TrySetResult(requestId);
+            return Task.CompletedTask;
+        });
+        var chosen = Guid.NewGuid();
+
+        state.RequestReplay(chosen);
+
+        Assert.Equal(chosen, await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]

@@ -60,7 +60,7 @@
 
 ## 5. Verify
 
-- [ ] 5.1 `openspec validate append-against-the-version-a-handler-read --strict`.
-- [ ] 5.2 `./scripts/local-gauntlet.sh` green.
-- [ ] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` and
+- [x] 5.1 `openspec validate append-against-the-version-a-handler-read --strict`.
+- [x] 5.2 `./scripts/local-gauntlet.sh` green.
+- [x] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` and
   `dotnet test tests/Stratara.Outbox.RabbitMQ.IntegrationTests` green (Docker).

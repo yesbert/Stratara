@@ -37,6 +37,37 @@ applies to the entire NuGet family.
   `AddWriteStore(configuration)` still does too. The cost: a handler appending to a stream another writer
   touches concurrently gets a conflict where it used to succeed, and on the `IMediator` path the caller
   sees it.
+- **The outcome of the last replay is kept.** After a replay that succeeded, `GetProgress()` answered exactly
+  what it answered before any replay, so a status reader that polled saw a short replay only if a poll fell
+  inside it, and told the operator it had not begun. `ReplayProgress.LastReplay` is a new `ReplayOutcome` —
+  the request's id, when the replay started and ended, how many events it replayed, and whether it
+  `Succeeded`, `Failed` or was `Interrupted` — kept until the next replay ends. `ReplayProgress.RequestId`
+  names the replay that is running.
+- **A replay request has an identity.** `IProjectionReplayState.RequestReplay(Guid requestId)` lets the
+  requester choose it and find it again. `IProjectionReplayState` also gains
+  `SubscribeToReplayRequestAsync(Func<Guid, Task>)`, `TryActivate(Guid)` and `Complete(ReplayCompletion)`;
+  all four have default implementations, so an implementation outside the framework still compiles and
+  behaves as before.
+
+### Fixed
+
+- **One replay request starts one replay.** Every host that runs the replay worker subscribes to the
+  request channel, and nothing claimed a request: with the coordination state in Redis, one request started
+  a full replay in every such host at once, all emptying and rebuilding the same read store, and two
+  requests in quick succession did the same within one host. A request is now claimed atomically with the
+  replay's marking; the other hosts pass it over, a host that receives it after the replay ended finds it
+  claimed, and a request that arrives while a replay is running starts nothing and logs `104_019`. A replay that
+  outlived its lease while another started records its outcome without ending the other's marking. **Rolling
+  upgrade:** a host on an earlier release claims nothing and runs every request it receives, and its requests carry
+  no identity — upgrade every host that runs the replay worker before relying on this.
+- **A replay stopped by its host ends as interrupted.** A replay cancelled between two batches logged
+  `104_006` "completed" with its partial count. It now ends as `Interrupted` and logs `104_020`, and the host's
+  stop waits, within its shutdown timeout, for the replay to record that. A cancellation that does not come from
+  the host stopping — a provider's own timeout — now ends the replay as `Failed` with its message, where it was
+  silently treated as a shutdown. A failure to claim a request or to record an outcome is logged (`104_109`,
+  `104_121`) instead of escaping the coordination store's callback.
+- **The Redis-backed replay state reports `0` of `0` after a failure,** as the in-process one and the guide
+  always did; it kept showing the failed run's counters until their lease ran out.
 
 ## [4.4.2] — 2026-10-02
 

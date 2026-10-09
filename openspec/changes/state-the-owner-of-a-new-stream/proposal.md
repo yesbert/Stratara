@@ -5,7 +5,7 @@
 ## Why
 
 Since 4.0.0 a stream keeps the owner its first event recorded (`anchor-event-subject-to-the-stream`), which
-closed the consumer report NextPA F-005 for every event *after* the first. The first one is still decided
+closed consumer finding F-005 for every event *after* the first. The first one is still decided
 by whoever is acting: when the creation event names no tenant and no subject is stated, the owner is the
 session's tenant, silently. That is how the defect F-005 describes arose — an operator creates a customer,
 and the customer's whole stream is keyed to the operator's tenant, with nothing failing and nothing logged.

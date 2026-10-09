@@ -6,7 +6,7 @@
 
 After a replay that succeeded, `IProjectionReplayState.GetProgress()` answers exactly what it answers
 before any replay: inactive, 0 of 0, no message. A status reader polls, so it sees a replay only if one
-of its polls falls inside the run. A consumer reported it on 2026-10-09 (NextPA finding F-020): a replay
+of its polls falls inside the run. A consumer reported it on 2026-10-09 (consumer finding F-020): a replay
 of 730 events began 41 ms after the operator's request and ended two seconds later; the first poll came a
 second after that, read inactive and 0/0, and the operator's interface reported after 30 s that the replay
 had not begun. The operator's natural next step — request it again — empties the read store a second time.
@@ -60,7 +60,7 @@ _None._
 - `src/Stratara.Abstractions/Abstractions/Projections/IProjectionReplayState.cs` — `ReplayOutcome`,
   `ReplayResult`, the two `ReplayProgress` properties, and four members with default implementations:
   `RequestReplay(Guid)`, `SubscribeToReplayRequestAsync(Func<Guid, Task>, …)`, `TryActivate(Guid)`,
-  `Complete(ReplayResult, long, string?)`.
+  `Complete(ReplayCompletion)`.
 - `src/Stratara.Outbox.RabbitMQ/Projections/ProjectionReplayState.cs` — the request id on the channel,
   the claim, the outcome key, `GetProgress`.
 - `src/Stratara.Outbox.RabbitMQ/Projections/InProcessProjectionReplayState.cs` — the same in memory.

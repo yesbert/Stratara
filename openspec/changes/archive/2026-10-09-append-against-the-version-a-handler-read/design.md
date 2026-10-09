@@ -19,7 +19,7 @@ Same-scope callers of `AggregateAsync` that matter: `SnapshotService.CreateSnaps
 to the command's `SourceVersion`, then unbounded. `ResiliencePipelineBehavior` retries an
 `IResilientRequest` in the same scope, so per-scope state has to be cleared on a failed save as well.
 
-Evidence: the implementation at `main` 398d20d; NextPA finding F-021 (two streams, 2026-10-09, facts at
+Evidence: the implementation at `main` 398d20d; consumer finding F-021 (two streams, 2026-10-09, facts at
 v12/v13 after the removal at v11, and a soft deletion at v10 after v9).
 
 ## Goals / Non-Goals

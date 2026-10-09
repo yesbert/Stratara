@@ -9,13 +9,13 @@ queue `<sub>.v2` on a channel of its own (`DeclareWorkerQueueAsync`; a refusal b
 `x-overflow: reject-publish` and at-least-once dead-lettering; no length, byte or TTL argument.
 
 Nothing in `src/` calls `EnsureSubscriptionAsync`; consumers call it at start-up from the hosts that publish
-(the guide's pattern; NextPA's command and outbox workers). The Azure Service Bus implementation makes it a
+(the guide's pattern; a consumer's command and outbox workers). The Azure Service Bus implementation makes it a
 no-op on purpose (data-plane credentials). `MessagingOptions` (section `Messaging`, `Stratara.Shared`) is
 validated in `AddMessaging` (`PrefetchCount` 1..65535).
 
 Evidence: the implementation at `main` 398d20d; the 4.0.0 changelog entry (*What it costs*) and the archived
 design `2026-08-31-lose-no-fact-to-a-late-subscription/design.md` lines 111–115, whose only mitigation was
-"the guide says so"; NextPA finding F-010 (*What it costs*).
+"the guide says so"; consumer finding F-010 (*What it costs*).
 
 ## Goals / Non-Goals
 

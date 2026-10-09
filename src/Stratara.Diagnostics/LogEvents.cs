@@ -108,6 +108,12 @@ public static class LogEvents
         public const int ProjectionReplayStateSubscriptionFailed = 104_017;
         /// <summary>The host subscribed to the replay marking's announcements again after a failing stretch (information).</summary>
         public const int ProjectionReplayStateSubscribed = 104_018;
+        /// <summary>A replay request was claimed while another replay was active, and started nothing (information).</summary>
+        public const int ProjectionReplayRequestNotRun = 104_019;
+        /// <summary>A replay ended because its host stopped; not a failure (information).</summary>
+        public const int ProjectionReplayInterrupted = 104_020;
+        /// <summary>The outcome of a replay could not be recorded in the coordination state; its marking lapses with its lease (error).</summary>
+        public const int ProjectionReplayOutcomeNotRecorded = 104_121;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>

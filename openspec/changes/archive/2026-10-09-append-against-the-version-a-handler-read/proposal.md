@@ -7,7 +7,7 @@
 A command handler reads a stream, decides on what it read, and appends. The store numbers the new fact
 after whatever the stream holds *when the handler appends*, not after what the handler read, so a write
 that lands between the read and the append is not a conflict: the new fact is simply recorded after it.
-A consumer reported it under load on 2026-10-09 (NextPA finding F-021): a processing stage re-read an
+A consumer reported it under load on 2026-10-09 (consumer finding F-021): a processing stage re-read an
 entry, saw it alive, and recorded two follow-up facts after another handler had removed the entry for
 good. A fact recorded after a stream's end then stops every later projection replay. The consumer had
 already added a re-read before each append; the window between that check and the commit is hundreds of

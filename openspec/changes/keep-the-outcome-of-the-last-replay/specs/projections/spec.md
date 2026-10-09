@@ -51,7 +51,10 @@ interrupted by its host stopping, with the failure message where it failed. The 
 until the next replay ends, so it is readable while the next one runs, and SHALL be readable from every
 host that shares the coordination state. A reader that polls SHALL therefore be able to tell a replay that
 finished between two polls from one that never ran. Once a replay has ended, its processed count and
-total SHALL read as zero on every coordination state; the count it reached belongs to its outcome.
+total SHALL read as zero on every coordination state; the count it reached belongs to its outcome. A
+replay that ends after its marking lapsed and another replay began SHALL record its outcome and SHALL NOT
+end the other replay's marking. Only the host stopping SHALL make a replay end as interrupted; any other
+cancellation is a failure.
 
 #### Scenario: A replay is running
 
@@ -78,6 +81,12 @@ total SHALL read as zero on every coordination state; the count it reached belon
 - **WHEN** a replay starts and succeeds entirely between two reads of the progress
 - **THEN** the second read reports no active replay and an outcome that names the request, reads
   succeeded, and states how many events were replayed
+
+#### Scenario: A replay outlived its lease while another began
+
+- **WHEN** a replay's marking lapses, another request starts a replay, and the first replay then ends
+- **THEN** its outcome is recorded, and the second replay is still marked active under its own request —
+  verified on the in-process and the Redis-backed coordination state
 
 #### Scenario: Before any replay
 
