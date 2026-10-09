@@ -22,7 +22,7 @@ Nothing in `src/` or `samples/` calls `RequestReplay()` or `GetProgress()`; the 
 consumer-written endpoint pair. Test doubles of the interface exist as hand-written classes
 (`ProjectionReplayStreamOrderTests` ×2, `ResumedOnceInOrderTests`) and as Moq mocks.
 
-Evidence: the implementation at `main` 398d20d; NextPA finding F-020 (2026-10-09, timings of request,
+Evidence: the implementation at `main` 398d20d; consumer finding F-020 (2026-10-09, timings of request,
 replay and first poll); the double run is read off the subscription code, not observed in a log.
 
 ## Goals / Non-Goals

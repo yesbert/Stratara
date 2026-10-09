@@ -10,7 +10,7 @@ half-built until a *later* replay gets all the way through. The spec says so in 
 fails partway*: "the read models are left in whatever partial state the replay reached") and hands the
 fallback to "the backup taken before it, which is the operator's".
 
-Consumers have paid for that twice. NextPA finding F-012 records the original outage (2026-05-29, a
+Consumers have paid for that twice. consumer finding F-012 records the original outage (2026-05-29, a
 projection query timing out mid-rebuild); F-021 records the second, on 2026-10-09, when a fact recorded
 after a stream's end made the replay fail and left the read store empty. And F-015 records the cost that
 never shows up as an incident: a full rebuild has not been run on the consumer's stack since the stream-order

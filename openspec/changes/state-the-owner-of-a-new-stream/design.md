@@ -15,7 +15,7 @@ for both). Only the first concerns this change.
 After `append-against-the-version-a-handler-read`, `AddEventSourcing()` binds `EventSourcingOptions` and
 `EventSource` takes `IOptions<EventSourcingOptions>?`.
 
-Evidence: the implementation at `main` 398d20d; NextPA finding F-005 (*Suggested fix*, first two bullets;
+Evidence: the implementation at `main` 398d20d; consumer finding F-005 (*Suggested fix*, first two bullets;
 the third, documentation, is done in `docs/guides/write-a-command-handler.md` lines 70–117).
 
 ## Goals / Non-Goals

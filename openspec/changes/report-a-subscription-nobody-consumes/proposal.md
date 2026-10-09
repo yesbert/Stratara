@@ -5,7 +5,7 @@
 ## Why
 
 Since 4.0.0 a host can establish a subscription before its handler attaches
-(`IMessageBus.EnsureSubscriptionAsync`), which closed NextPA finding F-010 — facts lost to a subscription
+(`IMessageBus.EnsureSubscriptionAsync`), which closed consumer finding F-010 — facts lost to a subscription
 that bound late. The change named its own cost and left it to the guide: an established subscription keeps
 what is published to it until something consumes it, so a queue whose worker is never deployed, or was
 retired, grows without end. Nothing in the framework notices. The first sign is a broker running out of

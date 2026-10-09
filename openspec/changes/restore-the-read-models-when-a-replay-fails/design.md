@@ -3,7 +3,7 @@
 The read store belongs to the consumer. The framework's base `ReadDbContext<TContext>` contributes three
 tables of its own — the tenant view, `projection_checkpoint` (Orleans store readers) and
 `projection_forgotten_tenant` — and the consumer's derived context adds its views. There is no schema or
-`search_path` setting in the framework; consumers set `HasDefaultSchema` themselves (NextPA does), so
+`search_path` setting in the framework; consumers set `HasDefaultSchema` themselves (at least one consumer does), so
 every table name the context emits is schema-qualified. Projections inject whatever they write through
 (`IProjectionsUnitOfWork`, `IDbContextFactory<T>`, …); the framework passes them nothing and does not see
 their writes.
@@ -18,7 +18,7 @@ stop — except bundles that were already queued when the replay began.
 After `keep-the-outcome-of-the-last-replay`, a replay has a request id, `TryActivate`/`Complete`, and an
 outcome that survives it.
 
-Evidence: the implementation at `main` 398d20d; NextPA findings F-012 (2026-05-29 outage), F-015 (no full
+Evidence: the implementation at `main` 398d20d; consumer findings F-012 (2026-05-29 outage), F-015 (no full
 rebuild run since 4.3.1 adoption), F-021 (2026-10-09 empty read store); the owner chose this approach over
 build-beside-and-swap and over a hooks-only contract on 2026-10-09.
 
