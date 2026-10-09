@@ -1,0 +1,68 @@
+## 1. Reproduce first
+
+- [ ] 1.1 `tests/Stratara.Orleans.IntegrationTests/Projections/ReplayRestoreTests.cs` (new; the project owns
+  the PostgreSQL container and a real read context): `A_replay_that_fails_after_truncating_leaves_the_read_models_empty`
+  documents today's behaviour (green on `main`) and becomes the "without the registration" fact.
+- [ ] 1.2 Same file, red until the registration exists:
+  `A_replay_that_fails_restores_the_views_the_checkpoints_and_the_forgotten_tenants`,
+  `A_replay_that_succeeds_leaves_no_copy`,
+  `A_copy_left_by_a_dead_replay_is_restored_when_the_next_host_starts`,
+  `Two_hosts_starting_over_one_abandoned_copy_restore_it_once`,
+  `A_replay_requested_over_an_abandoned_copy_keeps_that_copy`,
+  `A_foreign_key_from_outside_the_set_fails_the_replay_before_anything_is_emptied`,
+  `A_restore_after_a_column_change_refuses_and_keeps_the_copy`,
+  `Identity_sequences_continue_above_the_restored_rows`.
+
+## 2. The abstraction and the worker
+
+- [ ] 2.1 `IReadModelPreservation` (`src/Stratara.Projections/Abstractions/IReadModelPreservation.cs`),
+  documented member by member.
+- [ ] 2.2 `ReplayOutcome.ReadModelsRestored` (`init`, `bool`) in
+  `src/Stratara.Abstractions/Abstractions/Projections/IProjectionReplayState.cs`; the Redis and in-process
+  states carry it through `Complete` (an overload or a parameter object, decided against what
+  `keep-the-outcome-of-the-last-replay` shipped).
+- [ ] 2.3 `ProjectionReplayWorker`: preserve after `TryActivate` and renew the lease; restore on failure
+  with `CancellationToken.None`; discard on success; nothing on interruption; `RestoreAbandonedAsync` once
+  after subscribing — `tests/Stratara.Projections.Tests/Services/ProjectionReplayWorkerTests.cs`:
+  `ReplayCallback_WithPreservation_PreservesBeforeClearingForgottenTenantsAndTruncating`,
+  `ReplayCallback_WithPreservation_FailureRestoresAndCompletesWithReadModelsRestored`,
+  `ReplayCallback_WithPreservation_SuccessDiscards`,
+  `ReplayCallback_WithPreservation_CancellationLeavesTheCopy`,
+  `ReplayCallback_PreservationFails_NothingIsTruncatedAndTheReplayFails`,
+  `ReplayCallback_RestoreFails_CompletesWithoutReadModelsRestoredAndLogs`,
+  `ExecuteAsync_WithPreservation_RestoresAnAbandonedCopyOnce`; without a registration every existing fact
+  stays green unchanged.
+- [ ] 2.4 Log events in `LogEvents.Projection` (`ReadModelsPreserved`, `ReadModelsRestored`,
+  `AbandonedReadModelsRestored` as `104_02x`, `ReadModelRestoreFailed` as `104_1xx`) and their
+  source-generated methods.
+
+## 3. The PostgreSQL implementation
+
+- [ ] 3.1 `ReadModelRestoreOptions` (`Schema`, `ExcludedTables`, `AdditionalTables`; section
+  `ProjectionReplay:Restore`) and `AddReadModelRestore<TReadContext>()` in
+  `src/Stratara.EventSourcing.EntityFrameworkCore/ReadStore/Replay/`;
+  `tests/Stratara.Documentation.Tests/OptionsSectionBindingTests.cs` gets the section.
+- [ ] 3.2 Table set from the EF model plus the `pg_constraint` checks (outside-in foreign key, cycle) and
+  the insertion order — unit-tested against a model in `tests/Stratara.WriteStore.Tests` or the nearest
+  EF-model test project: `TheSet_IncludesTheFrameworksOwnTables`, `TheSet_SkipsViewsAndKeylessTypes`,
+  `TheSet_HonoursExcludedAndAdditionalTables`.
+- [ ] 3.3 `PreserveAsync` (repeatable-read snapshot, marker in the same transaction, existing marker kept and
+  re-pointed), `RestoreAsync` (advisory lock, column comparison, truncate, parent-first insert with
+  `OVERRIDING SYSTEM VALUE`, sequence reset, drop), `DiscardAsync`, `RestoreAbandonedAsync` — the facts of
+  1.2 go green.
+
+## 4. Documentation
+
+- [ ] 4.1 `docs/guides/write-a-projection.md`, *Replay is destructive, and it is all-or-nothing* (around
+  line 298): the registration, what is copied and when, both endings, the dead-host restore, the queued-bundle
+  window, disk and time cost, the `CREATE` permission, the unmapped-table caveat.
+- [ ] 4.2 `docs/guides/operate-the-orleans-execution-model.md`, *A rebuild or a replay that does not finish*
+  (around line 338): checkpoints are part of the copy; restored readers resume from the restored positions.
+- [ ] 4.3 `docs/reference/di-extensions-cheatsheet.md`: a row for `AddReadModelRestore<TReadContext>()`.
+- [ ] 4.4 `CHANGELOG.md` → *Unreleased*.
+
+## 5. Verify
+
+- [ ] 5.1 `openspec validate restore-the-read-models-when-a-replay-fails --strict`.
+- [ ] 5.2 `./scripts/local-gauntlet.sh` green.
+- [ ] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker).

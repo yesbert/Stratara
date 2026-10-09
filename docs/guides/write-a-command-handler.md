@@ -185,6 +185,50 @@ Each conflict is also counted, on `event_source.append.conflicts`, tagged with `
 `bucket.id` — the partition the stream fell in — so contention on one aggregate type or one hot
 partition shows up before it shows up as latency.
 
+### A write between your read and your append
+
+`AppendAsync` numbers the event after whatever the stream holds **when you append**, not after what
+you read. A handler that rebuilds an aggregate, decides on it, and then appends therefore does not
+conflict with a write that landed in between: its event is simply recorded after that write. Most of
+the time that is harmless. It is not when the write in between changed what the decision rests on —
+the entry was deleted, the order was cancelled — because the handler's fact is then recorded after a
+fact that contradicts it. Re-reading just before the append narrows the window; it does not close it,
+because the save that follows still takes time.
+
+Two ways close it:
+
+- **Name the version you decided on.** `AppendAtVersionAsync<TAggregate>(streamId, expectedVersion, @event)`
+  and `AppendRangeAtVersionAsync<TAggregate>(streamId, expectedVersion, events)` number the events from
+  `expectedVersion + 1`. If the stream has moved past it, `SaveChangesAsync` throws the same
+  `ConcurrencyException` as above and records nothing. Read the version with `GetCurrentVersionAsync`
+  *before* you rebuild the aggregate, so a write in between surfaces as a conflict rather than slipping
+  through. A version the stream has not reached yet is refused at the append with
+  `ArgumentOutOfRangeException`.
+- **Let the host apply it to every read-then-write handler.** Set the option, and an append to a stream
+  that the handler rebuilt through `IAggregationService.AggregateAsync` in the same scope is made on the
+  condition of the version that rebuild saw — without touching a handler:
+
+```json
+{
+  "EventSourcing": {
+    "AppendAgainstAggregatedVersion": true
+  }
+}
+```
+
+  `AddEventSourcing()` reads the section. The condition is the version of the *first* rebuild of a stream
+  in the scope — a second rebuild of the same stream, by a validator or a helper, does not move it. A
+  rebuild bounded with `toVersion` sets no condition. A rebuild that found no stream sets the condition
+  that the stream still does not exist, so a handler whose `AppendAsync` writes the first event conflicts
+  with whoever created it first; `CreateAsync` refuses an existing stream with `InvalidOperationException`,
+  as it always has. A successful save ends the condition on the streams it wrote and keeps it on those
+  the handler read but has not written; a failed save ends it everywhere, so a handler that runs again
+  reads again.
+
+What the option costs: a handler that appends to a stream another writer touches concurrently now gets a
+conflict where it used to succeed. Through `ICommandOutboxDispatcher` that is a redelivery and a fresh
+read; through `IMediator` the caller sees the `ConcurrencyException`. The option is off by default.
+
 ## When a save committed but could not publish
 
 `SaveChangesAsync` commits the events and then hands their bundle on to the outbox. On a host without

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Stratara.Contracts.Messages;
 using Stratara.Contracts.Session;
 using Stratara.Abstractions.Domain;
@@ -52,8 +53,11 @@ internal sealed partial class EventSource(
     ISecureJsonSerializer serializer,
     IEnumerable<IStoreConflictDetector> conflictDetectors,
     IBusEnvelopeSigner? signer = null,
-    ILogger<EventSource>? logger = null) : IEventSource
+    ILogger<EventSource>? logger = null,
+    AggregatedStreamVersions? aggregatedVersions = null,
+    IOptions<EventSourcingOptions>? options = null) : IEventSource
 {
+    private readonly bool _appendAgainstAggregatedVersion = options?.Value.AppendAgainstAggregatedVersion ?? false;
     private readonly List<EventStreamEntry> _eventStreamEntries = [];
     private readonly Dictionary<Guid, long> _streamVersions = new();
 
@@ -112,6 +116,44 @@ internal sealed partial class EventSource(
         AppendRangeCoreAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The stream is numbered from <paramref name="expectedVersion"/> instead of from its head. A writer
+    /// that moved the stream past it occupies <paramref name="expectedVersion"/> + 1, so the store's
+    /// uniqueness of a stream's versions refuses the save and it surfaces as
+    /// <see cref="ConcurrencyException"/>; a version above the head would collide with nothing and is
+    /// refused here instead.
+    /// </remarks>
+    public async Task AppendRangeAtVersionAsync<TAggregate>(Guid streamId, long expectedVersion, IEnumerable<object> events,
+        CancellationToken cancellationToken = default) where TAggregate : notnull, new()
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+
+        if (_streamVersions.TryGetValue(streamId, out var stagedVersion))
+        {
+            if (stagedVersion != expectedVersion)
+            {
+                throw new InvalidOperationException(
+                    $"Events for stream {streamId} are already staged up to version {stagedVersion} in this batch; " +
+                    $"an append expecting version {expectedVersion} contradicts them.");
+            }
+        }
+        else
+        {
+            var head = await ReadHeadAsync(streamId, cancellationToken);
+            if (expectedVersion > head)
+            {
+                throw new ArgumentOutOfRangeException(nameof(expectedVersion), expectedVersion,
+                    $"Stream {streamId} is at version {head}; an append cannot expect version {expectedVersion}, " +
+                    "which the stream has not reached.");
+            }
+
+            _streamVersions[streamId] = expectedVersion;
+        }
+
+        await AddEventsToStreamAsync<TAggregate>(streamId, events, statedSubject: null, cancellationToken);
+    }
+
+    /// <inheritdoc/>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="subject"/> names no tenant. A caller that states the Subject has
     /// also stated that no other candidate applies, so the append fails instead of falling back.
@@ -153,12 +195,15 @@ internal sealed partial class EventSource(
     /// </remarks>
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        var saved = false;
         try
         {
             await PersistAndPublishAsync(cancellationToken);
+            saved = true;
         }
         finally
         {
+            ForgetAggregatedVersions(saved);
             ClearBatchState();
         }
     }
@@ -252,6 +297,27 @@ internal sealed partial class EventSource(
     }
 
     /// <summary>
+    /// A save ends the condition on the streams it wrote, and keeps it on streams the handler read but has not
+    /// written yet. A failed save ends it on every stream, so a handler that runs again reads again.
+    /// </summary>
+    private void ForgetAggregatedVersions(bool saved)
+    {
+        if (aggregatedVersions is null)
+        {
+            return;
+        }
+
+        if (saved)
+        {
+            aggregatedVersions.Forget(_streamVersions.Keys);
+        }
+        else
+        {
+            aggregatedVersions.Clear();
+        }
+    }
+
+    /// <summary>
     /// A conflict the persistence layer names as one, or a unique violation a registered detector
     /// recognises. Every detector sees the exception as the unit of work threw it, whatever its
     /// type: which layer wraps the provider's exception is a provider detail, and a unit of work that
@@ -287,12 +353,20 @@ internal sealed partial class EventSource(
     {
         if (!_streamVersions.ContainsKey(streamId))
         {
-            await using var transaction = await unitOfWork.StartAsync(cancellationToken);
-            var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
-            _streamVersions[streamId] = await eventStreamRepository.GetVersionOrDefaultAsync(streamId, cancellationToken);
+            _streamVersions[streamId] =
+                _appendAgainstAggregatedVersion && aggregatedVersions is not null && aggregatedVersions.TryGet(streamId, out var readVersion)
+                    ? readVersion
+                    : await ReadHeadAsync(streamId, cancellationToken);
         }
 
         await AddEventsToStreamAsync<TAggregate>(streamId, events, statedSubject, cancellationToken);
+    }
+
+    private async Task<long> ReadHeadAsync(Guid streamId, CancellationToken cancellationToken)
+    {
+        await using var transaction = await unitOfWork.StartAsync(cancellationToken);
+        var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
+        return await eventStreamRepository.GetVersionOrDefaultAsync(streamId, cancellationToken);
     }
 
     private async Task AddEventsToStreamAsync<TAggregate>(Guid streamId, IEnumerable<object> events,

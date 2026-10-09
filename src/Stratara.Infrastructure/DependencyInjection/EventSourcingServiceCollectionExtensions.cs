@@ -2,7 +2,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Infrastructure.EventSourcing;
+using Microsoft.Extensions.Options;
 using Stratara.Abstractions.EventSourcing;
+using Stratara.Shared.EventSourcing;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -28,6 +30,12 @@ public static class EventSourcingServiceCollectionExtensions
     /// brings another provider, registers a detector itself; without one, a duplicate stream
     /// version is not recognised as a <see cref="ConcurrencyException"/>.
     /// </para>
+    /// <para>
+    /// The call reads <c>EventSourcingOptions</c> from the <c>EventSourcing</c> section of the
+    /// configuration the container holds, where it holds one — for example
+    /// <c>"EventSourcing": { "AppendAgainstAggregatedVersion": true }</c> makes every append that follows
+    /// a rebuild through <see cref="IAggregationService"/> conditional on the version that rebuild saw.
+    /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
@@ -40,6 +48,9 @@ public static class EventSourcingServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddEventSourcing(this IServiceCollection services)
     {
+        services.AddOptions<EventSourcingOptions>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<EventSourcingOptions>, EventSourcingOptionsBinding>());
+        services.TryAddScoped<AggregatedStreamVersions>();
         services.AddScoped<IEventSource, EventSource>();
         services.AddScoped<IAggregationService, AggregationService>();
         services.AddScoped<IChangeSetHandler, ChangeSetHandler>();
