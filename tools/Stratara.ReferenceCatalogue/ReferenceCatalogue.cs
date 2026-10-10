@@ -258,6 +258,7 @@ public static class ReferenceCatalogue
         string text => $"`{text}`",
         bool flag => $"`{(flag ? "true" : "false")}`",
         Array array => array.Length == 0 ? "*(empty)*" : $"`{array.Length} entries`",
+        System.Collections.ICollection collection => collection.Count == 0 ? "*(empty)*" : $"`{collection.Count} entries`",
         _ => $"`{Convert.ToString(value, CultureInfo.InvariantCulture)}`",
     };
 

@@ -2,7 +2,7 @@ namespace Stratara.Diagnostics;
 
 /// <summary>
 /// Event-ID schema for Stratara's source-generated <c>[LoggerMessage]</c> extensions. Even
-/// hundreds = info/debug, <c>_1xx</c> = error. Consumer apps should pick non-overlapping
+/// hundreds = info/debug, <c>_1xx</c> = error; a warning follows its band's precedent. Consumer apps should pick non-overlapping
 /// ranges; Stratara reserves the whole 100_000–199_999 block and currently allocates
 /// 100_000–117_999. Start consumer event-IDs at 200_000.
 /// </summary>
@@ -58,10 +58,9 @@ public static class LogEvents
         /// snapshot is a cache and a later save writes one (warning; information when it was cancelled).
         /// </summary>
         public const int SnapshotFailed = 102_006;
-
         /// <summary>
-        /// A new stream's first event took its owner from the session, and the host asked to be warned of it
-        /// (warning, once per stream created).
+        /// A new stream's first event is taking its owner from the session, and the host asked to be warned of it
+        /// (warning, once per stream and batch — again when a failed save is retried).
         /// </summary>
         public const int NewStreamOwnerTakenFromSession = 102_007;
     }
@@ -126,10 +125,17 @@ public static class LogEvents
         public const int ReadModelsRestored = 104_022;
         /// <summary>A state preserved by a replay whose host stopped was restored when a host started (warning).</summary>
         public const int AbandonedReadModelsRestored = 104_023;
-        /// <summary>The state preserved for a replay that succeeded could not be dropped; it is dropped when a host next starts (warning).</summary>
+        /// <summary>
+        /// The state preserved for a replay that succeeded could not be dropped; a host that starts later drops it where the
+        /// coordination state still holds the replay's outcome, and restores it otherwise (warning).
+        /// </summary>
         public const int PreservedReadModelsNotDiscarded = 104_025;
         /// <summary>A failed replay could not restore the read models, or a host could not restore an abandoned preserved state; the state is kept (error).</summary>
         public const int ReadModelRestoreFailed = 104_124;
+        /// <summary>A replay could not renew its marking while it prepared; it tries again every second (warning, once per preparation).</summary>
+        public const int ProjectionReplayRenewalFailed = 104_026;
+        /// <summary>A replay request could not be claimed because the coordination state failed; no replay started (error).</summary>
+        public const int ProjectionReplayRequestNotClaimed = 104_127;
     }
 
     /// <summary>Command-handling worker event-IDs (105_000s).</summary>

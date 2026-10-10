@@ -175,6 +175,53 @@ public class ProjectionReplayStateTests(RedisFixture redis)
     }
 
     [Fact]
+    public async Task AFailedCompletionOfAReplayThatOutlivedItsLease_LeavesTheRunningReplaysErrorAndMarkingAlone()
+    {
+        await redis.FlushAsync();
+        await using var outlivedHost = await StartSutAsync();
+        await using var nextHost = await StartSutAsync();
+        var outlived = Guid.NewGuid();
+        outlivedHost.TryActivate(outlived);
+        await redis.Connection.GetDatabase().KeyDeleteAsync(ActiveKey);
+        nextHost.TryActivate(Guid.NewGuid());
+
+        outlivedHost.Complete(new ReplayCompletion(outlived, ReplayResult.Failed, 1, "late failure"));
+
+        var progress = nextHost.GetProgress();
+        Assert.True(progress.IsActive);
+        Assert.Null(progress.ErrorMessage);
+        Assert.Equal("late failure", progress.LastReplay!.ErrorMessage);
+        Assert.True(outlivedHost.IsReplayActive);
+    }
+
+    [Fact]
+    public async Task SetProgress_OfAReplayThatOutlivedItsLease_LeavesTheRunningReplayAlone()
+    {
+        await redis.FlushAsync();
+        await using var outlivedHost = await StartSutAsync();
+        await using var nextHost = await StartSutAsync();
+        outlivedHost.TryActivate(Guid.NewGuid());
+        await redis.Connection.GetDatabase().KeyDeleteAsync(ActiveKey);
+        nextHost.TryActivate(Guid.NewGuid());
+        nextHost.SetProgress(40, 100);
+
+        outlivedHost.SetProgress(0, 0);
+
+        var progress = nextHost.GetProgress();
+        Assert.Equal(40, progress.ProcessedEvents);
+        Assert.Equal(100, progress.TotalEvents);
+    }
+
+    [Fact]
+    public async Task RequestReplay_WithAnEmptyIdentity_IsRefused()
+    {
+        await redis.FlushAsync();
+        await using var sut = await StartSutAsync();
+
+        Assert.Throws<ArgumentException>(() => sut.RequestReplay(Guid.Empty));
+    }
+
+    [Fact]
     public async Task SetProgress_RenewsTheLeaseOfTheRunningRequestsIdentity()
     {
         await redis.FlushAsync();

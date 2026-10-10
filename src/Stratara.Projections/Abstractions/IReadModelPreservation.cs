@@ -17,6 +17,10 @@ namespace Stratara.Projections.Abstractions;
 /// restored state is one that existed. <c>AddReadModelRestore&lt;TReadContext&gt;()</c> registers the PostgreSQL
 /// implementation.
 /// </para>
+/// <para>
+/// A failure of the store itself — a connection that drops, a statement the database refuses — propagates as the
+/// store's own exception; the replay worker logs it, and a preserved state stays in place for the next attempt.
+/// </para>
 /// </remarks>
 public interface IReadModelPreservation
 {

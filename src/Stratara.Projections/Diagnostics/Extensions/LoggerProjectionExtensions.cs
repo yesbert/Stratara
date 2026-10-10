@@ -90,12 +90,32 @@ public static partial class LoggerProjectionExtensions
 
     /// <summary>Logs that a projection replay ended because its host stopped. It is not a failure.</summary>
     /// <param name="logger">The logger.</param>
+    /// <param name="requestId">The identity of the request the replay ran.</param>
     /// <param name="replayedEvents">The number of events the replay had applied when it ended.</param>
     [LoggerMessage(
         EventId = LogEvents.Projection.ProjectionReplayInterrupted,
         Level = LogLevel.Information,
-        Message = "Projection replay interrupted by the host stopping after {ReplayedEvents} events. The read models are partly rebuilt; request the replay again.")]
-    public static partial void LogProjectionReplayInterrupted(this ILogger logger, long replayedEvents);
+        Message = "Projection replay {RequestId} interrupted by the host stopping after {ReplayedEvents} events. The read models are partly rebuilt — unless a host that keeps them restores them when it starts; otherwise request the replay again.")]
+    public static partial void LogProjectionReplayInterrupted(this ILogger logger, Guid requestId, long replayedEvents);
+
+    /// <summary>Logs, once per preparation, that a replay could not renew its marking; it tries again every second.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">The failure.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayRenewalFailed,
+        Level = LogLevel.Warning,
+        Message = "Projection replay could not renew its marking while it prepares; it tries again every second. If the coordination store stays away longer than the lease, the marking lapses and publication resumes mid-rebuild.")]
+    public static partial void LogProjectionReplayRenewalFailed(this ILogger logger, Exception exception);
+
+    /// <summary>Logs that a replay request could not be claimed because the coordination state failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="exception">The failure.</param>
+    /// <param name="requestId">The identity of the request.</param>
+    [LoggerMessage(
+        EventId = LogEvents.Projection.ProjectionReplayRequestNotClaimed,
+        Level = LogLevel.Error,
+        Message = "Projection replay request {RequestId} could not be claimed; no replay started here.")]
+    public static partial void LogProjectionReplayRequestNotClaimed(this ILogger logger, Exception exception, Guid requestId);
 
     /// <summary>Logs that the outcome of a replay could not be recorded in the coordination state.</summary>
     /// <param name="logger">The logger.</param>
@@ -140,7 +160,7 @@ public static partial class LoggerProjectionExtensions
     [LoggerMessage(
         EventId = LogEvents.Projection.PreservedReadModelsNotDiscarded,
         Level = LogLevel.Warning,
-        Message = "Projection replay {RequestId} succeeded, but the read models preserved before it could not be dropped. They are dropped, not restored, when a host next starts.")]
+        Message = "Projection replay {RequestId} succeeded, but the read models preserved before it could not be dropped. A host that starts later drops them where the coordination state still holds this outcome, and restores them otherwise — which undoes the replay.")]
     public static partial void LogPreservedReadModelsNotDiscarded(this ILogger logger, Exception exception, Guid requestId);
 
     /// <summary>Logs that preserved read models could not be restored; the preserved state is kept.</summary>

@@ -39,9 +39,9 @@ Every bindable options type, the section it binds from, and the default each key
 
 | Key | Type | Default |
 |---|---|---|
-| `ProjectionReplay:Restore:AdditionalTables` | `IList<String>` | `System.Collections.Generic.List`1[System.String]` |
+| `ProjectionReplay:Restore:AdditionalTables` | `IList<String>` | *(empty)* |
 | `ProjectionReplay:Restore:CommandTimeout` | `TimeSpan` | `00:30:00` |
-| `ProjectionReplay:Restore:ExcludedTables` | `IList<String>` | `System.Collections.Generic.List`1[System.String]` |
+| `ProjectionReplay:Restore:ExcludedTables` | `IList<String>` | *(empty)* |
 | `ProjectionReplay:Restore:Schema` | `String` | `stratara_replay` |
 
 ### `Outbox` — Stratara.Outbox.RabbitMQ.Outbox.OutboxOptions

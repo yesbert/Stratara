@@ -10,7 +10,8 @@ namespace Stratara.Abstractions.EventSourcing;
 /// Every event is recorded under the tenant that owns it — its Subject — and that tenant is not
 /// simply the one in the caller's session. For each event the store takes the first of these that
 /// names a tenant: the Subject stated for that event with
-/// <see cref="AppendOnBehalfOfAsync{TAggregate}"/>; the owner already resolved for the same stream
+/// <see cref="AppendOnBehalfOfAsync{TAggregate}"/>, or for a stream's first event with
+/// <see cref="CreateOnBehalfOfAsync{TAggregate}"/>; the owner already resolved for the same stream
 /// earlier in the batch; the owner recorded on the stream's first event — its tenant, and its user
 /// where one was recorded; the <see cref="IAggregateCreationEvent.TenantId"/> of a creation event;
 /// and only then the tenant in the session. If none of them names a tenant, the append fails.
@@ -49,11 +50,15 @@ public interface IEventSource
     /// <summary>Returns the head version of the stream, or <c>0</c> if it does not exist.</summary>
     Task<long> GetCurrentVersionAsync(Guid streamId, CancellationToken cancellationToken = default);
 
-    /// <summary>Create a new stream with the first event. Fails if the stream already exists.</summary>
+    /// <summary>
+    /// Create a new stream with the first event. Fails if the stream already exists or already has events staged in
+    /// this batch.
+    /// </summary>
     /// <remarks>
     /// The new stream's owner is the tenant the event carries when it is an
     /// <see cref="IAggregateCreationEvent"/> with a non-empty tenant, otherwise the tenant in the
-    /// session. Every later event on the stream keeps that owner.
+    /// session — unless the host's <c>EventSourcing:NewStreamOwnerFromSession</c> warns of or refuses that. Every
+    /// later event on the stream keeps that owner.
     /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type the stream represents.</typeparam>
     /// <param name="streamId">The stream id.</param>
@@ -62,6 +67,11 @@ public interface IEventSource
     /// stream's owner instead of taking the tenant in the session.
     /// </param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="InvalidOperationException">
+    /// The stream already exists or already has events staged in this batch; no candidate names an owner; or the
+    /// first event would take its owner from the session and the host refuses that
+    /// (<c>EventSourcing:NewStreamOwnerFromSession</c> = <c>Refuse</c>).
+    /// </exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task CreateAsync<TAggregate>(Guid streamId, object @event, CancellationToken cancellationToken = default)
         where TAggregate : notnull, new();
@@ -75,6 +85,11 @@ public interface IEventSource
     /// <param name="streamId">The stream id.</param>
     /// <param name="events">The events to append, in order.</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="InvalidOperationException">
+    /// The stream already exists or already has events staged in this batch; no candidate names an owner; or the
+    /// first event would take its owner from the session and the host refuses that
+    /// (<c>EventSourcing:NewStreamOwnerFromSession</c> = <c>Refuse</c>).
+    /// </exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task CreateRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
@@ -113,7 +128,7 @@ public interface IEventSource
         if (await ExistsAsync(streamId, cancellationToken))
         {
             throw new InvalidOperationException(
-                $"Stream with ID {streamId} already exists. Use AppendToStream to add events.");
+                $"Stream with ID {streamId} already exists. Use AppendAsync to add events.");
         }
 
         await AppendOnBehalfOfAsync<TAggregate>(streamId, @event, subject, cancellationToken);
@@ -123,13 +138,18 @@ public interface IEventSource
     /// <remarks>
     /// The event takes the owner recorded on the stream, not the tenant in the session. On a stream
     /// that does not exist yet, the owner is resolved as for the first event of
-    /// <see cref="CreateAsync{TAggregate}"/>. Use <see cref="AppendOnBehalfOfAsync{TAggregate}"/> for
+    /// <see cref="CreateAsync{TAggregate}"/>, including what the host's
+    /// <c>EventSourcing:NewStreamOwnerFromSession</c> decides. Use <see cref="AppendOnBehalfOfAsync{TAggregate}"/> for
     /// an event whose owner differs from the stream's.
     /// </remarks>
     /// <typeparam name="TAggregate">The aggregate type.</typeparam>
     /// <param name="streamId">The stream id.</param>
     /// <param name="event">The event payload.</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="InvalidOperationException">
+    /// No candidate names an owner, or the stream does not exist yet, its first event would take its owner from the
+    /// session, and the host refuses that (<c>EventSourcing:NewStreamOwnerFromSession</c> = <c>Refuse</c>).
+    /// </exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task AppendAsync<TAggregate>(Guid streamId, object @event, CancellationToken cancellationToken = default)
         where TAggregate : notnull, new();
@@ -140,6 +160,10 @@ public interface IEventSource
     /// <param name="streamId">The stream id.</param>
     /// <param name="events">The events to append, in order.</param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
+    /// <exception cref="InvalidOperationException">
+    /// No candidate names an owner, or the stream does not exist yet, its first event would take its owner from the
+    /// session, and the host refuses that (<c>EventSourcing:NewStreamOwnerFromSession</c> = <c>Refuse</c>).
+    /// </exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task AppendRangeAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();
@@ -180,7 +204,8 @@ public interface IEventSource
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Events for the stream are already staged in this batch, and <paramref name="expectedVersion"/>
-    /// is not the version they end at.
+    /// is not the version they end at; or the owner cannot be resolved, as for
+    /// <see cref="AppendAsync{TAggregate}"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">The implementation does not support conditional appends.</exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
@@ -209,7 +234,8 @@ public interface IEventSource
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Events for the stream are already staged in this batch, and <paramref name="expectedVersion"/>
-    /// is not the version they end at.
+    /// is not the version they end at; or the owner cannot be resolved, as for
+    /// <see cref="AppendAsync{TAggregate}"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">The implementation does not support conditional appends.</exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>

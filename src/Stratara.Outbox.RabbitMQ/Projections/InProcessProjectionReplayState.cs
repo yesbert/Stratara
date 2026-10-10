@@ -12,10 +12,12 @@ namespace Stratara.Outbox.RabbitMQ.Projections;
 /// here only; the registration that chooses this implementation records that once at start-up.
 /// </summary>
 /// <remarks>
-/// The lease semantics mirror the Redis-backed implementation: <see cref="Activate"/> and
+/// The lease semantics mirror the Redis-backed implementation: <see cref="TryActivate"/>, <see cref="Activate"/> and
 /// <see cref="SetProgress"/> stamp an expiry <see cref="ProjectionReplayOptions.LeaseSeconds"/>
 /// ahead, and an expired marking reads as inactive with its counters cleared. The recorded error is
-/// not leased; it describes a replay that has ended and is cleared by the next <see cref="Activate"/>.
+/// not leased; it describes a replay that has ended and is cleared when the next replay is activated or completes
+/// without failing. A completion whose replay outlived its lease while another started records its outcome and leaves
+/// the other replay's marking and error alone.
 /// A subscriber that fails when a replay is requested is logged and does not stop the remaining
 /// subscribers from being notified, as a pub/sub handler's failure never reaches the publisher.
 /// A request is claimed once: the identities of the most recent requests are remembered, so a request
@@ -39,9 +41,8 @@ internal sealed class InProcessProjectionReplayState(
     private long _processed;
     private long _total;
     private string? _error;
+    private readonly Dictionary<Guid, DateTimeOffset> _startedAt = [];
     private Guid? _requestId;
-    private DateTimeOffset _startedAt;
-    private readonly Dictionary<Guid, DateTimeOffset> _startedAtByRequest = [];
     private ReplayOutcome? _lastReplay;
 
     /// <inheritdoc/>
@@ -64,9 +65,10 @@ internal sealed class InProcessProjectionReplayState(
             _error = null;
             _processed = 0;
             _total = 0;
-            _requestId = null;
-            _startedAt = timeProvider.GetUtcNow();
-            _activeUntil = _startedAt + _lease;
+            _requestId = Guid.Empty;
+            var startedAt = timeProvider.GetUtcNow();
+            _startedAt[Guid.Empty] = startedAt;
+            _activeUntil = startedAt + _lease;
         }
     }
 
@@ -90,9 +92,9 @@ internal sealed class InProcessProjectionReplayState(
             _processed = 0;
             _total = 0;
             _requestId = requestId;
-            _startedAt = timeProvider.GetUtcNow();
-            _startedAtByRequest[requestId] = _startedAt;
-            _activeUntil = _startedAt + _lease;
+            var startedAt = timeProvider.GetUtcNow();
+            _startedAt[requestId] = startedAt;
+            _activeUntil = startedAt + _lease;
             return true;
         }
     }
@@ -103,20 +105,21 @@ internal sealed class InProcessProjectionReplayState(
         ArgumentNullException.ThrowIfNull(completion);
         lock (_gate)
         {
-            var startedAt = _startedAtByRequest.Remove(completion.RequestId, out var started) ? started : _startedAt;
+            var endedAt = timeProvider.GetUtcNow();
+            var startedAt = _startedAt.Remove(completion.RequestId, out var started) ? started : endedAt;
             _lastReplay = new ReplayOutcome(
                 completion.RequestId,
                 startedAt,
-                timeProvider.GetUtcNow(),
+                endedAt,
                 completion.ReplayedEvents,
                 completion.Result,
                 completion.ErrorMessage)
             {
                 ReadModelsRestored = completion.ReadModelsRestored,
             };
-            _error = completion.Result == ReplayResult.Failed ? completion.ErrorMessage : null;
             if (_requestId is null || _requestId == completion.RequestId)
             {
+                _error = completion.Result == ReplayResult.Failed ? completion.ErrorMessage : null;
                 EndReplay();
             }
         }
@@ -128,6 +131,7 @@ internal sealed class InProcessProjectionReplayState(
         lock (_gate)
         {
             _error = null;
+            _startedAt.Clear();
             EndReplay();
         }
     }
@@ -138,6 +142,7 @@ internal sealed class InProcessProjectionReplayState(
         lock (_gate)
         {
             _error = errorMessage;
+            _startedAt.Clear();
             EndReplay();
         }
     }
@@ -164,7 +169,7 @@ internal sealed class InProcessProjectionReplayState(
             var percentage = total > 0 ? (int)(processed * 100 / total) : 0;
             return new ReplayProgress(isActive, processed, total, percentage, _error)
             {
-                RequestId = isActive ? _requestId : null,
+                RequestId = isActive && _requestId != Guid.Empty ? _requestId : null,
                 LastReplay = _lastReplay,
             };
         }
@@ -193,8 +198,14 @@ internal sealed class InProcessProjectionReplayState(
     public void RequestReplay() => RequestReplay(Guid.CreateVersion7());
 
     /// <inheritdoc/>
+    /// <exception cref="ArgumentException"><paramref name="requestId"/> is <see cref="Guid.Empty"/>.</exception>
     public void RequestReplay(Guid requestId)
     {
+        if (requestId == Guid.Empty)
+        {
+            throw new ArgumentException("A replay request needs an identity other than Guid.Empty.", nameof(requestId));
+        }
+
         Func<Guid, Task>[] subscribers;
         lock (_gate)
         {

@@ -1,9 +1,9 @@
 namespace Stratara.Abstractions.Projections;
 
 /// <summary>
-/// In-memory coordination handle for the projection-replay state-machine. Workers query
-/// this to decide whether they are currently running a replay; admin endpoints flip it
-/// via <see cref="Activate"/> / <see cref="Deactivate"/>.
+/// In-memory coordination handle for the projection-replay state-machine. Dispatchers and readers query
+/// <see cref="IsReplayActive"/> to hold back while a replay runs; admin endpoints request a replay with
+/// <see cref="RequestReplay(Guid)"/> and watch it with <see cref="GetProgress"/>.
 /// </summary>
 /// <remarks>
 /// Implementations should be process-singleton and thread-safe; the replay handshake
@@ -57,7 +57,16 @@ public interface IProjectionReplayState
     /// the identity.
     /// </remarks>
     /// <param name="requestId">The identity of the request; a new <see cref="Guid"/> per request.</param>
-    void RequestReplay(Guid requestId) => RequestReplay();
+    /// <exception cref="ArgumentException"><paramref name="requestId"/> is <see cref="Guid.Empty"/>.</exception>
+    void RequestReplay(Guid requestId)
+    {
+        if (requestId == Guid.Empty)
+        {
+            throw new ArgumentException("A replay request needs an identity other than Guid.Empty.", nameof(requestId));
+        }
+
+        RequestReplay();
+    }
 
     /// <summary>Register a callback fired with the request's identity whenever a replay is requested.</summary>
     /// <remarks>
@@ -106,6 +115,7 @@ public interface IProjectionReplayState
     /// no outcome.
     /// </remarks>
     /// <param name="completion">How the replay ended.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="completion"/> is <see langword="null"/>.</exception>
     void Complete(ReplayCompletion completion)
     {
         ArgumentNullException.ThrowIfNull(completion);

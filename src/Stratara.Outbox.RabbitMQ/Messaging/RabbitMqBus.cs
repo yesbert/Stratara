@@ -276,8 +276,6 @@ internal sealed class RabbitMqBus(
     // rejects a redeclaration whose properties differ, so a drift here would surface as a channel
     // error on whichever path ran second. The one difference tolerated is the delivery limit an
     // earlier deployment's bounds declared; see DeclareWorkerQueueAsync.
-    // The worker queue's declaration answers how many messages it holds and how many consumers it has; establishing a
-    // subscription reports a backlog nobody consumes from that answer.
     private async Task<QueueDeclareOk> DeclareAndBindAsync(IConnection connection, IChannel channel, string topic, string subscription, CancellationToken cancellationToken)
     {
         await channel.ExchangeDeclareAsync(topic, ExchangeType.Fanout, cancellationToken: cancellationToken);
@@ -309,7 +307,9 @@ internal sealed class RabbitMqBus(
     /// counts every redelivery, so a bound raised above the old limit is cut short by the broker until
     /// the drained queue is deleted and declared again. The warning names the queue for that step.
     /// Any other refusal still fails the declaration: a queue of that name with another type or
-    /// another dead-letter route would lose the messages a handler cannot take.
+    /// another dead-letter route would lose the messages a handler cannot take. Either path answers
+    /// how many messages the queue holds and how many consumers it has, from which establishing a
+    /// subscription reports a backlog nobody consumes.
     /// </summary>
     private async Task<QueueDeclareOk> DeclareWorkerQueueAsync(IConnection connection, string queue, string deadLetterQueue, string subscription, CancellationToken cancellationToken)
     {

@@ -299,17 +299,6 @@ public class EventSourceTests
 
     private IEventSource Events => _eventSource;
 
-    private EventSource EventSourceWith(AggregatedStreamVersions versions, bool appendAgainstAggregatedVersion) =>
-        new(
-            _snapshotServiceMock.Object,
-            _unitOfWorkMock.Object,
-            _sessionContextProviderMock.Object,
-            _outboxDispatcherMock.Object,
-            _serializerMock.Object,
-            [new PostgresUniqueViolationDetector()],
-            aggregatedVersions: versions,
-            options: Options.Create(new EventSourcingOptions { AppendAgainstAggregatedVersion = appendAgainstAggregatedVersion }));
-
     [Fact]
     public async Task SaveChangesAsync_PersistsAllBufferedEvents()
     {
@@ -967,7 +956,13 @@ public class EventSourceTests
         return Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId;
     }
 
+    private EventSource EventSourceWith(AggregatedStreamVersions versions, bool appendAgainstAggregatedVersion) =>
+        NewEventSource(new EventSourcingOptions { AppendAgainstAggregatedVersion = appendAgainstAggregatedVersion }, versions);
+
     private EventSource EventSourceWithPolicy(NewStreamOwnerPolicy policy, ILogger<EventSource>? logger = null) =>
+        NewEventSource(new EventSourcingOptions { NewStreamOwnerFromSession = policy }, logger: logger);
+
+    private EventSource NewEventSource(EventSourcingOptions options, AggregatedStreamVersions? versions = null, ILogger<EventSource>? logger = null) =>
         new(
             _snapshotServiceMock.Object,
             _unitOfWorkMock.Object,
@@ -976,7 +971,139 @@ public class EventSourceTests
             _serializerMock.Object,
             [new PostgresUniqueViolationDetector()],
             logger: logger,
-            options: Options.Create(new EventSourcingOptions { NewStreamOwnerFromSession = policy }));
+            aggregatedVersions: versions,
+            options: Options.Create(options));
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Refuse_AppliesToAnAppendThatCreatesTheStream()
+    {
+        var eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Refuse);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            eventSource.AppendAsync<TestAggregate>(Guid.NewGuid(), new TestRenamed("First")));
+    }
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Warn_AppliesToAConditionalAppendThatCreatesTheStream()
+    {
+        var logger = new RecordingEventSourceLogger();
+        IEventSource eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Warn, logger);
+
+        await eventSource.AppendAtVersionAsync<TestAggregate>(Guid.NewGuid(), 0, new TestRenamed("First"));
+
+        Assert.Single(logger.Entries, entry => entry.EventId == LogEvents.EventStore.NewStreamOwnerTakenFromSession);
+    }
+
+    [Fact]
+    public async Task NewStreamOwnerFromSession_Refuse_LeavesAStatedFirstOwnerThroughAppendOnBehalfOfAlone()
+    {
+        var eventSource = EventSourceWithPolicy(NewStreamOwnerPolicy.Refuse);
+        var owner = Guid.NewGuid();
+
+        await eventSource.AppendOnBehalfOfAsync<TestAggregate>(Guid.NewGuid(), new TestCreated("Stated"), new EventSubject(owner));
+        await eventSource.SaveChangesAsync();
+
+        Assert.Equal(owner, Assert.Single(Assert.Single(_capturedAddRangeCalls)).TenantId);
+    }
+
+    [Fact]
+    public async Task AppendAtVersion_WithANegativeVersion_IsRefused()
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            Events.AppendAtVersionAsync<TestAggregate>(Guid.NewGuid(), -1, new TestRenamed("Negative")));
+    }
+
+    [Fact]
+    public async Task ASuccessfulSave_KeepsTheConditionOnAStreamThatWasTouchedButNotWritten()
+    {
+        var touched = Guid.NewGuid();
+        var written = Guid.NewGuid();
+        var versions = new AggregatedStreamVersions();
+        versions.Record(touched, 3);
+        versions.Record(written, 5);
+        var eventSource = EventSourceWith(versions, appendAgainstAggregatedVersion: true);
+
+        await eventSource.AppendRangeAsync<TestAggregate>(touched, []);
+        await eventSource.AppendAsync<TestAggregate>(written, new TestRenamed("Written"));
+        await eventSource.SaveChangesAsync();
+
+        Assert.True(versions.TryGet(touched, out _));
+        Assert.False(versions.TryGet(written, out _));
+    }
+
+    [Fact]
+    public async Task AConflictInAMultiStreamBatch_NamesTheStreamAnotherWriterMoved()
+    {
+        var untouched = Guid.NewGuid();
+        var moved = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(untouched, It.IsAny<CancellationToken>())).ReturnsAsync(1L);
+        _eventStreamRepoMock.SetupSequence(r => r.GetVersionOrDefaultAsync(moved, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3L)
+            .ReturnsAsync(4L);
+        _transactionMock.Setup(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(CreateUniqueViolationDbUpdateException());
+
+        await _eventSource.AppendAsync<TestAggregate>(untouched, new TestRenamed("A"));
+        await _eventSource.AppendAsync<TestAggregate>(moved, new TestRenamed("B"));
+        var conflict = await Assert.ThrowsAsync<ConcurrencyException>(() => _eventSource.SaveChangesAsync());
+
+        Assert.Equal(moved, conflict.StreamId);
+    }
+
+    [Fact]
+    public async Task AConditionalAppendThatStagesNothing_LeavesNoSeedForTheNextAppend()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(5L);
+        _serializerMock.Setup(s => s.SerializeAsync(It.Is<object>(o => o is TestCreated), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("cannot serialize"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Events.AppendAtVersionAsync<TestAggregate>(streamId, 2, new TestCreated("Unserializable")));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Next"));
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Equal(6, Assert.Single(Assert.Single(_capturedAddRangeCalls)).Version);
+    }
+
+    [Fact]
+    public async Task TheDefaultCreateOnBehalfOf_ChecksTheSubjectBeforeTheStoreAndRefusesAnExistingStream()
+    {
+        var events = new Mock<IEventSource> { CallBase = true };
+        var streamId = Guid.NewGuid();
+        events.Setup(e => e.ExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            events.Object.CreateOnBehalfOfAsync<TestAggregate>(streamId, new TestCreated("Nobody"), new EventSubject(Guid.Empty)));
+        events.Verify(e => e.ExistsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            events.Object.CreateOnBehalfOfAsync<TestAggregate>(streamId, new TestCreated("Again"), new EventSubject(Guid.NewGuid())));
+    }
+
+    [Fact]
+    public async Task TheDefaultCreateOnBehalfOf_ForwardsANewStreamToAppendOnBehalfOf()
+    {
+        var events = new Mock<IEventSource> { CallBase = true };
+        var streamId = Guid.NewGuid();
+        var subject = new EventSubject(Guid.NewGuid());
+        events.Setup(e => e.ExistsAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        events.Setup(e => e.AppendOnBehalfOfAsync<TestAggregate>(streamId, It.IsAny<object>(), subject, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        await events.Object.CreateOnBehalfOfAsync<TestAggregate>(streamId, new TestCreated("Stated"), subject);
+
+        events.Verify(e => e.AppendOnBehalfOfAsync<TestAggregate>(streamId, It.IsAny<object>(), subject, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task TheDefaultConditionalAppends_AreNotSupported()
+    {
+        var events = new Mock<IEventSource> { CallBase = true };
+
+        await Assert.ThrowsAsync<NotSupportedException>(() =>
+            events.Object.AppendAtVersionAsync<TestAggregate>(Guid.NewGuid(), 0, new TestRenamed("Conditional")));
+    }
 
     private sealed class RecordingEventSourceLogger : ILogger<EventSource>
     {

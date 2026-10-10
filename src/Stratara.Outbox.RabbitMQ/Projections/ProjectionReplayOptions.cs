@@ -19,12 +19,12 @@ public sealed class ProjectionReplayOptions
 
     /// <summary>
     /// Seconds the replay's active marking and its progress counters survive without renewal. The
-    /// replay renews them every time it reports progress, so this value must outlast the longest
-    /// stretch between two reports — the slowest batch, and the read-model truncation that precedes
-    /// the first report. A value shorter than that lets the marking lapse while the replay is still
-    /// running, which resumes suppressed publication against half-rebuilt read models; erring long
-    /// only delays the clearing of a marking whose replay already died. Must be greater than zero; a
-    /// value of zero or less is refused when the host starts. Defaults to 300.
+    /// replay renews them every time it reports progress, and every second while it preserves, empties
+    /// and counts before the first report, so this value must outlast the slowest batch. A value
+    /// shorter than that lets the marking lapse while the replay is still running, which resumes
+    /// suppressed publication against half-rebuilt read models; erring long only delays the clearing of
+    /// a marking whose replay already died. Must be greater than zero; a value of zero or less is
+    /// refused when the host starts. Defaults to 300.
     /// </summary>
     public int LeaseSeconds { get; set; } = 300;
 

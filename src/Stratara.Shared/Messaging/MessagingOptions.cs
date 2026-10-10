@@ -23,9 +23,10 @@ public sealed class MessagingOptions
     public int PrefetchCount { get; set; } = 16;
 
     /// <summary>
-    /// How many messages an established subscription may hold with no consumer attached before establishing it again
-    /// logs a warning naming it (<c>Messaging:UnconsumedSubscriptionWarningThreshold</c>, default 10 000; 0 turns the
-    /// warning off). An established subscription keeps what is published to it until something consumes it, so a
+    /// On RabbitMQ, how many messages an established subscription may hold with no consumer attached before
+    /// establishing it again logs a warning naming it (<c>Messaging:UnconsumedSubscriptionWarningThreshold</c>, default
+    /// 10 000; 0 turns the warning off; a negative value is refused when the host starts). Azure Service Bus provisions
+    /// subscriptions administratively and reports nothing. An established subscription keeps what is published to it until something consumes it, so a
     /// subscription whose worker is never deployed, or was retired, grows without end; the warning puts it in the log
     /// of every host that establishes it, at its next start. Nothing is capped or discarded.
     /// </summary>
