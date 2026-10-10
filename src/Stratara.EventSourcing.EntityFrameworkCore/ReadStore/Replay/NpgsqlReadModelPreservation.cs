@@ -318,7 +318,7 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
         {
             while (await reader.ReadAsync(cancellationToken))
             {
-                if (!reader.IsDBNull(1))
+                if (!await reader.IsDBNullAsync(1, cancellationToken))
                 {
                     owned.Add((reader.GetString(0), reader.GetString(1)));
                 }

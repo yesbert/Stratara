@@ -228,7 +228,7 @@ internal sealed partial class EventSource(
         }
         catch (Exception ex) when (IsConcurrencyOrUniqueViolation(ex))
         {
-            var conflicted = await ConflictedEntryAsync(cancellationToken);
+            var conflicted = await ConflictedEntryAsync();
             var streamId = conflicted?.StreamId ?? Guid.Empty;
             var aggregateTypeName = conflicted?.AggregateTypeName ?? string.Empty;
             var bucketId = conflicted?.BucketId ?? 0;
@@ -323,7 +323,7 @@ internal sealed partial class EventSource(
     /// one stream, or the lookup itself fails — the batch's first entry. The lookup ignores the caller's cancellation:
     /// the conflict it attributes is reported either way.
     /// </summary>
-    private async Task<EventStreamEntry?> ConflictedEntryAsync(CancellationToken cancellationToken)
+    private async Task<EventStreamEntry?> ConflictedEntryAsync()
     {
         var firstPerStream = _eventStreamEntries
             .GroupBy(entry => entry.StreamId)

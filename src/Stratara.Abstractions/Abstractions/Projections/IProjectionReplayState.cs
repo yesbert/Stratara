@@ -35,15 +35,21 @@ public interface IProjectionReplayState
     /// <summary>Register a callback fired whenever a replay is requested.</summary>
     Task SubscribeToReplayRequestAsync(Func<Task> onReplayRequested, CancellationToken cancellationToken = default);
 
+    /// <summary>Register a callback fired with the request's identity whenever a replay is requested.</summary>
+    /// <remarks>
+    /// The default implementation subscribes through
+    /// <see cref="SubscribeToReplayRequestAsync(Func{Task}, CancellationToken)"/> and passes
+    /// <see cref="Guid.Empty"/>, because that member carries no identity.
+    /// </remarks>
+    /// <param name="onReplayRequested">The callback, given the identity of the request.</param>
+    /// <param name="cancellationToken">Cancels the subscription's establishment.</param>
+    /// <returns>A task that completes once the callback is registered.</returns>
+    Task SubscribeToReplayRequestAsync(Func<Guid, Task> onReplayRequested, CancellationToken cancellationToken = default) =>
+        SubscribeToReplayRequestAsync(() => onReplayRequested(Guid.Empty), cancellationToken);
+
     /// <summary>Signal that a replay should start — fires every subscribed callback.</summary>
     /// <remarks>The request is given a new identity; use <see cref="RequestReplay(Guid)"/> to choose it.</remarks>
     void RequestReplay();
-
-    /// <summary>Update the replay progress counters.</summary>
-    void SetProgress(long processedEvents, long totalEvents);
-
-    /// <summary>Snapshot the current replay progress.</summary>
-    ReplayProgress GetProgress();
 
     /// <summary>
     /// Signal that a replay should start, under an identity the requester chose — fires every subscribed
@@ -68,17 +74,11 @@ public interface IProjectionReplayState
         RequestReplay();
     }
 
-    /// <summary>Register a callback fired with the request's identity whenever a replay is requested.</summary>
-    /// <remarks>
-    /// The default implementation subscribes through
-    /// <see cref="SubscribeToReplayRequestAsync(Func{Task}, CancellationToken)"/> and passes
-    /// <see cref="Guid.Empty"/>, because that member carries no identity.
-    /// </remarks>
-    /// <param name="onReplayRequested">The callback, given the identity of the request.</param>
-    /// <param name="cancellationToken">Cancels the subscription's establishment.</param>
-    /// <returns>A task that completes once the callback is registered.</returns>
-    Task SubscribeToReplayRequestAsync(Func<Guid, Task> onReplayRequested, CancellationToken cancellationToken = default) =>
-        SubscribeToReplayRequestAsync(() => onReplayRequested(Guid.Empty), cancellationToken);
+    /// <summary>Update the replay progress counters.</summary>
+    void SetProgress(long processedEvents, long totalEvents);
+
+    /// <summary>Snapshot the current replay progress.</summary>
+    ReplayProgress GetProgress();
 
     /// <summary>
     /// Claim the request <paramref name="requestId"/> and mark its replay as started, unless another host
