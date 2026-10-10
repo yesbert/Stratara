@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -197,7 +199,110 @@ public class ProjectionReplayWorkerTests
         await harness.RunAsync(triggerReplay: true);
 
         harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Never);
-        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ProjectionReplayFailed);
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ProjectionReplayRequestNotClaimed);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_ARequestThatArrivesWhileTheHostStops_IsNotClaimed()
+    {
+        var harness = new Harness { StopBeforeTrigger = true };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.TryActivate(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_APreservationThatCannotBeResolved_EndsTheReplayAsFailed()
+    {
+        var harness = new Harness
+        {
+            Configure = services => services.AddScoped<IReadModelPreservation>(_ => throw new InvalidOperationException("no read context")),
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(
+            s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Failed && c.ErrorMessage!.Contains("no read context"))),
+            Times.Once);
+        harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_RenewsTheMarkingWhileItPrepares()
+    {
+        var harness = new Harness();
+        harness.ViewTruncator.Setup(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                for (var second = 0; second < 3; second++)
+                {
+                    harness.Time.Advance(ProjectionReplayWorker.PreparationRenewal);
+                    await Task.Delay(20);
+                }
+            });
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.SetProgress(0, 0), Times.AtLeast(2));
+    }
+
+    [Fact]
+    public async Task ReplayCallback_ADiscardThatFails_IsLoggedAndTheReplayStillSucceeds()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.DiscardAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("store away"));
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.PreservedReadModelsNotDiscarded);
+        harness.ReplayState.Verify(s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Succeeded)), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AnAbandonedCopyStillOwned_IsCheckedAgainUntilRestored()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.SetupSequence(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AbandonedPreservation.StillOwned)
+            .ReturnsAsync(AbandonedPreservation.Restored);
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+        harness.BeforeStop = async () =>
+        {
+            harness.Time.Advance(ProjectionReplayWorker.AbandonedCheckInterval);
+            await Task.Delay(100);
+        };
+
+        await harness.RunAsync(triggerReplay: false);
+
+        preservation.Verify(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.AbandonedReadModelsRestored);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AnAbandonedCheckThatFails_IsLoggedTheHostRunsAndItIsCheckedAgain()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.SetupSequence(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("store away"))
+            .ReturnsAsync(AbandonedPreservation.Restored);
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+        harness.BeforeStop = async () =>
+        {
+            harness.Time.Advance(ProjectionReplayWorker.AbandonedCheckInterval);
+            await Task.Delay(100);
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        Assert.Contains(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ReadModelRestoreFailed);
+        harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Once);
+        preservation.Verify(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -746,6 +851,12 @@ public class ProjectionReplayWorkerTests
 
         public Action<IServiceCollection>? Configure { get; set; }
 
+        public FakeTimeProvider Time { get; } = new();
+
+        public Func<Task>? BeforeStop { get; set; }
+
+        public bool StopBeforeTrigger { get; set; }
+
         private ProjectionReplayWorker? _worker;
 
         /// <summary>
@@ -804,16 +915,27 @@ public class ProjectionReplayWorkerTests
                 scopeFactory,
                 ReplayState.Object,
                 pipelineProvider.Object,
-                options);
+                options,
+                Time);
             _worker = worker;
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await worker.StartAsync(cts.Token);
             await Task.Delay(50, cts.Token);
 
+            if (StopBeforeTrigger)
+            {
+                await StopWorkerAsync();
+            }
+
             if (triggerReplay && capturedCallback is not null)
             {
                 await capturedCallback();
+            }
+
+            if (BeforeStop is not null)
+            {
+                await BeforeStop();
             }
 
             await worker.StopAsync(CancellationToken.None);
@@ -822,12 +944,14 @@ public class ProjectionReplayWorkerTests
 
     private sealed class RecordingLogger<T> : ILogger<T>
     {
-        public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
+        private readonly ConcurrentQueue<(LogLevel Level, int EventId, string Message)> _entries = new();
+
+        public IReadOnlyCollection<(LogLevel Level, int EventId, string Message)> Entries => _entries;
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
+            => _entries.Enqueue((logLevel, eventId.Id, formatter(state, exception)));
     }
 }

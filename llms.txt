@@ -1,7 +1,7 @@
 # Stratara
 
 > Integrated CQRS, Event Sourcing, and audit stack for .NET 10 — mediator, outbox, event
-> store, sagas, projections, and identity wired together and lockstep-versioned across 27
+> store, sagas, projections, and identity wired together and lockstep-versioned across 28
 > NuGet packages. Distinguishing properties: hash-chained tamper-evident event streams,
 > tenant-aware AES-GCM encryption with tenant-bound associated data, and GDPR Art. 17
 > crypto-shredding. Scales out on the Orleans execution model: one writer per aggregate
@@ -43,7 +43,12 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   Call it from whichever process publishes first, before its first publish, with names from
   `IMessagingIdentifier`. Nothing calls it automatically. Worker queues are durable, so it only
   matters on a broker that has never seen them. Azure Service Bus implements it as a no-op because
-  its subscriptions are provisioned administratively.
+  its subscriptions are provisioned administratively. **What it costs:** an established subscription
+  keeps everything until something consumes it. On RabbitMQ (since 4.4.3) `EnsureSubscriptionAsync`
+  logs `108_114` (Warning) when the subscription already holds at least
+  `Messaging:UnconsumedSubscriptionWarningThreshold` messages (default 10000, 0 = off) with no consumer
+  attached. Nothing is capped. To retire a worker, stop establishing its subscription, then delete
+  `<subscription>.v2` and `<subscription>.dead-letter`.
 - **Bundle order (since 4.0.1):** across the consumers of one subscription bundles are **not**
   ordered — the projection and saga workers open one consumer per processor
   (`Projections:DegreeOfParallelism` / `Sagas:DegreeOfParallelism`; a non-positive value means the
@@ -55,6 +60,13 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   `ResilienceNames.PrecedingFact` policy (6 attempts, ~3 s total) with the lock released between
   attempts, and fails it only when the retries are exhausted. Any other exception fails the bundle
   on the first attempt. A beginning that is minutes late is what replay is for, not the retry.
+- **Projection replay:** a full replay empties every read model and rebuilds them from the store; it
+  runs only on request. Since 4.4.3 one request runs one replay across hosts —
+  `IProjectionReplayState.RequestReplay(Guid requestId)`, then poll `GetProgress()`: `RequestId` while
+  running, `LastReplay` (`Succeeded` / `Failed` / `Interrupted`, counts, times) once ended. On
+  PostgreSQL `AddReadModelRestore<TReadContext>()` copies the read context's tables before the replay
+  empties them and writes them back when it fails or its host dies, so a failed replay no longer leaves
+  an empty read store. See [Write a projection](https://stratara.tech/guides/write-a-projection.html).
 - **A message a handler cannot take (since 4.0.4):** on a durable subscription the transport
   redelivers it up to `MessageRetry:MaxDeliveryAttempts` times (default 3; a concurrency conflict up
   to `MessageRetry:MaxConflictRequeues`, default 100) and then moves it to the subscription's
@@ -83,7 +95,12 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   Events are immutable `sealed record`s. Aggregate properties use `set` (public setter, NOT
   `private set`) so snapshot JSON deserialization works. `Apply` methods hold the write logic.
 - **Event sourcing:** `IEventSource` (`CreateAsync` / `AppendAsync` / `SaveChangesAsync`),
-  `IAggregationService.AggregateAsync`. Stream tables: `event_stream_entry`, `snapshot`,
+  `IAggregationService.AggregateAsync`. **A read-then-write handler (since 4.4.3)** that must not record
+  after a write it did not see appends with `AppendAtVersionAsync(streamId, expectedVersion, event)` /
+  `AppendRangeAtVersionAsync` — the save throws `ConcurrencyException` if the stream moved — or the
+  host sets `EventSourcing:AppendAgainstAggregatedVersion = true` (default false) to make every append
+  after an `AggregateAsync` in the same scope conditional on the version that read saw. Plain
+  `AppendAsync` numbers after whatever the stream holds at the append. Stream tables: `event_stream_entry`, `snapshot`,
   `command_log_entry`, `outbox_entry`, `event_chain_anchor` (declared by `Stratara.EventSourcing.EntityFrameworkCore`,
   PostgreSQL/Npgsql).
 - **Event upcasting** (since 3.1.7): register `IEventUpcaster` via `AddEventUpcaster<T>()` to
@@ -92,7 +109,13 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   Encrypted fields are ciphertext at upcast time; snapshots are not upcasted.
 - **Session model (Actor/Subject):** `ISessionContextProvider.Current` → `SessionContext`.
   Unprefixed `TenantId`/`UserId` always means the *data owner* (subject); `Actor*` means *who
-  triggered* (audit). `ClientId` is the connection identity, not actor/subject.
+  triggered* (audit). `ClientId` is the connection identity, not actor/subject. **A stream keeps the
+  owner of its first event**, and a first event that states none takes the *session's* tenant —
+  silently, which keys a record an operator creates for another tenant to the operator's tenant. State
+  it with `CreateOnBehalfOfAsync(streamId, event, new EventSubject(tenantId))`,
+  `AppendOnBehalfOfAsync`, or an `IAggregateCreationEvent`; `EventSourcing:NewStreamOwnerFromSession`
+  = `Allow` (default) / `Warn` (`102_007`) / `Refuse` (since 4.4.3) makes the fallback visible or
+  impossible.
 - **Identity directory (since 3.2.0):** user↔tenant is **many-to-many** and roles are scoped **per
   membership**, not per account — `TenantMembership(UserId, TenantId, Roles, Status)` via
   `ITenantMembershipStore`. The same user can be `TenantAdmin` in one tenant and `Viewer` in
@@ -165,7 +188,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - [Observe the framework](https://stratara.tech/guides/observe-the-framework.html): all framework telemetry comes from one activity source (`Stratara.Application`) and one meter (`Stratara.Service`); instrument names are published constants and a stable contract.
 - [Queue background work](https://stratara.tech/guides/queue-background-work.html): `IBackgroundTaskQueue` runs in-process work in the background and reports each item's outcome.
 
-## Packages (27, lockstep)
+## Packages (28, lockstep)
 
 - [Stratara.Abstractions](https://www.nuget.org/packages/Stratara.Abstractions) (Tier-A): contract interfaces + POCO records — Mediator, EventSourcing, Persistence, Outbox, Messaging, Session, Security, Authorization. No EF Core or message-bus runtime.
 - [Stratara.Contracts](https://www.nuget.org/packages/Stratara.Contracts) (Tier-A): wire-level POCO contracts — command/event envelopes, paged-request records, `SessionContext` shape.

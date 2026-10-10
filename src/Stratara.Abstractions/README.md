@@ -18,7 +18,7 @@ Use this when you need to reference Stratara types without pulling in any concre
 - `Stratara.Abstractions.Messaging` — `IMessageBus`, `IMessagingIdentifier`, `IEventBusConsumer`, `IEventBusPublisher`.
 - `Stratara.Abstractions.Session` — `ISessionContextProvider`.
 - `Stratara.Abstractions.Multitenancy` — `ITenantService`, `ICurrentUserService`, `ITenantScopedRequest`, `ICrossTenantAuthorizer`, `TenantAccessDeniedException`, `ITenantMembershipStore`. Plus wire-types: `TenantMembership`, `MembershipStatus`.
-- `Stratara.Abstractions.Projections` — `IProjectionReplayState`.
+- `Stratara.Abstractions.Projections` — `IProjectionReplayState`. Plus wire-types: `ReplayProgress`, `ReplayOutcome`, `ReplayCompletion`, `ReplayResult`.
 - `Stratara.Abstractions.Security` — `IEncryptionFactory`, `IKeyStore`, `IMasterKeyProvider`, `ISecureBlobEncryptor`, `ISecureJsonSerializer`. Plus wire-types: `KeyScope`, `KeyMaterial`, `EncryptedData`, `DataSensitivityLevel`, `EncryptDataAttribute`.
 - `Stratara.Abstractions.Validation` — `IValidator<T>`, `ValidationResult`, `ValidationFailure`, `ValidationSeverity`, `StrataraValidationException`.
 - `Stratara.Abstractions.Entities` — `IEntity`, `IBucket`, `IHasRowVersion`, `IMultiTenant`, `ITenantEntity`, `IUserIdentity`.

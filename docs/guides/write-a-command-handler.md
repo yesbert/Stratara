@@ -116,15 +116,15 @@ public sealed class OpenAccountInTenantHandler(IEventSource events) : ICommandHa
 
 Every later append to that stream lands in the same tenant, whoever's session makes it.
 
-When the event does not carry the owner — a record an operator creates for a customer's tenant, a
+When the event does not carry the owner — an account an operator opens in a customer's tenant, a
 platform-owned record created under any session — state it at creation instead:
 
 <!-- stratara-snippet-ignore: narrative fragment - the event source, the aggregate and the ids come from the surrounding handler -->
 ```csharp
-await events.CreateOnBehalfOfAsync<PhoneNumberBlock>(
-    blockId,
-    new PhoneNumberBlockReserved(blockId, range),
-    new EventSubject(platformTenantId),
+await events.CreateOnBehalfOfAsync<Account>(
+    accountId,
+    new AccountOpened(accountId, initialBalance),
+    new EventSubject(customerTenantId),
     ct);
 ```
 
@@ -148,7 +148,7 @@ when an operator creates one for somebody else, and nothing fails either way. A 
 | Value | A new stream's first event that would take its owner from the session |
 |---|---|
 | `Allow` (default) | is recorded for the session's tenant, as before |
-| `Warn` | is recorded for the session's tenant, and `102_007` (Warning) names the stream, the event type and the tenant — once per stream created |
+| `Warn` | is recorded for the session's tenant, and `102_007` (Warning) names the stream, the event type and the tenant — once per stream and batch, again when a failed save is retried |
 | `Refuse` | fails before anything is staged, naming the stream, the event type and the ways to state an owner |
 
 The setting touches nothing else: an owner stated with `CreateOnBehalfOfAsync` or `AppendOnBehalfOfAsync`,
@@ -247,20 +247,20 @@ Two ways close it:
   that the handler rebuilt through `IAggregationService.AggregateAsync` in the same scope is made on the
   condition of the version that rebuild saw — without touching a handler:
 
-```json
-{
-  "EventSourcing": {
-    "AppendAgainstAggregatedVersion": true
+  ```json
+  {
+    "EventSourcing": {
+      "AppendAgainstAggregatedVersion": true
+    }
   }
-}
-```
+  ```
 
   `AddEventSourcing()` reads the section. The condition is the version of the *first* rebuild of a stream
   in the scope — a second rebuild of the same stream, by a validator or a helper, does not move it. A
   rebuild bounded with `toVersion` sets no condition. A rebuild that found no stream sets the condition
   that the stream still does not exist, so a handler whose `AppendAsync` writes the first event conflicts
-  with whoever created it first; `CreateAsync` refuses an existing stream with `InvalidOperationException`,
-  as it always has. A successful save ends the condition on the streams it wrote and keeps it on those
+  with whoever created it first; `CreateAsync` refuses an existing stream — or one already staged in the
+  batch — with `InvalidOperationException`. A successful save ends the condition on the streams it wrote and keeps it on those
   the handler read but has not written; a failed save ends it everywhere, so a handler that runs again
   reads again.
 

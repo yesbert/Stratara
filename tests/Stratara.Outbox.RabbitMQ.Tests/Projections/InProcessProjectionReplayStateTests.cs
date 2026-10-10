@@ -108,6 +108,31 @@ public class InProcessProjectionReplayStateTests
     }
 
     [Fact]
+    public void AFailedCompletionOfAReplayThatOutlivedItsLease_LeavesTheRunningReplaysErrorAlone()
+    {
+        var (state, clock) = Create(leaseSeconds: 10);
+        var outlived = Guid.NewGuid();
+        state.TryActivate(outlived);
+        clock.Now = clock.Now.AddSeconds(11);
+        state.TryActivate(Guid.NewGuid());
+
+        state.Complete(new ReplayCompletion(outlived, ReplayResult.Failed, 1, "late failure"));
+
+        var progress = state.GetProgress();
+        Assert.True(progress.IsActive);
+        Assert.Null(progress.ErrorMessage);
+        Assert.Equal("late failure", progress.LastReplay!.ErrorMessage);
+    }
+
+    [Fact]
+    public void RequestReplay_WithAnEmptyIdentity_IsRefused()
+    {
+        var (state, _) = Create();
+
+        Assert.Throws<ArgumentException>(() => state.RequestReplay(Guid.Empty));
+    }
+
+    [Fact]
     public void Initially_ReportsNoOutcome()
     {
         var (state, _) = Create();

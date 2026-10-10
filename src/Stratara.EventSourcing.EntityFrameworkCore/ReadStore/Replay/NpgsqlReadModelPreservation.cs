@@ -1,7 +1,7 @@
 using System.Data;
 using System.Data.Common;
-using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -50,6 +50,10 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
     /// and must not wait on, or restore, each other's.
     /// </summary>
     private readonly long _lockKey = BitConverter.ToInt64(SHA256.HashData(Encoding.UTF8.GetBytes("stratara-replay:" + options.Value.Schema)), 0);
+
+    private string Marker => Qualified(_options.Schema, "preservation");
+
+    private string Mapping => Qualified(_options.Schema, "preserved_table");
 
     /// <inheritdoc/>
     /// <remarks>
@@ -175,6 +179,7 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
         Guid? replayId;
         await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
+            context.Database.SetCommandTimeout(_options.CommandTimeout);
             await context.Database.OpenConnectionAsync(cancellationToken);
             replayId = await ReadMarkerAsync(context, cancellationToken);
         }
@@ -200,10 +205,6 @@ internal sealed class NpgsqlReadModelPreservation<TContext>(
 
     private bool ReplaySucceeded(Guid replayId) =>
         replayState?.GetProgress().LastReplay is { Result: ReplayResult.Succeeded } last && last.RequestId == replayId;
-
-    private string Marker => Qualified(_options.Schema, "preservation");
-
-    private string Mapping => Qualified(_options.Schema, "preserved_table");
 
     private Task LockAsync(DbContext context, CancellationToken cancellationToken) =>
         ExecuteAsync(context, "SELECT pg_advisory_xact_lock(@key)", cancellationToken, ("key", _lockKey));

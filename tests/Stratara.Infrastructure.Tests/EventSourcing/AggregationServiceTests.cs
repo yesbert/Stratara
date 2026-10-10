@@ -5,6 +5,7 @@ using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Shared.EventSourcing;
+using Stratara.Shared.Reflections;
 
 namespace Stratara.Infrastructure.Tests.EventSourcing;
 
@@ -398,7 +399,7 @@ public class AggregationServiceTests
             Id = Guid.NewGuid(),
             StreamId = streamId,
             Version = 10,
-            AggregateTypeName = typeof(TestAggregate).AssemblyQualifiedName!,
+            AggregateTypeName = typeof(TestAggregate).GetQualifiedTypeName(),
             DataJson = "{}",
             BucketId = 1,
             TenantId = tenantId,

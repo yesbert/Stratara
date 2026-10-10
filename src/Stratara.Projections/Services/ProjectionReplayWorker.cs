@@ -20,11 +20,11 @@ namespace Stratara.Projections.Services;
 /// Background service that replays the full event stream against all projections on demand. Triggered via
 /// <see cref="IProjectionReplayState"/>; truncates all projection views — having first emptied the record of deleted
 /// tenants of each registered projection that declares <see cref="IForgetsDeletedTenants"/> — and re-applies every
-/// event, batched
-/// by <see cref="ProjectionOptions.BatchSize"/>, each stream in version order and the streams interleaved as
-/// their sequence numbers interleave them.
+/// event, batched by <see cref="ProjectionOptions.BatchSize"/>, each stream in version order and the streams
+/// interleaved as their sequence numbers interleave them.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A save does not number its entries in version order, so a batch is read through
 /// <see cref="IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync"/>, which may return more entries than
 /// the batch size and whose last entry need not carry its highest sequence number; the next batch starts after
@@ -33,32 +33,45 @@ namespace Stratara.Projections.Services;
 /// <see cref="ResilienceNames.ProjectionReplayBatch"/> policy: a failed attempt disposes its scope and the
 /// batch is applied again from its first entry in a new one, so a passing failure such as a read-store
 /// timeout does not end the replay. Once the attempts are exhausted the failure ends the replay as an
-/// unretried one would. A request runs only if this host claims it through
-/// <see cref="IProjectionReplayState.TryActivate"/>, and the replay ends in one
-/// <see cref="IProjectionReplayState.Complete"/> — succeeded, failed with its message truncated to 500 characters,
-/// or interrupted by the host stopping — so consumer-side dashboards can read its outcome after it ended.
+/// unretried one would.
+/// </para>
+/// <para>
+/// A request runs only if this host claims it through <see cref="IProjectionReplayState.TryActivate"/>, and the replay
+/// ends in one <see cref="IProjectionReplayState.Complete"/> — succeeded, failed with its message truncated to 500
+/// characters, or interrupted by the host stopping — so consumer-side dashboards can read its outcome after it ended.
+/// While it preserves, empties and counts, none of which reports progress, it renews its marking every
+/// <see cref="PreparationRenewal"/>.
+/// </para>
+/// <para>
+/// Where an <see cref="IReadModelPreservation"/> is registered, the replay preserves the read models before it empties
+/// anything, restores them when it fails and drops the preserved state when it succeeds; a replay its host stops leaves
+/// it. Before the host takes requests it restores a state such a replay left, and while a replay that is still marked
+/// active owns that state, it checks again every <see cref="AbandonedCheckInterval"/>. No replay starts on its own.
+/// </para>
 /// </remarks>
 internal sealed class ProjectionReplayWorker(
     ILogger<ProjectionReplayWorker> logger,
     IServiceScopeFactory scopeFactory,
     IProjectionReplayState replayState,
     ResiliencePipelineProvider<string> pipelineProvider,
-    IOptions<ProjectionOptions> options) : BackgroundService
+    IOptions<ProjectionOptions> options,
+    TimeProvider? timeProvider = null) : BackgroundService
 {
+    /// <summary>
+    /// How often the replay renews its marking while it prepares — preserves the read models, empties them, counts the
+    /// events — since none of those steps reports progress. Shorter than the shortest lease the options accept.
+    /// </summary>
+    internal static readonly TimeSpan PreparationRenewal = TimeSpan.FromSeconds(1);
+
+    /// <summary>How often a host checks again for a preserved state that a replay still marked active owned.</summary>
+    internal static readonly TimeSpan AbandonedCheckInterval = TimeSpan.FromSeconds(30);
+
     private const int MaxFailureMessageLength = 500;
 
     private readonly ProjectionOptions _options = options.Value;
     private readonly ResiliencePipeline _batchPipeline = pipelineProvider.GetPipeline(ResilienceNames.ProjectionReplayBatch);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentDictionary<Guid, Task> _running = new();
-
-    /// <summary>
-    /// How often the replay renews its marking while it prepares — preserves the read models, empties them, counts the
-    /// events — since none of those steps reports progress, and the copy alone can outlast the lease.
-    /// </summary>
-    internal static readonly TimeSpan PreparationRenewal = TimeSpan.FromSeconds(10);
-
-    /// <summary>How often a host checks again for a preserved state a replay marked active still owned at its start.</summary>
-    internal static readonly TimeSpan AbandonedCheckInterval = TimeSpan.FromSeconds(30);
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -66,7 +79,7 @@ internal sealed class ProjectionReplayWorker(
         var abandoned = await RestoreAbandonedReadModelsAsync(stoppingToken);
         await replayState.SubscribeToReplayRequestAsync(
             requestId => TrackAsync(requestId, stoppingToken), stoppingToken);
-        if (abandoned == AbandonedPreservation.StillOwned)
+        if (abandoned is null or AbandonedPreservation.StillOwned)
         {
             await CheckAbandonedReadModelsAgainAsync(stoppingToken);
         }
@@ -74,19 +87,20 @@ internal sealed class ProjectionReplayWorker(
 
     /// <summary>
     /// Where the host keeps the read models a replay empties, restores a state left by a replay whose host stopped —
-    /// before the host takes requests, so a request cannot preserve the partial read models in its place. A failure here
-    /// is logged and does not stop the host: the preserved state is kept, and the next start tries again.
+    /// before the host takes requests, so a request cannot preserve the partial read models in its place. A failure here,
+    /// a misregistration included, is logged and does not stop the host: it answers <see langword="null"/>, the preserved
+    /// state is kept, and the host checks again.
     /// </summary>
-    private async Task<AbandonedPreservation> RestoreAbandonedReadModelsAsync(CancellationToken cancellationToken)
+    private async Task<AbandonedPreservation?> RestoreAbandonedReadModelsAsync(CancellationToken cancellationToken)
     {
-        using var scope = scopeFactory.CreateScope();
-        if (scope.ServiceProvider.GetService<IReadModelPreservation>() is not { } preservation)
-        {
-            return AbandonedPreservation.NoneKept;
-        }
-
         try
         {
+            using var scope = scopeFactory.CreateScope();
+            if (scope.ServiceProvider.GetService<IReadModelPreservation>() is not { } preservation)
+            {
+                return AbandonedPreservation.NoneKept;
+            }
+
             var found = await preservation.RestoreAbandonedAsync(cancellationToken);
             if (found == AbandonedPreservation.Restored)
             {
@@ -102,23 +116,23 @@ internal sealed class ProjectionReplayWorker(
         catch (Exception ex)
         {
             logger.LogReadModelRestoreFailed(ex);
-            return AbandonedPreservation.NoneKept;
+            return null;
         }
     }
 
     /// <summary>
-    /// A host that restarted within its own dead replay's lease found that replay still marked active. Once the marking
-    /// lapses the preserved state is abandoned, so the host checks again until it is restored, dropped, or taken over
-    /// by a replay that ends it itself.
+    /// A preserved state was still owned by a replay marked active — a host that restarted within its own dead replay's
+    /// lease finds it so — or the check failed. Once the marking lapses the state is abandoned, so the host checks again
+    /// until it is restored, dropped, or taken over by a replay that ends it itself.
     /// </summary>
     private async Task CheckAbandonedReadModelsAgainAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(AbandonedCheckInterval);
+        using var timer = new PeriodicTimer(AbandonedCheckInterval, _timeProvider);
         try
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                if (await RestoreAbandonedReadModelsAsync(cancellationToken) != AbandonedPreservation.StillOwned)
+                if (await RestoreAbandonedReadModelsAsync(cancellationToken) is not (null or AbandonedPreservation.StillOwned))
                 {
                     return;
                 }
@@ -167,15 +181,21 @@ internal sealed class ProjectionReplayWorker(
     }
 
     /// <summary>
-    /// Runs the replay a request asks for, if this host claims the request: a request every host receives, or one
-    /// that arrives while another replay is active, starts nothing here. Where the host keeps the read models, they are
-    /// preserved before anything is emptied, restored after a failure and dropped after a success; a replay its host
-    /// stops leaves them for the next start. The replay ends in exactly one completion — succeeded, failed with its
-    /// message, or interrupted because the host stops — which keeps its outcome. Nothing here may escape: the
-    /// coordination store invokes the callback where an exception would end the process.
+    /// Runs the replay a request asks for, if this host claims the request: a request every host receives, one that
+    /// arrives while another replay is active, or one that arrives while the host stops, starts nothing here. Where the
+    /// host keeps the read models, they are preserved before anything is emptied, restored after a failure and dropped
+    /// after a success; a replay its host stops leaves them for the next start. The replay ends in exactly one
+    /// completion — succeeded, failed with its message, or interrupted because the host stops — which keeps its
+    /// outcome. Nothing here may escape: the coordination store invokes the callback where an exception would end the
+    /// process.
     /// </summary>
     private async Task RunRequestedReplayAsync(Guid requestId, CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
         bool claimed;
         try
         {
@@ -183,7 +203,7 @@ internal sealed class ProjectionReplayWorker(
         }
         catch (Exception ex)
         {
-            logger.LogProjectionReplayFailed(ex);
+            logger.LogProjectionReplayRequestNotClaimed(ex, requestId);
             return;
         }
 
@@ -194,6 +214,23 @@ internal sealed class ProjectionReplayWorker(
 
         logger.LogProjectionReplayStarted();
         var tally = new ReplayTally();
+        try
+        {
+            await RunClaimedReplayAsync(requestId, tally, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogProjectionReplayFailed(ex);
+            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
+        }
+    }
+
+    /// <summary>
+    /// The claimed replay itself. What fails before it reaches its own handling — a scope or a preservation that cannot
+    /// be resolved — ends it as failed in the caller.
+    /// </summary>
+    private async Task RunClaimedReplayAsync(Guid requestId, ReplayTally tally, CancellationToken cancellationToken)
+    {
         using var preservationScope = scopeFactory.CreateScope();
         var preservation = preservationScope.ServiceProvider.GetService<IReadModelPreservation>();
         var preserved = false;
@@ -288,7 +325,7 @@ internal sealed class ProjectionReplayWorker(
 
     private void Interrupted(Guid requestId, ReplayTally tally)
     {
-        logger.LogProjectionReplayInterrupted(tally.Replayed);
+        logger.LogProjectionReplayInterrupted(requestId, tally.Replayed);
         Complete(new ReplayCompletion(requestId, ReplayResult.Interrupted, tally.Replayed));
     }
 
@@ -325,11 +362,12 @@ internal sealed class ProjectionReplayWorker(
 
     /// <summary>
     /// Renews the marking every <see cref="PreparationRenewal"/> until the preparation ends. A renewal that fails is
-    /// passed over: the next one tries again, and the refresh reports a coordination store that is away.
+    /// logged once and tried again on the next tick.
     /// </summary>
     private async Task RenewWhilePreparingAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(PreparationRenewal);
+        using var timer = new PeriodicTimer(PreparationRenewal, _timeProvider);
+        var failing = false;
         try
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))
@@ -340,7 +378,11 @@ internal sealed class ProjectionReplayWorker(
                 }
                 catch (Exception renewalFailed) when (renewalFailed is not OperationCanceledException)
                 {
-                    _ = renewalFailed;
+                    if (!failing)
+                    {
+                        failing = true;
+                        logger.LogProjectionReplayRenewalFailed(renewalFailed);
+                    }
                 }
             }
         }
@@ -463,7 +505,10 @@ internal sealed class ProjectionReplayWorker(
         return new ReplayedBatch(entries.Count, entries.Max(entry => entry.SequenceNumber));
     }
 
-    /// <summary>How many events the running replay has applied, readable after it ends however it ends.</summary>
+    /// <summary>
+    /// How many events the running replay has applied, and whether it reached the end of the store — readable after it
+    /// ends however it ends.
+    /// </summary>
     private sealed class ReplayTally
     {
         public long Replayed { get; set; }

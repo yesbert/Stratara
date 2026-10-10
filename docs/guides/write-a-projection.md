@@ -297,8 +297,10 @@ registers the shared connection; the order of that call and the composites does 
 
 ## Replay is destructive, and it is all-or-nothing
 
-A replay is not a repair tool you reach for casually. Three properties, in the order they will
-surprise you:
+A replay is not a repair tool you reach for casually. Five properties, in the order they will
+surprise you — and on PostgreSQL a registration that makes a failed replay leave the read models as
+it found them, described under
+[Keep the read models a failed replay would leave behind](#keep-the-read-models-a-failed-replay-would-leave-behind):
 
 **It empties before it rebuilds.** A replay marks itself active, truncates *every registered read
 model*, then replays the whole stream from the beginning in batches. The truncation is what makes it
@@ -310,8 +312,10 @@ rebuild passes each row again.
 in the host is emptied, including the ones that were fine.
 
 **It runs on request, with no confirmation step.** The worker does not start one at host start-up —
-it subscribes and waits. But when a request arrives it begins immediately. There is no dry run, no
-"are you sure", and no built-in guard on who may ask.
+it subscribes and waits. But when a request arrives it begins immediately, in the one host that
+claims it — unless a replay is already running, in which case it starts nothing and logs `104_019`
+(see [Watch a replay](#watch-a-replay)). There is no dry run, no "are you sure", and no built-in
+guard on who may ask.
 
 **A batch that fails is retried before the replay gives up.** Each batch — reading it from the
 event store and applying it — runs under the `ResilienceNames.ProjectionReplayBatch` policy: five
@@ -331,10 +335,12 @@ stop on a sound stream. A batch that would end between two versions of one strea
 until it does not, so a batch can hold more entries than `Projections:BatchSize`. A store written
 before this guarantee needs no migration; the order comes from reading, not from the rows.
 
-And when it ends, it marks itself inactive **whether it succeeded or not**. A replay that dies
-half-way leaves you with partially rebuilt read models and no active flag saying so — only the
-failure message described under [Watch a replay](#watch-a-replay). Treat a failed replay
-as "run it again", not as "it stopped safely".
+And when it ends, it marks itself inactive **whether it succeeded or not**. Without
+`AddReadModelRestore` (below), a replay that dies half-way leaves you with partially rebuilt read
+models; its outcome, described under [Watch a replay](#watch-a-replay), reads `Failed` with the
+message and how far it got. Treat such a failed replay as "run it again", not as "it stopped
+safely". With the registration, a failed replay restores the state it started from and its outcome
+reads `ReadModelsRestored = true`.
 
 **A replay is a maintenance operation.** Run it in a window. The retry above covers a failure that
 passes; it does not make a deterministic one survivable. Without the registration below the
@@ -361,7 +367,10 @@ started from:
 - **A replay that fails** after its batch retries writes the copy back in one transaction — readers
   wait for it and then see the state from before the replay, never a mix — logs `104_022`, and its
   outcome reads `Failed` with `ReadModelsRestored = true`.
-- **A replay that succeeds** drops the copy.
+- **A replay that succeeds** drops the copy. If the copy cannot be dropped, the replay still succeeds
+  and logs `104_025`; a host that starts later drops it where the coordination state still holds that
+  outcome. On a host without the shared Redis state the outcome does not survive a restart, and that
+  host restores the copy instead — which undoes the replay; run it again.
 - **A replay whose host stops** — killed, or shut down — leaves the copy. The next host with the
   registration that starts while no replay is running writes it back and logs `104_023`; hosts that
   start together do it once. A replay requested while such a copy is still there keeps it as the state
@@ -371,8 +380,8 @@ Readers still see the rebuild in progress while the replay runs; what changes is
 costs and what to know:
 
 - **Time and disk.** The copy reads the whole read store once more before the replay starts, and holds
-  it twice while the replay runs. The replay renews its marking every ten seconds while it copies, empties
-  and counts, so `ProjectionReplay:LeaseSeconds` need not outlast the copy — keep it above ten seconds.
+  it twice while the replay runs. The lease need not outlast the copy: the replay renews its marking every
+  second until its first batch, as it does on every host.
 - **A host that restarts within its own replay's lease** finds that replay still marked active and leaves the
   copy alone; it checks again every thirty seconds and writes the copy back once the marking has lapsed.
 - **Deployments that share a read store** give each its own `Schema`: the copy, its record and the lock that
@@ -388,8 +397,9 @@ costs and what to know:
   active, so this is the replay's first seconds — stop the projection consumers for the replay if even
   that is too much.
 - **A schema change between the copy and the write-back** — a migration that ran during the replay —
-  makes the write-back refuse (`104_124`) and keep the copy, rather than write rows into the wrong
-  shape.
+  makes the write-back refuse (`104_124`, Error) and keep the copy, rather than write rows into the wrong
+  shape. The same id reports any other write-back that fails, and a check at start that fails; the host
+  keeps running and checks again every thirty seconds.
 - **Permissions.** The copy schema is created on first use, which needs `CREATE` on the database;
   create it beforehand and name it in `Schema` where the read store's user lacks it.
 
@@ -414,10 +424,10 @@ clear its own marking — and while the marking stands, publication stays suppre
 host: commands are recorded instead of sent, the caller gets an identifier and a success response for
 a command that will never run, and the outbox does not drain.
 
-So the marking is held on a lease that the replay renews each time it reports progress. Nobody
-renewing it means nobody is replaying, and it lapses on its own. Set the lease longer than your
-slowest stretch between two progress reports — the slowest batch, and the read-model truncation that
-precedes the first report:
+So the marking is held on a lease that the replay renews each time it reports progress, and every
+second while it prepares — preserves, empties and counts — before its first report. Nobody renewing
+it means nobody is replaying, and it lapses on its own. Set the lease longer than your slowest batch;
+a renewal that fails while the replay prepares logs `104_026` once:
 
 ```csharp
 builder.Services.Configure<ProjectionReplayOptions>(o =>
@@ -497,18 +507,21 @@ shutdown is not a replay error — but its outcome says `Interrupted`, not `Succ
 
 **One request, one replay.** A request carries an identity: pass your own to
 `RequestReplay(Guid requestId)` and look for it in `RequestId` and `LastReplay.RequestId`;
-`RequestReplay()` draws one. Every host that runs the replay worker receives the request, but only the
+`RequestReplay()` draws one, and `Guid.Empty` is refused. Every host that runs the replay worker receives the request, but only the
 first to claim it runs it, and a host that receives it after the replay has already ended finds it
 claimed. A request that arrives while another replay is running starts nothing and logs `104_019`: a
 second replay would empty what the first is rebuilding. A replay that outlived its lease — its host
 stalled long enough for another request to start — records its outcome when it ends and leaves the
-other replay's marking alone.
+other replay's marking and error message alone. A host that cannot claim a request because the
+coordination state failed logs `104_127` and starts nothing; an outcome that cannot be recorded logs
+`104_121`, and the marking then lapses with its lease.
 
 During a rolling upgrade the guarantee holds only between upgraded hosts. A host on an earlier release
 claims nothing and runs every request it receives; and a request it publishes carries no identity, so
 upgraded hosts cannot tell their copies apart and one that receives it after the replay ended runs it
-again. Upgrade every host that runs the replay worker before relying on one request starting one
-replay.
+again. A replay an earlier-release host runs records no outcome either, so a client polling for its
+request's id would wait in vain. Upgrade every host that runs the replay worker before relying on one
+request starting one replay.
 
 Reading and requesting a replay from an admin endpoint takes a few lines; the guard on them is yours,
 because the framework has none:

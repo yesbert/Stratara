@@ -150,6 +150,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         var warning = Assert.Single(logger.Entries, entry => entry.EventId == LogEvents.Messaging.UnconsumedSubscription);
         Assert.Equal(LogLevel.Warning, warning.Level);
         Assert.Contains(subscription, warning.Message, StringComparison.Ordinal);
+        Assert.Contains(topic, warning.Message, StringComparison.Ordinal);
         Assert.Contains("holds 6 messages", warning.Message, StringComparison.Ordinal);
     }
 
@@ -178,7 +179,7 @@ public sealed class RabbitMqBusTests(RabbitMqFixture fixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var release = new TaskCompletionSource();
         await bus.SubscribeAsync<TestMessage>(topic, subscription, _ => release.Task, cts.Token);
-        await PublishAsync(bus, topic, 10, cts.Token);
+        await PublishAsync(bus, topic, 30, cts.Token);
 
         await bus.EnsureSubscriptionAsync(topic, subscription, cts.Token);
         release.TrySetResult();

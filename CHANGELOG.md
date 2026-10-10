@@ -16,6 +16,14 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+A release about facts recorded in the wrong place and replays nobody dared to start. A handler can now append
+only if the stream is still where it read it, so a fact decided on a stream's earlier state is no longer recorded
+after one that contradicts it. A replay request starts one replay instead of one per host, its outcome stays
+readable after it ends, and on PostgreSQL a failed replay restores the read models it emptied. A new stream's
+owner can be stated at creation, and a subscription nobody consumes is reported. Everything new is opt-in or
+additive; no migration is needed. Three optional settings are new — and hosts that run the replay worker are
+upgraded together (see *Changed*).
+
 ### Added
 
 - **An append can be made on the condition of the version the handler read.** `AppendAsync` numbers an
@@ -24,19 +32,28 @@ applies to the entire NuGet family.
   stream's end, for example, which then stops every later projection replay. `IEventSource` gains
   `AppendAtVersionAsync<TAggregate>(streamId, expectedVersion, @event)` and
   `AppendRangeAtVersionAsync<TAggregate>(streamId, expectedVersion, events)`: if another writer has moved
-  the stream past `expectedVersion`, `SaveChangesAsync` throws `ConcurrencyException` and records nothing,
-  and the bus redelivers as for any conflict. A version the stream has not reached is refused at the
-  append with `ArgumentOutOfRangeException`. The members have default implementations that throw
-  `NotSupportedException`, so an implementation of `IEventSource` outside the framework still compiles.
+  the stream past `expectedVersion`, `SaveChangesAsync` throws `ConcurrencyException` — naming the stream that
+  moved — and records nothing, and the bus redelivers as for any conflict. A version the stream has not reached,
+  or a negative one, is refused at the append with `ArgumentOutOfRangeException`. The members have default
+  implementations that throw `NotSupportedException`, so an implementation of `IEventSource` outside the
+  framework still compiles.
 - **`EventSourcing:AppendAgainstAggregatedVersion`** (default `false`). With it on, an append to a stream
   the handler rebuilt through `IAggregationService.AggregateAsync` in the same scope is made on the
   condition of the version that rebuild saw — every read-then-write handler gets the protection without a
   code change. The condition is the version of the first rebuild of a stream in the scope; a rebuild bounded
-  with `toVersion` sets none; a rebuild that found no stream expects it still not to exist. With the option
-  off nothing is recorded. `AddEventSourcing()` now reads the `EventSourcing` section itself;
-  `AddWriteStore(configuration)` still does too. The cost: a handler appending to a stream another writer
-  touches concurrently gets a conflict where it used to succeed, and on the `IMediator` path the caller
-  sees it.
+  with `toVersion` sets none; a rebuild that found no stream expects it still not to exist; a successful save
+  ends it on the streams it wrote. With the option off nothing is recorded. The cost: a handler appending to a
+  stream another writer touches concurrently gets a conflict where it used to succeed, and on the `IMediator`
+  path the caller sees it.
+- **A new stream's owner can be stated at creation.** `IEventSource.CreateOnBehalfOfAsync<TAggregate>(streamId,
+  @event, subject)` creates the stream with the owner the subject states, which every later event keeps. Until
+  now the explicit route existed for appends only. A default implementation built on `ExistsAsync` and
+  `AppendOnBehalfOfAsync` keeps implementations outside the framework compiling.
+- **`EventSourcing:NewStreamOwnerFromSession`** — `Allow` (default), `Warn` or `Refuse` — decides what happens when
+  a new stream's first event would take its owner from the session: as before, as before plus a warning `102_007`
+  (once per stream and batch), or a refusal before anything is staged. Stated owners, creation events that carry a
+  tenant, and appends to existing streams are untouched. A value that names no policy fails the host's start with
+  an `OptionsValidationException`.
 - **The outcome of the last replay is kept.** After a replay that succeeded, `GetProgress()` answered exactly
   what it answered before any replay, so a status reader that polled saw a short replay only if a poll fell
   inside it, and told the operator it had not begun. `ReplayProgress.LastReplay` is a new `ReplayOutcome` —
@@ -44,37 +61,49 @@ applies to the entire NuGet family.
   `Succeeded`, `Failed` or was `Interrupted` — kept until the next replay ends. `ReplayProgress.RequestId`
   names the replay that is running.
 - **A replay request has an identity.** `IProjectionReplayState.RequestReplay(Guid requestId)` lets the
-  requester choose it and find it again. `IProjectionReplayState` also gains
+  requester choose it and find it again; `Guid.Empty` is refused. `IProjectionReplayState` also gains
   `SubscribeToReplayRequestAsync(Func<Guid, Task>)`, `TryActivate(Guid)` and `Complete(ReplayCompletion)`;
   all four have default implementations, so an implementation outside the framework still compiles and
   behaves as before.
-
 - **A failed replay can restore the read models it emptied.** `AddReadModelRestore<TReadContext>()`
   (PostgreSQL, `Stratara.EventSourcing.EntityFrameworkCore`) copies every table the read context maps — the read
   models, the projection checkpoints and the record of forgotten tenants, as one snapshot — before a replay empties
-  anything. A replay that fails writes the copy back in one transaction (`104_022`), one that succeeds drops it, and
-  one whose host stopped leaves it for the next host that starts, which writes it back (`104_023`). A replay then
-  ends in the rebuilt read models or exactly the ones it started from, so starting one no longer risks an empty read
-  store. `ReplayOutcome.ReadModelsRestored` says it happened. Settings come from `ProjectionReplay:Restore`
-  (`Schema`, `ExcludedTables`, `AdditionalTables`, `CommandTimeout`). New abstraction `IReadModelPreservation` in
-  `Stratara.Projections` for another store; without one registered a replay behaves as before. The copy costs one
-  more read of the read store before the replay and the disk to hold it twice while it runs.
-
-- **A new stream's owner can be stated at creation.** `IEventSource.CreateOnBehalfOfAsync<TAggregate>(streamId,
-  @event, subject)` creates the stream with the owner the subject states, which every later event keeps. Until
-  now the explicit route existed for appends only, and at creation the owner had to come from an
-  `IAggregateCreationEvent` or the session. A default implementation built on `ExistsAsync` and
-  `AppendOnBehalfOfAsync` keeps implementations outside the framework compiling.
-- **`EventSourcing:NewStreamOwnerFromSession`** — `Allow` (default), `Warn` or `Refuse` — decides what happens when
-  a new stream's first event would take its owner from the session: as before, as before plus a warning `102_007`,
-  or a refusal before anything is staged. Stated owners, creation events that carry a tenant, and appends to
-  existing streams are untouched.
-
+  anything. A replay that fails writes the copy back in one transaction, one that succeeds drops it, and one whose
+  host stopped leaves it for the next host that starts, which writes it back — and, while a replay still marked
+  active owns it, checks again every thirty seconds. A replay then ends in the rebuilt read models or exactly the
+  ones it started from. `ReplayOutcome.ReadModelsRestored` says it happened. Settings come from
+  `ProjectionReplay:Restore` (`Schema`, `ExcludedTables`, `AdditionalTables`, `CommandTimeout`); deployments that
+  share a read store give each its own `Schema`. New abstraction `IReadModelPreservation` in `Stratara.Projections`
+  for another store; without one registered a replay behaves as before. The copy costs one more read of the read
+  store before the replay and the disk to hold it twice while it runs. On a host without the shared Redis state, a
+  successful replay whose copy could not be dropped (`104_025`) is restored at the next start, because the outcome
+  that would say otherwise does not survive the restart.
 - **A subscription nobody consumes is reported.** An established subscription keeps what is published to it until
   something consumes it, so one whose worker is never deployed, or was retired, grows without end — and until now
   nothing said so. On RabbitMQ, `EnsureSubscriptionAsync` logs `108_114` at Warning when the subscription already
-  holds at least `Messaging:UnconsumedSubscriptionWarningThreshold` messages (default 10 000; 0 turns it off) and
-  no consumer is attached. Nothing is capped or discarded, and no queue is declared with different arguments.
+  holds at least `Messaging:UnconsumedSubscriptionWarningThreshold` messages (default 10 000; 0 turns it off; a
+  negative value fails the host's start) and no consumer is attached. Nothing is capped or discarded, and no queue
+  is declared with different arguments.
+- **Log events:** `102_007` (Warning, a new stream's owner taken from the session), `104_019` (a request not run
+  because a replay is active), `104_020` (replay interrupted), `104_021` (read models preserved), `104_022`
+  (Warning, read models restored after a failure), `104_023` (Warning, an abandoned copy restored at start),
+  `104_025` (Warning, a copy that could not be dropped), `104_026` (Warning, the marking could not be renewed while
+  the replay prepares), `104_121` (Error, an outcome not recorded), `104_124` (Error, a write-back or a check at
+  start that failed; the copy is kept), `104_127` (Error, a request that could not be claimed), `108_114` (Warning,
+  a subscription nobody consumes).
+
+### Changed
+
+- **`AddEventSourcing()` reads the `EventSourcing` section itself** and validates it at start;
+  `AddWriteStore(configuration)` still binds it too, and the later registration wins if the two differ.
+- **`CreateAsync` and `CreateRangeAsync` refuse a stream that already has events staged in the same batch** with
+  `InvalidOperationException` at the call, where the save used to fail later with a `ConcurrencyException`.
+- **A replay renews its marking every second while it prepares** — preserves, empties and counts — so
+  `ProjectionReplay:LeaseSeconds` now has to outlast the slowest batch only, not the truncation before the first
+  progress report.
+- **Rolling upgrade of replay hosts.** A host on an earlier release claims nothing: it runs every replay request it
+  receives, records no outcome, and its own requests carry no identity. Upgrade every host that runs the replay
+  worker before relying on one request starting one replay, or on `LastReplay`.
 
 ### Fixed
 
@@ -83,18 +112,19 @@ applies to the entire NuGet family.
   a full replay in every such host at once, all emptying and rebuilding the same read store, and two
   requests in quick succession did the same within one host. A request is now claimed atomically with the
   replay's marking; the other hosts pass it over, a host that receives it after the replay ended finds it
-  claimed, and a request that arrives while a replay is running starts nothing and logs `104_019`. A replay that
-  outlived its lease while another started records its outcome without ending the other's marking. **Rolling
-  upgrade:** a host on an earlier release claims nothing and runs every request it receives, and its requests carry
-  no identity — upgrade every host that runs the replay worker before relying on this.
+  claimed, and a request that arrives while a replay is running — or while the host stops — starts nothing. A
+  replay that outlived its lease while another started records its outcome without touching the other's marking
+  or error message.
 - **A replay stopped by its host ends as interrupted.** A replay cancelled between two batches logged
   `104_006` "completed" with its partial count. It now ends as `Interrupted` and logs `104_020`, and the host's
   stop waits, within its shutdown timeout, for the replay to record that. A cancellation that does not come from
   the host stopping — a provider's own timeout — now ends the replay as `Failed` with its message, where it was
-  silently treated as a shutdown. A failure to claim a request or to record an outcome is logged (`104_109`,
-  `104_121`) instead of escaping the coordination store's callback.
+  silently treated as a shutdown. Nothing the replay does after claiming a request can escape the coordination
+  store's callback any more.
 - **The Redis-backed replay state reports `0` of `0` after a failure,** as the in-process one and the guide
   always did; it kept showing the failed run's counters until their lease ran out.
+- **A conflict in a batch that spans several streams names the stream another writer moved**, not the batch's first
+  entry; the conflict counter is tagged the same way.
 
 ## [4.4.2] — 2026-10-02
 

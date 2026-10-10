@@ -17,14 +17,14 @@ namespace Stratara.Outbox.RabbitMQ.Projections;
 /// Keys are namespaced under <c>stratara:projection:replay:*</c>. The dispatchers in this
 /// package and the Orleans execution model consult <see cref="IsReplayActive"/> on every publish,
 /// every dispatch and every catch-up to suspend the fast-path while a replay is running; the replay
-/// worker uses <see cref="SetProgress"/> / <see cref="SetFailed"/> to surface progress to UI consumers
-/// polling <see cref="GetProgress"/>.
+/// worker uses <see cref="TryActivate"/>, <see cref="SetProgress"/> and <see cref="Complete"/> to surface progress and
+/// the outcome to UI consumers polling <see cref="GetProgress"/>.
 /// </para>
 /// <para>
 /// <see cref="IsReplayActive"/> is answered from a field and never waits on Redis. The field is
 /// refreshed asynchronously every <see cref="ProjectionReplayOptions.RefreshSeconds"/>, and at once
-/// when a message arrives on the state channel, which <see cref="Activate"/>, <see cref="Deactivate"/>
-/// and <see cref="SetFailed"/> publish to. The message is a wake-up, not the truth: a refresh reads the
+/// when a message arrives on the state channel, which every transition — <see cref="TryActivate"/>,
+/// <see cref="Complete"/>, <see cref="Activate"/>, <see cref="Deactivate"/> and <see cref="SetFailed"/> — publishes to. The message is a wake-up, not the truth: a refresh reads the
 /// marking itself, so two transitions in quick succession cannot leave the field behind the marking.
 /// A transition made through this instance is seen in it at once, and a refresh whose read was in
 /// flight when that transition happened is discarded rather than written over it. Until the first
@@ -36,10 +36,10 @@ namespace Stratara.Outbox.RabbitMQ.Projections;
 /// <para>
 /// The active marking and the progress counters are held on the lease configured by
 /// <see cref="ProjectionReplayOptions.LeaseSeconds"/>, which <see cref="SetProgress"/> renews. A
-/// replay whose host stops without reaching <see cref="Deactivate"/> therefore stops renewing it and
+/// replay whose host stops without reaching <see cref="Complete"/> therefore stops renewing it and
 /// the marking lapses on its own, rather than suppressing publication for good; the lapse is seen by
 /// the refresh. The recorded error is deliberately not leased: it describes a replay that has already
-/// ended and is cleared by the next <see cref="Activate"/>.
+/// ended and is cleared when the next replay is activated or completes without failing.
 /// </para>
 /// <para>
 /// A request travels with its identity, and <see cref="TryActivate"/> claims it in one atomic step with the
@@ -82,16 +82,16 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
 
     /// <summary>
     /// Writes the outcome and, while the marking still belongs to the completing request, ends the marking, its
-    /// counters and its identity, in one step. A replay that outlived its lease while another request started records
-    /// its outcome and leaves the other replay running.
+    /// counters and its identity and records or clears the error, in one step; returns 1 when it ended the marking. A
+    /// replay that outlived its lease while another request started records its outcome and leaves the other replay —
+    /// marking and error — alone.
     /// </summary>
     private const string CompleteScript = """
         redis.call('DEL', KEYS[1])
         redis.call('HSET', KEYS[1], 'requestId', ARGV[1], 'startedAt', ARGV[2], 'endedAt', ARGV[3], 'replayed', ARGV[4], 'result', ARGV[5], 'error', ARGV[6], 'restored', ARGV[8])
         local running = redis.call('GET', KEYS[5])
-        if running == false or running == ARGV[1] then
-            redis.call('DEL', KEYS[2], KEYS[3], KEYS[4], KEYS[5])
-        end
+        if running ~= false and running ~= ARGV[1] then return 0 end
+        redis.call('DEL', KEYS[2], KEYS[3], KEYS[4], KEYS[5])
         if ARGV[7] == '1' then redis.call('SET', KEYS[6], ARGV[6]) else redis.call('DEL', KEYS[6]) end
         return 1
         """;
@@ -189,7 +189,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var endedAt = _timeProvider.GetUtcNow();
         var startedAt = _startedAt.TryRemove(completion.RequestId, out var started) ? started : endedAt;
         var failed = completion.Result == ReplayResult.Failed;
-        _redis.GetDatabase().ScriptEvaluate(
+        var ended = (int)_redis.GetDatabase().ScriptEvaluate(
             CompleteScript,
             [LastKey, CacheKey, ProcessedKey, TotalKey, RequestIdKey, ErrorKey],
             [
@@ -202,7 +202,10 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
                 failed ? Yes : No,
                 completion.ReadModelsRestored ? Yes : No,
             ]);
-        Transition(active: false);
+        if (ended == 1)
+        {
+            Transition(active: false);
+        }
     }
 
     /// <inheritdoc/>
@@ -210,6 +213,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     {
         var db = _redis.GetDatabase();
         db.KeyDelete([CacheKey, ProcessedKey, TotalKey, ErrorKey, RequestIdKey]);
+        _startedAt.Clear();
         Transition(active: false);
     }
 
@@ -219,6 +223,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var db = _redis.GetDatabase();
         db.KeyDelete([CacheKey, ProcessedKey, TotalKey, RequestIdKey]);
         db.StringSet(ErrorKey, errorMessage);
+        _startedAt.Clear();
         Transition(active: false);
     }
 
@@ -275,7 +280,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var subscriber = _redis.GetSubscriber();
         await subscriber.SubscribeAsync(RedisChannel.Literal(Channel), async (_, message) =>
         {
-            var requestId = Guid.TryParse((string?)message, out var parsed) ? parsed : Guid.CreateVersion7();
+            var requestId = Guid.TryParse((string?)message, out var parsed) && parsed != Guid.Empty ? parsed : Guid.CreateVersion7();
             await onReplayRequested(requestId);
         });
     }
@@ -284,8 +289,14 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public void RequestReplay() => RequestReplay(Guid.CreateVersion7());
 
     /// <inheritdoc/>
+    /// <exception cref="ArgumentException"><paramref name="requestId"/> is <see cref="Guid.Empty"/>.</exception>
     public void RequestReplay(Guid requestId)
     {
+        if (requestId == Guid.Empty)
+        {
+            throw new ArgumentException("A replay request needs an identity other than Guid.Empty.", nameof(requestId));
+        }
+
         var subscriber = _redis.GetSubscriber();
         subscriber.Publish(RedisChannel.Literal(Channel), requestId.ToString("N"));
     }
@@ -434,7 +445,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
             return null;
         }
 
-        var fields = entries.ToDictionary(entry => (string)entry.Name!, entry => (string?)entry.Value);
+        var fields = entries.ToDictionary(entry => entry.Name.ToString(), entry => (string?)entry.Value);
         if (!Guid.TryParse(fields.GetValueOrDefault("requestId"), out var requestId)
             || !long.TryParse(fields.GetValueOrDefault("startedAt"), out var startedAt)
             || !long.TryParse(fields.GetValueOrDefault("endedAt"), out var endedAt)

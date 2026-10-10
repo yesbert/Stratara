@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Stratara.Infrastructure.EventSourcing;
 using Microsoft.Extensions.Options;
+using Stratara.Infrastructure.EventSourcing;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Shared.EventSourcing;
 
@@ -32,9 +32,13 @@ public static class EventSourcingServiceCollectionExtensions
     /// </para>
     /// <para>
     /// The call reads <c>EventSourcingOptions</c> from the <c>EventSourcing</c> section of the
-    /// configuration the container holds, where it holds one — for example
-    /// <c>"EventSourcing": { "AppendAgainstAggregatedVersion": true }</c> makes every append that follows
-    /// a rebuild through <see cref="IAggregationService"/> conditional on the version that rebuild saw.
+    /// configuration the container holds, where it holds one:
+    /// <c>EventSourcing:AppendAgainstAggregatedVersion</c> (default <c>false</c>) makes every append that follows
+    /// a rebuild through <see cref="IAggregationService"/> conditional on the version that rebuild saw;
+    /// <c>EventSourcing:NewStreamOwnerFromSession</c> (<c>Allow</c>, the default, <c>Warn</c> or <c>Refuse</c>)
+    /// decides what happens when a new stream's first event would take its owner from the session. A value
+    /// that names no policy fails the host's start. The section is read at the position of the first call, so
+    /// a <c>Configure&lt;EventSourcingOptions&gt;</c> that must win over it comes after this call.
     /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>

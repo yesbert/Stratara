@@ -28,9 +28,11 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// <remarks>
 /// <para>
 /// Subject (TenantId / UserId) is resolved in the following priority order: explicit override
-/// (via <see cref="AppendOnBehalfOfAsync{TAggregate}"/>), per-batch cache, the owner recorded on the
-/// stream, <see cref="IAggregateCreationEvent"/> payload, then <see cref="SessionContext"/> fallback.
-/// If none yields a non-empty Subject, the append fails fast with an <see cref="InvalidOperationException"/>.
+/// (via <see cref="AppendOnBehalfOfAsync{TAggregate}"/>, or <see cref="CreateOnBehalfOfAsync{TAggregate}"/> for a
+/// stream's first event), per-batch cache, the owner recorded on the stream,
+/// <see cref="IAggregateCreationEvent"/> payload, then <see cref="SessionContext"/> fallback — which
+/// <see cref="EventSourcingOptions.NewStreamOwnerFromSession"/> may warn of or refuse for a stream that does not exist
+/// yet. If none yields a non-empty Subject, the append fails fast with an <see cref="InvalidOperationException"/>.
 /// </para>
 /// <para>
 /// Concurrency conflicts — a unique-index violation on the stream version, recognised by the
@@ -44,7 +46,7 @@ namespace Stratara.Infrastructure.EventSourcing;
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
     Justification = "DI-resolved sealed internal event source; primary-constructor parameters reflect intrinsic " +
                     "framework dependencies (snapshots, unit of work, session, outbox, serializer, conflict detectors, " +
-                    "signer, logger) and are not a hand-called API surface.")]
+                    "signer, logger, the record of aggregated versions, options) and are not a hand-called API surface.")]
 internal sealed partial class EventSource(
     ISnapshotService snapshotService,
     IWriteUnitOfWork unitOfWork,
@@ -105,7 +107,7 @@ internal sealed partial class EventSource(
     public async Task CreateOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
-        ThrowIfNamesNoTenant(subject, @event, streamId, "CreateAsync");
+        ThrowIfNamesNoTenant(subject, @event, streamId, nameof(CreateAsync));
         await EnsureStreamIsNewAsync(streamId, cancellationToken);
         _streamVersions[streamId] = 0;
         await AddEventsToStreamAsync<TAggregate>(streamId, [@event], subject, cancellationToken);
@@ -133,7 +135,7 @@ internal sealed partial class EventSource(
     {
         ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
 
-        if (_streamVersions.TryGetValue(streamId, out var stagedVersion))
+        if (_eventStreamEntries.Exists(entry => entry.StreamId == streamId) && _streamVersions.TryGetValue(streamId, out var stagedVersion))
         {
             if (stagedVersion != expectedVersion)
             {
@@ -166,7 +168,7 @@ internal sealed partial class EventSource(
     public Task AppendOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
-        ThrowIfNamesNoTenant(subject, @event, streamId, "AppendAsync");
+        ThrowIfNamesNoTenant(subject, @event, streamId, nameof(AppendAsync));
         return AppendRangeCoreAsync<TAggregate>(streamId, [@event], subject, cancellationToken);
     }
 
@@ -226,10 +228,10 @@ internal sealed partial class EventSource(
         }
         catch (Exception ex) when (IsConcurrencyOrUniqueViolation(ex))
         {
-            var firstEntry = _eventStreamEntries.FirstOrDefault();
-            var streamId = firstEntry?.StreamId ?? Guid.Empty;
-            var aggregateTypeName = firstEntry?.AggregateTypeName ?? string.Empty;
-            var bucketId = firstEntry?.BucketId ?? 0;
+            var conflicted = await ConflictedEntryAsync(cancellationToken);
+            var streamId = conflicted?.StreamId ?? Guid.Empty;
+            var aggregateTypeName = conflicted?.AggregateTypeName ?? string.Empty;
+            var bucketId = conflicted?.BucketId ?? 0;
             ApplicationDiagnostics.Metrics.EventSourceAppendConflicts.Add(1,
                 new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.AggregateType, ApplicationDiagnostics.MetricTags.TypeNameValue(aggregateTypeName)),
                 new KeyValuePair<string, object?>(ApplicationDiagnostics.MetricTags.BucketId, bucketId));
@@ -307,12 +309,46 @@ internal sealed partial class EventSource(
 
         if (saved)
         {
-            aggregatedVersions.Forget(_streamVersions.Keys);
+            aggregatedVersions.Forget(_eventStreamEntries.Select(entry => entry.StreamId).Distinct());
         }
         else
         {
             aggregatedVersions.Clear();
         }
+    }
+
+    /// <summary>
+    /// The first staged entry of the stream the conflict is about: where the batch spans several streams, the one
+    /// whose head another writer has moved to or past the version this batch staged first. Where that cannot be told —
+    /// one stream, or the lookup itself fails — the batch's first entry.
+    /// </summary>
+    private async Task<EventStreamEntry?> ConflictedEntryAsync(CancellationToken cancellationToken)
+    {
+        var firstPerStream = _eventStreamEntries
+            .GroupBy(entry => entry.StreamId)
+            .Select(stream => stream.OrderBy(entry => entry.Version).First())
+            .ToList();
+        if (firstPerStream.Count <= 1)
+        {
+            return firstPerStream.FirstOrDefault();
+        }
+
+        try
+        {
+            foreach (var first in firstPerStream)
+            {
+                if (await ReadHeadAsync(first.StreamId, cancellationToken) >= first.Version)
+                {
+                    return first;
+                }
+            }
+        }
+        catch (Exception lookupFailed) when (lookupFailed is not OperationCanceledException)
+        {
+            return firstPerStream[0];
+        }
+
+        return firstPerStream[0];
     }
 
     /// <summary>
@@ -494,7 +530,7 @@ internal sealed partial class EventSource(
     [LoggerMessage(
         EventId = LogEvents.EventStore.NewStreamOwnerTakenFromSession,
         Level = LogLevel.Warning,
-        Message = "Stream {StreamId} was created by {EventType} with its owner taken from the session: tenant {TenantId}. State the owner with CreateOnBehalfOfAsync, AppendOnBehalfOfAsync or an IAggregateCreationEvent.")]
+        Message = "Stream {StreamId} is being created by {EventType} with its owner taken from the session: tenant {TenantId}. State the owner with CreateOnBehalfOfAsync, AppendOnBehalfOfAsync or an IAggregateCreationEvent.")]
     private static partial void LogNewStreamOwnerTakenFromSession(ILogger logger, Guid streamId, string eventType, Guid tenantId);
 
     /// <summary>Whether the stream exists in the store, and the owner its first entry recorded, where it recorded one.</summary>
@@ -519,15 +555,21 @@ internal sealed partial class EventSource(
     /// </summary>
     private async Task EnsureStreamIsNewAsync(Guid streamId, CancellationToken cancellationToken)
     {
+        if (_eventStreamEntries.Exists(entry => entry.StreamId == streamId))
+        {
+            throw StreamAlreadyExists(streamId);
+        }
+
         await using var transaction = await unitOfWork.StartAsync(cancellationToken);
         var eventStreamRepository = unitOfWork.CreateEventStreamRepository(transaction);
-        if (_eventStreamEntries.Exists(entry => entry.StreamId == streamId)
-            || await eventStreamRepository.StreamExistsAsync(streamId, cancellationToken))
+        if (await eventStreamRepository.StreamExistsAsync(streamId, cancellationToken))
         {
-            throw new InvalidOperationException(
-                $"Stream with ID {streamId} already exists. Use AppendToStream to add events.");
+            throw StreamAlreadyExists(streamId);
         }
     }
+
+    private static InvalidOperationException StreamAlreadyExists(Guid streamId) =>
+        new($"Stream with ID {streamId} already exists. Use AppendAsync to add events.");
 
     private static void ThrowIfNamesNoTenant(EventSubject subject, object @event, Guid streamId, string resolvingAlternative)
     {

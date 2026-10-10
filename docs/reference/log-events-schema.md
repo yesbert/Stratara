@@ -42,7 +42,7 @@ Sub-buckets inside the framework's `100_000` range are defined in `src/Stratara.
 | `116_000s` | API keys | `LogEvents.ApiKeys` |
 | `117_000s` | Orleans execution model | `LogEvents.Orleans` |
 
-Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `100_101` error). Consult `src/Stratara.Diagnostics/LogEvents.cs` for the authoritative current list — buckets shift as features mature.
+Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `100_101` error); a warning follows the precedent of its band — the event store and projections keep theirs below `_1xx`, messaging inside it. Consult `src/Stratara.Diagnostics/LogEvents.cs` for the authoritative current list — buckets shift as features mature.
 
 ### The Orleans execution model (`117_000s`)
 
