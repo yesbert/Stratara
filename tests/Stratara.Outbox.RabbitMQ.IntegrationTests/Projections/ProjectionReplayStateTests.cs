@@ -195,6 +195,24 @@ public class ProjectionReplayStateTests(RedisFixture redis)
     }
 
     [Fact]
+    public async Task SetProgress_OfAReplayThatOutlivedItsLease_LeavesTheRunningReplayAlone()
+    {
+        await redis.FlushAsync();
+        await using var outlivedHost = await StartSutAsync();
+        await using var nextHost = await StartSutAsync();
+        outlivedHost.TryActivate(Guid.NewGuid());
+        await redis.Connection.GetDatabase().KeyDeleteAsync(ActiveKey);
+        nextHost.TryActivate(Guid.NewGuid());
+        nextHost.SetProgress(40, 100);
+
+        outlivedHost.SetProgress(0, 0);
+
+        var progress = nextHost.GetProgress();
+        Assert.Equal(40, progress.ProcessedEvents);
+        Assert.Equal(100, progress.TotalEvents);
+    }
+
+    [Fact]
     public async Task RequestReplay_WithAnEmptyIdentity_IsRefused()
     {
         await redis.FlushAsync();

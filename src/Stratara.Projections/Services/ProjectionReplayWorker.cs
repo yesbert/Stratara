@@ -72,6 +72,7 @@ internal sealed class ProjectionReplayWorker(
     private readonly ResiliencePipeline _batchPipeline = pipelineProvider.GetPipeline(ResilienceNames.ProjectionReplayBatch);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentDictionary<Guid, Task> _running = new();
+    private bool _abandonedCheckFailing;
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -88,8 +89,8 @@ internal sealed class ProjectionReplayWorker(
     /// <summary>
     /// Where the host keeps the read models a replay empties, restores a state left by a replay whose host stopped —
     /// before the host takes requests, so a request cannot preserve the partial read models in its place. A failure here,
-    /// a misregistration included, is logged and does not stop the host: it answers <see langword="null"/>, the preserved
-    /// state is kept, and the host checks again.
+    /// a misregistration included, is logged once per failing stretch and does not stop the host: it answers
+    /// <see langword="null"/>, the preserved state is kept, and the host checks again.
     /// </summary>
     private async Task<AbandonedPreservation?> RestoreAbandonedReadModelsAsync(CancellationToken cancellationToken)
     {
@@ -102,6 +103,7 @@ internal sealed class ProjectionReplayWorker(
             }
 
             var found = await preservation.RestoreAbandonedAsync(cancellationToken);
+            _abandonedCheckFailing = false;
             if (found == AbandonedPreservation.Restored)
             {
                 logger.LogAbandonedReadModelsRestored();
@@ -115,7 +117,12 @@ internal sealed class ProjectionReplayWorker(
         }
         catch (Exception ex)
         {
-            logger.LogReadModelRestoreFailed(ex);
+            if (!_abandonedCheckFailing)
+            {
+                _abandonedCheckFailing = true;
+                logger.LogReadModelRestoreFailed(ex);
+            }
+
             return null;
         }
     }
@@ -218,10 +225,14 @@ internal sealed class ProjectionReplayWorker(
         {
             await RunClaimedReplayAsync(requestId, tally, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!tally.Ended)
         {
             logger.LogProjectionReplayFailed(ex);
-            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
+            Complete(tally, new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message)));
+        }
+        catch (Exception afterTheEnd)
+        {
+            logger.LogProjectionReplayFailed(afterTheEnd);
         }
     }
 
@@ -270,7 +281,7 @@ internal sealed class ProjectionReplayWorker(
         {
             logger.LogProjectionReplayFailed(ex);
             var restored = preserved && preservation is not null && await RestoreAsync(preservation, requestId);
-            Complete(new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message))
+            Complete(tally, new ReplayCompletion(requestId, ReplayResult.Failed, tally.Replayed, TruncateFailureMessage(ex.Message))
             {
                 ReadModelsRestored = restored,
             });
@@ -289,7 +300,7 @@ internal sealed class ProjectionReplayWorker(
         }
 
         logger.LogProjectionReplayCompleted(tally.Replayed);
-        Complete(new ReplayCompletion(requestId, ReplayResult.Succeeded, tally.Replayed));
+        Complete(tally, new ReplayCompletion(requestId, ReplayResult.Succeeded, tally.Replayed));
     }
 
     private async Task<bool> RestoreAsync(IReadModelPreservation preservation, Guid requestId)
@@ -326,11 +337,13 @@ internal sealed class ProjectionReplayWorker(
     private void Interrupted(Guid requestId, ReplayTally tally)
     {
         logger.LogProjectionReplayInterrupted(requestId, tally.Replayed);
-        Complete(new ReplayCompletion(requestId, ReplayResult.Interrupted, tally.Replayed));
+        Complete(tally, new ReplayCompletion(requestId, ReplayResult.Interrupted, tally.Replayed));
     }
 
-    private void Complete(ReplayCompletion completion)
+    /// <summary>Records the replay's one completion; anything that fails after it is logged, not completed again.</summary>
+    private void Complete(ReplayTally tally, ReplayCompletion completion)
     {
+        tally.Ended = true;
         try
         {
             replayState.Complete(completion);
@@ -514,6 +527,8 @@ internal sealed class ProjectionReplayWorker(
         public long Replayed { get; set; }
 
         public bool ReachedTheEnd { get; set; }
+
+        public bool Ended { get; set; }
     }
 
     private sealed record ReplayedBatch(int Count, long LastSequence)

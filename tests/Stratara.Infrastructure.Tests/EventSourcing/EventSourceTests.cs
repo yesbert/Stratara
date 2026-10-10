@@ -1051,6 +1051,22 @@ public class EventSourceTests
     }
 
     [Fact]
+    public async Task AConditionalAppendThatStagesNothing_LeavesNoSeedForTheNextAppend()
+    {
+        var streamId = Guid.NewGuid();
+        _eventStreamRepoMock.Setup(r => r.GetVersionOrDefaultAsync(streamId, It.IsAny<CancellationToken>())).ReturnsAsync(5L);
+        _serializerMock.Setup(s => s.SerializeAsync(It.Is<object>(o => o is TestCreated), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("cannot serialize"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Events.AppendAtVersionAsync<TestAggregate>(streamId, 2, new TestCreated("Unserializable")));
+        await _eventSource.AppendAsync<TestAggregate>(streamId, new TestRenamed("Next"));
+        await _eventSource.SaveChangesAsync();
+
+        Assert.Equal(6, Assert.Single(Assert.Single(_capturedAddRangeCalls)).Version);
+    }
+
+    [Fact]
     public async Task TheDefaultCreateOnBehalfOf_ChecksTheSubjectBeforeTheStoreAndRefusesAnExistingStream()
     {
         var events = new Mock<IEventSource> { CallBase = true };

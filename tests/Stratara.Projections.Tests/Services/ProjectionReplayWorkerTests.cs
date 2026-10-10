@@ -306,6 +306,43 @@ public class ProjectionReplayWorkerTests
     }
 
     [Fact]
+    public async Task ReplayCallback_AFailureAfterTheCompletion_DoesNotCompleteTheReplayAgain()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.As<IAsyncDisposable>().Setup(d => d.DisposeAsync()).Returns(ValueTask.CompletedTask);
+        harness.Configure = services => services.AddScoped(_ => preservation.Object);
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Succeeded)), Times.Once);
+        harness.ReplayState.Verify(s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Failed)), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AnAbandonedCheckThatKeepsFailing_IsLoggedOncePerStretch()
+    {
+        var harness = new Harness();
+        var preservation = new Mock<IReadModelPreservation>();
+        preservation.Setup(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("store away"));
+        harness.Configure = services => services.AddSingleton(preservation.Object);
+        harness.BeforeStop = async () =>
+        {
+            for (var check = 0; check < 3; check++)
+            {
+                harness.Time.Advance(ProjectionReplayWorker.AbandonedCheckInterval);
+                await Task.Delay(50);
+            }
+        };
+
+        await harness.RunAsync(triggerReplay: false);
+
+        preservation.Verify(p => p.RestoreAbandonedAsync(It.IsAny<CancellationToken>()), Times.AtLeast(3));
+        Assert.Single(harness.Logger.Entries, e => e.EventId == LogEvents.Projection.ReadModelRestoreFailed);
+    }
+
+    [Fact]
     public async Task ReplayCallback_CompleteThrows_IsLoggedAndDoesNotEscape()
     {
         var harness = new Harness();
@@ -624,7 +661,12 @@ public class ProjectionReplayWorkerTests
             .Callback(() => order.Add("check")).ReturnsAsync(AbandonedPreservation.NoneKept);
         harness.ReplayState
             .Setup(s => s.SubscribeToReplayRequestAsync(It.IsAny<Func<Guid, Task>>(), It.IsAny<CancellationToken>()))
-            .Callback(() => order.Add("subscribe")).Returns(Task.CompletedTask);
+            .Callback(() =>
+            {
+                order.Add("subscribe");
+                harness.Subscribed.TrySetResult();
+            })
+            .Returns(Task.CompletedTask);
         harness.Configure = services => services.AddSingleton(preservation.Object);
 
         await harness.RunAsync(triggerReplay: false);
@@ -857,6 +899,9 @@ public class ProjectionReplayWorkerTests
 
         public bool StopBeforeTrigger { get; set; }
 
+        /// <summary>Completes once the worker has subscribed for requests.</summary>
+        public TaskCompletionSource Subscribed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         private ProjectionReplayWorker? _worker;
 
         /// <summary>
@@ -893,6 +938,7 @@ public class ProjectionReplayWorkerTests
                 .Returns<Func<Task>, CancellationToken>((cb, _) =>
                 {
                     capturedCallback = cb;
+                    Subscribed.TrySetResult();
                     return Task.CompletedTask;
                 });
 
@@ -921,7 +967,7 @@ public class ProjectionReplayWorkerTests
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await worker.StartAsync(cts.Token);
-            await Task.Delay(50, cts.Token);
+            await Task.WhenAny(Subscribed.Task, Task.Delay(TimeSpan.FromSeconds(5), CancellationToken.None));
 
             if (StopBeforeTrigger)
             {

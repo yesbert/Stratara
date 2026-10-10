@@ -320,7 +320,8 @@ internal sealed partial class EventSource(
     /// <summary>
     /// The first staged entry of the stream the conflict is about: where the batch spans several streams, the one
     /// whose head another writer has moved to or past the version this batch staged first. Where that cannot be told —
-    /// one stream, or the lookup itself fails — the batch's first entry.
+    /// one stream, or the lookup itself fails — the batch's first entry. The lookup ignores the caller's cancellation:
+    /// the conflict it attributes is reported either way.
     /// </summary>
     private async Task<EventStreamEntry?> ConflictedEntryAsync(CancellationToken cancellationToken)
     {
@@ -333,22 +334,27 @@ internal sealed partial class EventSource(
             return firstPerStream.FirstOrDefault();
         }
 
+        return await MovedStreamAsync(firstPerStream) ?? firstPerStream[0];
+    }
+
+    private async Task<EventStreamEntry?> MovedStreamAsync(List<EventStreamEntry> firstPerStream)
+    {
         try
         {
             foreach (var first in firstPerStream)
             {
-                if (await ReadHeadAsync(first.StreamId, cancellationToken) >= first.Version)
+                if (await ReadHeadAsync(first.StreamId, CancellationToken.None) >= first.Version)
                 {
                     return first;
                 }
             }
-        }
-        catch (Exception lookupFailed) when (lookupFailed is not OperationCanceledException)
-        {
-            return firstPerStream[0];
-        }
 
-        return firstPerStream[0];
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -403,12 +409,30 @@ internal sealed partial class EventSource(
         return await eventStreamRepository.GetVersionOrDefaultAsync(streamId, cancellationToken);
     }
 
+    /// <summary>
+    /// Stages the events on a stream whose version the caller has seeded. If staging fails before any event of the
+    /// stream is staged — a refused owner, a payload that cannot be serialized — the seed is withdrawn, so a later append
+    /// in the batch reads the stream's head again instead of numbering from a version nothing was staged on.
+    /// </summary>
     private async Task AddEventsToStreamAsync<TAggregate>(Guid streamId, IEnumerable<object> events,
         EventSubject? statedSubject, CancellationToken cancellationToken) where TAggregate : notnull, new()
     {
-        foreach (var @event in events)
+        var staged = false;
+        try
         {
-            await AppendEventToStreamAsync<TAggregate>(streamId, @event, statedSubject, cancellationToken);
+            foreach (var @event in events)
+            {
+                await AppendEventToStreamAsync<TAggregate>(streamId, @event, statedSubject, cancellationToken);
+            }
+
+            staged = true;
+        }
+        finally
+        {
+            if (!staged && !_eventStreamEntries.Exists(entry => entry.StreamId == streamId))
+            {
+                _streamVersions.Remove(streamId);
+            }
         }
     }
 

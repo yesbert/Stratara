@@ -96,8 +96,16 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         return 1
         """;
 
-    /// <summary>Records the counters and renews the marking's lease, its identity's and the counters' in one round trip.</summary>
+    /// <summary>
+    /// Records the counters and renews the marking's lease, its identity's and the counters' in one round trip — while
+    /// the marking still belongs to this host's replay (<c>ARGV[4]</c>; empty when this host activated none). A replay
+    /// that outlived its lease neither resets nor renews the replay that took its place.
+    /// </summary>
     private const string SetProgressScript = """
+        if ARGV[4] ~= '' then
+            local running = redis.call('GET', KEYS[4])
+            if running ~= false and running ~= ARGV[4] then return 0 end
+        end
         redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[3])
         redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[3])
         redis.call('PEXPIRE', KEYS[3], ARGV[3])
@@ -119,6 +127,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     private volatile bool _active;
     private int _generation;
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _startedAt = new();
+    private volatile string _ownRequestId = string.Empty;
     private ChannelMessageQueue? _subscription;
     private bool _refreshFailing;
     private bool _subscribeFailing;
@@ -155,6 +164,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         db.StringSet(CacheKey, Active, _lease);
         db.StringSet(RequestIdKey, Guid.Empty.ToString("N"), _lease);
         _startedAt[Guid.Empty] = _timeProvider.GetUtcNow();
+        _ownRequestId = Guid.Empty.ToString("N");
         Transition(active: true);
     }
 
@@ -178,6 +188,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         }
 
         _startedAt[requestId] = startedAt;
+        _ownRequestId = requestId.ToString("N");
         Transition(active: true);
         return true;
     }
@@ -189,6 +200,11 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var endedAt = _timeProvider.GetUtcNow();
         var startedAt = _startedAt.TryRemove(completion.RequestId, out var started) ? started : endedAt;
         var failed = completion.Result == ReplayResult.Failed;
+        if (_ownRequestId == completion.RequestId.ToString("N"))
+        {
+            _ownRequestId = string.Empty;
+        }
+
         var ended = (int)_redis.GetDatabase().ScriptEvaluate(
             CompleteScript,
             [LastKey, CacheKey, ProcessedKey, TotalKey, RequestIdKey, ErrorKey],
@@ -214,6 +230,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var db = _redis.GetDatabase();
         db.KeyDelete([CacheKey, ProcessedKey, TotalKey, ErrorKey, RequestIdKey]);
         _startedAt.Clear();
+        _ownRequestId = string.Empty;
         Transition(active: false);
     }
 
@@ -224,6 +241,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         db.KeyDelete([CacheKey, ProcessedKey, TotalKey, RequestIdKey]);
         db.StringSet(ErrorKey, errorMessage);
         _startedAt.Clear();
+        _ownRequestId = string.Empty;
         Transition(active: false);
     }
 
@@ -233,7 +251,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         _redis.GetDatabase().ScriptEvaluate(
             SetProgressScript,
             [ProcessedKey, TotalKey, CacheKey, RequestIdKey],
-            [processedEvents, totalEvents, (long)_lease.TotalMilliseconds]);
+            [processedEvents, totalEvents, (long)_lease.TotalMilliseconds, _ownRequestId]);
     }
 
     /// <inheritdoc/>
