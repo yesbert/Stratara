@@ -16,6 +16,14 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.4`._
+
+## [4.4.4] — 2026-10-10
+
+A one-fix release. On the Redis-backed replay state, a host could report a replay still active after it had ended
+it, holding publication back for up to one refresh interval. Nothing else changes; no configuration or migration is
+needed.
+
 ### Fixed
 
 - **A host no longer reports a replay active after it ended the replay itself.** On the Redis-backed replay state, a
@@ -4536,7 +4544,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.3...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.4...main
+[4.4.4]: https://github.com/yesbert/Stratara/releases/tag/v4.4.4
 [4.4.3]: https://github.com/yesbert/Stratara/releases/tag/v4.4.3
 [4.4.2]: https://github.com/yesbert/Stratara/releases/tag/v4.4.2
 [4.4.1]: https://github.com/yesbert/Stratara/releases/tag/v4.4.1
