@@ -125,6 +125,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     private readonly Task _loop;
 
     private volatile bool _active;
+    private readonly object _fieldGate = new();
     private int _generation;
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _startedAt = new();
     private volatile string _ownRequestId = string.Empty;
@@ -343,14 +344,19 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     }
 
     /// <summary>
-    /// Records a transition this instance made: the generation moves first, so a refresh whose read was in flight
-    /// finds it changed and discards what it read; then the field, then the announcement to every host sharing the
-    /// store, which read the marking themselves.
+    /// Records a transition this instance made: the generation moves and the field is set together, under the same
+    /// lock a refresh holds while it compares and writes, so a refresh whose read was in flight finds the generation
+    /// changed and discards what it read — it can neither compare before the move and write after it; then the
+    /// announcement to every host sharing the store, which read the marking themselves.
     /// </summary>
     private void Transition(bool active)
     {
-        Interlocked.Increment(ref _generation);
-        _active = active;
+        lock (_fieldGate)
+        {
+            _generation++;
+            _active = active;
+        }
+
         _redis.GetSubscriber().Publish(RedisChannel.Literal(StateChannel), StateChanged);
     }
 
@@ -424,7 +430,8 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
 
     /// <summary>
     /// Reads the marking and sets the field to it, unless this instance made a transition while the read was in
-    /// flight: what was read may predate that transition, and the next refresh reads again. Refreshes are serialised,
+    /// flight: what was read may predate that transition, and the next refresh reads again. The comparison and the
+    /// write are one step under the transitions' lock. Refreshes are serialised,
     /// so a read that began earlier cannot land after a later one; a refresh that fails keeps the field and is logged
     /// once per failing stretch.
     /// </summary>
@@ -433,11 +440,19 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         await _refreshing.WaitAsync(cancellationToken);
         try
         {
-            var generation = Volatile.Read(ref _generation);
-            var value = await _redis.GetDatabase().StringGetAsync(CacheKey);
-            if (Volatile.Read(ref _generation) == generation)
+            int generation;
+            lock (_fieldGate)
             {
-                _active = value == Active;
+                generation = _generation;
+            }
+
+            var value = await _redis.GetDatabase().StringGetAsync(CacheKey);
+            lock (_fieldGate)
+            {
+                if (_generation == generation)
+                {
+                    _active = value == Active;
+                }
             }
 
             if (_refreshFailing)

@@ -16,7 +16,13 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.3`._
+### Fixed
+
+- **A host no longer reports a replay active after it ended the replay itself.** On the Redis-backed replay state, a
+  refresh that had read the marking just before the host's own deactivation could compare its generation before the
+  deactivation and write the field after it, leaving `IsReplayActive` true — and publication held back — until the
+  next refresh (`ProjectionReplay:RefreshSeconds`, default 5). The comparison and the write are now one step with the
+  transition. Present since 4.4.2.
 
 ## [4.4.3] — 2026-10-10
 
