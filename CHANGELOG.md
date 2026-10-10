@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.3`._
+
+## [4.4.3] — 2026-10-10
+
 A release about facts recorded in the wrong place and replays nobody dared to start. A handler can now append
 only if the stream is still where it read it, so a fact decided on a stream's earlier state is no longer recorded
 after one that contradicts it. A replay request starts one replay instead of one per host, its outcome stays
@@ -4526,7 +4530,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.2...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.3...main
+[4.4.3]: https://github.com/yesbert/Stratara/releases/tag/v4.4.3
 [4.4.2]: https://github.com/yesbert/Stratara/releases/tag/v4.4.2
 [4.4.1]: https://github.com/yesbert/Stratara/releases/tag/v4.4.1
 [4.4.0]: https://github.com/yesbert/Stratara/releases/tag/v4.4.0
