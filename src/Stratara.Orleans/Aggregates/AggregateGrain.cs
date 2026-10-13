@@ -10,6 +10,7 @@ using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
+using Stratara.Shared.Security;
 using IRequest = Stratara.Abstractions.Mediator.IRequest;
 using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
@@ -455,8 +456,9 @@ internal static class CommandExecution
         services.GetRequiredService<ISessionContextProvider>().Set(session);
 
         var type = services.GetRequiredService<ITrustedTypeResolver>().Resolve(envelope.CommandTypeName);
+        var owner = CommandDataOwner.ForRead(envelope.DataOwnerTenantId, envelope.DataOwnerUserId, session);
         var command = await services.GetRequiredService<ISecureJsonSerializer>()
-                          .DeserializeAsync(envelope.CommandJson, type, session.TenantId, session.ActorUserId)
+                          .DeserializeAsync(envelope.CommandJson, type, owner.TenantId, owner.UserId)
                       ?? throw new InvalidOperationException($"The aggregate command envelope's command of type {type.FullName} deserialised to nothing.");
 
         using (AggregateTurn.Enter((command as IAggregateScopedCommand)?.AggregateId, callerChain))

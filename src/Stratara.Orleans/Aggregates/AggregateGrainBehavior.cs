@@ -5,6 +5,7 @@ using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
 using Stratara.Shared.Reflections;
+using Stratara.Shared.Security;
 using IRequest = Stratara.Abstractions.Mediator.IRequest;
 
 namespace Stratara.Orleans.Aggregates;
@@ -33,6 +34,7 @@ internal sealed class AggregateGrainBehavior<TRequest>(
     /// <inheritdoc/>
     /// <exception cref="InvalidOperationException">The command would call back into an aggregate whose turn encloses this one.</exception>
     /// <exception cref="SessionRequiredException">The command is forwarded to its grain and no session context is set.</exception>
+    /// <exception cref="ArgumentException">The command is forwarded to its grain, implements <see cref="INamesDataOwner"/> and names an empty tenant.</exception>
     public async Task HandleAsync(TRequest request, Func<Task> next, CancellationToken cancellationToken)
     {
         if (request is not IAggregateScopedCommand scoped || AggregateTurn.IsInside(scoped.AggregateId))
@@ -68,9 +70,14 @@ internal sealed class AggregateGrainBehavior<TRequest>(
         }
     }
 
-    private async Task<AggregateCommandEnvelope> BuildEnvelopeAsync(TRequest request, SessionContext session, CancellationToken cancellationToken) =>
-        new(
+    private async Task<AggregateCommandEnvelope> BuildEnvelopeAsync(TRequest request, SessionContext session, CancellationToken cancellationToken)
+    {
+        var owner = CommandDataOwner.ForTransit(request, session);
+        return new AggregateCommandEnvelope(
             request.GetType().GetQualifiedTypeName(),
-            await serializer.SerializeAsync(request, session.TenantId, session.ActorUserId, cancellationToken),
-            JsonSerializer.Serialize(session));
+            await serializer.SerializeAsync(request, owner.TenantId, owner.UserId, cancellationToken),
+            JsonSerializer.Serialize(session),
+            DataOwnerTenantId: owner.NamedTenantId,
+            DataOwnerUserId: owner.NamedUserId);
+    }
 }

@@ -29,4 +29,25 @@ public sealed record CommandEnvelope(
     [property: JsonPropertyName("CommandTypeName")] string CommandTypeName,
     [property: JsonPropertyName("SessionContextJson")] string SessionContextJson,
     [property: JsonPropertyName("Signature")] string? Signature = null,
-    [property: JsonPropertyName("Heavy")] bool Heavy = false);
+    [property: JsonPropertyName("Heavy")] bool Heavy = false)
+{
+    /// <summary>
+    /// The tenant the command's protected fields were encrypted for, when the command named its data
+    /// owner; <see langword="null"/> when it named none and its fields were encrypted for the session.
+    /// Omitted from the serialized form when <see langword="null"/>, which is also how an envelope
+    /// written before this property existed deserializes.
+    /// </summary>
+    [JsonPropertyName("DataOwnerTenantId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? DataOwnerTenantId { get; init; }
+
+    /// <summary>
+    /// The user the command's protected fields were encrypted for, when the command named one beside
+    /// its data-owner tenant; <see langword="null"/> otherwise. Read only where
+    /// <see cref="DataOwnerTenantId"/> is set, and omitted from the serialized form when
+    /// <see langword="null"/>.
+    /// </summary>
+    [JsonPropertyName("DataOwnerUserId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? DataOwnerUserId { get; init; }
+}

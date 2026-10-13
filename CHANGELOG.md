@@ -16,7 +16,61 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.4`._
+A command can now say whose data its protected fields are. Until now a command's `[EncryptData]` fields were
+encrypted for the session that dispatched it, so a session with no tenant could not protect anything and a session
+with another tenant protected under the wrong one. Additive and opt-in; no schema change and no migration. One
+ordering rule applies once a host starts using it (see *Changed*).
+
+### Added
+
+- **A command can name the owner of its protected fields.** A command that implements the new `INamesDataOwner`
+  (`Stratara.Abstractions.Security`: `Guid DataOwnerTenantId`, optional `Guid? DataOwnerUserId`) has its
+  `[EncryptData]` fields encrypted for that owner wherever the framework serializes it — the copy the outbox, the
+  bus and the Orleans record carry to its handler, and the copy the command audit records — whatever session
+  dispatched it. It is to a command what `IAggregateCreationEvent` is to a stream's first event. Three cases it
+  answers: a session with no tenant (an anonymous endpoint, or a saga reacting to a fact one recorded) could not
+  encrypt a `TenantScoped` field at all outside development; a session with another tenant than the data's owner
+  encrypted it under that tenant's key, silently, so the real owner's erasure left the audit record readable; and
+  the two copies of one command were written for different users. For a command that names its owner, both copies
+  are written for the same tenant and the same user.
+- **The audit record of such a command is attributed to the named owner.** Its data-owner tenant and user are the
+  owner the command names; its actor is the session's, as before. A tenant's view of the command log then holds the
+  commands that carried its data, whoever issued them, and each record can be read back from its own columns.
+- **`CommandEnvelope.DataOwnerTenantId` and `.DataOwnerUserId`** carry the owner beside the session context. They
+  are set only for a command that names an owner and are omitted from the JSON otherwise; the constructor and
+  `Deconstruct` are unchanged. The handling host reads the command's protected fields for the owner the envelope
+  carries and runs the handler under the session it carries.
+- **`CommandDataOwner`** (`Stratara.Shared.Security`) is the one resolution every writer and reader of a command
+  uses, for a host that serializes commands itself.
+
+### Changed
+
+- **The bus-envelope signature covers a named owner.** A signed command does not verify when it is presented with
+  another data owner, or with its owner removed. A command that names no owner has the canonical form it had before,
+  so publishers and consumers on either side of this release verify each other's signatures for it and a fleet in
+  `Strict` mode upgrades without a pass through `Permissive`.
+- **Upgrade the hosts that handle commands before a host dispatches a command that names an owner.** A command
+  worker or silo on an earlier release cannot read the owner. It does not run the handler with the fields emptied:
+  in `Strict` mode the signature does not verify, otherwise the read fails authentication, and the message is
+  retried and then kept. Two deployments are the simple order — this release first, the declarations after.
+- **Nothing changes for a command that names no owner.** It is serialized, stored, published and signed as before.
+  That includes a divergence this release states rather than removes: its travelling copy is written for the
+  session's tenant and the *acting* user, its audit record for the session's tenant and the session's *data-owner*
+  user — for an ordinary signed-in request, a user and nobody. Aligning that default would re-key every protected
+  command field in transit and is left to a major version; a command that names its owner is not affected.
+
+### Security
+
+- **An erasure now reaches a command's protected fields where the command names its owner.** `ISubjectEraser`'s
+  documentation said the command audit log and the outbox are left alone. Their rows still are; what it now also
+  says is what happens to protected fields in them. A command that names its owner has them under that owner's key
+  in both places, so the owner's erasure leaves the record of the command with those fields unreadable, and a
+  command still waiting reaches its handler with them absent.
+- **A command that names an empty tenant as its owner is refused.** It fails with `ArgumentException` naming the
+  command type where it is recorded and where it is dispatched, and nothing is recorded or sent. It does not fall
+  back to the session, which would hide a caller's mistake in valid ciphertext under the wrong tenant's key.
+- **Naming an owner authorizes nothing.** Nothing compares the named owner against the session; the handler runs
+  under the dispatching session, and authorization and tenant isolation decide as they do for any other command.
 
 ## [4.4.4] — 2026-10-10
 

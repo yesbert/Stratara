@@ -9,6 +9,7 @@ using Stratara.Contracts.Session;
 using Stratara.Diagnostics;
 using Stratara.Orleans.Diagnostics;
 using Stratara.Shared.Reflections;
+using Stratara.Shared.Security;
 
 namespace Stratara.Orleans.Aggregates;
 
@@ -26,12 +27,17 @@ internal sealed class IntentRecorder(ICommandIntentStore intents, ISecureJsonSer
     {
         ArgumentNullException.ThrowIfNull(dispatch);
         var session = dispatch.Session;
+        var owner = CommandDataOwner.ForTransit(command, session);
         var envelope = new CommandEnvelope(
             dispatch.IntentId,
-            await serializer.SerializeAsync(command, session.TenantId, session.ActorUserId, cancellationToken),
+            await serializer.SerializeAsync(command, owner.TenantId, owner.UserId, cancellationToken),
             command.GetType().GetQualifiedTypeName(),
             JsonSerializer.Serialize(session),
-            Heavy: dispatch.Heavy);
+            Heavy: dispatch.Heavy)
+        {
+            DataOwnerTenantId = owner.NamedTenantId,
+            DataOwnerUserId = owner.NamedUserId
+        };
         if (signer is not null)
         {
             envelope = envelope with { Signature = signer.Sign(BusEnvelopeCanonical.Of(envelope)) };
@@ -41,7 +47,12 @@ internal sealed class IntentRecorder(ICommandIntentStore intents, ISecureJsonSer
         ApplicationDiagnostics.Metrics.OrleansIntentRecorded.Add(1);
         logger.LogCommandRecorded(dispatch.IntentId);
 
-        return new AggregateCommandEnvelope(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson);
+        return new AggregateCommandEnvelope(
+            envelope.CommandTypeName,
+            envelope.CommandJson,
+            envelope.SessionContextJson,
+            DataOwnerTenantId: envelope.DataOwnerTenantId,
+            DataOwnerUserId: envelope.DataOwnerUserId);
     }
 }
 

@@ -407,7 +407,7 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
         var due = (await intents.GetDueAsync(now.AddDays(1), 10, CancellationToken.None)).Where(intent => intent.Id == intentId).ToList();
         Assert.Equal([intentId], await intents.ClaimAsync(due, claimedAt, CancellationToken.None));
         var envelope = due[0].Envelope;
-        return (new AggregateCommandEnvelope(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson, claimedAt), claimedAt);
+        return (new AggregateCommandEnvelope(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson, claimedAt, envelope.DataOwnerTenantId, envelope.DataOwnerUserId), claimedAt);
     }
 
     private static async Task HandOverAsync(IHost host, Guid intentId, AggregateCommandEnvelope payload, bool heavy, Guid? aggregateId)

@@ -35,6 +35,16 @@ ciphertext, tag = AES-GCM-Encrypt(
 
 Decryption requires the **same** AAD. If a sealed value from tenant A is presented for decryption under tenant B's `SessionContext`, AES-GCM rejects the authentication tag with `AuthenticationTagMismatchException`. This holds **even with the correct master key**. The tenant binding is in the cryptography, not in the query.
 
+**The tenant is the data owner, and the session is only its default.** The session says who is acting; where something more specific says whose data this is, that wins:
+
+| What is sealed | The owner it is sealed for |
+|---|---|
+| An event | The owner recorded for its **stream** — whoever appends it. |
+| A command that implements `INamesDataOwner` | The owner the **command names** — in the copy that travels to its handler and in the audit record alike, whoever dispatches it. |
+| A command that names no owner | The dispatching **session's** data-owner tenant. |
+
+That is what lets a tenant's erasure reach its data in a command dispatched by somebody else — an operator, a saga, an anonymous endpoint — and what keeps an anonymous session from being unable to protect anything. See [Whose key a command's protected fields are under](../guides/write-a-command-handler.md#whose-key-a-commands-protected-fields-are-under).
+
 ## Use cases
 
 ### 🗑️ GDPR Article 17 — Right to Be Forgotten via crypto-shredding

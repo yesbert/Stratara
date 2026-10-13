@@ -5,6 +5,7 @@ using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Messaging;
 using Stratara.Abstractions.Security;
 using Stratara.Shared.Reflections;
+using Stratara.Shared.Security;
 
 namespace Stratara.Shared.Mediator.Mapping;
 
@@ -19,10 +20,14 @@ namespace Stratara.Shared.Mediator.Mapping;
 public static class CommandEnvelopeMapper
 {
     /// <summary>
-    /// Encrypts <paramref name="command"/> through <paramref name="serializer"/> using the session's
-    /// tenant + user as AAD, serializes <paramref name="sessionContext"/> to JSON, and wraps them in a
-    /// freshly-id'd <see cref="CommandEnvelope"/>. The envelope id is generated via
-    /// <see cref="Guid.CreateVersion7()"/> so it doubles as a sortable outbox row id.
+    /// Encrypts <paramref name="command"/> through <paramref name="serializer"/> for the owner
+    /// <see cref="CommandDataOwner.ForTransit"/> resolves — the owner the command names through
+    /// <see cref="INamesDataOwner"/>, or the session's data-owner tenant and acting user — serializes
+    /// <paramref name="sessionContext"/> to JSON, and wraps them in a freshly-id'd
+    /// <see cref="CommandEnvelope"/>. A named owner is recorded on the envelope so the receiving host
+    /// reads the command for it; an envelope for a command that names none carries no owner. The
+    /// envelope id is generated via <see cref="Guid.CreateVersion7()"/> so it doubles as a sortable
+    /// outbox row id.
     /// </summary>
     /// <typeparam name="T">CLR type of the command being wrapped.</typeparam>
     /// <param name="command">The command instance to serialize.</param>
@@ -30,14 +35,16 @@ public static class CommandEnvelopeMapper
     /// <param name="serializer">The secure JSON serializer used to encrypt <c>[EncryptData]</c>-tagged fields.</param>
     /// <param name="cancellationToken">Token observed during the asynchronous serialization.</param>
     /// <returns>A new <see cref="CommandEnvelope"/> ready to enqueue or publish.</returns>
+    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant.</exception>
     public static async Task<CommandEnvelope> MapToAsync<T>(
         this T command,
         SessionContext sessionContext,
         ISecureJsonSerializer serializer,
         CancellationToken cancellationToken = default) where T : ICommand
     {
+        var owner = CommandDataOwner.ForTransit(command, sessionContext);
         var id = Guid.CreateVersion7();
-        var commandJson = await serializer.SerializeAsync(command, sessionContext.TenantId, sessionContext.ActorUserId, cancellationToken);
+        var commandJson = await serializer.SerializeAsync(command, owner.TenantId, owner.UserId, cancellationToken);
         var sessionContextJson = JsonSerializer.Serialize(sessionContext);
 
         var commandType = command.GetType();
@@ -47,6 +54,10 @@ public static class CommandEnvelopeMapper
             commandJson,
             commandType.GetQualifiedTypeName(),
             sessionContextJson,
-            Heavy: IMessagingIdentifier.IsHeavy(commandType));
+            Heavy: IMessagingIdentifier.IsHeavy(commandType))
+        {
+            DataOwnerTenantId = owner.NamedTenantId,
+            DataOwnerUserId = owner.NamedUserId
+        };
     }
 }

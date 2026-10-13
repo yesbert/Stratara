@@ -89,6 +89,34 @@ public sealed class IntentRecordIntegrityTests
         Assert.Equal(eventId == 0 ? [] : [eventId], integrityEvents);
     }
 
+    /// <summary>
+    /// A resumed command's owner is taken from its signed record. A record whose owner was altered, or
+    /// removed so that the command would be read for its session instead, does not verify.
+    /// </summary>
+    [Theory]
+    [InlineData("altered")]
+    [InlineData("removed")]
+    public async Task A_recorded_command_naming_an_owner_whose_owner_was_changed_in_the_record_is_kept_under_strict_mode(string change)
+    {
+        var signer = new FakeSigner();
+        var envelope = new CommandEnvelope(Guid.NewGuid(), "{}", "Probe", "{}") { DataOwnerTenantId = Guid.NewGuid(), DataOwnerUserId = Guid.NewGuid() };
+        envelope = envelope with { Signature = FakeSigner.SignatureOf(BusEnvelopeCanonical.Of(envelope)) };
+        envelope = change == "altered"
+            ? envelope with { DataOwnerTenantId = Guid.NewGuid() }
+            : envelope with { DataOwnerTenantId = null, DataOwnerUserId = null };
+        var intent = new RecordedIntent(envelope.Id, envelope, Guid.NewGuid(), Heavy: false, AttemptCount: 0, LastHandedOverAt: null, LastFailure: null);
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(s => s.GetDueAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync([intent]);
+        var grains = new RecordedCommandDrainTests.Grains();
+
+        var pass = await Resumer(intents.Object, grains, new RecordingLogger(), signer, BusEnvelopeIntegrityMode.Strict).ResumeDueAsync(10, CancellationToken.None);
+
+        Assert.Equal(0, pass.Resumed);
+        Assert.Empty(grains.Accepted);
+        intents.Verify(s => s.KeepAsync(intent.Id, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+        intents.Verify(s => s.RecordFailureAsync(intent.Id, It.Is<string>(reason => reason.Contains("does not verify")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task A_pass_claims_its_batch_in_one_call_and_hands_over_only_what_it_claimed_in_read_order()
     {

@@ -17,5 +17,7 @@
     <ItemGroup>
         <ProjectReference Include="../../src/Stratara.EventSourcing.EntityFrameworkCore/Stratara.EventSourcing.EntityFrameworkCore.csproj"/>
         <ProjectReference Include="../../src/Stratara.Shared/Stratara.Shared.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Infrastructure/Stratara.Infrastructure.csproj"/>
+        <ProjectReference Include="../../src/Stratara.Testing/Stratara.Testing.csproj"/>
     </ItemGroup>
 </Project>

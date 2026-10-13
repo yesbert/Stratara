@@ -245,6 +245,108 @@ public class MediatorCommandWorkerTests
         harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → the handling host reads a command's protected fields for the owner
+    /// the message carries, and runs the handler under the session the message carries.
+    /// </summary>
+    [Fact]
+    public async Task DispatchAsync_EnvelopeNamingAnOwner_ReadsForThatOwnerAndRunsUnderTheDispatchingSession()
+    {
+        var harness = new Harness();
+        var ownerTenant = Guid.NewGuid();
+        var ownerUser = Guid.NewGuid();
+        var session = SessionContext.Empty();
+        var envelope = NewEnvelope(new PlainCommand("hello"), session) with { DataOwnerTenantId = ownerTenant, DataOwnerUserId = ownerUser };
+
+        await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
+
+        harness.Serializer.Verify(
+            s => s.DeserializeAsync(envelope.CommandJson, typeof(PlainCommand), ownerTenant, ownerUser, It.IsAny<CancellationToken>()),
+            Times.Once);
+        harness.SessionContextProvider.Verify(
+            s => s.Set(It.Is<SessionContext>(c => c.CorrelationId == session.CorrelationId && c.TenantId == Guid.Empty && c.ActorUserId == Guid.Empty)),
+            Times.Once);
+        harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_EnvelopeNamingATenantAlone_ReadsForThatTenantAndNoUser()
+    {
+        var harness = new Harness();
+        var ownerTenant = Guid.NewGuid();
+        var session = SessionContext.Empty() with { TenantId = Guid.NewGuid(), ActorUserId = Guid.NewGuid() };
+        var envelope = NewEnvelope(new PlainCommand("hello"), session) with { DataOwnerTenantId = ownerTenant };
+
+        await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
+
+        harness.Serializer.Verify(
+            s => s.DeserializeAsync(envelope.CommandJson, typeof(PlainCommand), ownerTenant, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_EnvelopeNamingNone_ReadsForSessionTenantAndActorUser()
+    {
+        var harness = new Harness();
+        var session = SessionContext.Empty() with { TenantId = Guid.NewGuid(), ActorUserId = Guid.NewGuid(), UserId = Guid.NewGuid() };
+        var envelope = NewEnvelope(new PlainCommand("hello"), session);
+
+        await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
+
+        harness.Serializer.Verify(
+            s => s.DeserializeAsync(envelope.CommandJson, typeof(PlainCommand), session.TenantId, session.ActorUserId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_StrictMode_SignedEnvelopeNamingAnOwner_Dispatches()
+    {
+        var signer = new InMemoryEnvelopeSigner();
+        var harness = new Harness(BusEnvelopeIntegrityMode.Strict, signer);
+        var unsigned = NewEnvelope(new PlainCommand("hello"), SessionContext.Empty()) with { DataOwnerTenantId = Guid.NewGuid() };
+        var envelope = unsigned with { Signature = signer.Sign(BusEnvelopeCanonical.Of(unsigned)) };
+
+        await harness.Sut.DispatchAsync(envelope, CancellationToken.None);
+
+        harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_StrictMode_OwnerAlteredAfterSigning_IsRejected()
+    {
+        var signer = new InMemoryEnvelopeSigner();
+        var harness = new Harness(BusEnvelopeIntegrityMode.Strict, signer);
+        var unsigned = NewEnvelope(new PlainCommand("hello"), SessionContext.Empty()) with { DataOwnerTenantId = Guid.NewGuid() };
+        var signed = unsigned with { Signature = signer.Sign(BusEnvelopeCanonical.Of(unsigned)) };
+        var tampered = signed with { DataOwnerTenantId = Guid.NewGuid() };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.Sut.DispatchAsync(tampered, CancellationToken.None));
+
+        Assert.Contains("does not verify", ex.Message);
+        harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>
+    /// Stripping the owner would make the receiver read the command for its session instead. The
+    /// signature covers the owner's presence, so the stripped envelope does not verify.
+    /// </summary>
+    [Fact]
+    public async Task DispatchAsync_StrictMode_OwnerRemovedAfterSigning_IsRejected()
+    {
+        var signer = new InMemoryEnvelopeSigner();
+        var harness = new Harness(BusEnvelopeIntegrityMode.Strict, signer);
+        var unsigned = NewEnvelope(new PlainCommand("hello"), SessionContext.Empty()) with { DataOwnerTenantId = Guid.NewGuid(), DataOwnerUserId = Guid.NewGuid() };
+        var signed = unsigned with { Signature = signer.Sign(BusEnvelopeCanonical.Of(unsigned)) };
+        var stripped = signed with { DataOwnerTenantId = null, DataOwnerUserId = null };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.Sut.DispatchAsync(stripped, CancellationToken.None));
+
+        Assert.Contains("does not verify", ex.Message);
+        harness.Mediator.Verify(m => m.HandleAsync(It.IsAny<PlainCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private sealed class InMemoryEnvelopeSigner : IBusEnvelopeSigner
     {
         public string Sign(string payload) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("sig:" + payload));
@@ -268,6 +370,7 @@ public class MediatorCommandWorkerTests
         public Mock<ISessionContextProvider> SessionContextProvider { get; } = new();
         public Mock<IMediator> Mediator { get; } = new();
         public FakeLogger<MediatorCommandWorker> Logger { get; } = new();
+        public Mock<ISecureJsonSerializer> Serializer { get; } = new();
 
         public MediatorCommandWorker Sut { get; }
 
@@ -285,8 +388,7 @@ public class MediatorCommandWorkerTests
             resolver.Register(typeof(PlainCommand));
             resolver.Register(typeof(AggregateCommand));
 
-            var serializer = new Mock<ISecureJsonSerializer>();
-            serializer.Setup(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            Serializer.Setup(s => s.DeserializeAsync(It.IsAny<string>(), It.IsAny<Type>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
                 .Returns<string, Type, Guid?, Guid?, CancellationToken>((json, type, _, _, _) =>
                     Task.FromResult(JsonSerializer.Deserialize(json, type)));
 
@@ -297,7 +399,7 @@ public class MediatorCommandWorkerTests
                 scopeFactory,
                 PipelineProvider.Object,
                 resolver,
-                serializer.Object,
+                Serializer.Object,
                 Options.Create(new BusEnvelopeJsonOptions()),
                 Options.Create(new BusEnvelopeIntegrityOptions { Mode = integrityMode }),
                 signer);

@@ -183,6 +183,66 @@ whose tenant id is empty fails the append at once — the message names the even
 nothing is recorded, and the store does **not** fall back to the stream, the event or the session,
 because stating a subject already said that none of them applies.
 
+## Whose key a command's protected fields are under
+
+A command can carry `[EncryptData]` fields like any other serialized type. The framework serializes
+a command in two places: the copy that travels to a handler that runs later — the outbox, the bus,
+the Orleans record — and the copy the command audit records. By default both are encrypted for the
+**session the command was dispatched under**: the session's data-owner tenant, together with the
+acting user in the travelling copy and with the session's data-owner user in the audit record.
+
+That is right when the session's tenant is the tenant the data belongs to, and wrong in exactly the
+flows the session has two identities for. A session with no tenant — an anonymous endpoint, or a
+saga reacting to a fact one recorded, which runs under that fact's session — cannot encrypt a
+`TenantScoped` field at all outside development. A session with *another* tenant encrypts it under
+that tenant's key: nothing fails, and erasing the real owner leaves the audit record readable.
+
+Only the command knows whose data it carries, so let it say so. `INamesDataOwner` is to a command
+what `IAggregateCreationEvent` is to a stream's first event:
+
+```csharp
+public sealed record TrackPageVisit(
+    Guid TenantId,
+    [property: EncryptData(DataSensitivityLevel.TenantScoped)] string Address)
+    : ICommand, INamesDataOwner
+{
+    Guid INamesDataOwner.DataOwnerTenantId => TenantId;
+}
+```
+
+Implement it explicitly, as above, so nothing is added to the command's JSON. `DataOwnerUserId` is
+optional and defaults to no user; implement it too when the data belongs to one user of the tenant.
+
+What follows from the declaration:
+
+- **Both copies are written for the named owner** — the same tenant and the same user, whatever
+  session dispatched the command. The audit record names that owner as its data owner and the
+  session's actor as its actor, so a tenant's view of the command log holds the commands that
+  carried its data, whoever issued them.
+- **The session is untouched.** The handler runs under the dispatching session; authorization,
+  tenant isolation and correlation read it as before.
+- **It authorizes nothing.** Nothing compares the named owner against the session. Whether the
+  caller may act on that owner's data is decided as for any other command — by the stages you
+  registered and by your handler. A command that also implements `ITenantScopedRequest` is still
+  held to the session by the isolation guard; the two declarations are separate statements.
+- **An empty owner is refused.** A command that implements the declaration and names
+  `Guid.Empty` fails with an `ArgumentException` naming its type, where it is recorded and where it
+  is dispatched, and nothing is recorded or sent. It does not fall back to the session.
+- **The command can outlive its owner.** A command still waiting when its owner is erased is
+  delivered, and its protected fields read as absent — see
+  [Unreadable encrypted fields degrade rather than fail](encrypt-data-setup.md#unreadable-encrypted-fields-degrade-rather-than-fail).
+  Give those fields a type that can be absent, and let the handler treat an absent one as "the owner
+  is gone". The audit record stays as the evidence that the command was issued; its protected fields
+  are unreadable from then on.
+
+> **Rolling upgrade.** A host on a release before `INamesDataOwner` cannot read the owner a command
+> carries. It does not run the handler with the fields emptied: under `Strict` bus-envelope integrity
+> the signature does not verify, and otherwise the read fails authentication, so the message is
+> retried and then kept. Upgrade every host that handles commands — command workers and silos —
+> before any host dispatches a command that names an owner. The simplest order is two deployments:
+> the framework release first, the declarations after. A command that names no owner is stored,
+> published and signed exactly as before, so the release itself needs no ordering.
+
 ## When two writers race on one stream
 
 `SaveChangesAsync` writes the whole batch or none of it. If another writer has already written the

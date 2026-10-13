@@ -37,8 +37,15 @@ public static class BusEnvelopeCanonical
 {
     /// <summary>
     /// Canonical projection of a <see cref="CommandEnvelope"/> — covers the envelope id, the command
-    /// type, the session context, the heavy-lane flag and a digest of the command payload.
+    /// type, the session context, the heavy-lane flag, a digest of the command payload and, where the
+    /// command named its data owner, that owner's tenant and user.
     /// </summary>
+    /// <remarks>
+    /// The owner is appended only when the envelope carries one, so an envelope that names none
+    /// projects to what it projected to before an envelope could name one, and hosts on either side
+    /// of that release verify each other's signatures for it. Because every field is length-prefixed,
+    /// an envelope with an owner and the same envelope without one never project to the same string.
+    /// </remarks>
     /// <param name="envelope">The envelope to project.</param>
     /// <returns>The canonical string to sign or verify.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="envelope"/> is <c>null</c>.</exception>
@@ -52,6 +59,12 @@ public static class BusEnvelopeCanonical
         Append(canonical, envelope.SessionContextJson);
         Append(canonical, envelope.Heavy ? "1" : "0");
         Append(canonical, Digest(envelope.CommandJson));
+        if (envelope.DataOwnerTenantId is { } dataOwnerTenantId)
+        {
+            Append(canonical, dataOwnerTenantId.ToString());
+            Append(canonical, envelope.DataOwnerUserId?.ToString() ?? string.Empty);
+        }
+
         return canonical.ToString();
     }
 
