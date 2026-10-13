@@ -41,13 +41,13 @@ public readonly record struct CommandDataOwner(Guid TenantId, Guid? UserId, bool
     /// <param name="session">The session the command is dispatched under.</param>
     /// <returns>The named owner, or the session's data-owner tenant and acting user.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="command"/> or <paramref name="session"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant.</exception>
+    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant or an empty user.</exception>
     public static CommandDataOwner ForTransit(object command, SessionContext session)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(session);
 
-        return NamedBy(command) ?? new CommandDataOwner(session.TenantId, session.ActorUserId, Named: false);
+        return NamedBy(command) ?? InTransitFor(session);
     }
 
     /// <summary>
@@ -57,7 +57,7 @@ public readonly record struct CommandDataOwner(Guid TenantId, Guid? UserId, bool
     /// <param name="session">The session the command is dispatched under.</param>
     /// <returns>The named owner, or the session's data-owner tenant and data-owner user.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="command"/> or <paramref name="session"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant.</exception>
+    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant or an empty user.</exception>
     public static CommandDataOwner ForRecord(object command, SessionContext session)
     {
         ArgumentNullException.ThrowIfNull(command);
@@ -94,8 +94,11 @@ public readonly record struct CommandDataOwner(Guid TenantId, Guid? UserId, bool
 
         return dataOwnerTenantId is { } tenantId
             ? new CommandDataOwner(tenantId, dataOwnerUserId, Named: true)
-            : new CommandDataOwner(session.TenantId, session.ActorUserId, Named: false);
+            : InTransitFor(session);
     }
+
+    private static CommandDataOwner InTransitFor(SessionContext session) =>
+        new(session.TenantId, session.ActorUserId, Named: false);
 
     private static CommandDataOwner? NamedBy(object command)
     {
@@ -110,6 +113,14 @@ public readonly record struct CommandDataOwner(Guid TenantId, Guid? UserId, bool
                 $"{command.GetType().FullName} implements {nameof(INamesDataOwner)} and names an empty tenant as the owner of its protected fields. " +
                 "A command that names its data owner must name one: fill the field the declaration reads, " +
                 $"or remove {nameof(INamesDataOwner)} from the command to have its fields encrypted for the session.",
+                nameof(command));
+        }
+
+        if (named.DataOwnerUserId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                $"{command.GetType().FullName} implements {nameof(INamesDataOwner)} and names an empty user beside the tenant that owns its protected fields. " +
+                $"Return null from {nameof(INamesDataOwner.DataOwnerUserId)} for data that belongs to the tenant alone, or fill the field the declaration reads.",
                 nameof(command));
         }
 

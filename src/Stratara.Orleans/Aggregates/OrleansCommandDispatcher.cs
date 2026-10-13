@@ -265,13 +265,7 @@ internal sealed class IntentResumer(
         {
             ApplicationDiagnostics.Metrics.OrleansIntentResumed.Add(1);
             logger.LogCommandResumed(intent.Id, intent.AttemptCount + 1);
-            var payload = new AggregateCommandEnvelope(
-                intent.Envelope.CommandTypeName,
-                intent.Envelope.CommandJson,
-                intent.Envelope.SessionContextJson,
-                claimedAt,
-                intent.Envelope.DataOwnerTenantId,
-                intent.Envelope.DataOwnerUserId);
+            var payload = AggregateCommandEnvelope.From(intent.Envelope, claimedAt);
 
             // Where it runs is taken from the signed envelope, not from the row beside it: the heavy claim is one of
             // the things the signature covers, and a row that disagrees with it was already refused above.

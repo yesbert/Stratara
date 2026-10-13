@@ -28,6 +28,10 @@ public interface ICommandOutboxDispatcher
     /// <param name="cancellationToken">Propagated to the bus / outbox write.</param>
     /// <returns>The id assigned to the envelope.</returns>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="command"/> implements <see cref="Stratara.Abstractions.Security.INamesDataOwner"/> and names an
+    /// empty tenant or an empty user as the owner of its protected fields. Nothing is stored or published.
+    /// </exception>
     Task<Guid> EnqueueCommandAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand;
 
     /// <summary>

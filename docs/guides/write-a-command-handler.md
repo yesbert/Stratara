@@ -203,7 +203,7 @@ what `IAggregateCreationEvent` is to a stream's first event:
 ```csharp
 public sealed record TrackPageVisit(
     Guid TenantId,
-    [property: EncryptData(DataSensitivityLevel.TenantScoped)] string Address)
+    [property: EncryptData(DataSensitivityLevel.TenantScoped)] string? Address)
     : ICommand, INamesDataOwner
 {
     Guid INamesDataOwner.DataOwnerTenantId => TenantId;
@@ -225,15 +225,25 @@ What follows from the declaration:
   caller may act on that owner's data is decided as for any other command — by the stages you
   registered and by your handler. A command that also implements `ITenantScopedRequest` is still
   held to the session by the isolation guard; the two declarations are separate statements.
-- **An empty owner is refused.** A command that implements the declaration and names
-  `Guid.Empty` fails with an `ArgumentException` naming its type, where it is recorded and where it
-  is dispatched, and nothing is recorded or sent. It does not fall back to the session.
+- **The owner is taken as stated.** Nothing checks that the named tenant exists, and the key store
+  creates key material for a tenant the first time a field is encrypted for it. Name an owner your
+  code resolved from something it trusts — the stream it loaded, a credential it verified, the event a
+  saga reacts to — and never one copied from a request body. An endpoint that passes a
+  caller's identifier straight through lets that caller mint keys, and, with auditing registered
+  ahead of authorization, leave records in the command log of whichever tenant it names.
+- **An empty owner is refused.** A command that implements the declaration and names `Guid.Empty`
+  as its tenant — or as its user — fails with an `ArgumentException` naming its type, where it is
+  recorded and where it is dispatched, and nothing is recorded or sent. It does not fall back to the
+  session. Return `null` from `DataOwnerUserId` for data that belongs to the tenant alone.
 - **The command can outlive its owner.** A command still waiting when its owner is erased is
   delivered, and its protected fields read as absent — see
   [Unreadable encrypted fields degrade rather than fail](encrypt-data-setup.md#unreadable-encrypted-fields-degrade-rather-than-fail).
-  Give those fields a type that can be absent, and let the handler treat an absent one as "the owner
-  is gone". The audit record stays as the evidence that the command was issued; its protected fields
-  are unreadable from then on.
+  Give those fields a type that can be absent, as `Address` is above, and let the handler treat an
+  absent one as "the owner is gone". The audit record stays as the evidence that the command was
+  issued; its protected fields are unreadable from then on. A command with `[EncryptData]` on the
+  **class** is encrypted as one unit and cannot be rebuilt once its key is gone: it is retried and
+  then kept, and its handler does not run. Mark fields, not the class, on a command that should
+  still be handled after its owner is erased.
 
 > **Rolling upgrade.** A host on a release before `INamesDataOwner` cannot read the owner a command
 > carries. It does not run the handler with the fields emptied: under `Strict` bus-envelope integrity

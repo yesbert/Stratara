@@ -66,11 +66,18 @@ ordering rule applies once a host starts using it (see *Changed*).
   says is what happens to protected fields in them. A command that names its owner has them under that owner's key
   in both places, so the owner's erasure leaves the record of the command with those fields unreadable, and a
   command still waiting reaches its handler with them absent.
-- **A command that names an empty tenant as its owner is refused.** It fails with `ArgumentException` naming the
-  command type where it is recorded and where it is dispatched, and nothing is recorded or sent. It does not fall
-  back to the session, which would hide a caller's mistake in valid ciphertext under the wrong tenant's key.
-- **Naming an owner authorizes nothing.** Nothing compares the named owner against the session; the handler runs
-  under the dispatching session, and authorization and tenant isolation decide as they do for any other command.
+- **A command that names an empty tenant, or an empty user, as its owner is refused.** It fails with
+  `ArgumentException` naming the command type where it is recorded and where it is dispatched, and nothing is
+  recorded or sent. It does not fall back to the session, which would hide a caller's mistake in valid ciphertext
+  under the wrong tenant's key.
+- **Naming an owner authorizes nothing, and the owner is taken as stated.** Nothing compares the named owner
+  against the session; the handler runs under the dispatching session, and authorization and tenant isolation decide
+  as they do for any other command. Nothing checks that the named tenant exists either, and key material is created
+  for it on first use — name an owner the code resolved from something it trusts, never one copied from a request.
+- **A command encrypted as a whole does not outlive its owner.** With `[EncryptData]` on individual fields, a
+  command still waiting when its owner is erased reaches its handler with those fields absent. With `[EncryptData]`
+  on the class there is nothing left to rebuild: the command is retried and then kept, and its handler does not run.
+  That is how a command whose session tenant was erased already behaved; it is now stated.
 
 ## [4.4.4] — 2026-10-10
 

@@ -97,6 +97,28 @@ public sealed class CommandOwnerTests
         Assert.Empty(serializer.WrittenFor);
     }
 
+    /// <summary>
+    /// One projection from a recorded envelope to what an activation receives, shared by the dispatch that records and the
+    /// drain that resumes, so a field one of them carries is carried by the other.
+    /// </summary>
+    [Fact]
+    public void From_CarriesEverythingAnActivationActsOn()
+    {
+        var claimedAt = DateTimeOffset.UtcNow;
+        var envelope = new CommandEnvelope(Guid.NewGuid(), "{\"a\":1}", "Probe", "{\"s\":1}", "signature", Heavy: true)
+        {
+            DataOwnerTenantId = OwnerTenant,
+            DataOwnerUserId = OwnerUser
+        };
+
+        Assert.Equal(
+            new AggregateCommandEnvelope("Probe", "{\"a\":1}", "{\"s\":1}", claimedAt, OwnerTenant, OwnerUser),
+            AggregateCommandEnvelope.From(envelope, claimedAt));
+        Assert.Equal(
+            new AggregateCommandEnvelope("Probe", "{\"a\":1}", "{\"s\":1}"),
+            AggregateCommandEnvelope.From(envelope with { DataOwnerTenantId = null, DataOwnerUserId = null }));
+    }
+
     [Fact]
     public async Task A_resumed_command_is_handed_over_with_the_owner_its_record_names()
     {

@@ -45,6 +45,8 @@ public static class BusEnvelopeCanonical
     /// projects to what it projected to before an envelope could name one, and hosts on either side
     /// of that release verify each other's signatures for it. Because every field is length-prefixed,
     /// an envelope with an owner and the same envelope without one never project to the same string.
+    /// Both owner fields are appended as soon as either is set, so neither can be added to a signed
+    /// envelope on its own.
     /// </remarks>
     /// <param name="envelope">The envelope to project.</param>
     /// <returns>The canonical string to sign or verify.</returns>
@@ -59,9 +61,9 @@ public static class BusEnvelopeCanonical
         Append(canonical, envelope.SessionContextJson);
         Append(canonical, envelope.Heavy ? "1" : "0");
         Append(canonical, Digest(envelope.CommandJson));
-        if (envelope.DataOwnerTenantId is { } dataOwnerTenantId)
+        if (envelope.DataOwnerTenantId is not null || envelope.DataOwnerUserId is not null)
         {
-            Append(canonical, dataOwnerTenantId.ToString());
+            Append(canonical, envelope.DataOwnerTenantId?.ToString() ?? string.Empty);
             Append(canonical, envelope.DataOwnerUserId?.ToString() ?? string.Empty);
         }
 

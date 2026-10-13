@@ -34,7 +34,7 @@ internal sealed class AggregateGrainBehavior<TRequest>(
     /// <inheritdoc/>
     /// <exception cref="InvalidOperationException">The command would call back into an aggregate whose turn encloses this one.</exception>
     /// <exception cref="SessionRequiredException">The command is forwarded to its grain and no session context is set.</exception>
-    /// <exception cref="ArgumentException">The command is forwarded to its grain, implements <see cref="INamesDataOwner"/> and names an empty tenant.</exception>
+    /// <exception cref="ArgumentException">The command is forwarded to its grain, implements <see cref="INamesDataOwner"/> and names an empty tenant or an empty user.</exception>
     public async Task HandleAsync(TRequest request, Func<Task> next, CancellationToken cancellationToken)
     {
         if (request is not IAggregateScopedCommand scoped || AggregateTurn.IsInside(scoped.AggregateId))

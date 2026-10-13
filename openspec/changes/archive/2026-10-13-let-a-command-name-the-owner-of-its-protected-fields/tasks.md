@@ -158,3 +158,24 @@
 - [x] 8.2 `./scripts/local-gauntlet.sh` — green: 0 warnings, 24 test projects, DocFX, doc-symbol and
   pack checks. `dotnet test tests/Stratara.Outbox.RabbitMQ.IntegrationTests` — 87 passed;
   `dotnet test tests/Stratara.Orleans.IntegrationTests` — 194 passed (Docker).
+
+## 9. After the review of the implementation
+
+- [x] 9.1 An empty named user is refused like an empty named tenant (`CommandDataOwner.NamedBy`) —
+  `CommandDataOwnerTests.ForTransit_CommandNamingAnEmptyUser_ThrowsNamingTheCommandType`,
+  `ForRecord_CommandNamingAnEmptyUser_ThrowsNamingTheCommandType`.
+- [x] 9.2 The canonical form covers either owner field as soon as one is set —
+  `BusEnvelopeCanonicalTests.Of_CommandEnvelope_AUserAddedWithoutATenantProducesDifferentCanonical`.
+- [x] 9.3 A command encrypted as a whole is not delivered once its owner is erased, and the
+  specification, the guide and `INamesDataOwner` say so —
+  `CommandOwnerProtectionTests.TheOwnersErasure_WhileACommandEncryptedAsAWholeWaits_KeepsItFromItsHandler`.
+- [x] 9.4 The owner is taken as stated: specification, guide, `INamesDataOwner` remarks, design
+  *Risks* — `CommandOwnerProtectionTests.ACommandNamingATenantNobodyHasSeen_CreatesKeyMaterialForIt`.
+- [x] 9.5 `ICommandOutboxDispatcher.EnqueueCommandAsync` and `ICommandAuditRepository.AddAsync`
+  document the `ArgumentException`; `IntentRecorder`'s summary and the envelope-trust paragraph of
+  `SECURITY.md` no longer state the old rule.
+- [x] 9.6 One projection from a recorded envelope to what an activation receives
+  (`AggregateCommandEnvelope.From`), used by the recorder, the resumer and the integration tests'
+  claim helper — `CommandOwnerTests.From_CarriesEverythingAnActivationActsOn`. One fallback for a
+  travelling copy in `CommandDataOwner`, shared by the writer and the reader.
+- [x] 9.7 The guide's and the interface's examples declare the protected field as `string?`.

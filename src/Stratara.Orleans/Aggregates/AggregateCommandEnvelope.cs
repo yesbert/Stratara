@@ -1,3 +1,5 @@
+using Stratara.Contracts.Messages;
+
 namespace Stratara.Orleans.Aggregates;
 
 /// <summary>
@@ -20,4 +22,12 @@ internal sealed record AggregateCommandEnvelope(
     [property: Id(2)] string SessionContextJson,
     [property: Id(3)] DateTimeOffset? ClaimedAt = null,
     [property: Id(4)] Guid? DataOwnerTenantId = null,
-    [property: Id(5)] Guid? DataOwnerUserId = null);
+    [property: Id(5)] Guid? DataOwnerUserId = null)
+{
+    /// <summary>
+    /// What an activation receives of a recorded command: everything of its envelope the activation acts on, and the
+    /// stamp of the claim that hands it over, if a resumption does.
+    /// </summary>
+    public static AggregateCommandEnvelope From(CommandEnvelope envelope, DateTimeOffset? claimedAt = null) =>
+        new(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson, claimedAt, envelope.DataOwnerTenantId, envelope.DataOwnerUserId);
+}

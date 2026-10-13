@@ -73,7 +73,7 @@ A consumer implements it explicitly from fields the command already has, as `Ten
 `IAggregateCreationEvent`, so nothing is added to the command's JSON:
 
 ```csharp
-public sealed record TrackPageCommand(Guid TenantId, [property: EncryptData(DataSensitivityLevel.TenantScoped)] string Address)
+public sealed record TrackPageCommand(Guid TenantId, [property: EncryptData(DataSensitivityLevel.TenantScoped)] string? Address)
     : ICommand, INamesDataOwner
 {
     Guid INamesDataOwner.DataOwnerTenantId => TenantId;
@@ -113,6 +113,11 @@ tenant. Rejected: that reproduces the finding. The fallback yields valid ciphert
 session's tenant, and the mistake in the caller — a field that was never filled — becomes invisible.
 The precedent that fits is the explicit one: an explicit event subject naming no tenant throws
 (`2026-08-28-reject-an-ownerless-event-subject`, shipped in 3.4.0).
+
+The same holds for the user: a command that implements `DataOwnerUserId` and returns `Guid.Empty`
+is refused. Both copies would otherwise be sealed under a key naming the tenant and nobody, shared by
+every such command in the tenant and reached by no user's erasure, because an erasure refuses an empty
+id. *Added after the review of the implementation (2026-10-13).*
 
 ### D3 — One resolution, used by every site
 
@@ -176,6 +181,12 @@ Appending conditionally is what keeps a command that names no owner verifiable a
 both directions. The alternative — appending two empty fields always — is simpler to state and
 invalidates every signature in a mixed fleet, forcing a pass through permissive mode for a change no
 ordinary command takes part in.
+
+Both owner fields are appended as soon as *either* is set, not only when the tenant is. A reader
+ignores a user without a tenant, so appending on the tenant alone would have been harmless today and
+would have left one field of the envelope outside the signature — against the class's own statement
+that every field except the signature is covered. *Changed after the review of the implementation
+(2026-10-13).*
 
 On the Orleans path the resumed hand-over is built from the signed envelope in the intent record
 (`OrleansCommandDispatcher.cs:268`, verified at `:327`), so the owner it passes on is covered by the
@@ -250,6 +261,21 @@ names an owner can arrive after that owner is gone.
   position an event appended to another tenant's stream is already in (`tenant-isolation`: "a handler
   which must refuse another tenant's stream checks the owner"). Mitigated by documentation and by the
   *Naming an owner does not authorize* scenario; the stage order is the consumer's.
+- **[The owner is whatever the command says]** → Before this change the key a command's fields were
+  sealed under always came from the session. Now it can come from the command body, and
+  `GetOrCreateCurrentKeyAsync` creates key material for a tenant on first use. A host that copies a
+  caller-supplied identifier into the declaration — the anonymous endpoint is exactly where this is
+  tempting — lets that caller grow the key store without bound and, with auditing ahead of
+  authorization, leave records in a named tenant's command log. The framework cannot check a tenant's
+  existence: the tenant directory is optional and its tenants are a consumer's aggregates. Mitigated by
+  the specification's *taken as stated* paragraph, the guide and `INamesDataOwner`'s remarks. *Raised by
+  the review of the implementation (2026-10-13).*
+- **[A command encrypted as a whole and D8]** → D8 holds for marked fields. With `[EncryptData]` on
+  the class, a destroyed key leaves nothing to rebuild (`SecureJsonSerializer.cs:180-185` returns
+  `null`), and both readers throw on a command that deserializes to nothing, so the message is retried
+  and kept. That is the existing behaviour for a session tenant erased while a command waits; the
+  specification and the guide now state it instead of promising delivery unconditionally. *Raised by
+  the review of the implementation (2026-10-13).*
 - **[The declaration is implemented implicitly]** → A public `DataOwnerTenantId` property is then
   serialized into the command's JSON, in the clear. It is an id the envelope carries in the clear
   anyway; the guide shows the explicit form.

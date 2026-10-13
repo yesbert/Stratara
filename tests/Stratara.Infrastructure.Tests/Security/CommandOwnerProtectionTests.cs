@@ -46,6 +46,12 @@ public class CommandOwnerProtectionTests
         Guid INamesDataOwner.DataOwnerTenantId => Tenant;
     }
 
+    [EncryptData(DataSensitivityLevel.TenantScoped)]
+    public sealed record TrackPageEncryptedAsAWhole(Guid Tenant, string? Address) : ICommand, INamesDataOwner
+    {
+        Guid INamesDataOwner.DataOwnerTenantId => Tenant;
+    }
+
     public sealed record TrackPageWithoutAnOwner([property: EncryptData(DataSensitivityLevel.TenantScoped)] string? Address) : ICommand;
 
     private static SessionContext SessionWithoutATenant() => SessionContext.Empty();
@@ -123,6 +129,54 @@ public class CommandOwnerProtectionTests
         await fixture.Worker.DispatchAsync(envelope, TestContext.Current.CancellationToken);
 
         Assert.Equal(new TrackPage(Owner, null), Assert.Single(fixture.Handled));
+    }
+
+    /// <summary>
+    /// A command marked as a whole is one ciphertext. Once its key is gone there is nothing to rebuild,
+    /// so it does not reach its handler half-read: the read fails, and the message is retried and kept.
+    /// </summary>
+    [Fact]
+    public async Task TheOwnersErasure_WhileACommandEncryptedAsAWholeWaits_KeepsItFromItsHandler()
+    {
+        var fixture = new Fixture(SessionWithoutATenant());
+        await fixture.Dispatcher.EnqueueCommandAsync(new TrackPageEncryptedAsAWhole(Owner, Address), TestContext.Current.CancellationToken);
+        var envelope = fixture.TheEnvelopeOffTheWire();
+
+        await fixture.Eraser().EraseTenantAsync(Owner, TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Worker.DispatchAsync(envelope, TestContext.Current.CancellationToken));
+        Assert.Empty(fixture.Handled);
+    }
+
+    [Fact]
+    public async Task ACommandEncryptedAsAWhole_NamingAnOwner_ReachesItsHandlerWhileItsOwnerExists()
+    {
+        var fixture = new Fixture(SessionWithoutATenant());
+
+        await fixture.Dispatcher.EnqueueCommandAsync(new TrackPageEncryptedAsAWhole(Owner, Address), TestContext.Current.CancellationToken);
+        var envelope = fixture.TheEnvelopeOffTheWire();
+        await fixture.Worker.DispatchAsync(envelope, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(Address, envelope.CommandJson);
+        Assert.Equal(new TrackPageEncryptedAsAWhole(Owner, Address), Assert.Single(fixture.Handled));
+    }
+
+    /// <summary>
+    /// The owner is taken as stated: nothing checks that the tenant exists, and the first field
+    /// encrypted for it creates its key. This is the behaviour the documentation warns about — name
+    /// an owner the dispatching code trusts.
+    /// </summary>
+    [Fact]
+    public async Task ACommandNamingATenantNobodyHasSeen_CreatesKeyMaterialForIt()
+    {
+        var fixture = new Fixture(SessionWithoutATenant());
+        var unknown = Guid.CreateVersion7();
+        Assert.Empty(await fixture.Keys.ListScopesAsync(TestContext.Current.CancellationToken));
+
+        await fixture.Dispatcher.EnqueueCommandAsync(new TrackPage(unknown, Address), TestContext.Current.CancellationToken);
+
+        var scope = Assert.Single(await fixture.Keys.ListScopesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(unknown.ToString(), scope.TenantId);
     }
 
     [Fact]
@@ -228,6 +282,9 @@ public class CommandOwnerProtectionTests
             mediator.Setup(m => m.HandleAsync(It.IsAny<TrackPage>(), It.IsAny<CancellationToken>()))
                 .Callback<TrackPage, CancellationToken>((command, _) => Handled.Add(command))
                 .Returns(Task.CompletedTask);
+            mediator.Setup(m => m.HandleAsync(It.IsAny<TrackPageEncryptedAsAWhole>(), It.IsAny<CancellationToken>()))
+                .Callback<TrackPageEncryptedAsAWhole, CancellationToken>((command, _) => Handled.Add(command))
+                .Returns(Task.CompletedTask);
             mediator.Setup(m => m.HandleAsync(It.IsAny<TrackPageWithoutAnOwner>(), It.IsAny<CancellationToken>()))
                 .Callback<TrackPageWithoutAnOwner, CancellationToken>((command, _) => Handled.Add(command))
                 .Returns(Task.CompletedTask);
@@ -238,6 +295,7 @@ public class CommandOwnerProtectionTests
             var resolver = new TrustedTypeResolver();
             resolver.Register(typeof(TrackPage));
             resolver.Register(typeof(TrackPageWithoutAnOwner));
+            resolver.Register(typeof(TrackPageEncryptedAsAWhole));
 
             Worker = new MediatorCommandWorker(
                 NullLogger<MediatorCommandWorker>.Instance,

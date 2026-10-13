@@ -103,6 +103,27 @@ public class CommandDataOwnerTests
         Assert.Contains(typeof(Owned).FullName!, exception.Message);
     }
 
+    /// <summary>
+    /// An empty user is the same unfilled field an empty tenant is: sealed under it, the value would
+    /// share one key with every such command in the tenant, and no user's erasure would reach it.
+    /// </summary>
+    [Fact]
+    public void ForTransit_CommandNamingAnEmptyUser_ThrowsNamingTheCommandType()
+    {
+        var exception = Assert.Throws<ArgumentException>(() => CommandDataOwner.ForTransit(new OwnedByAUser(OwnerTenant, Guid.Empty, "x"), Session));
+
+        Assert.Contains(typeof(OwnedByAUser).FullName!, exception.Message);
+        Assert.Contains(nameof(INamesDataOwner.DataOwnerUserId), exception.Message);
+    }
+
+    [Fact]
+    public void ForRecord_CommandNamingAnEmptyUser_ThrowsNamingTheCommandType()
+    {
+        var exception = Assert.Throws<ArgumentException>(() => CommandDataOwner.ForRecord(new OwnedByAUser(OwnerTenant, Guid.Empty, "x"), Session));
+
+        Assert.Contains(typeof(OwnedByAUser).FullName!, exception.Message);
+    }
+
     [Fact]
     public void ForRead_EnvelopeNamingAnOwner_ReturnsIt()
     {

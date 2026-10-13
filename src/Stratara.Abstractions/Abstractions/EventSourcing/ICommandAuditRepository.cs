@@ -16,5 +16,9 @@ public interface ICommandAuditRepository
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
     /// <returns>The id assigned to the audit row. Used as <c>CausationId</c> downstream.</returns>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="command"/> implements <see cref="Stratara.Abstractions.Security.INamesDataOwner"/> and names an
+    /// empty tenant or an empty user as the owner of its protected fields. No row is added.
+    /// </exception>
     Task<Guid> AddAsync(ICommandBase command, CancellationToken cancellationToken);
 }

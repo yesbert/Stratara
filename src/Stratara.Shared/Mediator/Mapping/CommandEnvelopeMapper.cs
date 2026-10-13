@@ -35,7 +35,7 @@ public static class CommandEnvelopeMapper
     /// <param name="serializer">The secure JSON serializer used to encrypt <c>[EncryptData]</c>-tagged fields.</param>
     /// <param name="cancellationToken">Token observed during the asynchronous serialization.</param>
     /// <returns>A new <see cref="CommandEnvelope"/> ready to enqueue or publish.</returns>
-    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant.</exception>
+    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant or an empty user.</exception>
     public static async Task<CommandEnvelope> MapToAsync<T>(
         this T command,
         SessionContext sessionContext,

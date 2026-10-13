@@ -68,6 +68,11 @@ commands, and a fleet in strict mode takes the release without a pass through pe
 - **WHEN** the owner a signed command names — its tenant or its user — is modified in transit
 - **THEN** the canonical form differs and the signature no longer verifies
 
+#### Scenario: A user is added to a command that names no owner
+
+- **WHEN** a signed command that names no owner is presented with an owner's user and no tenant
+- **THEN** the signature no longer verifies, so no part of an owner can be added to a signed command
+
 #### Scenario: A command's named owner is removed
 
 - **WHEN** a signed command that names an owner is presented without one

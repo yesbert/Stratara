@@ -33,8 +33,6 @@ internal sealed class CommandAuditRepository(IWriteDbContext context, ISessionCo
     : ICommandAuditRepository
 {
     /// <inheritdoc/>
-    /// <exception cref="SessionRequiredException">No session context is set.</exception>
-    /// <exception cref="ArgumentException"><paramref name="command"/> implements <see cref="INamesDataOwner"/> and names an empty tenant.</exception>
     public async Task<Guid> AddAsync(ICommandBase command, CancellationToken cancellationToken)
     {
         var sessionContext = sessionContextProvider.Current;

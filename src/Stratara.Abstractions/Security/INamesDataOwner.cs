@@ -25,12 +25,21 @@ namespace Stratara.Abstractions.Security;
 /// the handler.
 /// </para>
 /// <para>
-/// An empty <see cref="DataOwnerTenantId"/> is refused when the command is recorded or dispatched, with
-/// an <see cref="ArgumentException"/> naming the command type. It does not fall back to the session.
+/// <strong>The owner is taken as stated.</strong> Nothing checks that the named tenant exists, and key
+/// material is created for it the first time a field is encrypted for it. Name an owner the code
+/// resolved from something it trusts — the stream it loaded, a credential it verified — and never
+/// one copied from a request.
+/// </para>
+/// <para>
+/// An empty <see cref="DataOwnerTenantId"/>, or an empty <see cref="DataOwnerUserId"/>, is refused when
+/// the command is recorded or dispatched, with an <see cref="ArgumentException"/> naming the command
+/// type. It does not fall back to the session.
 /// </para>
 /// <para>
 /// A command still waiting when its owner is erased reaches its handler with its protected fields
-/// absent, as any record does whose key was destroyed.
+/// absent, as any record does whose key was destroyed — so give those fields a type that can be
+/// absent. A command whose class is marked, and which is therefore encrypted as one unit, cannot be
+/// rebuilt at all once its key is gone: it is retried and then kept, and its handler does not run.
 /// </para>
 /// </remarks>
 /// <example>
@@ -39,7 +48,7 @@ namespace Stratara.Abstractions.Security;
 /// <code>
 /// public sealed record TrackPageCommand(
 ///     Guid TenantId,
-///     [property: EncryptData(DataSensitivityLevel.TenantScoped)] string Address)
+///     [property: EncryptData(DataSensitivityLevel.TenantScoped)] string? Address)
 ///     : ICommand, INamesDataOwner
 /// {
 ///     Guid INamesDataOwner.DataOwnerTenantId =&gt; TenantId;
@@ -53,7 +62,7 @@ public interface INamesDataOwner
 
     /// <summary>
     /// The user the command's protected fields belong to, or <see langword="null"/> when they belong to
-    /// the tenant alone. Defaults to <see langword="null"/>.
+    /// the tenant alone. Defaults to <see langword="null"/>. Must not be empty.
     /// </summary>
     Guid? DataOwnerUserId => null;
 }

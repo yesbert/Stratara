@@ -227,6 +227,21 @@ public class BusEnvelopeCanonicalTests
         Assert.NotEqual(BusEnvelopeCanonical.Of(owned), BusEnvelopeCanonical.Of(owned with { DataOwnerTenantId = null }));
     }
 
+    /// <summary>
+    /// No part of an owner can be added to a signed envelope. A reader ignores a user without a
+    /// tenant, but a field the projection skipped would be a field nobody signed.
+    /// </summary>
+    [Fact]
+    public void Of_CommandEnvelope_AUserAddedWithoutATenantProducesDifferentCanonical()
+    {
+        var unowned = ACommand();
+        var withAUserAlone = unowned with { DataOwnerUserId = Guid.Parse("88888888-8888-8888-8888-888888888888") };
+        var withThatGuidAsTenant = unowned with { DataOwnerTenantId = Guid.Parse("88888888-8888-8888-8888-888888888888") };
+
+        Assert.NotEqual(BusEnvelopeCanonical.Of(unowned), BusEnvelopeCanonical.Of(withAUserAlone));
+        Assert.NotEqual(BusEnvelopeCanonical.Of(withThatGuidAsTenant), BusEnvelopeCanonical.Of(withAUserAlone));
+    }
+
     [Fact]
     public void Of_CommandEnvelopeNamingAnOwner_SurvivesAJsonRoundTrip()
     {

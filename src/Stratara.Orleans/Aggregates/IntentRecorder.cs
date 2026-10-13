@@ -14,14 +14,15 @@ using Stratara.Shared.Security;
 namespace Stratara.Orleans.Aggregates;
 
 /// <summary>
-/// Records a command as a durable intent before it is handed to its grain: serialised under the
-/// session that issued it and kept by the intent store with the aggregate it names, so a resume never
-/// has to read the aggregate back from a payload that may be protected. Where the host has a bus-envelope signer, the
+/// Records a command as a durable intent before it is handed to its grain: serialised for the owner it
+/// names, or for the session that issued it where it names none, and kept by the intent store with the
+/// aggregate it names, so a resume never has to read the aggregate back from a payload that may be protected. Where the host has a bus-envelope signer, the
 /// record is signed over the canonical form a bus command is signed over, so the drain can verify it before it resumes.
 /// </summary>
 internal sealed class IntentRecorder(ICommandIntentStore intents, ISecureJsonSerializer serializer, ILogger<IntentRecorder> logger, IBusEnvelopeSigner? signer = null)
 {
     /// <summary>Records the intent at the time its dispatch took, and returns the payload its grain receives.</summary>
+    /// <exception cref="ArgumentException">The command names an empty tenant or an empty user as the owner of its protected fields.</exception>
     public async Task<AggregateCommandEnvelope> RecordAsync<T>(IntentDispatch dispatch, T command, CancellationToken cancellationToken)
         where T : ICommand
     {
@@ -47,12 +48,7 @@ internal sealed class IntentRecorder(ICommandIntentStore intents, ISecureJsonSer
         ApplicationDiagnostics.Metrics.OrleansIntentRecorded.Add(1);
         logger.LogCommandRecorded(dispatch.IntentId);
 
-        return new AggregateCommandEnvelope(
-            envelope.CommandTypeName,
-            envelope.CommandJson,
-            envelope.SessionContextJson,
-            DataOwnerTenantId: envelope.DataOwnerTenantId,
-            DataOwnerUserId: envelope.DataOwnerUserId);
+        return AggregateCommandEnvelope.From(envelope);
     }
 }
 

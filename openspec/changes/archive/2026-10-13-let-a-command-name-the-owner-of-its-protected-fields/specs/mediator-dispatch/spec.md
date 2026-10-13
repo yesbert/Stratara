@@ -16,11 +16,16 @@ The record of a command that names an owner SHALL name that owner as its data ow
 actor as its actor, so that a tenant's view of the recorded commands holds the commands that carried
 its data, whoever issued them.
 
-A command that implements the declaration and names an empty tenant SHALL be refused where it is
-recorded and where it is dispatched to run later, with an error that names the command's type, and
-nothing SHALL be recorded or sent for it. It SHALL NOT fall back to the session's tenant: a command
-that says it has an owner and names none is a mistake in the caller, and encrypting it for whoever is
-acting would hide the mistake in valid ciphertext.
+A command that implements the declaration and names an empty tenant, or an empty user beside its
+tenant, SHALL be refused where it is recorded and where it is dispatched to run later, with an error
+that names the command's type, and nothing SHALL be recorded or sent for it. It SHALL NOT fall back to
+the session's tenant: a command that says it has an owner and names none is a mistake in the caller,
+and encrypting it for whoever is acting would hide the mistake in valid ciphertext.
+
+The owner SHALL be taken as the command states it. The framework does not check that the named tenant
+exists, and encrypting for an owner creates key material for it where there was none. The
+documentation SHALL say so, and SHALL say that the owner is to be named from something the dispatching
+code trusts and not from what a caller supplied.
 
 Naming an owner SHALL NOT change the session a handler runs under, and SHALL NOT grant, check or
 replace any authorization. Whether the caller may act on that owner's data is decided as it is for a
@@ -29,7 +34,8 @@ documentation SHALL say so.
 
 A recorded command SHALL remain after its owner is erased, as the evidence that it was issued, by whom
 and when; its protected fields SHALL read as absent from then on, because the keys they were written
-for are gone. The documentation of erasure SHALL state both halves.
+for are gone. Where the whole command type is marked for encryption rather than individual fields,
+the whole recorded payload reads as absent. The documentation of erasure SHALL state both halves.
 
 A command that names no owner SHALL be serialized as it was before a command could name one: its
 protected fields are written for the session's data-owner tenant — together with the session's
@@ -65,6 +71,18 @@ data-owner user in the record, and with the acting user in the copy carried to a
 
 - **WHEN** a command that implements the declaration and names an empty tenant is dispatched
 - **THEN** it is refused with an error naming its type, and nothing is recorded or sent
+
+#### Scenario: A command names an empty user beside its tenant
+
+- **WHEN** a command that names a tenant and an empty user as its owner is dispatched
+- **THEN** it is refused with an error naming its type, and nothing is recorded or sent
+
+#### Scenario: A command names a tenant nobody has registered
+
+- **WHEN** a command names as its owner a tenant the host has never seen
+- **THEN** it is accepted and its protected fields are written under key material created for that
+  tenant, because the owner is taken as stated — which is why the documentation tells the dispatching
+  code to name an owner it trusts
 
 #### Scenario: The named owner is erased after the command was recorded
 
