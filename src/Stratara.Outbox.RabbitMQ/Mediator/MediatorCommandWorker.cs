@@ -19,6 +19,7 @@ using Stratara.Abstractions.Session;
 using Stratara.Diagnostics;
 using Stratara.Shared.Diagnostics.Extensions;
 using Stratara.Shared.Partitioning;
+using Stratara.Shared.Security;
 using Stratara.Resilience;
 
 namespace Stratara.Outbox.RabbitMQ.Mediator;
@@ -129,7 +130,8 @@ internal sealed class MediatorCommandWorker(
             VerifyEnvelopeIntegrity(commandEnvelope);
             var sessionContext = JsonSerializer.Deserialize<SessionContext>(commandEnvelope.SessionContextJson, _deserializeOptions)
                 ?? throw new InvalidOperationException("Failed to deserialize session context from command envelope.");
-            var command = await _serializer.DeserializeAsync(commandEnvelope.CommandJson, type, sessionContext.TenantId, sessionContext.ActorUserId, cancellationToken)
+            var owner = CommandDataOwner.ForRead(commandEnvelope, sessionContext);
+            var command = await _serializer.DeserializeAsync(commandEnvelope.CommandJson, type, owner.TenantId, owner.UserId, cancellationToken)
                 ?? throw new InvalidOperationException($"Failed to deserialize command of type {type.FullName}.");
 
             if (command is IAggregateScopedCommand scoped)

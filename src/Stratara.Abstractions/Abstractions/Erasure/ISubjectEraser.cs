@@ -22,7 +22,15 @@ namespace Stratara.Abstractions.Erasure;
 /// the event stream that is not protected by a scoped key is not shredded by removing a key,
 /// because there is no key to remove. The command audit log and the outbox both carry a session
 /// context naming the subject and are deliberately left alone: the audit log is the evidence that
-/// the erasure happened, and retaining it is a decision only the consumer can take.
+/// the erasure happened, and retaining it is a decision only the consumer can take. Their rows
+/// stay; what an erasure reaches in them is the fields a command marked for encryption, which are
+/// written for a key and die with it. For a command that names its data owner through
+/// <c>INamesDataOwner</c> that key is the named owner's, in the audit record and in the copy
+/// waiting in the outbox alike, so the owner's erasure leaves the record of the command with those
+/// fields unreadable, and a command still waiting reaches its handler with them absent. For a
+/// command that names none the key is the dispatching session's — the session's tenant with its
+/// data-owner user in the audit record, with the acting user in the outbox — whichever tenant the
+/// data in fact belongs to. A command field that is not marked is not reached at all.
 /// Tenant-level and confidential values written for a user belong to the tenant and survive that
 /// user's erasure. Confidential values written with an empty tenant share one system-wide key that
 /// no erasure shreds. A key store that cannot list its scopes leaves an erasure with the keys the

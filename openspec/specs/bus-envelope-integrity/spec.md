@@ -19,6 +19,14 @@ The canonical form SHALL additionally cover the message's payload, so that a sig
 message cannot be presented with a different payload. Covering it as a digest keeps the signature
 independent of payload size.
 
+Where a command names the owner of its protected fields, the canonical form SHALL also cover that
+owner — its tenant and its user — because the receiver reads the command's fields for it. A signed
+command SHALL NOT verify when it is presented with a different owner, or with none.
+
+The canonical form of a command that names no owner SHALL be the form it had before a command could
+name one, so that hosts on either side of that release verify each other's signatures for such
+commands, and a fleet in strict mode takes the release without a pass through permissive mode.
+
 #### Scenario: A session context is altered in transit
 
 - **WHEN** the serialized session context of a signed message is modified
@@ -54,6 +62,28 @@ independent of payload size.
   of the session context
 - **THEN** its canonical form differs and the signature does not verify, so the boundary between two
   signed fields cannot be moved
+
+#### Scenario: A command's named owner is altered
+
+- **WHEN** the owner a signed command names — its tenant or its user — is modified in transit
+- **THEN** the canonical form differs and the signature no longer verifies
+
+#### Scenario: A user is added to a command that names no owner
+
+- **WHEN** a signed command that names no owner is presented with an owner's user and no tenant
+- **THEN** the signature no longer verifies, so no part of an owner can be added to a signed command
+
+#### Scenario: A command's named owner is removed
+
+- **WHEN** a signed command that names an owner is presented without one
+- **THEN** the signature no longer verifies, so a receiver cannot be made to read the command for its
+  session instead
+
+#### Scenario: A command naming no owner crosses the release
+
+- **WHEN** a command that names no owner is signed by a host on the release before a command could
+  name one and verified by a host on the release after, or the other way round
+- **THEN** the signature verifies
 
 ### Requirement: Verification has three modes with an explicit rollout path
 

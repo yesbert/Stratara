@@ -128,6 +128,13 @@ Two things to know:
 If per-subject shredding above the tenant is what you actually need, that is a different question
 from this one, and Stratara does not model a dimension above the tenant today.
 
+**A command dispatched from a session without a tenant is not data without a tenant.** An anonymous
+endpoint, or a saga reacting to a fact one recorded, dispatches under a session that names no
+tenant, and a `TenantScoped` field on such a command is refused for the reason above. `Confidential`
+is the wrong answer when the data does belong to a tenant: it would never be erased with it. Let the
+command name its owner instead — see
+[Whose key a command's protected fields are under](write-a-command-handler.md#whose-key-a-commands-protected-fields-are-under).
+
 ## The AAD binding
 
 When Stratara serializes an `[EncryptData]` property, it includes the current `TenantId` from `SessionContext` as the AAD:
@@ -137,6 +144,10 @@ ciphertext = AES-GCM-Encrypt(key, plaintext, nonce, AAD = TenantId)
 ```
 
 Decryption requires the **same** AAD. If a ciphertext is moved between tenants, decryption fails with `CryptographicException` — defense-in-depth against cross-tenant data leakage.
+
+The tenant is the session's only where nothing more specific states the owner. An event is bound to
+its **stream's** owner, whoever appends it, and a command that implements `INamesDataOwner` is bound
+to the owner it names, whoever dispatches it.
 
 ## Reading blobs written before the v2 format
 

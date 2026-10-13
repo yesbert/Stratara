@@ -70,7 +70,7 @@ zero — one `OrleansDispatchOptions.IntentGrace` after the last host without a 
 
 Every field of the message except the signature itself:
 
-- **CommandEnvelope**: the envelope id, the command type, the session context, the heavy-lane flag, and a digest of the command body.
+- **CommandEnvelope**: the envelope id, the command type, the session context, the heavy-lane flag, a digest of the command body and — where the command names the owner of its protected fields through `INamesDataOwner` — that owner's tenant and user.
 - **EventBundle**: the session context, and a digest over every field of every event it carries.
 
 **A recorded command carries the same signature, and the same coverage.** The Orleans execution model
@@ -81,6 +81,15 @@ and resumed as the envelope says otherwise, logged either way. The aggregate the
 is **not** covered: it decides which activation accepts the command, not what the command writes. What
 it writes comes from the command body, which the digest covers, and the append is held to its stream's
 version, so a changed aggregate id costs the command its place in an order and nothing else.
+
+**A named data owner is covered, and so is its absence.** The receiver reads a command's protected
+fields for the owner the envelope carries, so a signed command does not verify when it is presented
+with another owner — or with none, which would have the receiver read it for its session instead.
+The owner is part of the projection only where there is one: a command that names no owner projects
+to exactly what it projected to before a command could name one. A fleet in `Strict` mode therefore
+takes that release without a pass through `Permissive`. What does need an order is the first command
+that names an owner: a consumer on an earlier release does not verify it, so upgrade every host that
+handles commands before any host dispatches one.
 
 Two properties of the projection are load-bearing, and both are why it looks the way it does.
 

@@ -110,6 +110,31 @@ public class CommandAuditBehaviorTests
             Times.Never);
     }
 
+    /// <summary>
+    /// <c>mediator-dispatch</c> → a command that names an empty tenant as its owner is refused where it
+    /// is recorded, and nothing is recorded for it. The recording stage runs before the handler, so the
+    /// refusal reaches the caller and the handler does not run.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_CommandTheRecordRefuses_DoesNotRunTheHandlerAndSavesNothing()
+    {
+        var harness = new Harness();
+        harness.AuditRepository
+            .Setup(r => r.AddAsync(It.IsAny<ICommandBase>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ArgumentException("names an empty tenant as the owner"));
+        var sut = new CommandAuditBehavior<TestCommand>(harness.UnitOfWork.Object);
+        var nextCalled = false;
+
+        await Assert.ThrowsAsync<ArgumentException>(() => sut.HandleAsync(new TestCommand("hi"), () =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        }, CancellationToken.None));
+
+        Assert.False(nextCalled);
+        harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     public sealed record StubRequest : IRequest;
 
     private sealed class Harness

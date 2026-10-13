@@ -140,7 +140,12 @@ subscription and cache key it uses. This file explains; that one enumerates, and
 - **Security:** `IKeyStore` manages versioned per-`KeyScope` DEKs; production `EnvelopeFileKeyStore`
   stores them KEK-wrapped. `EraseScopeAsync` crypto-shreds a scope (GDPR Art. 17). `[EncryptData]`
   fields are AES-GCM sealed with tenant-bound associated data. Register with
-  `AddStrataraFileKeyStore(configuration)` before `AddSecurity()`.
+  `AddStrataraFileKeyStore(configuration)` before `AddSecurity()`. The tenant is the data owner:
+  an event is sealed for its stream's owner, a command for the dispatching session's tenant —
+  unless the command implements `INamesDataOwner` (`DataOwnerTenantId`, optional
+  `DataOwnerUserId`), which seals its travelling copy and its audit record for the owner it names,
+  leaves the session untouched and authorizes nothing. An empty named tenant throws
+  `ArgumentException`. Upgrade command-handling hosts before dispatching such a command.
 - **Two execution models, same handlers.** The bus workers (RabbitMQ / Azure Service Bus) are
   supported; the Orleans execution model (`Stratara.Orleans`, Orleans 10.3) is recommended for hosts
   that can run a cluster. On it, one aggregate has one writer across the cluster

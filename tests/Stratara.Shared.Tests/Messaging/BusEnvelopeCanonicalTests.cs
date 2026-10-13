@@ -156,20 +156,104 @@ public class BusEnvelopeCanonicalTests
 
     /// <summary>
     /// A field added to one of these records and not added to the canonical form is silently
-    /// unsigned, and nothing else would catch it. This test fails at the point of the edit.
+    /// unsigned, and nothing else would catch it. This test fails at the point of the edit, whether
+    /// the field arrives as a constructor parameter or as a property beside them.
     /// </summary>
     [Theory]
-    [InlineData(typeof(CommandEnvelope), "Id,CommandJson,CommandTypeName,SessionContextJson,Signature,Heavy")]
+    [InlineData(typeof(CommandEnvelope), "Id,CommandJson,CommandTypeName,SessionContextJson,Signature,Heavy,DataOwnerTenantId,DataOwnerUserId")]
     [InlineData(typeof(EventBundle), "Events,SessionContextJson,Signature")]
     [InlineData(typeof(EventMessage), "Id,Version,DataJson,StreamId,EventTypeName,AggregateTypeName,ActorTenantId,ActorUserId,TenantId,UserId")]
     public void TheSignedRecordsHaveTheFieldsTheCanonicalFormAccountsFor(Type recordType, string expected)
     {
-        var actual = string.Join(
-            ',',
-            recordType.GetConstructors().OrderByDescending(c => c.GetParameters().Length).First()
-                .GetParameters().Select(p => p.Name));
+        var actual = recordType
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Select(p => p.Name)
+            .Order(StringComparer.Ordinal);
 
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected.Split(',').Order(StringComparer.Ordinal), actual);
+    }
+
+    /// <summary>
+    /// A command that names no owner projects to what it projected to before a command could name
+    /// one — pinned against the literal, because this is what lets hosts on either side of that
+    /// release verify each other's signatures without a pass through permissive mode.
+    /// </summary>
+    [Fact]
+    public void Of_CommandEnvelopeNamingNoOwner_IsTheProjectionBeforeTheOwner()
+    {
+        const string before =
+            "36:66666666-6666-6666-6666-666666666666" +
+            "17:Stratara.Test.Cmd" +
+            "12:session-json" +
+            "1:0" +
+            "64:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862";
+
+        Assert.Equal(before, BusEnvelopeCanonical.Of(ACommand()));
+    }
+
+    [Fact]
+    public void Of_CommandEnvelope_CoversTheNamedOwnersTenant()
+    {
+        var a = ACommand() with { DataOwnerTenantId = Guid.Parse("77777777-7777-7777-7777-777777777777") };
+        var b = a with { DataOwnerTenantId = Guid.Parse("88888888-8888-8888-8888-888888888888") };
+
+        Assert.NotEqual(BusEnvelopeCanonical.Of(a), BusEnvelopeCanonical.Of(b));
+    }
+
+    [Fact]
+    public void Of_CommandEnvelope_CoversTheNamedOwnersUser()
+    {
+        var a = ACommand() with
+        {
+            DataOwnerTenantId = Guid.Parse("77777777-7777-7777-7777-777777777777"),
+            DataOwnerUserId = Guid.Parse("88888888-8888-8888-8888-888888888888")
+        };
+        var b = a with { DataOwnerUserId = Guid.Parse("99999999-9999-9999-9999-999999999999") };
+        var c = a with { DataOwnerUserId = null };
+
+        Assert.NotEqual(BusEnvelopeCanonical.Of(a), BusEnvelopeCanonical.Of(b));
+        Assert.NotEqual(BusEnvelopeCanonical.Of(a), BusEnvelopeCanonical.Of(c));
+    }
+
+    /// <summary>
+    /// A receiver cannot be made to read a command for its session instead of its owner: stripping the
+    /// owner from a signed envelope changes the projection.
+    /// </summary>
+    [Fact]
+    public void Of_CommandEnvelope_RemovingTheNamedOwnerProducesDifferentCanonical()
+    {
+        var owned = ACommand() with { DataOwnerTenantId = Guid.Parse("77777777-7777-7777-7777-777777777777") };
+
+        Assert.NotEqual(BusEnvelopeCanonical.Of(owned), BusEnvelopeCanonical.Of(owned with { DataOwnerTenantId = null }));
+    }
+
+    /// <summary>
+    /// No part of an owner can be added to a signed envelope. A reader ignores a user without a
+    /// tenant, but a field the projection skipped would be a field nobody signed.
+    /// </summary>
+    [Fact]
+    public void Of_CommandEnvelope_AUserAddedWithoutATenantProducesDifferentCanonical()
+    {
+        var unowned = ACommand();
+        var withAUserAlone = unowned with { DataOwnerUserId = Guid.Parse("88888888-8888-8888-8888-888888888888") };
+        var withThatGuidAsTenant = unowned with { DataOwnerTenantId = Guid.Parse("88888888-8888-8888-8888-888888888888") };
+
+        Assert.NotEqual(BusEnvelopeCanonical.Of(unowned), BusEnvelopeCanonical.Of(withAUserAlone));
+        Assert.NotEqual(BusEnvelopeCanonical.Of(withThatGuidAsTenant), BusEnvelopeCanonical.Of(withAUserAlone));
+    }
+
+    [Fact]
+    public void Of_CommandEnvelopeNamingAnOwner_SurvivesAJsonRoundTrip()
+    {
+        var owned = ACommand() with
+        {
+            DataOwnerTenantId = Guid.Parse("77777777-7777-7777-7777-777777777777"),
+            DataOwnerUserId = Guid.Parse("88888888-8888-8888-8888-888888888888")
+        };
+
+        var roundTripped = JsonSerializer.Deserialize<CommandEnvelope>(JsonSerializer.Serialize(owned))!;
+
+        Assert.Equal(BusEnvelopeCanonical.Of(owned), BusEnvelopeCanonical.Of(roundTripped));
     }
 
     [Fact]

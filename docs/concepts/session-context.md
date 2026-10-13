@@ -67,6 +67,14 @@ public sealed class ForeignTenantScope(ISessionContextProvider sessions)
 In strict mode, [Enforce Tenant Isolation](../guides/enforce-tenant-isolation.md) sends exactly this
 case (actor tenant differs from data-owner tenant) through an authorizer.
 
+Promoting the session is a statement about authorization as much as about encryption, because the
+isolation guard and the query filter trust the session's data owner. Where the only thing that needs
+an owner is the key a command's protected fields are sealed under — a saga or an anonymous endpoint
+dispatching a command that carries a tenant's data — leave the session as it is and let the command
+name its owner with `INamesDataOwner`; see
+[Whose key a command's protected fields are under](../guides/write-a-command-handler.md#whose-key-a-commands-protected-fields-are-under).
+The session then still says who acted, and the command says whose data it carries.
+
 ## The connection identity
 
 A session context also carries a third identity that belongs to neither the actor nor the data

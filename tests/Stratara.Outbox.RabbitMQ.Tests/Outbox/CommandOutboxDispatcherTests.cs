@@ -25,6 +25,105 @@ public class CommandOutboxDispatcherTests
 
     public sealed record HeavyTestCommand(Guid Marker) : ICommand, IHeavyCommand;
 
+    public sealed record OwnedTestCommand(Guid Tenant, Guid? User) : ICommand, INamesDataOwner
+    {
+        Guid INamesDataOwner.DataOwnerTenantId => Tenant;
+
+        Guid? INamesDataOwner.DataOwnerUserId => User;
+    }
+
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → a command that names the owner of its protected fields carries
+    /// that owner over the bus, beside its session.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueCommandAsync_CommandNamingAnOwner_PublishesAnEnvelopeCarryingIt()
+    {
+        var harness = new Harness();
+        var session = SessionContext.Empty();
+        harness.SessionContext.Setup(s => s.Current).Returns(session);
+        var published = harness.CapturePublished();
+        var tenant = Guid.NewGuid();
+        var user = Guid.NewGuid();
+
+        await harness.Sut.EnqueueCommandAsync(new OwnedTestCommand(tenant, user));
+
+        var envelope = Assert.Single(published);
+        Assert.Equal(tenant, envelope.DataOwnerTenantId);
+        Assert.Equal(user, envelope.DataOwnerUserId);
+        Assert.Equal(session, JsonSerializer.Deserialize<SessionContext>(envelope.SessionContextJson));
+    }
+
+    [Fact]
+    public async Task EnqueueCommandAsync_CommandNamingAnOwner_StoresAnEnvelopeCarryingItWhenTheBusIsDown()
+    {
+        var harness = new Harness();
+        harness.SessionContext.Setup(s => s.Current).Returns(SessionContext.Empty());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(CommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+        var tenant = Guid.NewGuid();
+
+        await harness.Sut.EnqueueCommandAsync(new OwnedTestCommand(tenant, null));
+
+        harness.OutboxRepository.Verify(
+            r => r.AddAsync(It.Is<CommandEnvelope>(e => e.DataOwnerTenantId == tenant && e.DataOwnerUserId == null), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueCommandAsync_CommandNamingNone_PublishesAnEnvelopeWithoutAnOwner()
+    {
+        var harness = new Harness();
+        harness.SessionContext.Setup(s => s.Current).Returns(SessionContext.Empty());
+        var published = harness.CapturePublished();
+
+        await harness.Sut.EnqueueCommandAsync(new TestCommand(Guid.NewGuid()));
+
+        var envelope = Assert.Single(published);
+        Assert.Null(envelope.DataOwnerTenantId);
+        Assert.DoesNotContain("DataOwner", JsonSerializer.Serialize(envelope));
+    }
+
+    [Fact]
+    public async Task EnqueueCommandAsync_CommandNamingAnEmptyTenant_ThrowsAndSendsNothing()
+    {
+        var harness = new Harness();
+        harness.SessionContext.Setup(s => s.Current).Returns(SessionContext.Empty());
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => harness.Sut.EnqueueCommandAsync(new OwnedTestCommand(Guid.Empty, null)));
+
+        Assert.Contains(nameof(OwnedTestCommand), exception.Message);
+        harness.MessageBus.Verify(
+            b => b.PublishAsync(It.IsAny<string>(), It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        harness.OutboxRepository.Verify(r => r.AddAsync(It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>
+    /// The drain republishes what the row holds. A stored command that names an owner is republished
+    /// with it and with the signature it was stored under, which still covers it.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_StoredCommandNamingAnOwner_IsRepublishedWithItsOwner()
+    {
+        var harness = new Harness();
+        var published = harness.CapturePublished();
+        var unsigned = new CommandEnvelope(Guid.NewGuid(), "{}", typeof(OwnedTestCommand).AssemblyQualifiedName!, "{}")
+        {
+            DataOwnerTenantId = Guid.NewGuid(),
+            DataOwnerUserId = Guid.NewGuid()
+        };
+        var stored = unsigned with { Signature = "sig:" + BusEnvelopeCanonical.Of(unsigned) };
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(stored)]);
+
+        var republished = Assert.Single(published);
+        Assert.Equal(stored, republished);
+        Assert.Equal(stored.Signature, "sig:" + BusEnvelopeCanonical.Of(republished));
+    }
+
     [Fact]
     public async Task EnqueueCommandAsync_HeavyCommand_PublishesToHeavyTopic()
     {
@@ -280,6 +379,16 @@ public class CommandOutboxDispatcherTests
         public Mock<ResiliencePipelineProvider<string>> PipelineProvider { get; } = new();
 
         public CommandOutboxDispatcher Sut { get; }
+
+        public List<CommandEnvelope> CapturePublished()
+        {
+            var published = new List<CommandEnvelope>();
+            MessageBus
+                .Setup(b => b.PublishAsync(It.IsAny<string>(), It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()))
+                .Callback<string, CommandEnvelope, CancellationToken>((_, envelope, _) => published.Add(envelope))
+                .Returns(Task.CompletedTask);
+            return published;
+        }
 
         public Harness()
         {

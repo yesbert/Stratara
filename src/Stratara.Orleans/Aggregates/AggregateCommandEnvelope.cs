@@ -1,3 +1,5 @@
+using Stratara.Contracts.Messages;
+
 namespace Stratara.Orleans.Aggregates;
 
 /// <summary>
@@ -6,7 +8,10 @@ namespace Stratara.Orleans.Aggregates;
 /// exactly what the caller had. Immutable, so a call inside one silo passes it by reference
 /// instead of copying it. A resumed command carries the stamp of the claim that handed it over, which its receiver's
 /// first renewal compares, so that of two hand-overs of one claim only one runs; the dispatch's own hand-over, a
-/// forwarded command and a hand-over from a silo that does not stamp carry none.
+/// forwarded command and a hand-over from a silo that does not stamp carry none. A command that named
+/// the owner of its protected fields carries that owner, which its receiver reads the command for; a
+/// command that named none, and a hand-over from a silo that predates the owner, carry none and are
+/// read for the session.
 /// </summary>
 [GenerateSerializer]
 [Alias("Stratara.Orleans.AggregateCommandEnvelope")]
@@ -15,4 +20,14 @@ internal sealed record AggregateCommandEnvelope(
     [property: Id(0)] string CommandTypeName,
     [property: Id(1)] string CommandJson,
     [property: Id(2)] string SessionContextJson,
-    [property: Id(3)] DateTimeOffset? ClaimedAt = null);
+    [property: Id(3)] DateTimeOffset? ClaimedAt = null,
+    [property: Id(4)] Guid? DataOwnerTenantId = null,
+    [property: Id(5)] Guid? DataOwnerUserId = null)
+{
+    /// <summary>
+    /// What an activation receives of a recorded command: everything of its envelope the activation acts on, and the
+    /// stamp of the claim that hands it over, if a resumption does.
+    /// </summary>
+    public static AggregateCommandEnvelope From(CommandEnvelope envelope, DateTimeOffset? claimedAt = null) =>
+        new(envelope.CommandTypeName, envelope.CommandJson, envelope.SessionContextJson, claimedAt, envelope.DataOwnerTenantId, envelope.DataOwnerUserId);
+}

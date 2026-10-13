@@ -19,12 +19,20 @@ namespace Stratara.Abstractions.Messaging;
 /// <b>Signature scope (threat model).</b> The HMAC covers the canonical projection produced by
 /// <c>BusEnvelopeCanonical</c>, which covers every field of the message except the signature
 /// itself: for <c>CommandEnvelope</c> the envelope id, the command type name, the session
-/// context, the heavy-lane flag and a SHA-256 digest of <c>CommandJson</c>; for
+/// context, the heavy-lane flag, a SHA-256 digest of <c>CommandJson</c> and, where the command
+/// named the owner of its protected fields, that owner's tenant and user; for
 /// <c>EventBundle</c> the session context and a SHA-256 digest over every field of every event
 /// in <c>Events[]</c>. Every field is length-prefixed, so content cannot be shifted across a
 /// field boundary without changing the projection. The signature therefore prevents tenant /
 /// actor spoofing, command-type substitution and payload tampering alike: a signature captured
-/// from one message does not verify when presented with a different body.
+/// from one message does not verify when presented with a different body, and a command cannot
+/// be presented with another data owner or with none.
+/// </para>
+/// <para>
+/// A command that names no data owner projects to what it projected to before a command could
+/// name one, so publishers and consumers on either side of that release verify each other's
+/// signatures for it without a pass through <see cref="BusEnvelopeIntegrityMode.Permissive"/>.
+/// A consumer on a release before it does not verify a command that names one.
 /// </para>
 /// <para>
 /// Fields marked <c>[EncryptData]</c> are additionally AES-GCM-encrypted with a tenant-bound AAD
