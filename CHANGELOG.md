@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.5`._
+
+## [4.4.5] — 2026-10-14
+
 A command can now say whose data its protected fields are. Until now a command's `[EncryptData]` fields were
 encrypted for the session that dispatched it, so a session with no tenant could not protect anything and a session
 with another tenant protected under the wrong one. Additive and opt-in; no schema change and no migration. One
@@ -4605,7 +4609,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.4...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.5...main
+[4.4.5]: https://github.com/yesbert/Stratara/releases/tag/v4.4.5
 [4.4.4]: https://github.com/yesbert/Stratara/releases/tag/v4.4.4
 [4.4.3]: https://github.com/yesbert/Stratara/releases/tag/v4.4.3
 [4.4.2]: https://github.com/yesbert/Stratara/releases/tag/v4.4.2
