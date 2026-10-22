@@ -110,15 +110,8 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     }
 
     /// <inheritdoc/>
-    public async Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default)
-    {
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var statements = _statements ??= Statements.For(context);
-        var head = await context.Database
-            .SqlQueryRaw<string?>(statements.Head, _partitionCount, partition)
-            .SingleAsync(cancellationToken);
-        return head is null ? 0 : (long)ulong.Parse(head, CultureInfo.InvariantCulture);
-    }
+    public Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default) =>
+        QueryHeadAsync(statements => statements.Head, partition, cancellationToken);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -127,12 +120,15 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     /// reaches that id only once every transaction below it has ended, so a checkpoint at or past it proves every entry
     /// committed before the call was applied.
     /// </remarks>
-    public async Task<long> CommittedHeadAsync(int partition, CancellationToken cancellationToken = default)
+    public Task<long> CommittedHeadAsync(int partition, CancellationToken cancellationToken = default) =>
+        QueryHeadAsync(statements => statements.CommittedHead, partition, cancellationToken);
+
+    private async Task<long> QueryHeadAsync(Func<Statements, string> statement, int partition, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var statements = _statements ??= Statements.For(context);
         var head = await context.Database
-            .SqlQueryRaw<string?>(statements.CommittedHead, _partitionCount, partition)
+            .SqlQueryRaw<string?>(statement(statements), _partitionCount, partition)
             .SingleAsync(cancellationToken);
         return head is null ? 0 : (long)ulong.Parse(head, CultureInfo.InvariantCulture);
     }

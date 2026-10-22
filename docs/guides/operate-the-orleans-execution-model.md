@@ -376,15 +376,18 @@ once every silo runs the new version.
 [Read your own write](write-a-projection.md#read-your-own-write)). Three things decide how it behaves in operation.
 
 **A mark costs one query per partition.** `MarkAsync` asks the commit-order reader for the highest committed
-position of every partition, one indexed query each — sixteen at the default partition count. A host that takes a
-mark on every request pays that on every request; take one only where a read follows a write. A reader of your own
-answers the mark through `ICommittedPositionReader.CommittedHeadAsync`, whose default is `HeadAsync`; a reader that
-holds its head back below what is committed, as the native PostgreSQL reader does, must override it, or a wait may
-answer before the projection has applied the write.
+position of every partition, one query each, in sequence — sixteen at the default partition count. On the native
+PostgreSQL reader each walks the transaction-id index from the top until it meets an entry of its partition: cheap
+for a partition with recent entries, a walk of the whole index for one that has none. A host that takes a mark on
+every request pays that on every request; take one only where a read follows a write. A reader of your own answers
+the mark through `ICommittedPositionReader.CommittedHeadAsync`, whose default is `HeadAsync`; a reader that holds its
+head back below what is committed, as the native PostgreSQL reader does, must override it, and a decorator around a
+reader must forward it, or a wait may answer before the projection has applied the write.
 
-**A wait asks each partition's reader once and is answered when it gets there.** Each call waits at most ten
-seconds on the grain, so it never meets the response timeout; a longer wait asks again. Nothing polls the read
-store, and a wait for a projection that is already through answers without waiting.
+**A wait asks each partition's reader and is answered when it gets there.** Each call waits at most two seconds
+on the grain — a waiting call holds that grain's deactivation for as long — and a longer wait asks again. It answers
+`Reached` only when every partition says so in the same round, so a rebuild that began during the wait is never
+missed. Nothing polls the read store, and a wait for a projection that is already through answers without waiting.
 
 **What holds a wait back.** On the native PostgreSQL reader nothing is read past a transaction that is still open,
 so a long-running transaction on the write store — one that appends nothing included — holds every projection's

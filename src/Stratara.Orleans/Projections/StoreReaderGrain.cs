@@ -250,8 +250,9 @@ internal abstract class StoreReaderGrain(
     /// <paramref name="budget"/> has passed, with how the reader stood then. Requests a catch-up, so the reader reads now
     /// rather than at its next poll. A suspended reader never answers that it reached the position, whatever its
     /// checkpoint says: a pauser is about to change the checkpoint, and a reader that read while it should have been
-    /// paused may hold a position over a read model about to be emptied. A deactivation answers every waiter at once,
-    /// and the caller asks the next activation.
+    /// paused may hold a position over a read model about to be emptied. A waiting call holds the grain's deactivation
+    /// until it is answered, so callers keep the budget short; a waiter still registered when the deactivation runs is
+    /// answered with how the reader stood, and the caller asks the next activation.
     /// </summary>
     public async Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget)
     {

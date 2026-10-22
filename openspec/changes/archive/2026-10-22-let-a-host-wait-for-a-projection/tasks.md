@@ -17,7 +17,7 @@
 
 ## 4. The service
 
-- [x] 4.1 `ProjectionProgress`: `MarkAsync` (reader name + `CommittedHeadAsync` per partition), `WaitAsync` by name and by type, reader-name check (D5), mark `0` counts as reached, parallel grain calls capped at ten seconds, suspended never counts as reached (D4), outcome precedence `Stalled` > `Suspended` > `TimedOut` (`src/Stratara.Orleans/Projections/ProjectionProgress.cs`)
+- [x] 4.1 `ProjectionProgress`: `MarkAsync` (reader name + `CommittedHeadAsync` per partition), `WaitAsync` by name and by type, reader-name check (D5), mark `0` counts as reached, parallel grain calls in rounds that answer reached only when every partition does in the same round, capped at two seconds, suspended never counts as reached (D4), outcome precedence `Stalled` > `Suspended` > `TimedOut` (`src/Stratara.Orleans/Projections/ProjectionProgress.cs`)
 - [x] 4.2 Register it in `AddStrataraProjectionGrains` beside `IProjectionRebuilder` (`src/Stratara.Orleans/DependencyInjection/OrleansProjectionServiceCollectionExtensions.cs`)
 - [x] 4.3 Execution-model test host: *A host waits for its own write*, *The projection does not get there in time*, *A partition is stopped at an entry*, *The projection is suspended*, *The store has nothing in a partition*, *The partition count changed after the mark was taken*, *The projection is unknown*, cancellation, and the type overload (`tests/Stratara.Testing.Orleans.Tests/ProjectionProgressTests.cs`)
 - [x] 4.4 PostgreSQL with the native reader: *A host waits for its own write* and *Another write is open when the mark is taken* (`tests/Stratara.Orleans.IntegrationTests/Projections/ProjectionProgressTests.cs`)

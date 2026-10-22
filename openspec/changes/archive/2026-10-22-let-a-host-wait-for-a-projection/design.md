@@ -131,13 +131,24 @@ Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget);
 
 The grain requests a catch-up (so the reader reads now, not at its next poll), registers the waiter, and
 completes it when the loop has advanced the checkpoint to `position` or past it, or when `budget` runs
-out, with the loop's state. `StoreReaderLoop` signals after every checkpoint it writes. A deactivating
-grain completes its waiters with its state; the caller asks again and reaches the next activation.
+out, with the loop's state. `StoreReaderLoop` signals after every checkpoint it writes. A waiting call
+holds its grain's deactivation until it is answered; a waiter still registered when the deactivation
+runs is answered with the state, and the caller asks the next activation.
 
 `ProjectionProgress.WaitAsync` checks the reader name first (D5), counts a partition whose mark is `0`
-as reached, and calls the grain of every other partition in parallel with a budget of the remaining
-time, capped at ten seconds so a call never meets Orleans' response timeout; a partition that answers
-short of its mark is asked again until the limit.
+as reached, and calls the grain of every other partition in parallel, in rounds, with a budget of the
+remaining time capped at two seconds. It answers `Reached` only when every partition answered reached
+in the same round; a partition that is through answers at once, so a round costs little.
+
+*Amended during review (2026-10-22), before merge.* The plan was a ten-second cap, and a partition
+that had answered reached was not asked again. The review of the implementation found two faults:
+a partition counted reached before a rebuild began was never re-checked, so a rebuild during the wait
+could leave it emptied under a `Reached` answer; and a waiting call holds its grain's deactivation for
+its whole budget, because the runtime lets in-flight requests finish before it deactivates. Asking
+every partition each round closes the first — a rebuild pauses every reader before it empties
+anything, and a paused reader never answers reached (D4), so one round in which all answer reached
+leaves no rebuild in progress behind it. The two-second cap bounds the second, and also keeps a call
+far below any response timeout a host is likely to set.
 
 *Alternative rejected — poll the checkpoint store.* Correct and simple, but it cannot see a stall or a
 pause, and its load grows with waiters × partitions × frequency, on the read store every projection

@@ -81,7 +81,8 @@ public interface ICommittedPositionReader
     /// Unlike <see cref="HeadAsync"/>, the answer is not a position to start a consumer at: an entry of a transaction
     /// still open may yet commit below it. A reader whose <see cref="HeadAsync"/> is held back below what is committed —
     /// the native reader on PostgreSQL — overrides this member to answer without holding it back; otherwise a wait for
-    /// the projections to apply what is committed may answer before they have.
+    /// the projections to apply what is committed may answer before they have. A decorator around another reader
+    /// forwards this member to the reader it wraps, for the same reason.
     /// </remarks>
     /// <param name="partition">The partition, from <c>0</c> to the configured partition count − 1.</param>
     /// <param name="cancellationToken">Propagated to the store.</param>

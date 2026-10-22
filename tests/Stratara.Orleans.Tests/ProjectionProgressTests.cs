@@ -58,6 +58,29 @@ public sealed class ProjectionProgressTests
         Assert.Equal(2, setup.Calls.Count(call => call.Partition == 1));
     }
 
+    [Fact]
+    public async Task A_partition_that_reached_the_mark_is_asked_again_until_every_partition_reaches_it_in_one_round()
+    {
+        var setup = new Setup();
+        setup.Answer(0, Reached(), Short(StoreReaderState.Suspended), Reached());
+        setup.Answer(1, Short(StoreReaderState.Advancing), Reached(), Reached());
+        var progress = setup.Build();
+
+        var result = await progress.Progress.WaitAsync(Projection, Mark(5, 5, 0, 0), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsReached);
+        Assert.Equal(3, setup.Calls.Count(call => call.Partition == 0));
+        Assert.Equal(3, setup.Calls.Count(call => call.Partition == 1));
+    }
+
+    [Fact]
+    public void Two_marks_with_the_same_reader_and_positions_are_equal()
+    {
+        Assert.Equal(Mark(1, 2, 3, 4), Mark(1, 2, 3, 4));
+        Assert.Equal(Mark(1, 2, 3, 4).GetHashCode(), Mark(1, 2, 3, 4).GetHashCode());
+        Assert.NotEqual(Mark(1, 2, 3, 4), Mark(1, 2, 3, 5));
+    }
+
     [Theory]
     [InlineData((int)StoreReaderState.StalledOnEntry, (int)StoreReaderState.Suspended, ProjectionWaitOutcome.Stalled)]
     [InlineData((int)StoreReaderState.StalledOnRead, (int)StoreReaderState.Advancing, ProjectionWaitOutcome.Stalled)]

@@ -64,12 +64,33 @@ public interface IProjectionProgress
 
 /// <summary>
 /// Where the store was when a mark was taken. A host passes it back to <see cref="IProjectionProgress"/> and relies on
-/// nothing inside it; what it holds is meaningful only to the reader that produced it.
+/// nothing inside it; what it holds is meaningful only to the reader that produced it. Two marks are equal when they
+/// name the same reader and the same positions.
 /// </summary>
 /// <param name="Reader">The name of the reader the positions belong to, which carries the partition count.</param>
 /// <param name="Positions">Per partition, the highest position committed when the mark was taken.</param>
-[ExcludeFromCodeCoverage]
-public sealed record StoreMark(string Reader, IReadOnlyList<long> Positions);
+public sealed record StoreMark(string Reader, IReadOnlyList<long> Positions)
+{
+    /// <summary>Whether <paramref name="other"/> names the same reader and the same positions.</summary>
+    /// <param name="other">The mark to compare with.</param>
+    /// <returns><see langword="true"/> where reader and positions are equal.</returns>
+    public bool Equals(StoreMark? other) =>
+        other is not null && Reader == other.Reader && Positions.SequenceEqual(other.Positions);
+
+    /// <summary>A hash over the reader and the positions.</summary>
+    /// <returns>The hash code.</returns>
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Reader, StringComparer.Ordinal);
+        foreach (var position in Positions)
+        {
+            hash.Add(position);
+        }
+
+        return hash.ToHashCode();
+    }
+}
 
 /// <summary>How a wait for a projection ended, or how a partition stood when it ended.</summary>
 public enum ProjectionWaitOutcome
