@@ -61,7 +61,7 @@ public class OutboxServiceCollectionExtensionsTests
 
         Assert.IsType<InProcessProjectionReplayState>(first);
         Assert.Same(first, second);
-        Assert.Single(logs, l => l.Level == LogLevel.Warning && l.Id.Id == LogEvents.Projection.ProjectionReplayCoordinationInProcess);
+        Assert.Single(Snapshot(logs), l => l.Level == LogLevel.Warning && l.Id.Id == LogEvents.Projection.ProjectionReplayCoordinationInProcess);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class OutboxServiceCollectionExtensionsTests
         var sp = services.BuildServiceProvider();
 
         Assert.IsType<ProjectionReplayState>(sp.GetRequiredService<IProjectionReplayState>());
-        Assert.DoesNotContain(logs, l => l.Id.Id == LogEvents.Projection.ProjectionReplayCoordinationInProcess);
+        Assert.DoesNotContain(Snapshot(logs), l => l.Id.Id == LogEvents.Projection.ProjectionReplayCoordinationInProcess);
     }
 
     [Fact]
@@ -151,6 +151,18 @@ public class OutboxServiceCollectionExtensionsTests
         var sp = services.BuildServiceProvider();
 
         Assert.Same(own, sp.GetRequiredService<IProjectionReplayState>());
+    }
+
+    /// <summary>
+    /// Copies what was logged under the lock the logger writes with: the Redis-backed replay state refreshes in the
+    /// background and may log while a test reads the list.
+    /// </summary>
+    private static List<(LogLevel Level, EventId Id)> Snapshot(List<(LogLevel Level, EventId Id)> logs)
+    {
+        lock (logs)
+        {
+            return [.. logs];
+        }
     }
 
     private sealed class CapturingLoggerProvider(List<(LogLevel Level, EventId Id)> sink) : ILoggerProvider
