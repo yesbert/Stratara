@@ -133,6 +133,9 @@ public sealed class ReplayCheckpointResetTests
 
         public Task<long> PositionAsync() => Task.FromResult(0L);
 
+
+        public Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget) => Task.FromResult(new StoreReaderProgress(false, StoreReaderState.Advancing));
+
         public Task PauseAsync(Guid pauser, TimeSpan lease)
         {
             lock (journal)

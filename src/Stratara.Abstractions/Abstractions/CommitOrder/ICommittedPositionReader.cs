@@ -70,6 +70,24 @@ public interface ICommittedPositionReader
             }
         }
     }
+
+    /// <summary>
+    /// Returns the highest position of <paramref name="partition"/> that the store shows as committed at the time of the
+    /// call, so that a consumer whose checkpoint is at or past it has applied every entry committed by then. <c>0</c> on
+    /// a partition without entries. The default answers <see cref="HeadAsync"/>, which means exactly that for a reader
+    /// that does not hold its head back.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="HeadAsync"/>, the answer is not a position to start a consumer at: an entry of a transaction
+    /// still open may yet commit below it. A reader whose <see cref="HeadAsync"/> is held back below what is committed —
+    /// the native reader on PostgreSQL — overrides this member to answer without holding it back; otherwise a wait for
+    /// the projections to apply what is committed may answer before they have.
+    /// </remarks>
+    /// <param name="partition">The partition, from <c>0</c> to the configured partition count − 1.</param>
+    /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <returns>The highest committed position the call sees in the partition.</returns>
+    Task<long> CommittedHeadAsync(int partition, CancellationToken cancellationToken = default) =>
+        HeadAsync(partition, cancellationToken);
 }
 
 /// <summary>

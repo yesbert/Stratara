@@ -52,6 +52,8 @@ internal abstract class StoreReaderGrain(
     internal static readonly TimeSpan AnonymousLease = TimeSpan.FromMinutes(10);
 
     private readonly CancellationTokenSource _stopping = new();
+    private readonly List<StoreReaderWaiter> _waiters = [];
+    private TimeProvider _time = TimeProvider.System;
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
     private StoreReaderPausers? _pausers;
@@ -181,7 +183,8 @@ internal abstract class StoreReaderGrain(
         var (consumer, partition) = StoreReaderGrainKey.Parse(this.GetPrimaryKeyString());
         Consumer = consumer;
         Partition = partition;
-        _pausers = new StoreReaderPausers(ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System);
+        _time = ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+        _pausers = new StoreReaderPausers(_time);
         if (partition >= settings.PartitionCount)
         {
             await RetireAsync();
@@ -204,7 +207,10 @@ internal abstract class StoreReaderGrain(
             return;
         }
 
-        _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger, StartAsync);
+        _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger, StartAsync)
+        {
+            PositionChanged = AnswerWaiters,
+        };
         _poll ??= this.RegisterGrainTimer(
             _ => PollAsync(),
             new GrainTimerCreationOptions
@@ -239,6 +245,41 @@ internal abstract class StoreReaderGrain(
 
     public Task<long> PositionAsync() => Retired ? Task.FromResult(0L) : Loop.PositionAsync();
 
+    /// <summary>
+    /// Answers once the reader has applied up to <paramref name="position"/> and is not suspended, or once
+    /// <paramref name="budget"/> has passed, with how the reader stood then. Requests a catch-up, so the reader reads now
+    /// rather than at its next poll. A suspended reader never answers that it reached the position, whatever its
+    /// checkpoint says: a pauser is about to change the checkpoint, and a reader that read while it should have been
+    /// paused may hold a position over a read model about to be emptied. A deactivation answers every waiter at once,
+    /// and the caller asks the next activation.
+    /// </summary>
+    public async Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget)
+    {
+        if (Retired)
+        {
+            return new StoreReaderProgress(false, StoreReaderState.Retired);
+        }
+
+        if (!HasReached(position))
+        {
+            var waiter = new StoreReaderWaiter(position);
+            _waiters.Add(waiter);
+            try
+            {
+                using var expiry = new CancellationTokenSource(budget, _time);
+                await using var registration = expiry.Token.Register(() => waiter.Completion.TrySetResult());
+                RequestCatchUp().Ignore();
+                await waiter.Completion.Task;
+            }
+            finally
+            {
+                _waiters.Remove(waiter);
+            }
+        }
+
+        return new StoreReaderProgress(HasReached(position), State);
+    }
+
     Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => Retired ? Task.CompletedTask : PollAsync();
 
     /// <summary>
@@ -253,6 +294,11 @@ internal abstract class StoreReaderGrain(
             _stopping.Dispose();
             await base.OnDeactivateAsync(reason, cancellationToken);
             return;
+        }
+
+        foreach (var waiter in _waiters)
+        {
+            waiter.Completion.TrySetResult();
         }
 
         try
@@ -327,6 +373,25 @@ internal abstract class StoreReaderGrain(
         }
 
         return RequestCatchUp();
+    }
+
+    /// <summary>How the reader stands: suspended before stalled on an entry before stalled on a read.</summary>
+    private StoreReaderState State => Suspended ? StoreReaderState.Suspended
+        : Loop.StalledOnEntry ? StoreReaderState.StalledOnEntry
+        : Loop.StalledOnRead ? StoreReaderState.StalledOnRead
+        : StoreReaderState.Advancing;
+
+    private bool HasReached(long position) => !Suspended && Loop.TryGetPosition(out var current) && current >= position;
+
+    private void AnswerWaiters()
+    {
+        foreach (var waiter in _waiters)
+        {
+            if (HasReached(waiter.Position))
+            {
+                waiter.Completion.TrySetResult();
+            }
+        }
     }
 
     private Task RestartAsync()

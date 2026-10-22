@@ -16,7 +16,27 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.5`._
+A host on the Orleans execution model can now wait until a projection has applied what it committed, instead of
+reading its read model and hoping the projection is through. Additive; no schema change and no migration.
+
+### Added
+
+- **`IProjectionProgress`** (`Stratara.Abstractions`), registered by `AddStrataraProjectionGrains()`.
+  `MarkAsync()` returns a `StoreMark` that covers every entry committed at the time of the call, in every partition
+  — on PostgreSQL also an entry that committed while another write was still open. `WaitAsync(projection, mark,
+  timeout)`, with the projection named by its type or its framework name, answers with a `ProjectionWaitResult`:
+  `Reached` only once the projection has applied every entry the mark covers; otherwise, at the limit, `Stalled`,
+  `Suspended` or `TimedOut` with the partitions behind; `MarkNotApplicable` at once for a mark taken under another
+  reader or partition count. A rebuild or a full replay during a wait is waited through; an unknown projection is
+  refused. See *Read your own write* in the projection guide.
+- **`ICommittedPositionReader.CommittedHeadAsync`**, the highest position the store shows as committed. The default
+  answers `HeadAsync`; the native PostgreSQL reader answers it without the horizon its head is held back to. A
+  reader of your own that holds its head back overrides it.
+
+### Upgrade notes
+
+- Adopt the wait once every silo runs this release: a silo of an earlier version does not answer it, and a wait
+  whose partition lives there fails with the grain call's error.
 
 ## [4.4.5] — 2026-10-14
 
