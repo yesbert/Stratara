@@ -74,14 +74,15 @@ _None._
 ## Impact
 
 - `src/Stratara.Abstractions/Abstractions/Projections/IProjectionProgress.cs` — new, with `StoreMark`,
-  `ProjectionWaitResult` and `ProjectionWaitOutcome`.
+  `ProjectionWaitResult`, `ProjectionPartitionLag` and `ProjectionWaitOutcome`.
 - `src/Stratara.Abstractions/Abstractions/CommitOrder/ICommittedPositionReader.cs` — new member
   `CommittedHeadAsync` with a default that answers `HeadAsync`.
 - `src/Stratara.Orleans.EntityFrameworkCore/CommitOrder/PostgresTransactionIdReader.cs` — overrides it
   with a statement that drops the horizon filter.
 - `src/Stratara.Orleans/Projections/` — `ProjectionProgress` (new), `StoreReaderGrain` and
   `StoreReaderLoop` (a waiter call per partition that answers once the checkpoint reaches a position or
-  its own deadline passes, with the reader's state), `IProjectionGrain` (one new grain method).
+  its own deadline passes, with the reader's state), `IProjectionGrain` (one new grain method),
+  `StoreReaderProgress.cs` (new: the grain's answer and the reader's state, serialized between silos).
 - `src/Stratara.Orleans/DependencyInjection/OrleansProjectionServiceCollectionExtensions.cs` — registers
   the service.
 - `docs/guides/write-a-projection.md`, `docs/guides/operate-the-orleans-execution-model.md`,
