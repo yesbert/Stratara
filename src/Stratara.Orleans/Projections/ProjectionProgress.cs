@@ -80,10 +80,14 @@ internal sealed class ProjectionProgress(
 
     private static ProjectionWaitResult Behind(IReadOnlyList<ProjectionPartitionLag> lags)
     {
-        var outcome = lags.Any(lag => lag.State == ProjectionWaitOutcome.Stalled) ? ProjectionWaitOutcome.Stalled
-            : lags.Any(lag => lag.State == ProjectionWaitOutcome.Suspended) ? ProjectionWaitOutcome.Suspended
-            : ProjectionWaitOutcome.TimedOut;
-        return new ProjectionWaitResult(outcome, lags);
+        if (lags.Any(lag => lag.State == ProjectionWaitOutcome.Stalled))
+        {
+            return new ProjectionWaitResult(ProjectionWaitOutcome.Stalled, lags);
+        }
+
+        return lags.Any(lag => lag.State == ProjectionWaitOutcome.Suspended)
+            ? new ProjectionWaitResult(ProjectionWaitOutcome.Suspended, lags)
+            : new ProjectionWaitResult(ProjectionWaitOutcome.TimedOut, lags);
     }
 
     private async Task<ProjectionWaitResult> WaitAsync(
@@ -116,7 +120,12 @@ internal sealed class ProjectionProgress(
         while (pending.Count > 0)
         {
             var remaining = timeout - time.GetElapsedTime(started);
-            var budget = remaining <= TimeSpan.Zero ? TimeSpan.Zero : remaining < MaximumBudget ? remaining : MaximumBudget;
+            var budget = remaining < MaximumBudget ? remaining : MaximumBudget;
+            if (budget < TimeSpan.Zero)
+            {
+                budget = TimeSpan.Zero;
+            }
+
             var answers = await Task.WhenAll(pending.Select(partition => grainFactory
                     .GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(projectionName, partition))
                     .WaitForAsync(mark.Positions[partition], budget)))

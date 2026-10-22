@@ -377,21 +377,31 @@ internal abstract class StoreReaderGrain(
     }
 
     /// <summary>How the reader stands: suspended before stalled on an entry before stalled on a read.</summary>
-    private StoreReaderState State => Suspended ? StoreReaderState.Suspended
-        : Loop.StalledOnEntry ? StoreReaderState.StalledOnEntry
-        : Loop.StalledOnRead ? StoreReaderState.StalledOnRead
-        : StoreReaderState.Advancing;
+    private StoreReaderState State
+    {
+        get
+        {
+            if (Suspended)
+            {
+                return StoreReaderState.Suspended;
+            }
+
+            if (Loop.StalledOnEntry)
+            {
+                return StoreReaderState.StalledOnEntry;
+            }
+
+            return Loop.StalledOnRead ? StoreReaderState.StalledOnRead : StoreReaderState.Advancing;
+        }
+    }
 
     private bool HasReached(long position) => !Suspended && Loop.TryGetPosition(out var current) && current >= position;
 
     private void AnswerWaiters()
     {
-        foreach (var waiter in _waiters)
+        foreach (var waiter in _waiters.Where(waiter => HasReached(waiter.Position)))
         {
-            if (HasReached(waiter.Position))
-            {
-                waiter.Completion.TrySetResult();
-            }
+            waiter.Completion.TrySetResult();
         }
     }
 
