@@ -57,6 +57,27 @@ internal sealed class StoreReaderLoop(
     public Task<int>? Running => _running is { IsCompleted: false } running ? running : null;
 
     /// <summary>
+    /// Called whenever the loop has learnt or moved its position — read the checkpoint, or written it — on the scheduler
+    /// the loop runs on, so a grain can answer whoever waits for a position.
+    /// </summary>
+    public Action? PositionChanged { get; set; }
+
+    /// <summary>Whether the partition is stopped at an entry it cannot apply.</summary>
+    public bool StalledOnEntry => _stalledOnEntry;
+
+    /// <summary>Whether the partition's last read of the store or of its checkpoint failed.</summary>
+    public bool StalledOnRead => _stalledOnRead;
+
+    /// <summary>The position the loop last read or wrote, where it still knows it.</summary>
+    /// <param name="position">The position, or <c>0</c> where the loop does not know it.</param>
+    /// <returns>Whether the loop knows its position.</returns>
+    public bool TryGetPosition(out long position)
+    {
+        position = _positionKnown ? _position : 0;
+        return _positionKnown;
+    }
+
+    /// <summary>
     /// Forgets the cached position, so the next catch-up reads the checkpoint store first — also where a read of the
     /// checkpoint store was in flight when this was called, since it may have read the position this forgets.
     /// </summary>
@@ -138,6 +159,7 @@ internal sealed class StoreReaderLoop(
             total += await CatchUpAsync(applyBatch, suspended, cancellationToken);
         }
 
+        PositionChanged?.Invoke();
         return total;
     }
 
@@ -228,6 +250,7 @@ internal sealed class StoreReaderLoop(
                 {
                     await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, resumeAt, CancellationToken.None);
                     _position = resumeAt;
+                    PositionChanged?.Invoke();
                 }
 
                 return total;
@@ -236,6 +259,7 @@ internal sealed class StoreReaderLoop(
             MarkAdvancing(onRead: false);
             await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, batch.Position, CancellationToken.None);
             _position = batch.Position;
+            PositionChanged?.Invoke();
             if (!batch.HasMore)
             {
                 StoreReaderLag.Clear(consumer, partition);
@@ -355,6 +379,7 @@ internal sealed class StoreReaderLoop(
         var invalidations = _invalidations;
         _position = await checkpoints.GetAsync(consumer, partition, readerName, cancellationToken);
         _positionKnown = invalidations == _invalidations;
+        PositionChanged?.Invoke();
     }
 
     private static (ICommittedPositionReader Reader, IProjectionCheckpointStore Checkpoints) Resolve(IServiceProvider services) =>

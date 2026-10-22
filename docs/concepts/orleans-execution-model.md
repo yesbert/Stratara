@@ -54,6 +54,12 @@ entry's identity, the stall is counted under its name, and the entry is tried ag
 and saga applies the entry once and goes on. A read that fails counts as a stall too. Two rebuilds of one projection never
 interleave, and a rebuild during a full replay is refused.
 
+**A host can wait for its read model.** A read model follows a write shortly after, not at once. A host that must
+read its own write takes a mark of the store once the write has committed and waits, for at most a time it names,
+until the projection has applied everything the mark covers. The wait answers that it got there only when it did;
+otherwise it says whether the projection is behind, stopped at an entry or suspended for a rebuild or a replay. See
+[Write a projection](../guides/write-a-projection.md#read-your-own-write).
+
 **Once per cluster.** Singleton work runs in one place in the cluster while the cluster agrees on its
 membership, only on silos that registered it, and moves to another silo when its silo is lost; a silo declared
 dead that is still running may run it once more before it learns of the declaration, so a work tolerates an

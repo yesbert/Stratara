@@ -91,6 +91,15 @@ internal interface IProjectionGrain : IGrainWithStringKey
     [AlwaysInterleave]
     [Alias("RenewPauseAsync")]
     Task RenewPauseAsync(Guid pauser, TimeSpan lease);
+
+    /// <summary>
+    /// Answers once the reader has applied up to <paramref name="position"/> and is not suspended, or once
+    /// <paramref name="budget"/> has passed, with how the reader stood then. Interleaves, so it never waits behind a
+    /// catch-up.
+    /// </summary>
+    [AlwaysInterleave]
+    [Alias("WaitForAsync")]
+    Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget);
 }
 
 /// <summary>

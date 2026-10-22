@@ -370,6 +370,38 @@ an upgraded silo for at most ten minutes — it cannot renew — and returns the
 once, and one started from an upgraded silo cannot pause a reader still hosted on 4.1.x and fails naming it. Rebuild
 once every silo runs the new version.
 
+## Waiting for a projection
+
+`IProjectionProgress` lets a host wait until a projection has applied what it committed (see
+[Read your own write](write-a-projection.md#read-your-own-write)). Three things decide how it behaves in operation.
+
+**A mark costs one query per partition.** `MarkAsync` asks the commit-order reader for the highest committed
+position of every partition, one query each, in sequence — sixteen at the default partition count. On the native
+PostgreSQL reader each walks the transaction-id index from the top until it meets an entry of its partition: cheap
+for a partition with recent entries, a walk of the whole index for one that has none. A host that takes a mark on
+every request pays that on every request; take one only where a read follows a write. A reader of your own answers
+the mark through `ICommittedPositionReader.CommittedHeadAsync`, whose default is `HeadAsync`; a reader that holds its
+head back below what is committed, as the native PostgreSQL reader does, must override it, and a decorator around a
+reader must forward it, or a wait may answer before the projection has applied the write.
+
+**A wait asks each partition's reader and is answered when it gets there.** Each call waits at most two seconds
+on the grain — a waiting call holds that grain's deactivation for as long — and a longer wait asks again. It answers
+`Reached` only when every partition says so in the same round, so a rebuild that began during the wait is never
+missed. Nothing polls the read store, and a wait for a projection that is already through answers without waiting.
+
+**What holds a wait back.** On the native PostgreSQL reader nothing is read past a transaction that is still open,
+so a long-running transaction on the write store — one that appends nothing included — holds every projection's
+readers back, and a wait for a fact committed after it times out although the fact is long visible. `TimedOut`
+with `orleans.reader.lag` climbing on every partition is that sign; find the transaction in `pg_stat_activity`.
+`Stalled` is a partition stopped at an entry; `Suspended` is a rebuild or a replay in progress, and the
+[section above](#a-rebuild-or-a-replay-that-does-not-finish) says what to do when one does not finish.
+
+The time a host waits is its own latency budget: a request path usually waits a few seconds and answers "try
+again" on anything but `Reached`; a background job may wait longer.
+
+During a rolling upgrade from 4.4.5 or earlier, a silo of the older version does not answer the wait, and a wait
+whose partition lives there fails with the grain call's error. Adopt the wait once every silo runs 4.4.6.
+
 ## What to watch
 
 Every instrument is published under the meter `Stratara` with the names in

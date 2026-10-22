@@ -295,6 +295,52 @@ by nor suppresses anything in another. A host that falls back says so once at st
 `104_012`. A deployment of several hosts that needs a replay to suppress publication in all of them
 registers the shared connection; the order of that call and the composites does not matter.
 
+## Read your own write
+
+Under the [Orleans execution model](../concepts/orleans-execution-model.md) a projection applies a fact shortly
+after it was committed, not as part of the commit. A host that answers a request from a read model — or refuses one
+because of what a read model holds — right after a write can wait until the projection has caught up. Resolve
+`IProjectionProgress`, which `AddStrataraProjectionGrains()` registers, take a mark once the write has committed, and
+wait:
+
+<!-- stratara-snippet-ignore: consumer-side endpoint fragment - the mediator, the projection and the result helpers are the host's -->
+```csharp
+await mediator.HandleAsync(command, cancellationToken);
+
+var mark = await progress.MarkAsync(cancellationToken);
+var result = await progress.WaitAsync(typeof(OrdersProjection), mark, TimeSpan.FromSeconds(5), cancellationToken);
+if (!result.IsReached)
+{
+    return Results.Problem("The change is accepted but not yet visible. Try again.", statusCode: 503);
+}
+
+return Results.Ok(await orders.ListAsync(cancellationToken));
+```
+
+A mark covers every entry committed when it is taken, in every partition — also one that committed while another
+write was still open. It does not cover a write whose transaction had not committed yet, so take it **after** the
+command has returned, never before. The projection is named by its type or by the name the framework gives it, the
+type's name.
+
+The answer is one of five:
+
+| `Outcome` | Meaning |
+|---|---|
+| `Reached` | The projection has applied every entry the mark covers; read the read model now. |
+| `TimedOut` | The time passed while the projection was behind but advancing. |
+| `Stalled` | A partition is stopped at an entry the projection cannot apply, or cannot read the store. Log `117_101` or `117_103` names it. |
+| `Suspended` | The projection's readers are paused for a rebuild, or a full replay is active. |
+| `MarkNotApplicable` | The mark was taken under another partition count or reader than the host reads with now. Take a new one. |
+
+`Behind` lists the partitions that did not get there and how each stood. A stalled partition does not end the
+wait early — a retry may still apply the entry in time. A rebuild or a full replay during the wait is waited
+through: the wait answers `Reached` only once the rebuilt read model holds the mark's entries again. A wait that
+is cancelled throws `OperationCanceledException`; it never answers `Reached` for something it did not see.
+
+The bus model has no checkpoint, so there is nothing to wait for there; `IProjectionProgress` is registered only
+with the store-reading projection grains. The cost of a mark and what holds a wait back are on
+[Operate the Orleans execution model](operate-the-orleans-execution-model.md#waiting-for-a-projection).
+
 ## Replay is destructive, and it is all-or-nothing
 
 A replay is not a repair tool you reach for casually. Five properties, in the order they will

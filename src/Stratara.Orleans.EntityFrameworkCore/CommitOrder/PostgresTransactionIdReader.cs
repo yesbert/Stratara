@@ -110,12 +110,25 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
     }
 
     /// <inheritdoc/>
-    public async Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default)
+    public Task<long> HeadAsync(int partition, CancellationToken cancellationToken = default) =>
+        QueryHeadAsync(statements => statements.Head, partition, cancellationToken);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The highest transaction id of the partition that the statement's own snapshot sees, without the horizon
+    /// <see cref="HeadAsync"/> is held back to: every transaction committed before the call is visible to it. A reader
+    /// reaches that id only once every transaction below it has ended, so a checkpoint at or past it proves every entry
+    /// committed before the call was applied.
+    /// </remarks>
+    public Task<long> CommittedHeadAsync(int partition, CancellationToken cancellationToken = default) =>
+        QueryHeadAsync(statements => statements.CommittedHead, partition, cancellationToken);
+
+    private async Task<long> QueryHeadAsync(Func<Statements, string> statement, int partition, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var statements = _statements ??= Statements.For(context);
         var head = await context.Database
-            .SqlQueryRaw<string?>(statements.Head, _partitionCount, partition)
+            .SqlQueryRaw<string?>(statement(statements), _partitionCount, partition)
             .SingleAsync(cancellationToken);
         return head is null ? 0 : (long)ulong.Parse(head, CultureInfo.InvariantCulture);
     }
@@ -145,8 +158,8 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
 
     private sealed record Row(EventStreamEntry Entry, ulong TransactionId);
 
-    /// <summary>The two statements, with the table and columns named as the context's model maps them.</summary>
-    private sealed record Statements(string ReadAfter, string ReadTransaction, string Head)
+    /// <summary>The statements, with the table and columns named as the context's model maps them.</summary>
+    private sealed record Statements(string ReadAfter, string ReadTransaction, string Head, string CommittedHead)
     {
         /// <exception cref="InvalidOperationException">The model maps no event stream table, or lacks the commit-order column.</exception>
         public static Statements For(DbContext context)
@@ -194,6 +207,10 @@ public sealed class PostgresTransactionIdReader<TContext>(IDbContextFactory<TCon
                 SELECT CAST(MAX({{transaction}}) AS text) AS "Value" FROM {{from}}
                 WHERE {{bucket}} % {0} = {1}
                   AND {{transaction}} < pg_snapshot_xmin(pg_current_snapshot())
+                """,
+                $$"""
+                SELECT CAST(MAX({{transaction}}) AS text) AS "Value" FROM {{from}}
+                WHERE {{bucket}} % {0} = {1}
                 """);
         }
 

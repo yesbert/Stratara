@@ -115,6 +115,9 @@ public sealed class LostNudgeTests
 
         public Task<long> PositionAsync() => Task.FromResult(0L);
 
+
+        public Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget) => Task.FromResult(new StoreReaderProgress(false, StoreReaderState.Advancing));
+
         public Task PauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
 
         public Task RenewPauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
