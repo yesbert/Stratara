@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.6`._
+
+## [4.4.6] — 2026-10-22
+
 A host on the Orleans execution model can now wait until a projection has applied what it committed, instead of
 reading its read model and hoping the projection is through. Additive; no schema change and no migration.
 
@@ -4629,7 +4633,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.5...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.6...main
+[4.4.6]: https://github.com/yesbert/Stratara/releases/tag/v4.4.6
 [4.4.5]: https://github.com/yesbert/Stratara/releases/tag/v4.4.5
 [4.4.4]: https://github.com/yesbert/Stratara/releases/tag/v4.4.4
 [4.4.3]: https://github.com/yesbert/Stratara/releases/tag/v4.4.3
