@@ -147,7 +147,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   leaves the session untouched and authorizes nothing. An empty named tenant throws
   `ArgumentException`. Upgrade command-handling hosts before dispatching such a command.
 - **Two execution models, same handlers.** The bus workers (RabbitMQ / Azure Service Bus) are
-  supported; the Orleans execution model (`Stratara.Orleans`, Orleans 10.3) is recommended for hosts
+  supported; the Orleans execution model (`Stratara.Orleans`, Orleans 10.4) is recommended for hosts
   that can run a cluster. On it, one aggregate has one writer across the cluster
   (`AddStrataraAggregateGrains`), `ICommandOutboxDispatcher` records a command before returning and
   resumes it after a crash up to `MessageRetry:MaxDeliveryAttempts` times, then keeps it
