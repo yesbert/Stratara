@@ -48,6 +48,7 @@ internal static class RecordedIntentHost
         });
         builder.Logging.AddProvider(settings.Probes.Logs);
         builder.Logging.AddFilter(typeof(IntentLease).FullName, LogLevel.Debug);
+        builder.Logging.AddFilter(typeof(CommandRunnerGrain).FullName, LogLevel.Debug);
         builder.UseOrleans(silo => PocSilo.Configure(silo, settings.Orleans, settings.Redis, settings.SiloPort, settings.GatewayPort));
         builder.AddBackendServices();
         builder.Services

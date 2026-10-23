@@ -58,6 +58,12 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
         Assert.True(await GoneAsync(store, intent), "the command's record was not removed");
         await Task.Delay(Settle);
         Assert.Equal(1, probes.RunsOf(probe));
+        if (!namesAnAggregate)
+        {
+            // The runner holds the intent from the first hand-over on: the second is dropped either while the first still
+            // holds it or, once the first has run, by the fence — logged both ways.
+            Assert.Contains(probes.Logs.Entries, e => e.EventId == LogEvents.Orleans.IntentHandOverDropped && e.Message.Contains(intent.ToString(), StringComparison.Ordinal));
+        }
 
         TestContext.Current.TestOutputHelper?.WriteLine($"claimed at {claimedAt:O}");
         await host.StopAsync();

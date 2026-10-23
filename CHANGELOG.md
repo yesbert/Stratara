@@ -34,6 +34,14 @@ timeout warnings in the logs. No API change, no schema change and no migration.
   cancelled only once the silo stops, so the host's stop hung until its shutdown timeout and the unit was not
   cancelled within the deactivation budget. The runner now stops taking units and leaves the running ones to the
   pool's deactivation, which waits for them within the budget and then cancels them, so they are resumed elsewhere.
+- **A cancellation the silo's stop did not cause is a failed attempt.** A recorded command whose handler threw an
+  `OperationCanceledException` of its own, for example from an HTTP call that timed out, was neither recorded as a
+  failure nor logged. It now counts against the delivery bound like any other failure, with `IntentAttemptFailed`
+  and its message on the record. A handler cancelled because its silo stops still gives its attempt back.
+- **A duplicate hand-over to a command that names no aggregate is logged.** The runner now holds the command from
+  the first hand-over on. A second hand-over that arrives meanwhile is dropped with `IntentHandOverDropped` at Debug,
+  as one dropped by the fence already was. A hand-over that reaches the runner while its silo stops is given up at
+  once, with its attempt given back, as the aggregate grain already did.
 - **Documentation.** *Operate the Orleans execution model* no longer says that a long hand-over's timeout goes
   unlogged: only a forwarded command is bounded by the response timeout. *Migrate to the Orleans execution model*
   no longer says that Orleans' PostgreSQL scripts ship inside the ADO.NET provider packages. They do not, and the
@@ -41,8 +49,10 @@ timeout warnings in the logs. No API change, no schema change and no migration.
 
 ### Upgrade notes
 
-- A dispatcher of this release that hands over to a silo of an earlier one sees the earlier behaviour, warnings
-  included, until that silo is upgraded.
+- Upgrade the silos before the hosts that dispatch. A dispatcher of this release that hands over to a silo of an
+  earlier one still waits for the whole unit there. Because it no longer keeps that wait's timeout quiet, it logs a
+  failed hand-over (`117_113` `HandOverFailed`, Warning) for every long unit until the silo is upgraded, beside the
+  runtime's own warnings. The unit itself runs and completes, and the drain does not hand it over again.
 
 ## [4.4.6] — 2026-10-22
 

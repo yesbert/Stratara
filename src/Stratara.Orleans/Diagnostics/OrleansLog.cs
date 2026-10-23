@@ -117,7 +117,7 @@ internal static partial class OrleansLog
     [LoggerMessage(
         EventId = LogEvents.Orleans.IntentHandOverDropped,
         Level = LogLevel.Debug,
-        Message = "A hand-over of command {IntentId} was dropped without running its handler: another runner already took the command, or it completed or was kept.")]
+        Message = "A hand-over of command {IntentId} was dropped without running its handler: an earlier hand-over still holds the command, another runner already took it, or it completed or was kept.")]
     public static partial void LogIntentHandOverDropped(this ILogger logger, Guid intentId);
 
     [LoggerMessage(

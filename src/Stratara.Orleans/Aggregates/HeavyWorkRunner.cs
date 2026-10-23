@@ -35,7 +35,7 @@ internal sealed class HeavyWorkRunner : IHostedService
     private readonly ILogger<HeavyWorkRunner> _logger;
     private readonly TimeSpan _renewal;
     private readonly ResiliencePipeline<bool> _acquirePermit;
-    private Task[]? _workers;
+    private bool _started;
 
     public HeavyWorkRunner(
         IServiceProvider services,
@@ -118,7 +118,17 @@ internal sealed class HeavyWorkRunner : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _workers ??= [.. Enumerable.Range(0, HeavyWorkGrain.MaxLocalWorkers).Select(_ => WorkAsync())];
+        if (_started)
+        {
+            return Task.CompletedTask;
+        }
+
+        _started = true;
+        for (var worker = 0; worker < HeavyWorkGrain.MaxLocalWorkers; worker++)
+        {
+            WorkAsync().Ignore();
+        }
+
         return Task.CompletedTask;
     }
 

@@ -9,6 +9,13 @@
 - [x] 2.2 `[OneWay, AlwaysInterleave]` `HoldAsync` on `IHeavyWorkGrain`: at most one outstanding, and it waits until no unit in flight is still running (design D2)
 - [x] 2.3 Found while proving 4.3, and present before this change: `HeavyWorkRunner.StopAsync` waited for running units, but the host stops the runner before the silo whose stop cancels them, so a silo stop hung until the host's shutdown timeout. The runner now only stops taking units (design D5) (`src/Stratara.Orleans/Aggregates/HeavyWorkRunner.cs`)
 
+## 2a. Review findings (`/code-review high`; Copilot's quota was exhausted)
+
+- [x] 2a.1 An `OperationCanceledException` the silo's stop did not cause is recorded and logged as a failed attempt. Before this, it went nowhere once the hand-over no longer carried it back (`CommandExecution.RunIntentAsync`; `IntentFailureLoggingTests.A_cancellation_the_silo_did_not_cause_is_a_failed_attempt_logged_and_recorded`)
+- [x] 2a.2 The runner logs a duplicate hand-over it drops while it holds the intent (`IntentHandOverDropped`, Debug), and gives up a hand-over accepted while its silo stops, as the aggregate grain does. The assertion in `ResumedOnceInOrderTests.Two_hand_overs_of_one_claim_run_the_handler_once` is restored
+- [x] 2a.3 The heavy pool's hold heals itself: the guard is "a hold is running" rather than "a hold was sent", so a hold message that was lost is sent again with the next hand-over, and one that cannot be sent does not fail the hand-over
+- [x] 2a.4 `HeavyWorkRunner` keeps a start flag instead of worker tasks nobody awaits, `HoldAsync` scans its units once per round, and the upgrade note says to upgrade silos first, naming the `HandOverFailed` warning a new dispatcher logs against an old silo
+
 ## 3. The dispatcher logs every failed hand-over
 
 - [x] 3.1 Remove the `spansTheUnit` exception from `IntentHandOver.Observe` and rewrite its XML summary (`src/Stratara.Orleans/Aggregates/OrleansCommandDispatcher.cs`)

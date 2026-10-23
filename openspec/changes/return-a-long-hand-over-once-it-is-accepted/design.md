@@ -135,13 +135,20 @@ host's own call order, which the framework does not control.
   scheduler (D1), and covered by the existing heavy-burst tests (*A heavy burst queues commands longer than
   the grace*), which exercise `_held` and `_inFlight` under load.
 
+- **[A hand-over that arrives while an earlier one of the same intent is still starting its lease is answered as
+  accepted; if the earlier lease is then refused, nothing runs until the next grace]** → This is the aggregate grain's
+  behaviour too (`_heldIntents`), and a lease starts with a single write, far inside the grace. The drain hands the
+  command over again after the grace, and the attempt bound still applies. Accepted for consistency, and found in
+  review rather than observed.
+
 ## Migration Plan
 
 No data, schema or configuration change. Method names and aliases stay, and the runner gains one new
 one-way method.
 
-- **Dispatcher on this release, silo on the previous one:** the old grain awaits the unit as before. The
-  caller sees the old warnings, and nothing breaks.
+- **Dispatcher on this release, silo on the previous one:** the old grain awaits the unit as before. Nothing
+  breaks, but the caller sees the old runtime warnings, and also its own `HandOverFailed` warning, because D3
+  removed the suppression. Upgrade the silos first, as the changelog says.
 - **Dispatcher on the previous release, silo on this one:** the hand-over is answered sooner. The old
   `Observe` suppression has nothing left to suppress.
 - **A runner hand-over across mixed silos:** the runner's self-call goes to its own activation, so both

@@ -47,7 +47,7 @@ internal interface IHeavyWorkGrain : IGrainWithIntegerKey
 
     /// <summary>
     /// Keeps the activation busy while units run on the silo's workers, so it is not collected as idle under them. The
-    /// grain calls it on itself, one-way, and at most once at a time; it interleaves, so it never holds back a hand-over.
+    /// grain calls it on itself, one-way, and one runs at a time; it interleaves, so it never holds back a hand-over.
     /// </summary>
     [OneWay]
     [AlwaysInterleave]
@@ -112,7 +112,7 @@ internal sealed class HeavyWorkGrain(
     private readonly HashSet<Guid> _held = [];
     private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
     private readonly HashSet<Task> _inFlight = [];
-    private bool _holding;
+    private bool _holdRunning;
 
     /// <summary>
     /// Accepts the hand-over: the intent's lease starts here, before the unit is queued for a worker, so a unit
@@ -164,17 +164,23 @@ internal sealed class HeavyWorkGrain(
 
     /// <summary>
     /// Waits, on this activation, for the units in flight until none is still running. Units a hand-over adds during the
-    /// wait are waited for in the next round.
+    /// wait are waited for in the next round. A hold that starts while another runs returns at once.
     /// </summary>
     public async Task HoldAsync()
     {
+        if (_holdRunning)
+        {
+            return;
+        }
+
+        _holdRunning = true;
         try
         {
-            while (_inFlight.Any(unit => !unit.IsCompleted))
+            while (_inFlight.Where(unit => !unit.IsCompleted).ToList() is { Count: > 0 } running)
             {
                 try
                 {
-                    await Task.WhenAll(_inFlight.Where(unit => !unit.IsCompleted).ToList());
+                    await Task.WhenAll(running);
                 }
                 catch (Exception ex)
                 {
@@ -184,7 +190,7 @@ internal sealed class HeavyWorkGrain(
         }
         finally
         {
-            _holding = false;
+            _holdRunning = false;
         }
     }
 
@@ -210,21 +216,25 @@ internal sealed class HeavyWorkGrain(
         }
     }
 
-    /// <summary>Asks the grain to hold itself, unless a hold is already outstanding.</summary>
+    /// <summary>
+    /// Asks the grain to hold itself, unless a hold is already running. A hold that was sent and never ran — the message
+    /// was lost — is sent again with the next hand-over; one that cannot be sent leaves the unit running unheld.
+    /// </summary>
     private void Hold()
     {
-        if (_holding)
+        if (_holdRunning)
         {
             return;
         }
 
-        _holding = true;
-        this.AsReference<IHeavyWorkGrain>().HoldAsync().ContinueWith(
-            static (_, state) => ((HeavyWorkGrain)state!)._holding = false,
-            this,
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Current);
+        try
+        {
+            this.AsReference<IHeavyWorkGrain>().HoldAsync().Ignore();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+        }
     }
 
     /// <summary>

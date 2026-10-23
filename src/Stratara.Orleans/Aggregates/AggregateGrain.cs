@@ -349,11 +349,11 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
 /// Runs an intent that names no aggregate: once, somewhere in the cluster, keyed by the intent. The hand-over is answered
 /// once the intent's lease has started, and the handler runs through a one-way call the grain makes to itself, as an
 /// aggregate's order does. A resumed hand-over that finds the intent already held here, taken by another runner or
-/// completed is dropped without running. A run outlasting the deactivation budget has its handler's token cancelled and
-/// is resumed elsewhere.
+/// completed is dropped without running. A hand-over accepted while the silo stops is given up at once, its attempt
+/// given back. A run outlasting the deactivation budget has its handler's token cancelled and is resumed elsewhere.
 /// </summary>
 [CommandsRolePlacementFilter]
-internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory, SiloStopSignal stopSignal) : Grain, ICommandRunnerGrain
+internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory, SiloStopSignal stopSignal, ILogger<CommandRunnerGrain> logger) : Grain, ICommandRunnerGrain
 {
     private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
     private AcceptedRun? _accepted;
@@ -365,6 +365,11 @@ internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory, Silo
         ArgumentNullException.ThrowIfNull(envelope);
         if (_held)
         {
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogIntentHandOverDropped(this.GetPrimaryKey());
+            }
+
             return;
         }
 
@@ -388,6 +393,12 @@ internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory, Silo
         }
 
         _accepted = new AcceptedRun(envelope, scope, lease);
+        if (_stopping.IsCancellationRequested)
+        {
+            await AbandonAsync();
+            return;
+        }
+
         this.AsReference<ICommandRunnerGrain>().RunAcceptedAsync().ContinueWith(
             static (_, state) => ((CommandRunnerGrain)state!).AbandonAsync().Ignore(),
             this,
@@ -509,7 +520,8 @@ internal static class CommandExecution
     /// the lease after the handler, records the failure of an attempt that throws, and hands the record to the
     /// completion queue once the handler has completed. A concurrency conflict is recorded as a conflict. A handler
     /// cancelled because the silo stops is logged and gives back the attempt its hand-over counted; the lease ends, so the
-    /// drain resumes the intent elsewhere after the grace.
+    /// drain resumes the intent elsewhere after the grace. A cancellation the silo's stop did not cause — a timeout
+    /// inside the handler — is a failed attempt like any other.
     /// </summary>
     public static async Task RunIntentAsync(IServiceProvider services, AggregateCommandEnvelope envelope, Guid intentId, IntentLease lease, Func<Func<Task>, Task>? around = null, Guid? aggregateId = null, CancellationToken stopping = default)
     {
@@ -541,7 +553,7 @@ internal static class CommandExecution
                 await lease.ReturnAttemptAsync();
                 throw;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !stopping.IsCancellationRequested)
             {
                 await lease.RecordFailureAsync(ex, envelope.CommandTypeName, aggregateId);
                 throw;
