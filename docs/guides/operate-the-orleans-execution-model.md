@@ -414,8 +414,13 @@ command silo without a reader — `AddStrataraStoreWakeUps()` does it through th
 key of the commit, to a grain on a silo of the role, which wakes that silo's readers. Nothing waits for a
 wake-up, and a lost one costs at most the readers' `PollInterval`.
 
-A role no silo of the cluster hosts is set aside for `StoreWakeUpOptions.AbsentRoleRetry` (one minute by default)
-instead of being called on every commit, and the host logs `117_131` once. When a silo of the role joins, the first
+A role no silo of the cluster hosts is set aside for `StoreWakeUpOptions.AbsentRoleRetry` (ten seconds by default)
+instead of being called on every commit, and the host logs `117_131` once. A placement can also fail for a moment while
+a silo of the role joins, so the period is short. No more than 256 wake-ups of one role await their answer at once;
+a host whose wake-ups go to a silo that hangs loses the ones beyond that, at debug, rather than piling up calls. Register
+`AddStrataraStoreWakeUps()` after the composite that registers the bus dispatcher (`AddBackendServices` or
+`AddCommandServices`), as with the store-reading roles; the composite also brings the replay state the wake-ups read,
+and it opens no broker connection while nothing publishes. When a silo of the role joins, the first
 commit after the period wakes it, and the host logs `117_132`. Until then, the new silo's readers find the commits
 by their poll. A wake-up that cannot be sent for any other reason, such as a silo of an earlier release that has no
 wake-up grain, is logged at debug as `117_121`.

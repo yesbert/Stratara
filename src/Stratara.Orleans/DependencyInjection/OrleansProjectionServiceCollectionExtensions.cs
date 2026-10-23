@@ -126,7 +126,9 @@ public static class OrleansProjectionServiceCollectionExtensions
     /// its own readers. On a silo that registers a store-reading role, the roles it hosts are woken as that role's
     /// registration wakes them, and only the others through the cluster. A role no silo hosts is set aside for
     /// <see cref="StoreWakeUpOptions.AbsentRoleRetry"/>; a wake-up that is lost costs at most the readers' poll
-    /// interval. Combines with <c>AddStrataraProjectionGrains</c> and <c>AddStrataraSagaGrains</c> in either order.
+    /// interval. Combines with <c>AddStrataraProjectionGrains</c> and <c>AddStrataraSagaGrains</c> in either order. Call
+    /// it after the composite that registers the bus dispatcher — <c>AddBackendServices</c> or <c>AddCommandServices</c>
+    /// — which also registers the replay state the wake-ups read; a bus dispatcher registered after it replaces it.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional settings.</param>

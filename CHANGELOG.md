@@ -30,8 +30,9 @@ instead of needing a message broker. Additive API only; no schema change and no 
   now its commits failed against the missing broker and stayed in the outbox table. The host needs to know no
   projection or saga. A silo of each role wakes its own readers, whatever partition count it runs with. On a silo
   that hosts one store-reading role, the other role is woken through the cluster as well. A role no silo hosts is
-  set aside for `StoreWakeUpOptions.AbsentRoleRetry` (one minute) instead of being called on every commit, with
-  `117_131` when it is found absent and `117_132` when it is woken again. `hybrid: true` keeps publishing to the bus
+  set aside for `StoreWakeUpOptions.AbsentRoleRetry` (ten seconds) instead of being called on every commit, with
+  `117_131` when it is found absent and `117_132` when it is woken again. At most 256 wake-ups of a role await an
+  answer at once, so a silo that hangs cannot pile up calls on the committing host. `hybrid: true` keeps publishing to the bus
   during a rollout, and the registration combines with `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` in
   either order.
 

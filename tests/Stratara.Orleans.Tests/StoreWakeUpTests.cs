@@ -12,7 +12,6 @@ using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.Hosting;
 using Stratara.Orleans.Projections;
 using Stratara.Projections.Abstractions;
-using Stratara.Shared.Partitioning;
 
 namespace Stratara.Orleans.Tests;
 
@@ -37,8 +36,8 @@ public sealed class StoreWakeUpTests
             .AddSingleton<INudgeTarget>(other)
             .BuildServiceProvider();
 
-        await StoreWakeUpGrain<CountingTarget>.WakeLocalAsync<CountingTarget>(
-            provider, new Mock<IGrainFactory>().Object, [3, 7, 19, 35], partitionCount: 16, NullLogger.Instance);
+        await StoreWakeUpGrain<CountingTarget>.WakeLocalAsync(
+            StoreWakeUpGrain<CountingTarget>.TargetsOf(provider), new Mock<IGrainFactory>().Object, [3, 7, 19, 35], partitionCount: 16, NullLogger.Instance);
 
         Assert.Equal([3, 7], mine.Partitions.Order());
         Assert.Equal(0, other.Nudges);
@@ -51,7 +50,7 @@ public sealed class StoreWakeUpTests
         var logger = new RecordingLogger();
         await using var provider = new ServiceCollection().AddSingleton<INudgeTarget>(target).BuildServiceProvider();
 
-        await StoreWakeUpGrain<CountingTarget>.WakeLocalAsync<CountingTarget>(provider, new Mock<IGrainFactory>().Object, [3, 4], 16, logger);
+        await StoreWakeUpGrain<CountingTarget>.WakeLocalAsync(StoreWakeUpGrain<CountingTarget>.TargetsOf(provider), new Mock<IGrainFactory>().Object, [3, 4], 16, logger);
 
         Assert.Equal([3, 4], target.Partitions.Order());
         Assert.Single(logger.Entries, entry => entry.EventId.Id == LogEvents.Orleans.NudgeFailed);
@@ -62,9 +61,7 @@ public sealed class StoreWakeUpTests
     {
         var grains = new Grains { Pending = true };
         var wakeUps = WakeUps(grains, new FakeTimeProvider());
-        var streams = StreamsInTwoKeys();
-
-        wakeUps.Wake(grains.Factory, streams);
+        wakeUps.Wake(grains.Factory, BucketsInTwoKeys());
 
         Assert.Equal(2, grains.ProjectionCalls);
         Assert.Equal(2, grains.SagaCalls);
@@ -79,7 +76,7 @@ public sealed class StoreWakeUpTests
         using var provider = services.BuildServiceProvider();
         var wakeUps = new ClusterWakeUps(provider, Options.Create(new StoreWakeUpOptions()), Options.Create(new CommitOrderOptions()), new FakeTimeProvider(), new LoggerOf<ClusterWakeUps>(new RecordingLogger()));
 
-        wakeUps.Wake(grains.Factory, [Guid.NewGuid()]);
+        wakeUps.Wake(grains.Factory, [5]);
 
         Assert.Equal([ExecutionRole.Sagas], wakeUps.Roles);
         Assert.Equal(0, grains.ProjectionCalls);
@@ -93,7 +90,7 @@ public sealed class StoreWakeUpTests
         var time = new FakeTimeProvider();
         var logger = new RecordingLogger();
         var wakeUps = WakeUps(grains, time, logger);
-        Guid[] stream = [Guid.NewGuid()];
+        int[] stream = [5];
 
         wakeUps.Wake(grains.Factory, stream);
         wakeUps.Wake(grains.Factory, stream);
@@ -119,7 +116,7 @@ public sealed class StoreWakeUpTests
         var grains = new Grains { SagaFailure = new InvalidOperationException("The grain interface is unknown to this silo.") };
         var logger = new RecordingLogger();
         var wakeUps = WakeUps(grains, new FakeTimeProvider(), logger);
-        Guid[] stream = [Guid.NewGuid()];
+        int[] stream = [5];
 
         wakeUps.Wake(grains.Factory, stream);
         wakeUps.Wake(grains.Factory, stream);
@@ -187,6 +184,66 @@ public sealed class StoreWakeUpTests
         Assert.Contains("AbsentRoleRetry", failure.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_silo_that_registers_no_reader_of_the_role_refuses_the_wake_up()
+    {
+        await using var provider = new ServiceCollection().AddSingleton<INudgeTarget>(new OtherTarget()).BuildServiceProvider();
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => StoreWakeUpGrain<CountingTarget>.WakeLocalAsync(
+            StoreWakeUpGrain<CountingTarget>.TargetsOf(provider), new Mock<IGrainFactory>().Object, [3], 16, NullLogger.Instance));
+
+        Assert.Contains(nameof(CountingTarget), refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void No_more_wake_ups_of_a_role_await_their_answer_than_the_bound()
+    {
+        var grains = new Grains { Pending = true };
+        var logger = new RecordingLogger();
+        var wakeUps = WakeUps(grains, new FakeTimeProvider(), logger);
+
+        for (var commit = 0; commit < ClusterWakeUps.MaxOutstandingPerRole + 10; commit++)
+        {
+            wakeUps.Wake(grains.Factory, [5]);
+        }
+
+        Assert.Equal(ClusterWakeUps.MaxOutstandingPerRole, grains.ProjectionCalls);
+        Assert.Equal(ClusterWakeUps.MaxOutstandingPerRole, grains.SagaCalls);
+        Assert.Equal(20, logger.Entries.Count(entry => entry.EventId.Id == LogEvents.Orleans.NudgeFailed));
+    }
+
+    [Fact]
+    public void An_answer_to_a_wake_up_sent_before_the_role_was_set_aside_neither_ends_the_set_aside_nor_logs_it_again()
+    {
+        var grains = new Grains();
+        var time = new FakeTimeProvider();
+        var logger = new RecordingLogger();
+        var wakeUps = WakeUps(grains, time, logger);
+        var late = new TaskCompletionSource();
+        grains.SagaAnswers.Enqueue(late.Task);
+        grains.SagaAnswers.Enqueue(Task.FromException(new InvalidOperationException(NoSagaSilo)));
+
+        wakeUps.Wake(grains.Factory, BucketsInTwoKeys());
+        late.SetResult();
+        wakeUps.Wake(grains.Factory, [5]);
+
+        Assert.Equal(2, grains.SagaCalls);
+        Assert.Single(logger.Entries, entry => entry.EventId.Id == LogEvents.Orleans.StoreWakeUpRoleAbsent);
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId.Id == LogEvents.Orleans.StoreWakeUpRoleBack);
+    }
+
+    [Fact]
+    public void A_wake_up_that_throws_a_cancellation_at_once_does_not_fail_the_commit()
+    {
+        var grains = new Grains { SagaThrowsAtOnce = new OperationCanceledException("the client is stopping") };
+        var wakeUps = WakeUps(grains, new FakeTimeProvider());
+
+        var thrown = Record.Exception(() => wakeUps.Wake(grains.Factory, [5]));
+
+        Assert.Null(thrown);
+        Assert.Equal(1, grains.ProjectionCalls);
+    }
+
     private static ClusterWakeUps WakeUps(Grains grains, FakeTimeProvider time, RecordingLogger? logger = null)
     {
         _ = grains;
@@ -199,20 +256,8 @@ public sealed class StoreWakeUpTests
             new LoggerOf<ClusterWakeUps>(logger ?? new RecordingLogger()));
     }
 
-    /// <summary>Two streams whose buckets fall on two different keys under the default partition count.</summary>
-    private static Guid[] StreamsInTwoKeys()
-    {
-        var first = Guid.NewGuid();
-        var key = PartitionMap.PartitionOf(BucketCalculator.GetBucketId(first), new CommitOrderOptions().PartitionCount);
-        Guid second;
-        do
-        {
-            second = Guid.NewGuid();
-        }
-        while (PartitionMap.PartitionOf(BucketCalculator.GetBucketId(second), new CommitOrderOptions().PartitionCount) == key);
-
-        return [first, second];
-    }
+    /// <summary>Two buckets that fall on two different keys under the default partition count.</summary>
+    private static int[] BucketsInTwoKeys() => [3, 4];
 
     private static IServiceCollection Base(Grains grains) => new ServiceCollection()
         .AddLogging()
@@ -248,6 +293,11 @@ public sealed class StoreWakeUpTests
 
         public Exception? SagaFailure { get; set; }
 
+        /// <summary>Answers handed out in order before <see cref="SagaFailure"/> and <see cref="Pending"/> apply.</summary>
+        public System.Collections.Concurrent.ConcurrentQueue<Task> SagaAnswers { get; } = new();
+
+        public Exception? SagaThrowsAtOnce { get; init; }
+
         public int ProjectionCalls => _projection.Calls;
 
         public int SagaCalls => _saga.Calls;
@@ -276,8 +326,13 @@ public sealed class StoreWakeUpTests
 
             public Task WakeAsync(int[] buckets)
             {
+                if (grains.SagaThrowsAtOnce is { } thrown)
+                {
+                    throw thrown;
+                }
+
                 Interlocked.Increment(ref _calls);
-                return grains.Answer(grains.SagaFailure);
+                return grains.SagaAnswers.TryDequeue(out var answer) ? answer : grains.Answer(grains.SagaFailure);
             }
         }
     }

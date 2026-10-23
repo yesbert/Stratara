@@ -95,7 +95,7 @@ always the exception type. The message is built by one helper that both the plac
 
 
 A placement failure that names the role sets that role's cluster wake-up aside for
-`StoreWakeUpOptions.AbsentRoleRetry` (default: one minute). The first commit after that tries again. The
+`StoreWakeUpOptions.AbsentRoleRetry` (default: ten seconds, lowered from one minute in review, because a placement also fails for a moment while a silo of the role joins). The first commit after that tries again. The
 transition to absent and back is logged once each at Information (new ids in `LogEvents.Orleans`), so an
 operator can see wake-ups going nowhere. Any other failure is a lost nudge, logged at debug with the
 existing `LogNudgeFailed`. The commit never awaits a wake-up's answer: the call is observed through a
@@ -119,6 +119,21 @@ options, and the time to notice a newly joined role is a separate decision from 
 - publishes no role.
 
 It sits in `OrleansProjectionServiceCollectionExtensions` beside the two it mirrors.
+
+### D6: Found in review — generations, a bound on outstanding calls, and a refusal where no reader is registered
+
+*As built after `/code-review high` on the pull request.* Each set-aside starts a new generation, and an answer to a
+wake-up sent in an earlier generation changes nothing. Without that, a call in flight when the role was set aside
+could log the role back while its wake-ups were still skipped. No more than 256 wake-ups of one role await an answer
+at once, so a silo that hangs costs the committing host a bounded number of callbacks. A wake-up grain placed on a
+silo that registers no reader of its role, which happens where the placement could not filter, refuses with an
+exception, so the host logs a lost wake-up instead of taking it as delivered. The targets are resolved once per
+activation. The dispatcher and the grain share one nudge loop (`LocalNudges`), and the buckets are computed once per
+commit.
+
+*Kept as built: detection from the message.* A dedicated exception type was suggested. The message comes from one
+helper that both the placement and the check use, and `ClientWakeUpTests.A_role_no_silo_hosts_is_set_aside…` proves
+that it survives the trip to a client on Orleans 10.3.
 
 ## Risks / Trade-offs
 

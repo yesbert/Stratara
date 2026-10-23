@@ -1,11 +1,9 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Stratara.Abstractions.Outbox;
 using Stratara.Abstractions.Projections;
 using Stratara.Contracts.Messages;
 using Stratara.Orleans.CommitOrder;
-using Stratara.Orleans.Diagnostics;
 using Stratara.Shared.Partitioning;
 
 namespace Stratara.Orleans.Projections;
@@ -45,47 +43,15 @@ internal sealed class OrleansEventBundleDispatcher(
 
         if (!replayState.IsReplayActive)
         {
-            var partitions = eventBundle.Events
-                .Select(e => PartitionMap.PartitionOf(BucketCalculator.GetBucketId(e.StreamId), _partitionCount))
-                .Distinct()
-                .ToList();
-            foreach (var target in targets)
-            {
-                foreach (var partition in partitions)
-                {
-                    await NudgeAsync(target, partition);
-                }
-            }
-
-            clusterWakeUps?.Wake(grainFactory, eventBundle.Events.Select(e => e.StreamId));
+            var buckets = eventBundle.Events.Select(e => BucketCalculator.GetBucketId(e.StreamId)).Distinct().ToList();
+            var partitions = buckets.Select(bucket => PartitionMap.PartitionOf(bucket, _partitionCount)).Distinct().ToList();
+            await LocalNudges.NudgeAsync(targets, grainFactory, partitions, logger);
+            clusterWakeUps?.Wake(grainFactory, buckets);
         }
 
         if (inner is not null)
         {
             await inner.EnqueueEventBundleAsync(eventBundle, cancellationToken);
-        }
-    }
-
-    /// <summary>
-    /// A nudge that cannot be sent — before the silo has started, while it stops — is a lost nudge like any other: the
-    /// facts are committed and the poll reads them, so it must not fail the commit that already happened. It is
-    /// logged at debug with the consumers it was meant for, so that a wake-up path that is always lost can be told
-    /// from one that was lost once. What is seen here is a wake-up that could not be sent; one that was sent and
-    /// never arrived is lost silently, by design, because nobody waits for it.
-    /// </summary>
-    private async Task NudgeAsync(INudgeTarget target, int partition)
-    {
-        try
-        {
-            await target.NudgeAsync(grainFactory, partition);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            var log = logger ?? (ILogger)NullLogger.Instance;
-            if (log.IsEnabled(LogLevel.Debug))
-            {
-                log.LogNudgeFailed(exception, string.Join(", ", target.ConsumerNames), partition);
-            }
         }
     }
 
