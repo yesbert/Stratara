@@ -125,9 +125,32 @@ internal static class RolePlacement
         }
 
         throw new InvalidOperationException(
-            $"No silo of the cluster registered the {role.ToString().ToLowerInvariant()} role of the Orleans execution model, so its grain cannot be placed. " +
+            $"{NoSiloFor(role)}, so its grain cannot be placed. " +
             $"Register the role on at least one silo with {RegistrationOf(role)}; a silo that registers a role registers every handler, projection, process or timer port of that role.");
     }
+
+    /// <summary>
+    /// Whether <paramref name="failure"/>, or an exception inside it, is the placement failure of <see cref="Select"/> for
+    /// <paramref name="role"/>. Read from the message, because the failure reaches a client through the runtime, which
+    /// keeps the message but not always the exception it was thrown as.
+    /// </summary>
+    public static bool NamesNoSiloFor(Exception failure, ExecutionRole role)
+    {
+        var expected = NoSiloFor(role);
+        for (Exception? current = failure; current is not null; current = current.InnerException)
+        {
+            if (current.Message.Contains(expected, StringComparison.Ordinal)
+                || (current is AggregateException aggregate && aggregate.InnerExceptions.Any(inner => NamesNoSiloFor(inner, role))))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NoSiloFor(ExecutionRole role) =>
+        $"No silo of the cluster registered the {role.ToString().ToLowerInvariant()} role of the Orleans execution model";
 
     /// <summary>The roles a composition registers, collected across registrations.</summary>
     internal sealed class PublishedRoles

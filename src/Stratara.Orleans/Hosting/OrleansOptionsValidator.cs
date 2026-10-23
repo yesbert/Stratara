@@ -27,7 +27,8 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
     IValidateOptions<SagaGrainOptions>,
     IValidateOptions<CommitOrderOptions>,
     IValidateOptions<SingletonWorkOptions>,
-    IValidateOptions<OutboxDrainOptions>
+    IValidateOptions<OutboxDrainOptions>,
+    IValidateOptions<StoreWakeUpOptions>
 {
     private TimeSpan MinimumReminderPeriod => reminders.Value.MinimumReminderPeriod;
 
@@ -78,6 +79,9 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
     public ValidateOptionsResult Validate(string? name, OutboxDrainOptions options) => Result<OutboxDrainOptions>(
         Positive(options.PollingInterval, nameof(options.PollingInterval)),
         Positive(options.BatchSize, nameof(options.BatchSize)));
+
+    public ValidateOptionsResult Validate(string? name, StoreWakeUpOptions options) => Result<StoreWakeUpOptions>(
+        Positive(options.AbsentRoleRetry, nameof(options.AbsentRoleRetry)));
 
     /// <summary>Validates the settings <paramref name="workType"/> runs with — the host's for every work with its own on top.</summary>
     public ValidateOptionsResult ValidateWork(Type workType, SingletonWorkOptions settings) => Result<SingletonWorkOptions>(

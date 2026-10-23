@@ -298,7 +298,7 @@ timer owner check and handler with `AddStrataraDurableTimers`.
 | Role today | Add after the composite | What changes |
 |---|---|---|
 | API or backend host (`AddBackendServices`) | `AddStrataraOrleansCommandDispatcher()` and `AddStrataraIntentStore<AppWriteDbContext>()` | `ICommandOutboxDispatcher` records the command in the outbox table and hands it to its activation instead of publishing it. The record is committed on its own before the call returns, not with anything the caller writes: a caller whose own writes and the command must stand or fall together saves its own writes first and dispatches after. Composes with `AddAuthorizingCommandOutboxDispatcher()` in either order. A resumed command is authorized on a silo from the session recorded with it, where no web request exists: the `IAuthorizationProvider` behind `AddAuthorizingMediator` must answer from the session context — `MembershipAuthorizationProvider` does — or every resumed command is refused and, after its attempts, kept |
-| Command worker (`AddCommandWorkerServices`) | `builder.AddCommandServices()` instead, then `AddStrataraOrleansCommandDispatcher()`, `AddStrataraIntentStore<AppWriteDbContext>()` and `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register the aggregate grains after every other pipeline behaviour. The silo's own sends — from a handler or a saga — are recorded and handed over instead of published. The bus-fed mediator worker is not registered, so the silo consumes no command queue; keep `AddCommandWorkerServices` only while API hosts that still publish to the command topic remain. A silo that also registers a store-reading role needs no broker — see [when the broker can go](#when-the-broker-can-go); one without keeps publishing its bundles to the bus. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
+| Command worker (`AddCommandWorkerServices`) | `builder.AddCommandServices()` instead, then `AddStrataraOrleansCommandDispatcher()`, `AddStrataraIntentStore<AppWriteDbContext>()` and `AddStrataraAggregateGrains()` | A command that names an aggregate runs in that aggregate's grain, and heavy commands run in pools on these silos. Register the aggregate grains after every other pipeline behaviour. The silo's own sends — from a handler or a saga — are recorded and handed over instead of published. The bus-fed mediator worker is not registered, so the silo consumes no command queue; keep `AddCommandWorkerServices` only while API hosts that still publish to the command topic remain. A silo that also registers a store-reading role, or `AddStrataraStoreWakeUps()`, needs no broker — see [when the broker can go](#when-the-broker-can-go); one with neither keeps publishing its bundles to the bus. Sends between aggregates must not form a cycle: a send back into an aggregate whose turn is waiting on the sender is refused at once, naming both |
 | Outbox worker (`AddOutboxWorkerServices`) | `AddStrataraSingletonWork<OutboxDrainWork>(OutboxDrainWork.WorkName)` and `AddStrataraIntentStore<AppWriteDbContext>()` on the silos, and retire the worker host | The drain runs once per cluster and resumes the commands a crash left behind, whichever host recorded them; it resumes only where an intent store is registered and logs `LogEvents.Orleans.RecordedCommandsWithoutIntentStore` where one is missing. The drain silo reads `OrleansDispatchOptions.IntentGrace`, `MessageRetryOptions.MaxDeliveryAttempts` and `MessageRetryOptions.MaxConflictRequeues` from its own configuration: give it the values the API host has, and the bus-envelope signer and integrity mode where the hosts sign. A backlog is resumed in passes that follow each other while they are full, not one batch per `PollingInterval`. Registered with its name, the drain is not constructed until the silo is active. The Redis outbox lock is no longer needed |
 | Projection worker (`AddEventProjectionWorkerServices`) | `builder.AddEventProjectionServices()` instead, then `AddStrataraProjectionCheckpoints<AppReadDbContext>()` and `AddStrataraProjectionGrains()` | One grain per projection and partition reads the store from a checkpoint; the bus-fed worker is not registered |
 | Saga worker (`AddSagaWorkerServices`) | `builder.AddSagaServices()` instead, then `AddStrataraSagaGrains()` | One grain per saga and partition hands each fact to that saga, reading with a checkpoint of its own; stateful processes derive from `SagaProcess<TState>`. Processes own durable timers, so the silo runs a reminder service |
@@ -348,18 +348,46 @@ To test the roles on the execution model before a cluster exists, run them in th
 A host stops needing the message broker when the execution model has replaced both of the bus dispatchers it
 uses: the command dispatcher, by `AddStrataraOrleansCommandDispatcher` with an intent store, and the bundle
 dispatcher, by a store-reading role — `AddStrataraProjectionGrains` or `AddStrataraSagaGrains` without
-`hybrid` — on the same host. Then nothing on the host publishes to or consumes from the bus, and the bus the
-composites register is never connected; the connection string and the `Messaging` section may go.
+`hybrid` — or by `AddStrataraStoreWakeUps()`, on the same host. Then nothing on the host publishes to or consumes
+from the bus, and the bus the composites register is never connected; the connection string and the `Messaging`
+section may go.
+
+The bundle dispatcher matters wherever facts are committed, and that is not only on a silo. A host that runs a
+command handler in process through `IMediator` — an API host that answers a request with a write, or a worker
+that is an Orleans client — commits facts itself: on a client host the mediator runs the handler there and does
+not forward to a grain. Unless its bundle dispatcher is replaced, each such commit is published to the bus, and
+without a broker it fails and is stored in the outbox table for a drain that cannot deliver it.
+
+`AddStrataraStoreWakeUps()` replaces it for a host that hosts no reader. After a commit, it wakes the readers of
+every projection and saga role in the cluster for the partitions the commit touched, through the host's grain
+factory, and stores nothing. The host needs to know no projection or saga: a silo of each role folds the commit
+into its own partitions and wakes its own readers. On a silo that hosts one store-reading role, it wakes the other
+role through the cluster as well.
+
+```csharp
+builder.UseOrleansClient(client => client.UseAdoNetClustering(options =>
+{
+    options.Invariant = "Npgsql";
+    options.ConnectionString = builder.Configuration.GetConnectionString("orleans");
+}));
+builder.AddBackendServices();
+builder.Services
+    .AddStrataraOrleansCommandDispatcher()
+    .AddStrataraIntentStore<AppWriteDbContext>()
+    .AddStrataraStoreWakeUps();
+```
 
 | Host | Composed as | Broker |
 |---|---|---|
-| API host | `AddBackendServices`, `AddStrataraOrleansCommandDispatcher`, `AddStrataraIntentStore` | not needed — it records commands and commits nothing itself |
+| API host that only dispatches | `AddBackendServices`, `AddStrataraOrleansCommandDispatcher`, `AddStrataraIntentStore` | not needed — it records commands and commits nothing itself |
+| API host or client worker that runs handlers in process | the same, and `AddStrataraStoreWakeUps()` | not needed with the wake-ups; **needed** without them, because its commits are published as bundles to the bus |
 | Command silo with a store-reading role | `AddCommandServices`, the dispatcher and intent store, `AddStrataraAggregateGrains`, and `AddEventProjectionServices` with `AddStrataraProjectionGrains` or `AddSagaServices` with `AddStrataraSagaGrains` | not needed |
-| Command silo without a store-reading role | `AddCommandServices`, the dispatcher and intent store, `AddStrataraAggregateGrains` | **needed** — the facts its handlers commit are published as bundles to the bus, because it has no reader to wake |
+| Command silo without a store-reading role | `AddCommandServices`, the dispatcher and intent store, `AddStrataraAggregateGrains`, and `AddStrataraStoreWakeUps()` | not needed with the wake-ups; **needed** without them, because the facts its handlers commit are published as bundles to the bus |
 | Any host on a `*WorkerServices` composite | the bus-fed worker is registered | needed |
 
-A command silo without a store-reading role keeps the broker until it registers one; the readers on other
-silos read the store either way, so the bundles it publishes serve only the bus consumers that remain.
+A host that keeps the broker because it registers neither keeps publishing bundles that serve only the bus
+consumers that remain; the readers on the silos read the store either way. During a rollout in which bus
+consumers still read bundles, `AddStrataraStoreWakeUps(hybrid: true)` wakes the readers and keeps publishing.
 
 ## After the cut-over: the bus queues
 

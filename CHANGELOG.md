@@ -17,7 +17,30 @@ applies to the entire NuGet family.
 ## [Unreleased]
 
 On the Orleans execution model, a long heavy command, or a long command that names no aggregate, no longer leaves
-timeout warnings in the logs. No API change, no schema change and no migration.
+timeout warnings in the logs, and a host that commits facts without hosting a reader can wake the store readers
+instead of needing a message broker. Additive API only; no schema change and no migration.
+
+### Added
+
+- **`AddStrataraStoreWakeUps()`** (`Stratara.Orleans`). A host that commits facts on the Orleans execution model
+  without hosting a reader can now wake the store readers instead of publishing bundles to the bus. Such a host is an
+  Orleans client that runs command handlers in process, or a command silo without a store-reading role. After a
+  commit, it wakes the readers of every projection and saga role in the cluster for the partitions the commit
+  touched, through the host's grain factory, and stores nothing. With it, such a host needs no message broker. Until
+  now its commits failed against the missing broker and stayed in the outbox table. The host needs to know no
+  projection or saga. A silo of each role wakes its own readers, whatever partition count it runs with. On a silo
+  that hosts one store-reading role, the other role is woken through the cluster as well. A role no silo hosts is
+  set aside for `StoreWakeUpOptions.AbsentRoleRetry` (ten seconds) instead of being called on every commit, with
+  `117_131` when it is found absent and `117_132` when it is woken again. At most 256 wake-ups of a role await an
+  answer at once, so a silo that hangs cannot pile up calls on the committing host. `hybrid: true` keeps publishing to the bus
+  during a rollout, and the registration combines with `AddStrataraProjectionGrains` and `AddStrataraSagaGrains` in
+  either order.
+
+### Changed
+
+- *Migrate to the Orleans execution model* no longer says an API host commits nothing. Its broker table now
+  separates a host that only dispatches from one that runs handlers in process, and names the registration that
+  removes the broker from each.
 
 ### Fixed
 
@@ -53,6 +76,8 @@ timeout warnings in the logs. No API change, no schema change and no migration.
   earlier one still waits for the whole unit there. Because it no longer keeps that wait's timeout quiet, it logs a
   failed hand-over (`117_113` `HandOverFailed`, Warning) for every long unit until the silo is upgraded, beside the
   runtime's own warnings. The unit itself runs and completes, and the drain does not hand it over again.
+- Upgrade the silos before registering the wake-ups on other hosts. A silo of an earlier release has no wake-up
+  grain, so a wake-up placed there is lost, logged at debug, and its readers find the commit by their poll.
 
 ## [4.4.6] — 2026-10-22
 

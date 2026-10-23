@@ -406,6 +406,25 @@ again" on anything but `Reached`; a background job may wait longer.
 During a rolling upgrade from 4.4.5 or earlier, a silo of the older version does not answer the wait, and a wait
 whose partition lives there fails with the grain call's error. Adopt the wait once every silo runs 4.4.6.
 
+## Wake-ups after a commit
+
+A commit wakes the readers of the partitions it touched. On a silo with a store-reading role the role's own
+registration does it. On any other host that commits — an Orleans client that runs handlers in process, or a
+command silo without a reader — `AddStrataraStoreWakeUps()` does it through the cluster: one call per role and
+key of the commit, to a grain on a silo of the role, which wakes that silo's readers. Nothing waits for a
+wake-up, and a lost one costs at most the readers' `PollInterval`.
+
+A role no silo of the cluster hosts is set aside for `StoreWakeUpOptions.AbsentRoleRetry` (ten seconds by default)
+instead of being called on every commit, and the host logs `117_131` once. A placement can also fail for a moment while
+a silo of the role joins, so the period is short. No more than 256 wake-ups of one role await their answer at once;
+a host whose wake-ups go to a silo that hangs loses the ones beyond that, at debug, rather than piling up calls. Register
+`AddStrataraStoreWakeUps()` after the composite that registers the bus dispatcher (`AddBackendServices` or
+`AddCommandServices`), as with the store-reading roles; the composite also brings the replay state the wake-ups read,
+and it opens no broker connection while nothing publishes. When a silo of the role joins, the first
+commit after the period wakes it, and the host logs `117_132`. Until then, the new silo's readers find the commits
+by their poll. A wake-up that cannot be sent for any other reason, such as a silo of an earlier release that has no
+wake-up grain, is logged at debug as `117_121`.
+
 ## What to watch
 
 Every instrument is published under the meter `Stratara` with the names in

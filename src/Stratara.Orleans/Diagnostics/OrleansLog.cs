@@ -181,6 +181,18 @@ internal static partial class OrleansLog
     public static partial void LogNudgeFailed(this ILogger logger, Exception exception, string consumers, int partition);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.StoreWakeUpRoleAbsent,
+        Level = LogLevel.Information,
+        Message = "No silo of the cluster hosts the {Role} role, so the wake-ups of its readers after this host's commits are set aside for {Period}; readers of the role, if any join, poll.")]
+    public static partial void LogStoreWakeUpRoleAbsent(this ILogger logger, string role, TimeSpan period);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.StoreWakeUpRoleBack,
+        Level = LogLevel.Information,
+        Message = "The {Role} role is hosted again; its readers are woken after this host's commits.")]
+    public static partial void LogStoreWakeUpRoleBack(this ILogger logger, string role);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.SingletonWorkFailed,
         Level = LogLevel.Error,
         Message = "A run of singleton work {WorkName} failed; it runs again at its next period.")]
