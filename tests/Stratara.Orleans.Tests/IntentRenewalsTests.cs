@@ -12,7 +12,8 @@ namespace Stratara.Orleans.Tests;
 /// <summary>
 /// Scenario <em>Renewals while a burst waits</em>: a silo renews every command it holds in batches, so the store calls
 /// per renewal period do not grow with the number held up to the batch size; a batch that fails is logged once and the
-/// others are still renewed; a lease registers its command when it starts and releases it when it ends.
+/// others are still renewed; a lease registers its command when it starts and releases it when it ends; a command held
+/// twice stays renewed until both release it; and the loop starts with the first hold, not with the host.
 /// </summary>
 public sealed class IntentRenewalsTests
 {
@@ -67,6 +68,43 @@ public sealed class IntentRenewalsTests
         await renewals.RenewAllAsync(CancellationToken.None);
 
         store.Verify(s => s.RenewManyAsync(It.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == kept), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task A_command_held_twice_stays_renewed_until_both_holds_are_released()
+    {
+        var (renewals, store, _) = Build();
+        var intent = Guid.NewGuid();
+        renewals.Hold(intent);
+        renewals.Hold(intent);
+        renewals.Release(intent);
+
+        await renewals.RenewAllAsync(CancellationToken.None);
+        renewals.Release(intent);
+
+        store.Verify(s => s.RenewManyAsync(It.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == intent), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(0, renewals.Count);
+    }
+
+    [Fact]
+    public async Task The_loop_starts_with_the_first_hold_and_renews_on_its_own_period()
+    {
+        var store = new Mock<ICommandIntentStore>();
+        var renewed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.Setup(s => s.RenewManyAsync(It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Returns(() => { renewed.TrySetResult(); return Task.CompletedTask; });
+        var time = new FakeTimeProvider();
+        var services = new ServiceCollection().AddScoped(_ => store.Object).BuildServiceProvider();
+        await using var renewals = new IntentRenewals(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new OrleansDispatchOptions { IntentGrace = TimeSpan.FromSeconds(30) }),
+            time,
+            new TypedLogger<IntentRenewals>(new RecordingLogger()));
+
+        renewals.Hold(Guid.NewGuid());
+        time.Advance(TimeSpan.FromSeconds(10));
+
+        await renewed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
     [Fact]

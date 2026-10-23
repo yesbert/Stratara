@@ -86,16 +86,14 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             : candidate.Where(e => e.LastHandedOverAt == null);
 
         var claimed = await candidate.ExecuteUpdateAsync(
-            set => set
-                .SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now)
-                .SetProperty(e => e.AttemptCount, e => e.AttemptCount + 1),
+            set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now),
             CancellationToken.None);
         return claimed == 1;
     }
 
     /// <summary>
-    /// Two statements whatever the batch: one guarded update over the due ids that stamps the hand-over and counts the
-    /// attempt where the row is not kept and its last hand-over is still no later than the latest one read — a claimer
+    /// Two statements whatever the batch: one guarded update over the due ids that stamps the hand-over where the row is
+    /// not kept and its last hand-over is still no later than the latest one read — a claimer
     /// that stamped a row since stamped a later time, so the row drops out — and one read of the rows that now carry
     /// this call's stamp.
     /// </summary>
@@ -123,9 +121,7 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             ? candidates.Where(e => e.LastHandedOverAt == null || e.LastHandedOverAt <= bound)
             : candidates.Where(e => e.LastHandedOverAt == null);
         await candidates.ExecuteUpdateAsync(
-            set => set
-                .SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)stamp)
-                .SetProperty(e => e.AttemptCount, e => e.AttemptCount + 1),
+            set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)stamp),
             CancellationToken.None);
 
         return await context.Set<OutboxEntry>().AsNoTracking()
@@ -159,7 +155,9 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
 
     /// <summary>
     /// One guarded update: it touches the row only where the last hand-over is still the claim's, so of two hand-overs
-    /// of one claim exactly one moves it, and a row that is gone touches nothing.
+    /// of one claim exactly one moves it, and a row that is gone touches nothing. The one that moves it counts the
+    /// attempt: a resumed command's attempt is the hand-over a silo took over, not the claim, so a hand-over the silo
+    /// refused or dropped as a duplicate costs nothing.
     /// </summary>
     public async Task<bool> TryRenewFromAsync(Guid intentId, DateTimeOffset claimedAt, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -168,7 +166,11 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var renewed = await context.Set<OutboxEntry>()
             .Where(e => e.Id == intentId && e.KeptAt == null && e.LastHandedOverAt == claimedAt)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)renewal), CancellationToken.None);
+            .ExecuteUpdateAsync(
+                set => set
+                    .SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)renewal)
+                    .SetProperty(e => e.AttemptCount, e => e.AttemptCount + 1),
+                CancellationToken.None);
         return renewed == 1;
     }
 

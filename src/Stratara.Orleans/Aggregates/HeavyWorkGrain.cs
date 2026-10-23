@@ -135,11 +135,6 @@ internal sealed class HeavyWorkGrain(
         ArgumentNullException.ThrowIfNull(envelope);
         if (_held.Contains(intentId))
         {
-            if (envelope.ClaimedAt is not null)
-            {
-                await IntentLease.GiveBackAsync(scopeFactory, intentId);
-            }
-
             return;
         }
 
@@ -151,7 +146,11 @@ internal sealed class HeavyWorkGrain(
                 logger.LogHeavyPoolFull(intentId, this.GetPrimaryKeyLong(), limit);
             }
 
-            await IntentLease.GiveBackAsync(scopeFactory, intentId);
+            if (envelope.ClaimedAt is null)
+            {
+                await IntentLease.GiveBackAsync(scopeFactory, intentId);
+            }
+
             return;
         }
 

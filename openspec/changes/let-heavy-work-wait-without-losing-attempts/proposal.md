@@ -32,12 +32,15 @@ that is worked off, and only a handler that runs and fails counts against the de
   period for up to a batch of commands, instead of one per command. `ICommandIntentStore` gains `RenewManyAsync`
   with a default that renews one at a time. The framework's EF Core store overrides it with one statement per batch.
 - **The heavy pool accepts a bounded number of waiting commands.** `HeavyWorkOptions.QueuedLimitPerPool` (default
-  256) bounds how many accepted commands one pool holds, running or waiting. A hand-over beyond it is refused: the
-  attempt it counted is given back, nothing runs, and the record stays in the store, where the drain hands it over
-  again after the grace.
-- **A hand-over that only finds its command already held gives its attempt back.** When the drain hands over a
-  command that a pool, a runner or an aggregate's order still holds, because the record lapsed, the duplicate is
-  dropped as before and now also returns the attempt its claim counted.
+  256) bounds how many accepted commands one pool holds, running or waiting. A hand-over beyond it is refused:
+  nothing runs, and the record stays in the store, where the drain hands it over again after the grace.
+- **An attempt is counted when a silo takes a command over, not when it is claimed.** A resumed command's attempt
+  moves from the drain's claim to the fencing renewal with which a silo takes the hand-over over
+  (`TryRenewFromAsync`). A hand-over the pool refuses, or one that finds its command still held because its record
+  lapsed, counts nothing. A first hand-over keeps counting at the record, as before, and if the pool refuses it,
+  that attempt is given back. *Revised after review:* the first plan gave back a claim's attempt on every refused or
+  duplicate hand-over, which miscounted two claims stamped in one millisecond and made every refusal cost a second
+  statement (`design.md`, D3).
 - **A stop gives back the attempts of what it ends.** This already holds after
   `return-a-long-hand-over-once-it-is-accepted`. A burst test pins it here.
 - **Documentation:** the operations guide says how a burst of heavy work behaves, what bounds it, and how to size

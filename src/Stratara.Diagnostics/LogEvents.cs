@@ -429,5 +429,7 @@ public static class LogEvents
         public const int HeavyPoolFull = 117_133;
         /// <summary>Renewing a batch of held commands failed; the next renewal tries again (warning).</summary>
         public const int IntentBatchRenewalFailed = 117_134;
+        /// <summary>Giving back the attempt of a hand-over that ran nothing failed, so the attempt stays counted (warning).</summary>
+        public const int AttemptGiveBackFailed = 117_135;
     }
 }

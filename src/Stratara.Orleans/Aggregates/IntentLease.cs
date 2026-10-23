@@ -91,19 +91,20 @@ internal sealed class IntentLease : IAsyncDisposable
     }
 
     /// <summary>
-    /// Gives back the attempt a hand-over's claim counted although nothing of it ran — the pool refused it for want of
-    /// room, or the command was already held from an earlier hand-over. A failure to give it back leaves it counted.
+    /// Gives back the attempt the record of a command counted for its first hand-over, when that hand-over ran nothing
+    /// because the heavy pool refused it for want of room. A resumed hand-over counts its attempt only when a silo takes
+    /// it over, so it has nothing to give back. A failure to give it back is logged and leaves the attempt counted.
     /// </summary>
     public static async Task GiveBackAsync(IServiceScopeFactory scopes, Guid intentId)
     {
+        await using var scope = scopes.CreateAsyncScope();
         try
         {
-            await using var scope = scopes.CreateAsyncScope();
             await scope.ServiceProvider.GetRequiredService<ICommandIntentStore>().ReturnAttemptAsync(intentId, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _ = ex;
+            scope.ServiceProvider.GetRequiredService<ILogger<IntentLease>>().LogAttemptGiveBackFailed(ex, intentId);
         }
     }
 

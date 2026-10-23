@@ -9,8 +9,9 @@
 ## 2. The bounded heavy pool and the give-backs
 
 - [x] 2.1 `HeavyWorkOptions.QueuedLimitPerPool` (default 256), validated positive (`HeavyWorkGrain.cs`, `OrleansOptionsValidator.cs`)
-- [x] 2.2 `HeavyWorkGrain.ExecuteIntentAsync` refuses beyond the bound: it gives back the attempt, logs `HeavyPoolFull` (Debug) and answers without accepting
-- [x] 2.3 `IntentLease.GiveBackAsync(scopes, intentId)`. `HeavyWorkGrain`, `AggregateGrain` and `CommandRunnerGrain` give back a stamped duplicate's attempt
+- [x] 2.2 `HeavyWorkGrain.ExecuteIntentAsync` refuses beyond the bound, logs `HeavyPoolFull` (Debug) and answers without accepting; a refused first hand-over gives back its record's attempt (`IntentLease.GiveBackAsync`, logged as `117_135` when it fails)
+- [x] 2.3 Revised after review (design D3): the claim no longer counts, and the EF store's `TryRenewFromAsync` counts the resumed attempt where it moves the stamp. The duplicate give-backs are removed. `ICommandIntentStore` documents the new meaning. `IntentClaimTests` and the counting helper of `ResumedOnceInOrderTests` follow it (`TakeOverAsync`)
+- [x] 2.5 Review findings on the loop (design D5): it starts with the first hold and stops with the container, holds are counted, a timeout inside a batch is logged, and `QueuedLimitPerPool` is validated against what a pool runs at once (`IntentRenewalsTests`, `OrleansOptionsValidatorTests`)
 - [x] 2.4 Log events `HeavyPoolFull` (`117_133`) and `IntentBatchRenewalFailed` (`117_134`) (`LogEvents.cs`, `OrleansLog.cs`, `docs/reference/log-events-schema.md`)
 
 ## 3. Tests
@@ -30,4 +31,4 @@
 
 - [x] 5.1 `openspec validate let-heavy-work-wait-without-losing-attempts --strict`
 - [x] 5.2 `./scripts/local-gauntlet.sh` green
-- [x] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker)
+- [ ] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker)

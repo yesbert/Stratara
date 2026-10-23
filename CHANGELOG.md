@@ -52,14 +52,18 @@ instead of needing a message broker. Additive API only; no schema change and no 
   drain handed them over again, and each hand-over counted an attempt, so commands were kept for an operator although
   no handler had failed. Now:
   - a silo renews everything it holds in batches, one statement per thousand commands per renewal period;
-  - one heavy pool holds at most `QueuedLimitPerPool` commands, and a hand-over beyond it is refused with its attempt
-    given back, so the burst waits in the store;
-  - a hand-over that only finds its command still held, in the heavy pool, a runner or an aggregate's order, is
-    dropped and gives its attempt back.
+  - one heavy pool holds at most `QueuedLimitPerPool` commands, and a hand-over beyond it is refused, so the burst
+    waits in the store;
+  - a resumed command's attempt is counted when a silo takes its hand-over over, in
+    `ICommandIntentStore.TryRenewFromAsync`, not when the drain claims it. A refused hand-over, or one that finds its
+    command still held, counts nothing. A first hand-over the pool refuses gives back the attempt its dispatch
+    counted.
 
   A stop already gave back the attempts of what it ended. A handler that runs and fails still counts, and is kept at
-  the bound as before. New log events: `117_133` (`HeavyPoolFull`, Debug) and `117_134` (`IntentBatchRenewalFailed`,
-  Warning). A store of your own keeps these promises only with `RenewManyAsync` and `ReturnAttemptAsync`.
+  the bound as before. The renewal loop runs until the silo has stopped, not until the host does, so a handler still
+  running during a stop keeps its record renewed. New log events: `117_133` (`HeavyPoolFull`, Debug), `117_134`
+  (`IntentBatchRenewalFailed`, Warning) and `117_135` (`AttemptGiveBackFailed`, Warning).
+
 - **A pool size the connection string names is kept.** The PostgreSQL registrations of the write, read and identity
   contexts rewrote every connection string whose maximum pool size was Npgsql's default of 100 to 15, including one
   that named `Maximum Pool Size=100` on purpose, and said nothing about it. They now apply 15 only where the
@@ -91,9 +95,12 @@ instead of needing a message broker. Additive API only; no schema change and no 
   unlogged: only a forwarded command is bounded by the response timeout. *Migrate to the Orleans execution model*
   no longer says that Orleans' PostgreSQL scripts ship inside the ADO.NET provider packages. They do not, and the
   guide now lists the paths to take them from in the `dotnet/orleans` repository.
-
 ### Upgrade notes
 
+- **`ICommandIntentStore` implementations of your own.** The framework's store now counts a resumed attempt in
+  `TryRenewFromAsync` instead of in `TryClaimAsync`/`ClaimAsync`. A store that keeps counting at the claim still
+  bounds resumption, but counts waiting as well; move the increment to keep waiting free. Implement `RenewManyAsync`
+  for one statement per batch. `QueuedLimitPerPool` below what a pool runs at once fails the start.
 - Upgrade the silos before the hosts that dispatch. A dispatcher of this release that hands over to a silo of an
   earlier one still waits for the whole unit there. Because it no longer keeps that wait's timeout quiet, it logs a
   failed hand-over (`117_113` `HandOverFailed`, Warning) for every long unit until the silo is upgraded, beside the

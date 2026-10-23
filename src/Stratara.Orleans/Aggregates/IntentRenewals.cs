@@ -17,14 +17,19 @@ namespace Stratara.Orleans.Aggregates;
 /// </summary>
 /// <remarks>
 /// The loop runs from a timer of its own, off every grain's scheduler, so a handler that computes without awaiting is
-/// renewed all the same. One renewal runs at a time; a tick that finds one running does nothing.
+/// renewed all the same. One renewal runs at a time; a tick that finds one running does nothing. The timer starts with
+/// the first command held and stops only when the container disposes the loop, not when the host stops: the host stops
+/// its services before the silo, and the silo runs its handlers through its deactivation budget after that, so a loop
+/// that stopped with the host would let a running command's record lapse during a stop. A command held twice on one
+/// silo — two hand-overs of it held by two activations — stays renewed until both release it.
 /// </remarks>
-internal sealed class IntentRenewals : IHostedService, IAsyncDisposable
+internal sealed class IntentRenewals : IAsyncDisposable
 {
     /// <summary>How many commands one store call renews.</summary>
     public const int BatchSize = 1_000;
 
-    private readonly ConcurrentDictionary<Guid, byte> _held = new();
+    private readonly ConcurrentDictionary<Guid, int> _held = new();
+    private readonly object _gate = new();
     private readonly IServiceScopeFactory _scopes;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
@@ -46,29 +51,35 @@ internal sealed class IntentRenewals : IHostedService, IAsyncDisposable
     /// <summary>How many commands are registered for renewal now.</summary>
     public int Count => _held.Count;
 
-    /// <summary>Keeps renewing <paramref name="intentId"/> until it is released.</summary>
-    public void Hold(Guid intentId) => _held[intentId] = 0;
-
-    /// <summary>Stops renewing <paramref name="intentId"/>; a batch already sent may still renew it once.</summary>
-    public void Release(Guid intentId) => _held.TryRemove(intentId, out _);
-
-    public Task StartAsync(CancellationToken cancellationToken)
+    /// <summary>Keeps renewing <paramref name="intentId"/> until every hold of it is released; starts the loop on first use.</summary>
+    public void Hold(Guid intentId)
     {
-        _timer ??= _timeProvider.CreateTimer(static state => ((IntentRenewals)state!).OnTick(), this, _period, _period);
-        return Task.CompletedTask;
-    }
-
-    public async Task StopAsync(CancellationToken cancellationToken)
-    {
-        if (_timer is { } timer)
+        _held.AddOrUpdate(intentId, 1, static (_, holds) => holds + 1);
+        if (_timer is null)
         {
-            await timer.DisposeAsync();
+            lock (_gate)
+            {
+                if (_timer is null && Volatile.Read(ref _disposed) == 0)
+                {
+                    _timer = _timeProvider.CreateTimer(static state => ((IntentRenewals)state!).OnTick(), this, _period, _period);
+                }
+            }
         }
-
-        await _inFlight.WaitAsync(cancellationToken);
     }
 
-    /// <summary>Stops the loop; the container disposes the one instance through both of its registrations, so twice.</summary>
+    /// <summary>Releases one hold of <paramref name="intentId"/>; the last release stops its renewal, though a batch already sent may still renew it once.</summary>
+    public void Release(Guid intentId)
+    {
+        while (_held.TryGetValue(intentId, out var holds))
+        {
+            if (holds <= 1 ? _held.TryRemove(new KeyValuePair<Guid, int>(intentId, holds)) : _held.TryUpdate(intentId, holds - 1, holds))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Stops the loop, once the container is disposed; a second call does nothing.</summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -104,7 +115,7 @@ internal sealed class IntentRenewals : IHostedService, IAsyncDisposable
             {
                 await intents.RenewManyAsync(batch, now, cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 _logger.LogIntentBatchRenewalFailed(ex, batch.Length);
             }
@@ -127,7 +138,7 @@ internal sealed class IntentRenewals : IHostedService, IAsyncDisposable
         {
             await RenewAllAsync(_stop.Token);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested)
         {
             // The loop stopped; nothing is left to renew.
         }

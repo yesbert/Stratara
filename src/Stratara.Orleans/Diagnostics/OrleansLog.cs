@@ -217,6 +217,12 @@ internal static partial class OrleansLog
     public static partial void LogIntentBatchRenewalFailed(this ILogger logger, Exception exception, int count);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.AttemptGiveBackFailed,
+        Level = LogLevel.Warning,
+        Message = "Giving back the attempt of a hand-over of command {IntentId} that ran nothing failed; the attempt stays counted.")]
+    public static partial void LogAttemptGiveBackFailed(this ILogger logger, Exception exception, Guid intentId);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.HeavyPoolFull,
         Level = LogLevel.Debug,
         Message = "Heavy pool {Pool} holds {Limit} commands and refused command {IntentId}; its attempt is given back and the drain hands it over again after the grace.")]
