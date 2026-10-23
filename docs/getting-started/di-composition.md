@@ -178,6 +178,12 @@ builder.Services.AddNpgsqlWriteDbContextFactory<LedgerWriteDbContext>();
 builder.Services.AddNpgsqlReadDbContextFactory<LedgerReadDbContext>();
 ```
 
+**Connection pools.** A connection string that names no `Maximum Pool Size` is given 15 rather than Npgsql's 100:
+one host registers several contexts over one database, and several hosts share that database's `max_connections`. A
+connection string that names one keeps it, whatever its value, 100 included. Contexts registered with the same
+connection string share one pool, so on a host that runs several roles every role draws from it. Each host logs the
+size in effect once per connection string at start (`102_008`), with the database and host it applies to.
+
 Without the predicate, the context takes in its sibling's entity configurations and its model gains
 tables that belong to another context. The migrations you generated for it no longer match that
 model, and nothing in-process says so: the mismatch shows up only when the context meets a real

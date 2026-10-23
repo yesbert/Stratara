@@ -2,6 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.Data.Common;
 using Npgsql;
 using Stratara.EventSourcing.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
@@ -22,7 +25,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// identity stores with snake_case naming, pgvector support, and a reduced connection-pool
 /// cap suitable for multi-tenant hosts.
 /// </summary>
-public static class NpgsqlDbContextServiceCollectionExtensions
+/// <remarks>
+/// A connection string that names no maximum pool size gets 15 rather than Npgsql's 100: one host registers several
+/// contexts over one database, and several hosts share that database's <c>max_connections</c>. A connection string
+/// that names one keeps it, whatever its value. Contexts that share a connection string share its pool, so on a host
+/// that runs several roles every role draws from it. The size in effect is logged once per connection string.
+/// </remarks>
+public static partial class NpgsqlDbContextServiceCollectionExtensions
 {
     /// <summary>
     /// Registers an Npgsql-backed <see cref="IDbContextFactory{TContext}"/> for a write-store
@@ -128,27 +137,78 @@ public static class NpgsqlDbContextServiceCollectionExtensions
         return services;
     }
 
-    private const int NpgsqlDefaultMaxPoolSize = 100;
-    private const int ReducedMaxPoolSize = 15;
+    /// <summary>The maximum pool size a connection string that names none is given.</summary>
+    internal const int DefaultMaxPoolSize = 15;
+
+    private static readonly ConcurrentDictionary<string, byte> Reported = new(StringComparer.Ordinal);
 
     private static void ConfigureDbOptions(DbContextOptionsBuilder options, IServiceProvider sp)
     {
-        var connectionString = EnsureMaxPoolSize(ResolveTenantConnectionString(sp));
+        var connectionString = EnsureMaxPoolSize(ResolveTenantConnectionString(sp), sp.GetService<ILoggerFactory>());
         options.UseSnakeCaseNamingConvention()
             .UseNpgsql(connectionString, o => o.UseVector())
             .AddInterceptors(CommitCompletionInterceptor.Instance)
             .ConfigureWarnings(w => w.Ignore(CoreEventId.NoEntityTypeConfigurationsWarning));
     }
 
-    private static string EnsureMaxPoolSize(string connectionString)
+    /// <summary>
+    /// Applies <see cref="DefaultMaxPoolSize"/> where <paramref name="connectionString"/> names no maximum pool size, and
+    /// logs the size in effect the first time a connection string is seen.
+    /// </summary>
+    internal static string EnsureMaxPoolSize(string connectionString, ILoggerFactory? loggers)
     {
         var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        if (builder.MaxPoolSize == NpgsqlDefaultMaxPoolSize)
+        var named = NamesMaxPoolSize(connectionString);
+        if (!named)
         {
-            builder.MaxPoolSize = ReducedMaxPoolSize;
+            builder.MaxPoolSize = DefaultMaxPoolSize;
         }
 
-        return builder.ConnectionString;
+        var resolved = builder.ConnectionString;
+        if (loggers is not null && Reported.TryAdd(resolved, 0))
+        {
+            var logger = loggers.CreateLogger(typeof(NpgsqlDbContextServiceCollectionExtensions));
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogPoolSizeInEffect(builder.MaxPoolSize, named ? "the connection string" : "the framework's default", builder.Database ?? "(none)", builder.Host ?? "(none)");
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Whether the connection string as the host gave it names a maximum pool size, under any keyword Npgsql takes for
+    /// it. Each key is applied to a builder preset to two different sizes; a key that changes either names the size,
+    /// whatever value it gives.
+    /// </summary>
+    internal static bool NamesMaxPoolSize(string connectionString)
+    {
+        var given = new DbConnectionStringBuilder { ConnectionString = connectionString };
+        foreach (string key in given.Keys)
+        {
+            if (Moves(key, given[key], 1) || Moves(key, given[key], 2))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool Moves(string key, object value, int preset)
+    {
+        var probe = new NpgsqlConnectionStringBuilder { MaxPoolSize = preset };
+        try
+        {
+            probe[key] = value;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        return probe.MaxPoolSize != preset;
     }
 
     private static string ResolveTenantConnectionString(IServiceProvider sp)
@@ -156,4 +216,10 @@ public static class NpgsqlDbContextServiceCollectionExtensions
         var dbResolver = sp.GetRequiredService<IDbResolver>();
         return dbResolver.ResolveConnectionString();
     }
+
+    [LoggerMessage(
+        EventId = Stratara.Diagnostics.LogEvents.EventStore.PoolSizeInEffect,
+        Level = LogLevel.Information,
+        Message = "Connections to database {Database} on {Host} use a pool of at most {MaxPoolSize}, from {Origin}.")]
+    private static partial void LogPoolSizeInEffect(this ILogger logger, int maxPoolSize, string origin, string database, string host);
 }
