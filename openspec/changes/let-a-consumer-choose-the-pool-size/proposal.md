@@ -21,12 +21,12 @@ The consumer-visible effect is that the pool size a connection string names is t
 - **A named pool size is kept.** The registrations apply 15 only where the connection string names no maximum pool
   size. They decide this from the keys of the string the host gave, not from the parsed value.
   `Maximum Pool Size=100` keeps 100.
-- **The pool size in effect is logged.** When a context's connection string is first resolved, its registration
-  logs the maximum pool size, and whether it was the framework's default or the consumer's, once per connection
-  string (Information).
-- **Documented.** The store guide and the operations guide of the Orleans execution model say what the default
-  is, why it is 15, that contexts sharing a connection string share its pool, and that every role of a silo draws
-  from it.
+- **The pool size in effect is logged.** When a host creates the first context for a database, it logs the maximum
+  pool size and whether it came from the connection string or the framework's default. It logs once per host and
+  database, never with the password (Information).
+- **Documented.** *Getting started — DI composition*, the operations guide of the Orleans execution model and the
+  DI cheatsheet say what the default is, why it is 15, that contexts sharing a connection string share its pool, and
+  that every role of a silo draws from it.
 - **Unchanged:** a connection string without a pool size still gets 15, and one with any other value keeps it.
 
 ## Capabilities
@@ -42,11 +42,12 @@ _None._
 ## Impact
 
 - `src/Stratara.EventSourcing.EntityFrameworkCore/EntityFrameworkCore/DependencyInjection/NpgsqlDbContextServiceCollectionExtensions.cs`:
-  `EnsureMaxPoolSize` decides from the connection string's keys and reports what it applied. The log line lives
-  beside it.
-- `src/Stratara.Diagnostics/LogEvents.cs`, `docs/reference/log-events-schema.md`: one new event id.
-- `docs/guides/` (the store guide that documents the Npgsql registrations, and
-  `operate-the-orleans-execution-model.md`), `CHANGELOG.md`.
+  `EnsureMaxPoolSize` decides from the connection string's keys. `PoolSizeReport.cs` (new, internal) is the per-host
+  record of what was logged.
+- `src/Stratara.Diagnostics/LogEvents.cs`: one new event id, `102_008`. `docs/reference/log-events-schema.md` lists
+  the `102_000` range only and needs no row.
+- `docs/getting-started/di-composition.md`, `docs/guides/operate-the-orleans-execution-model.md`,
+  `docs/reference/di-extensions-cheatsheet.md`, `CHANGELOG.md`.
 - Behaviour change for exactly one input: a connection string that names `Maximum Pool Size=100` now gets 100 instead
   of 15. No API, package, dependency, tier or schema change. A patch release (4.4.7).
 - Dissolved or superseded legacy sources: none.

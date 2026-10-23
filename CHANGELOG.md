@@ -47,8 +47,8 @@ instead of needing a message broker. Additive API only; no schema change and no 
 - **A pool size the connection string names is kept.** The PostgreSQL registrations of the write, read and identity
   contexts rewrote every connection string whose maximum pool size was Npgsql's default of 100 to 15, including one
   that named `Maximum Pool Size=100` on purpose, and said nothing about it. They now apply 15 only where the
-  connection string names no pool size, and log the size in effect once per connection string (`102_008`, with the
-  database and the host, never the password). *Getting started — DI composition* explains the default and that
+  connection string names no pool size, and log the size in effect once per host and database (`102_008`, category
+  `Stratara.EventSourcing.EntityFrameworkCore.ConnectionPool`, with the database and the host, never the password). *Getting started — DI composition* explains the default and that
   contexts with one connection string share one pool.
 - **A hand-over is answered once the command is accepted.** The hand-over of a heavy command, and of a command
   that names no aggregate, stayed open until the command had run. A unit longer than the runtime's response

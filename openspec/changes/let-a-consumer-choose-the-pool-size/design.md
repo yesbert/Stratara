@@ -24,12 +24,19 @@ set, so it cannot tell a named size from an unnamed one. *Found while testing:* 
 *Alternative rejected: an option on the registration.* It adds API to express what the connection string already
 expresses, and a consumer would then have two places that disagree.
 
-### D2: Log once per resolved connection string
+### D2: Log once per host and database, under the framework's category
 
-`ConfigureDbOptions` runs for every context instance. The log goes through a static
-`ConcurrentDictionary<string, bool>` of the connection strings already reported, keyed by the string after the
-rewrite, so a tenant-resolved string is reported once per tenant database, not once per context. The logger comes
-from `ILoggerFactory` in the provider the factory passes. Where none is registered, nothing is logged.
+*As built after review; the plan logged once per connection string from a static set.* Each registration adds a
+singleton `PoolSizeReport`. Its set is keyed by host, port, database, user, size and origin, never by the password,
+so a rotated credential neither logs again nor stays in memory. Each host keeps its own set, so a second host in the
+same process, such as a test fixture or a silo beside a client, reports for itself. A database is recorded only once
+the line was actually written, so a level that suppressed it at first does not suppress it for good. The category is
+`Stratara.EventSourcing.EntityFrameworkCore.ConnectionPool`, not the extension's namespace,
+`Microsoft.Extensions.DependencyInjection`, which a common `"Microsoft": "Warning"` filter would hide.
+
+*Kept as built: no per-string result cache.* The review suggested caching the result per input string. That would
+keep every connection string, passwords included, for the life of the host. The cost it saves is one parse and two
+probe builders per context.
 
 ## Risks / Trade-offs
 
