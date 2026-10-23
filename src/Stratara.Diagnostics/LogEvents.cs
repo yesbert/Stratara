@@ -63,6 +63,11 @@ public static class LogEvents
         /// (warning, once per stream and batch — again when a failed save is retried).
         /// </summary>
         public const int NewStreamOwnerTakenFromSession = 102_007;
+        /// <summary>
+        /// The maximum pool size in effect for a PostgreSQL connection string, and whether the connection string named it
+        /// or the framework's default applied; logged once per connection string (information).
+        /// </summary>
+        public const int PoolSizeInEffect = 102_008;
     }
 
     /// <summary>Validation event-IDs (103_000s).</summary>

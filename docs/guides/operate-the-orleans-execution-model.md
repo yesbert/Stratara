@@ -282,7 +282,10 @@ reader activations and S×P keep-alive reminders where it ran P, a silo's start 
 costs a read of the store per saga. A reader's first catch-up after it is activated asks the checkpoint store once
 per saga of the host whether that saga has a checkpoint in the partition, so a cold start of the cluster costs S×S×P
 such queries. Size the read and write stores' connection pools for that many readers catching up at once, as for
-projections. A stateless saga's reader passes over an entry of a type the saga does not handle without
+projections. A silo's command handlers, readers, drain and hand-over renewals all draw from the pools of the
+connection strings they use, and a connection string that names no `Maximum Pool Size` gets 15
+([connection pools](../getting-started/di-composition.md)): name a size in the silo's connection strings that
+covers the roles it runs. A stateless saga's reader passes over an entry of a type the saga does not handle without
 deserialising it.
 
 A saga's checkpoint is keyed by its name. A saga that has no checkpoint in a partition — one registered after the
