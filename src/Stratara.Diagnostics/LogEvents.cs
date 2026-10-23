@@ -425,5 +425,11 @@ public static class LogEvents
         public const int StoreWakeUpRoleAbsent = 117_131;
         /// <summary>A store-reading role whose wake-ups were set aside because no silo hosted it is woken again (information).</summary>
         public const int StoreWakeUpRoleBack = 117_132;
+        /// <summary>A heavy hand-over found its pool holding as many commands as the host allows; it was refused, its attempt given back, and it is handed over again after the grace (debug).</summary>
+        public const int HeavyPoolFull = 117_133;
+        /// <summary>Renewing a batch of held commands failed; the next renewal tries again (warning).</summary>
+        public const int IntentBatchRenewalFailed = 117_134;
+        /// <summary>Giving back the attempt of a hand-over that ran nothing failed, so the attempt stays counted (warning).</summary>
+        public const int AttemptGiveBackFailed = 117_135;
     }
 }

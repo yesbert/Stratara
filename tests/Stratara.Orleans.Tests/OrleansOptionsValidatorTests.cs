@@ -20,6 +20,7 @@ public sealed class OrleansOptionsValidatorTests
     [InlineData("HeavyWorkOptions.ClusterWideLimit")]
     [InlineData("HeavyWorkOptions.PermitRetry")]
     [InlineData("HeavyWorkOptions.PermitLease")]
+    [InlineData("HeavyWorkOptions.QueuedLimitPerPool")]
     [InlineData("DurableTimerOptions.RetryPeriod")]
     [InlineData("DurableTimerOptions.DueTolerance")]
     [InlineData("ProjectionGrainOptions.BatchSize")]
@@ -99,6 +100,13 @@ public sealed class OrleansOptionsValidatorTests
                 break;
             case "HeavyWorkOptions.PermitLease":
                 services.AddStrataraOrleansCommandDispatcher().ConfigureStrataraHeavyWork(o => o.PermitLease = TimeSpan.Zero);
+                break;
+            case "HeavyWorkOptions.QueuedLimitPerPool":
+                services.AddStrataraOrleansCommandDispatcher().ConfigureStrataraHeavyWork(o =>
+                {
+                    o.ClusterWideLimit = 8;
+                    o.QueuedLimitPerPool = 4;
+                });
                 break;
             case "DurableTimerOptions.RetryPeriod":
                 services.AddStrataraDurableTimers(o => o.RetryPeriod = tooShortForAReminder);

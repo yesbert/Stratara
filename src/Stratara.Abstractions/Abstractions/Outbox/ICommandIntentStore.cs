@@ -55,10 +55,15 @@ public interface ICommandIntentStore
     Task<IReadOnlyList<RecordedIntent>> GetDueAsync(DateTimeOffset handedOverBefore, int batchSize, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Claims a hand-over of a due command: stamps <paramref name="now"/> as its last hand-over and
-    /// increments its attempt count, only if it is not kept and its last hand-over is still
-    /// <paramref name="expectedLastHandedOverAt"/>.
+    /// Claims a hand-over of a due command: stamps <paramref name="now"/> as its last hand-over, only if it is not kept and
+    /// its last hand-over is still <paramref name="expectedLastHandedOverAt"/>. The claim does not count an attempt; the
+    /// hand-over a silo takes over does, in <see cref="TryRenewFromAsync"/>, so a hand-over that is refused or dropped as
+    /// a duplicate costs nothing.
     /// </summary>
+    /// <remarks>
+    /// A store written before 4.4.7 that increments the attempt count here still bounds the resumption, but counts a
+    /// hand-over that only waited as well.
+    /// </remarks>
     /// <param name="intentId">The recorded command.</param>
     /// <param name="expectedLastHandedOverAt">The last hand-over read with the command, or <see langword="null"/> for one never handed over.</param>
     /// <param name="now">The time of this hand-over.</param>
@@ -102,6 +107,28 @@ public interface ICommandIntentStore
     Task RenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Renews the hand-overs of several commands whose handlers are running or waiting, so none of them becomes due again:
+    /// for each that is not kept, what <see cref="RenewAsync"/> does.
+    /// </summary>
+    /// <param name="intentIds">The recorded commands.</param>
+    /// <param name="now">The time of the renewal.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>A task that completes when the renewals are durable.</returns>
+    /// <remarks>
+    /// The default renews one command at a time through <see cref="RenewAsync"/>, one round trip each. A store that
+    /// overrides it renews the batch in a number of round trips that does not grow with the batch, so that a host
+    /// holding many commands pays per renewal period, not per command.
+    /// </remarks>
+    async Task RenewManyAsync(IReadOnlyList<Guid> intentIds, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(intentIds);
+        foreach (var intentId in intentIds)
+        {
+            await RenewAsync(intentId, now, cancellationToken);
+        }
+    }
+
+    /// <summary>
     /// Renews the hand-over of a command that is still recorded and not kept, and reports whether there was one: a late
     /// hand-over that finds the command gone — it completed through another run — or kept is not run.
     /// </summary>
@@ -121,10 +148,10 @@ public interface ICommandIntentStore
 
     /// <summary>
     /// Takes over a resumed hand-over: renews it only if the command is not kept and its last hand-over is still
-    /// <paramref name="claimedAt"/>, the stamp of the claim that handed it over, and moves that stamp to
+    /// <paramref name="claimedAt"/>, the stamp of the claim that handed it over, moves that stamp to
     /// <paramref name="now"/> or, where <paramref name="now"/> is not later, one millisecond past
-    /// <paramref name="claimedAt"/>. A second hand-over of the same claim therefore finds the stamp moved, and a
-    /// hand-over of a command that completed finds no record.
+    /// <paramref name="claimedAt"/>, and counts one attempt. A second hand-over of the same claim therefore finds the
+    /// stamp moved, and a hand-over of a command that completed finds no record; neither counts.
     /// </summary>
     /// <param name="intentId">The recorded command.</param>
     /// <param name="claimedAt">The last hand-over the claim stamped, as the hand-over carries it.</param>

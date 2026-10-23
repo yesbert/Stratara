@@ -181,7 +181,7 @@ internal readonly record struct ResumePass(int Resumed, bool Full)
 /// The bounded resume. A due command that has reached either bound the host configures for bus messages — the delivery
 /// bound, which counts the hand-over of its dispatch as the first attempt, or the conflict bound — is kept for an operator; a due command whose record does not verify under the host's integrity mode is
 /// kept at once under strict mode, with the reason, and resumed with the failure logged under permissive mode; every
-/// other due command is claimed in one call — its hand-over stamped and its attempt counted — and handed over with the
+/// other due command is claimed in one call — its hand-over stamped; the silo that takes it over counts the attempt — and handed over with the
 /// claim's stamp, in the order it was read, in the order of the aggregate the record names. A hand-over that cannot be issued is recorded as
 /// the command's failure and does not end the pass.
 /// </summary>

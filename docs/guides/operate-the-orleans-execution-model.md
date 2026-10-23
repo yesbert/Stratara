@@ -602,6 +602,33 @@ lease and the permit are renewed from timers of their own, off the activation's 
 that computes without yielding is renewed all the same: however long a handler runs, and whether or not it
 yields, it runs once.
 
+### A burst of heavy work
+
+Waiting costs a recorded command nothing. A burst of heavy commands many times the cluster-wide limit becomes a
+backlog that is worked off, and only a handler that runs and fails counts against
+`MessageRetry:MaxDeliveryAttempts`:
+
+- **The pool holds a bounded number.** One pool holds at most `HeavyWorkOptions.QueuedLimitPerPool` commands
+  (256 by default), running and waiting together; set it no lower than a pool runs at once. A hand-over beyond it is
+  refused and logged at debug (`117_133`), and it costs no attempt. The command stays in the store and is handed over again after the grace, at most a
+  drain batch at a time. The whole cluster holds `pools × QueuedLimitPerPool` heavy commands in memory, and the rest
+  wait in the table, where they cost nothing.
+- **Holding costs one statement per renewal period per thousand commands.** A silo renews every command it holds —
+  in an aggregate's order, in a runner, in the heavy pool — in batches every third of the grace, through
+  `ICommandIntentStore.RenewManyAsync`, so the store load does not grow with the queue. A batch that fails is logged
+  once (`117_134`) and renewed again a third of the grace later.
+- **An attempt is counted when a silo takes a command over.** A resumed command's attempt is counted by the renewal
+  with which a silo takes its hand-over over (`TryRenewFromAsync`), not by the drain's claim. A hand-over the pool
+  refuses, or one that finds its command still held, counts nothing. That covers records that lapsed while their
+  commands waited, for example on an exhausted connection pool: the drain hands them over again, and the hand-overs
+  are dropped as duplicates. A first hand-over the pool refuses gives back the attempt its dispatch counted, and a stop
+  that ends a command gives its attempt back.
+
+A store of your own keeps these promises when it counts the attempt in `TryRenewFromAsync` rather than in the claim,
+implements `RenewManyAsync` (its default renews one at a time) and `ReturnAttemptAsync` (its default gives nothing
+back). A store that still counts at the claim stays bounded, but a hand-over that only waited counts too. Size the connection pool of the store a silo
+uses for its handlers, readers and renewals together ([connection pools](../getting-started/di-composition.md)).
+
 The permits are kept in memory by one activation in the durable directory, and the bound holds across the
 loss of its silo. A keeper that is activated — after a failover, and on a cluster's first heavy command,
 because it cannot tell the two apart — admits no new unit for one `HeavyWorkOptions.PermitLease`, the

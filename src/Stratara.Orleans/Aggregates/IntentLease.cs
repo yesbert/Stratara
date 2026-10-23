@@ -9,9 +9,11 @@ namespace Stratara.Orleans.Aggregates;
 /// <summary>
 /// Keeps a running command from becoming due again: renews its hand-over every third of the grace until the
 /// execution ends, so however long the handler runs, the drain does not hand it over a second time, and a single
-/// renewal that fails does not let the hand-over lapse. A renewal that fails is logged and skipped; the next one
-/// tries again. The renewals run from a timer of their own, off the scheduler the lease was started on: a handler
-/// that blocks its activation's scheduler — computing without awaiting — is renewed all the same.
+/// renewal that fails does not let the hand-over lapse. On a silo the lease registers its command with the silo's
+/// <see cref="IntentRenewals"/>, which renews every held command in batches; where none is registered, the lease
+/// renews from a timer of its own. A renewal that fails is logged and skipped; the next one tries again. Either way the
+/// renewals run off the scheduler the lease was started on: a handler that blocks its activation's scheduler —
+/// computing without awaiting — is renewed all the same.
 /// </summary>
 /// <remarks>
 /// A command handed over moments after it was recorded is not renewed when execution starts: its record time holds
@@ -28,17 +30,19 @@ internal sealed class IntentLease : IAsyncDisposable
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly Guid _intentId;
+    private readonly IntentRenewals? _renewals;
     private readonly CancellationTokenSource _stop = new();
     private ITimer? _timer;
     private volatile Task _inFlight = Task.CompletedTask;
     private int _renewing;
 
-    private IntentLease(ICommandIntentStore intents, TimeProvider timeProvider, ILogger logger, Guid intentId)
+    private IntentLease(ICommandIntentStore intents, TimeProvider timeProvider, ILogger logger, Guid intentId, IntentRenewals? renewals)
     {
         _intents = intents;
         _timeProvider = timeProvider;
         _logger = logger;
         _intentId = intentId;
+        _renewals = renewals;
     }
 
     /// <summary>
@@ -73,11 +77,35 @@ internal sealed class IntentLease : IAsyncDisposable
             return null;
         }
 
-        var lease = new IntentLease(intents, timeProvider, logger, intentId);
+        var renewals = services.GetService<IntentRenewals>();
+        var lease = new IntentLease(intents, timeProvider, logger, intentId, renewals);
+        if (renewals is not null)
+        {
+            renewals.Hold(intentId);
+            return lease;
+        }
 
         var period = grace / 3;
         lease._timer = timeProvider.CreateTimer(static state => ((IntentLease)state!).OnTick(), lease, period, period);
         return lease;
+    }
+
+    /// <summary>
+    /// Gives back the attempt the record of a command counted for its first hand-over, when that hand-over ran nothing
+    /// because the heavy pool refused it for want of room. A resumed hand-over counts its attempt only when a silo takes
+    /// it over, so it has nothing to give back. A failure to give it back is logged and leaves the attempt counted.
+    /// </summary>
+    public static async Task GiveBackAsync(IServiceScopeFactory scopes, Guid intentId)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        try
+        {
+            await scope.ServiceProvider.GetRequiredService<ICommandIntentStore>().ReturnAttemptAsync(intentId, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            scope.ServiceProvider.GetRequiredService<ILogger<IntentLease>>().LogAttemptGiveBackFailed(ex, intentId);
+        }
     }
 
     /// <summary>
@@ -158,6 +186,7 @@ internal sealed class IntentLease : IAsyncDisposable
     /// <summary>Stops the renewals: no tick starts after this returns, and the one in flight has ended.</summary>
     public async ValueTask DisposeAsync()
     {
+        _renewals?.Release(_intentId);
         await _stop.CancelAsync();
         if (_timer is { } timer)
         {

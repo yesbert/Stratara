@@ -308,6 +308,15 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
             });
         }
 
+        /// <summary>What the silo's lease does when it takes a resumed hand-over over: the fencing renewal, which counts the attempt.</summary>
+        public async Task TakeOverAsync(Guid intent)
+        {
+            var stamped = await RecordedIntentHost.ScalarAsync<DateTime>(connection, "SELECT last_handed_over_at FROM outbox_entry WHERE id = @id", ("id", intent));
+            var claimedAt = new DateTimeOffset(DateTime.SpecifyKind(stamped, DateTimeKind.Utc));
+            await using var scope = services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ICommandIntentStore>().TryRenewFromAsync(intent, claimedAt, clock.GetUtcNow(), CancellationToken.None);
+        }
+
         /// <summary>Lets the grace pass and resumes until the command is kept, playing each resumed run; returns the runs.</summary>
         public async Task<int> ResumeUntilKeptAsync(Guid intent, Queue<char> outcomes)
         {
@@ -325,6 +334,7 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
                 if (aggregate.HandedOver.Count > handedOver)
                 {
                     runs++;
+                    await TakeOverAsync(intent);
                     await RecordOutcomeAsync(intent, outcomes.TryDequeue(out var outcome) ? outcome : 'f');
                 }
             }

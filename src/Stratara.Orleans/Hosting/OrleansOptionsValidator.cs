@@ -52,7 +52,10 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
     public ValidateOptionsResult Validate(string? name, HeavyWorkOptions options) => Result<HeavyWorkOptions>(
         Positive(options.ClusterWideLimit, nameof(options.ClusterWideLimit)),
         Positive(options.PermitRetry, nameof(options.PermitRetry)),
-        Positive(options.PermitLease, nameof(options.PermitLease)));
+        Positive(options.PermitLease, nameof(options.PermitLease)),
+        options.QueuedLimitPerPool >= Math.Min(HeavyWorkGrain.MaxLocalWorkers, options.ClusterWideLimit)
+            ? null
+            : $"{nameof(options.QueuedLimitPerPool)} ({options.QueuedLimitPerPool}) must be at least as many as a pool runs at once, the smaller of {HeavyWorkGrain.MaxLocalWorkers} and {nameof(options.ClusterWideLimit)} ({options.ClusterWideLimit}), or it caps heavy work below the cluster-wide limit.");
 
     public ValidateOptionsResult Validate(string? name, DurableTimerOptions options) => Result<DurableTimerOptions>(
         AtLeastReminderMinimum(options.RetryPeriod, nameof(options.RetryPeriod)),

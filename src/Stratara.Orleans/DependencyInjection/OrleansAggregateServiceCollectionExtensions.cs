@@ -69,6 +69,7 @@ public static class OrleansAggregateServiceCollectionExtensions
         OrleansOptionsValidator.Register<OrleansDispatchOptions>(services);
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IntentCompletionQueue>();
+        services.TryAddSingleton<IntentRenewals>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IntentCompletionQueue>(sp => sp.GetRequiredService<IntentCompletionQueue>()));
     }
 

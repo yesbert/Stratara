@@ -88,6 +88,9 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_130` | SagaStepAftermathFailed | Warning | A saga step committed, and reading its state or cancelling its timers afterwards failed; the step still counts as applied, so it does not emit twice, and the owner check drops the timers of a completed process; carries the process |
 | `117_131` | StoreWakeUpRoleAbsent | Information | A host registered with `AddStrataraStoreWakeUps` found that no silo of the cluster hosts a store-reading role it wakes after its commits; the role's wake-ups are set aside for the configured period, and readers of the role poll; carries the role and the period |
 | `117_132` | StoreWakeUpRoleBack | Information | A store-reading role whose wake-ups were set aside because no silo hosted it is woken again; carries the role |
+| `117_133` | HeavyPoolFull | Debug | A heavy hand-over found its pool holding as many commands as `HeavyWorkOptions.QueuedLimitPerPool` allows; it was refused, its attempt given back, and the drain hands it over again after the grace; carries the intent, the pool and the limit |
+| `117_134` | IntentBatchRenewalFailed | Warning | Renewing a batch of the commands a silo holds failed; carries the batch size, and the next renewal — a third of the grace later — tries again, so one failure does not let a hand-over lapse |
+| `117_135` | AttemptGiveBackFailed | Warning | Giving back the attempt of a hand-over that ran nothing — refused by a full heavy pool, or a duplicate of a command still held — failed, so the attempt stays counted; carries the intent |
 
 ## Authoring a new log event
 

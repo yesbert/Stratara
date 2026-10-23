@@ -11,7 +11,7 @@ namespace Stratara.Orleans.IntegrationTests.Aggregates;
 
 /// <summary>
 /// The intent store claims a batch of due commands in a number of statements that does not grow with the batch: every
-/// row is stamped once with its attempt counted, and a row a concurrent claimer stamped after the read is left to it.
+/// row is stamped once, with no attempt counted until a silo takes it over, and a row a concurrent claimer stamped after the read is left to it.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class IntentClaimTests(PostgreSqlFixture postgres)
@@ -54,8 +54,9 @@ public sealed class IntentClaimTests(PostgreSqlFixture postgres)
         await using (var context = await store.CreateContextAsync())
         {
             var attempts = await context.Set<OutboxEntry>().AsNoTracking().Select(e => e.AttemptCount).ToListAsync(TestContext.Current.CancellationToken);
-            // Recorded with the dispatch's hand-over as the first attempt, claimed as the second.
-            Assert.All(attempts, attempt => Assert.Equal(2, attempt));
+            // Recorded with the dispatch's hand-over as the first attempt; the claim counts none — the silo that takes a
+            // resumed hand-over over counts it, so a claim nothing took over costs nothing.
+            Assert.All(attempts, attempt => Assert.Equal(1, attempt));
         }
     }
 
