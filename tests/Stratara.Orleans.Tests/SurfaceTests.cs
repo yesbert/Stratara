@@ -28,6 +28,7 @@ public class SurfaceTests
         "Stratara.Orleans.Hosting.IStoreReaderSeeding",
         "Stratara.Orleans.Hosting.StoreReaderSeedingReport",
         "Stratara.Orleans.Projections.ProjectionGrainOptions",
+        "Stratara.Orleans.Projections.StoreWakeUpOptions",
         "Stratara.Orleans.Sagas.SagaGrainOptions",
         "Stratara.Orleans.Singleton.OutboxDrainOptions",
         "Stratara.Orleans.Singleton.OutboxDrainWork",

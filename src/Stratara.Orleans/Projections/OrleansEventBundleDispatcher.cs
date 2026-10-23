@@ -14,7 +14,8 @@ namespace Stratara.Orleans.Projections;
 /// The wake-up hint after a commit: instead of publishing the bundle, nudge the store-reading grains
 /// of every target for the partitions the bundle touched. The nudge is fire-and-forget and may be
 /// lost; the store is the truth and the poll is the safety net, so a lost nudge costs latency, never
-/// a fact. With an inner dispatcher the bundle is also published as before — the hybrid shape.
+/// a fact. With an inner dispatcher the bundle is also published as before — the hybrid shape. With the store wake-ups
+/// registered, the readers of every store-reading role this host does not host are woken through the cluster as well.
 /// </summary>
 internal sealed class OrleansEventBundleDispatcher(
     IGrainFactory grainFactory,
@@ -22,7 +23,8 @@ internal sealed class OrleansEventBundleDispatcher(
     IProjectionReplayState replayState,
     IOptions<CommitOrderOptions> commitOrder,
     ILogger<OrleansEventBundleDispatcher>? logger = null,
-    InnerBundleDispatcher? innerDispatcher = null) : IEventBundleOutboxDispatcher
+    InnerBundleDispatcher? innerDispatcher = null,
+    ClusterWakeUps? clusterWakeUps = null) : IEventBundleOutboxDispatcher
 {
     private readonly int _partitionCount = commitOrder.Value.PartitionCount;
     private readonly IEventBundleOutboxDispatcher? inner = innerDispatcher?.Dispatcher;
@@ -54,6 +56,8 @@ internal sealed class OrleansEventBundleDispatcher(
                     await NudgeAsync(target, partition);
                 }
             }
+
+            clusterWakeUps?.Wake(grainFactory, eventBundle.Events.Select(e => e.StreamId));
         }
 
         if (inner is not null)

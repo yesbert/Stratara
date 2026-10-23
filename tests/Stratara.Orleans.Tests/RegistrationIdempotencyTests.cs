@@ -22,6 +22,7 @@ public sealed class RegistrationIdempotencyTests
         ["AddStrataraSagaGrains"] = services => services.AddStrataraSagaGrains(),
         ["AddStrataraDurableTimers"] = services => services.AddStrataraDurableTimers(),
         ["AddStrataraOrleansCommandDispatcher"] = services => services.AddStrataraOrleansCommandDispatcher(),
+        ["AddStrataraStoreWakeUps"] = services => services.AddStrataraStoreWakeUps(),
         ["ConfigureStrataraHeavyWork"] = services => services.ConfigureStrataraHeavyWork(Limit),
         ["AddStrataraSingletonWork"] = services => services.AddStrataraSingletonWork<IdleWork>(),
         ["AddStrataraSingletonWork(name)"] = services => services.AddStrataraSingletonWork<IdleWork>(IdleWork.WorkName),

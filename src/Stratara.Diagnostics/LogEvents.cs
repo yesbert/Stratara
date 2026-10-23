@@ -416,5 +416,9 @@ public static class LogEvents
         public const int TimerCommittedNotPublished = 117_129;
         /// <summary>A saga step committed, and reading its state or cancelling its timers afterwards failed; the step still counts as applied, and the owner check drops leftover timers (warning).</summary>
         public const int SagaStepAftermathFailed = 117_130;
+        /// <summary>No silo of the cluster hosts a store-reading role a host wakes after its commits; the role's wake-ups are set aside for a while and its readers, if any come, poll (information).</summary>
+        public const int StoreWakeUpRoleAbsent = 117_131;
+        /// <summary>A store-reading role whose wake-ups were set aside because no silo hosted it is woken again (information).</summary>
+        public const int StoreWakeUpRoleBack = 117_132;
     }
 }

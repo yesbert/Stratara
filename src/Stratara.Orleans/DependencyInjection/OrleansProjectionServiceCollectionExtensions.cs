@@ -116,6 +116,65 @@ public static class OrleansProjectionServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Turns the bundle dispatcher of a host that commits facts but hosts no store reader into the wake-up hint: after
+    /// a commit, the readers of every projection and saga role the cluster hosts are woken through the host's grain
+    /// factory for the partitions the commit touched, so they apply it without waiting for their poll, and the bundle
+    /// is stored nowhere. Use it on a host joined to the cluster as an Orleans client that runs command handlers in
+    /// process, or on a command silo without a store-reading role; with it, such a host needs no message broker. The
+    /// host needs to know no projection or saga: a silo of each role folds the commit into its own partitions and wakes
+    /// its own readers. On a silo that registers a store-reading role, the roles it hosts are woken as that role's
+    /// registration wakes them, and only the others through the cluster. A role no silo hosts is set aside for
+    /// <see cref="StoreWakeUpOptions.AbsentRoleRetry"/>; a wake-up that is lost costs at most the readers' poll
+    /// interval. Combines with <c>AddStrataraProjectionGrains</c> and <c>AddStrataraSagaGrains</c> in either order.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional settings.</param>
+    /// <param name="hybrid">
+    /// Whether the bundle is still published through the dispatcher registered before this call. Off, the bus never
+    /// sees bundles; on, both run, for a rollout in which consumers still read bundles from the bus.
+    /// </param>
+    /// <returns>The same service collection for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host was already built from <paramref name="services"/>, which is read-only; or <paramref name="hybrid"/> is
+    /// set and no bundle dispatcher is registered to keep.
+    /// </exception>
+    /// <example>
+    /// An API host that runs some command handlers in process and has no broker:
+    /// <code>
+    /// builder.UseOrleansClient(client => client.UseAdoNetClustering(options =>
+    /// {
+    ///     options.Invariant = "Npgsql";
+    ///     options.ConnectionString = builder.Configuration.GetConnectionString("orleans");
+    /// }));
+    /// builder.AddBackendServices();
+    /// builder.Services
+    ///     .AddStrataraOrleansCommandDispatcher()
+    ///     .AddStrataraIntentStore&lt;AppWriteDbContext&gt;()
+    ///     .AddStrataraStoreWakeUps();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddStrataraStoreWakeUps(
+        this IServiceCollection services,
+        Action<StoreWakeUpOptions>? configure = null,
+        bool hybrid = false)
+    {
+        BuiltHostGuard.Refuse(services, nameof(AddStrataraStoreWakeUps), "bundle dispatcher the running host commits through");
+        var options = services.AddOptions<StoreWakeUpOptions>();
+        if (configure is not null)
+        {
+            options.Configure(configure);
+        }
+
+        OrleansOptionsValidator.Register<StoreWakeUpOptions>(services);
+        services.AddOptions<CommitOrderOptions>();
+        OrleansOptionsValidator.Register<CommitOrderOptions>(services);
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<ClusterWakeUps>();
+        ReplaceBundleDispatcher(services, hybrid);
+        return services;
+    }
+
     /// <summary>Adds the role's wake-up target once, so a second registration of the role wakes nothing twice.</summary>
     private static void AddNudgeTarget<TTarget>(IServiceCollection services)
         where TTarget : class, INudgeTarget

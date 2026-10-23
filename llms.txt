@@ -153,7 +153,7 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   resumes it after a crash up to `MessageRetry:MaxDeliveryAttempts` times, then keeps it
   (`AddStrataraOrleansCommandDispatcher` + `AddStrataraIntentStore<TWriteContext>`), projections and
   sagas read the store in commit order from checkpoints instead of taking bundles from the bus
-  (`AddCommandServices()` / `AddEventProjectionServices()` / `AddSagaServices()` then the execution model's registrations; a silo whose command and bundle dispatchers are both replaced needs no broker; `AddStrataraProjectionGrains` /
+  (`AddCommandServices()` / `AddEventProjectionServices()` / `AddSagaServices()` then the execution model's registrations; a silo whose command and bundle dispatchers are both replaced needs no broker, and a host that commits without hosting a reader — a client running handlers in process, a command silo without a store-reading role — replaces its bundle dispatcher with `AddStrataraStoreWakeUps()`; `AddStrataraProjectionGrains` /
   `AddStrataraSagaGrains`), and singleton work runs once per cluster (`AddStrataraSingletonWork<T>(name)`; a failing run is logged as `117_119`
   and the work runs again). Every registration is idempotent, and a silo that registers the directory without
   `AddStrataraOrleans` while hosting a role or work fails at start.

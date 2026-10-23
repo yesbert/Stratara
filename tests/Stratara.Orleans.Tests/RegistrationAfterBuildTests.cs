@@ -19,6 +19,7 @@ public sealed class RegistrationAfterBuildTests
         ["AddStrataraAggregateGrains"] = services => services.AddStrataraAggregateGrains(),
         ["AddStrataraProjectionGrains"] = services => services.AddStrataraProjectionGrains(),
         ["AddStrataraSagaGrains"] = services => services.AddStrataraSagaGrains(),
+        ["AddStrataraStoreWakeUps"] = services => services.AddStrataraStoreWakeUps(),
         ["AddStrataraDurableTimers"] = services => services.AddStrataraDurableTimers(),
         ["AddStrataraSingletonWork"] = services => services.AddStrataraSingletonWork<DurableDirectoryCheckTests.IdleWork>(),
     };

@@ -43,7 +43,8 @@ the bus: validation, authorization, tenant isolation, audit.
 
 **No committed fact is missed.** Projections and sagas read the event store from a checkpoint, in commit
 order — each projection and each saga with a checkpoint of its own. A commit wakes the readers of the
-partitions it touched; a lost wake-up costs latency, never a fact, because the readers poll the store as
+partitions it touched — on a host without a reader, such as an API host that runs a handler in process, through
+`AddStrataraStoreWakeUps()`; a lost wake-up costs latency, never a fact, because the readers poll the store as
 well. A projection can be rebuilt on its own while every other projection keeps applying live events. A saga
 registered later starts where the deployment's sagas have read, so it does not run its side effects for the
 store's history.
