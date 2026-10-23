@@ -37,12 +37,22 @@ public sealed class HeavyWorkOptions
 internal interface IHeavyWorkGrain : IGrainWithIntegerKey
 {
     /// <summary>
-    /// Accepts a heavy hand-over — its lease starts before it waits for a worker or a permit — and completes once the
-    /// unit has run. The call interleaves with the units already running, so no hand-over waits unleased in a queue.
+    /// Accepts a heavy hand-over — its lease starts before it waits for a worker or a permit — and returns once the unit
+    /// is queued, not once it has run, so no caller's call stays open for the length of the unit. The call interleaves
+    /// with the units already running, so no hand-over waits unleased in a queue.
     /// </summary>
     [AlwaysInterleave]
     [Alias("ExecuteIntentAsync")]
     Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope);
+
+    /// <summary>
+    /// Keeps the activation busy while units run on the silo's workers, so it is not collected as idle under them. The
+    /// grain calls it on itself, one-way, and one runs at a time; it interleaves, so it never holds back a hand-over.
+    /// </summary>
+    [OneWay]
+    [AlwaysInterleave]
+    [Alias("HoldAsync")]
+    Task HoldAsync();
 }
 
 /// <summary>One grain for the cluster that hands out the permits heavy work runs under.</summary>
@@ -77,7 +87,7 @@ internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
 /// later writer where both append — and here rather than anywhere, so the number running is bounded: per silo by
 /// the <see cref="HeavyWorkRunner"/>'s workers, and across the cluster by the permit grain — the limit the silos
 /// alone cannot give. There are as many pools as the cluster-wide limit needs, placed on silos of the command role,
-/// where the handlers are. A hand-over is accepted at once, and the intent's hand-over is renewed from that moment —
+/// where the handlers are. A hand-over is accepted and answered at once, and the intent's hand-over is renewed from that moment —
 /// while it waits for a worker, while it waits for a permit and while it runs — so a burst that queues units for
 /// longer than the grace hands none of them over twice; it is completed after the handler, so a crash in between is
 /// resumed like any other intent. The unit itself runs on one of the silo's workers, off this activation's
@@ -102,11 +112,13 @@ internal sealed class HeavyWorkGrain(
     private readonly HashSet<Guid> _held = [];
     private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(stopSignal.Stopping);
     private readonly HashSet<Task> _inFlight = [];
+    private bool _holdRunning;
 
     /// <summary>
     /// Accepts the hand-over: the intent's lease starts here, before the unit is queued for a worker, so a unit
     /// waiting for a worker or a permit counts as running. The unit itself — the handler, inside its lease, under a
-    /// permit — runs on one of the silo's workers.
+    /// permit — runs on one of the silo's workers, and the call returns once it is queued; the activation holds itself
+    /// with a one-way call while units run.
     /// </summary>
     public async Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope)
     {
@@ -146,15 +158,82 @@ internal sealed class HeavyWorkGrain(
         }
 
         _inFlight.Add(run);
+        SettleAsync(run, intentId, scope).Ignore();
+        Hold();
+    }
+
+    /// <summary>
+    /// Waits, on this activation, for the units in flight until none is still running. Units a hand-over adds during the
+    /// wait are waited for in the next round. A hold that starts while another runs returns at once.
+    /// </summary>
+    public async Task HoldAsync()
+    {
+        if (_holdRunning)
+        {
+            return;
+        }
+
+        _holdRunning = true;
+        try
+        {
+            while (_inFlight.Where(unit => !unit.IsCompleted).ToList() is { Count: > 0 } running)
+            {
+                try
+                {
+                    await Task.WhenAll(running);
+                }
+                catch (Exception ex)
+                {
+                    _ = ex;
+                }
+            }
+        }
+        finally
+        {
+            _holdRunning = false;
+        }
+    }
+
+    /// <summary>
+    /// Ends the unit's bookkeeping once it has run. Its failure is recorded with the intent and logged by its lease, so it
+    /// is observed here and not thrown again.
+    /// </summary>
+    private async Task SettleAsync(Task run, Guid intentId, IServiceScope scope)
+    {
         try
         {
             await run;
+        }
+        catch (Exception ex)
+        {
+            _ = ex;
         }
         finally
         {
             _inFlight.Remove(run);
             _held.Remove(intentId);
             scope.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Asks the grain to hold itself, unless a hold is already running. A hold that was sent and never ran — the message
+    /// was lost — is sent again with the next hand-over; one that cannot be sent leaves the unit running unheld.
+    /// </summary>
+    private void Hold()
+    {
+        if (_holdRunning)
+        {
+            return;
+        }
+
+        try
+        {
+            this.AsReference<IHeavyWorkGrain>().HoldAsync().Ignore();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
         }
     }
 

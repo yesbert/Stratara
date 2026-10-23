@@ -16,7 +16,43 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.6`._
+On the Orleans execution model, a long heavy command, or a long command that names no aggregate, no longer leaves
+timeout warnings in the logs. No API change, no schema change and no migration.
+
+### Fixed
+
+- **A hand-over is answered once the command is accepted.** The hand-over of a heavy command, and of a command
+  that names no aggregate, stayed open until the command had run. A unit longer than the runtime's response
+  timeout made Orleans log *Response did not arrive on time* on the dispatching host and several *Dropping expired
+  message* warnings on the silo, even though the unit ran to its end and committed. Both are now answered once the
+  silo holds the command and its lease has started, as the hand-over of an aggregate's command already was, and the
+  command runs on the silo however long it takes. Lease, permit, completion, failure recording and resumption are
+  unchanged. A hand-over that times out now means the silo did not accept it in time, and it is logged as a failed
+  hand-over like any other failure.
+- **Stopping a silo no longer waits out the host's shutdown budget behind a running heavy unit.** The heavy-work
+  runner waited for its running units when the host stopped it. The host stops it before the silo, and a unit is
+  cancelled only once the silo stops, so the host's stop hung until its shutdown timeout and the unit was not
+  cancelled within the deactivation budget. The runner now stops taking units and leaves the running ones to the
+  pool's deactivation, which waits for them within the budget and then cancels them, so they are resumed elsewhere.
+- **A cancellation the silo's stop did not cause is a failed attempt.** A recorded command whose handler threw an
+  `OperationCanceledException` of its own, for example from an HTTP call that timed out, was neither recorded as a
+  failure nor logged. It now counts against the delivery bound like any other failure, with `IntentAttemptFailed`
+  and its message on the record. A handler cancelled because its silo stops still gives its attempt back.
+- **A duplicate hand-over to a command that names no aggregate is logged.** The runner now holds the command from
+  the first hand-over on. A second hand-over that arrives meanwhile is dropped with `IntentHandOverDropped` at Debug,
+  as one dropped by the fence already was. A hand-over that reaches the runner while its silo stops is given up at
+  once, with its attempt given back, as the aggregate grain already did.
+- **Documentation.** *Operate the Orleans execution model* no longer says that a long hand-over's timeout goes
+  unlogged: only a forwarded command is bounded by the response timeout. *Migrate to the Orleans execution model*
+  no longer says that Orleans' PostgreSQL scripts ship inside the ADO.NET provider packages. They do not, and the
+  guide now lists the paths to take them from in the `dotnet/orleans` repository.
+
+### Upgrade notes
+
+- Upgrade the silos before the hosts that dispatch. A dispatcher of this release that hands over to a silo of an
+  earlier one still waits for the whole unit there. Because it no longer keeps that wait's timeout quiet, it logs a
+  failed hand-over (`117_113` `HandOverFailed`, Warning) for every long unit until the silo is upgraded, beside the
+  runtime's own warnings. The unit itself runs and completes, and the drain does not hand it over again.
 
 ## [4.4.6] — 2026-10-22
 

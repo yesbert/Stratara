@@ -60,8 +60,8 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
         Assert.Equal(1, probes.RunsOf(probe));
         if (!namesAnAggregate)
         {
-            // The runner of a command that names no aggregate holds nothing: the second hand-over waited behind the
-            // first and found the stamp moved, which only the fence refuses.
+            // The runner holds the intent from the first hand-over on: the second is dropped either while the first still
+            // holds it or, once the first has run, by the fence — logged both ways.
             Assert.Contains(probes.Logs.Entries, e => e.EventId == LogEvents.Orleans.IntentHandOverDropped && e.Message.Contains(intent.ToString(), StringComparison.Ordinal));
         }
 

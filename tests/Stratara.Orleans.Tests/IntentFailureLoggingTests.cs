@@ -43,6 +43,30 @@ public sealed class IntentFailureLoggingTests
     }
 
     [Fact]
+    public async Task A_cancellation_the_silo_did_not_cause_is_a_failed_attempt_logged_and_recorded()
+    {
+        var intentId = Guid.NewGuid();
+        var logger = new RecordingLogger();
+        var intents = new Mock<ICommandIntentStore>();
+        intents.Setup(store => store.RecordFailureAsync(intentId, It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        intents.Setup(store => store.TryRenewAsync(intentId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var services = new ServiceCollection()
+            .AddSingleton(intents.Object)
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton(Options.Create(new OrleansDispatchOptions { IntentGrace = TimeSpan.FromMinutes(1) }))
+            .AddSingleton<ILogger<IntentLease>>(new TypedLogger<IntentLease>(logger))
+            .BuildServiceProvider();
+        var lease = await IntentLease.StartAsync(services, intentId, claimedAt: null) ?? throw new InvalidOperationException("the lease was not started");
+        var envelope = new AggregateCommandEnvelope("App.Commands.Fetch", "{}", "{}");
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => CommandExecution.RunIntentAsync(
+            services, envelope, intentId, lease, around: _ => throw new TaskCanceledException("the handler's own call timed out"), stopping: CancellationToken.None));
+
+        Assert.Single(logger.Entries, e => e.EventId.Id == LogEvents.Orleans.IntentAttemptFailed);
+        intents.Verify(store => store.RecordFailureAsync(intentId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task A_hand_over_that_faults_is_logged_with_the_intent_and_the_aggregate()
     {
         var intentId = Guid.NewGuid();
@@ -61,18 +85,18 @@ public sealed class IntentFailureLoggingTests
     }
 
     [Fact]
-    public async Task A_timeout_on_a_call_that_spans_a_heavy_unit_is_not_logged_but_any_other_fault_is()
+    public async Task A_timeout_on_any_hand_over_is_logged_because_a_hand_over_answers_once_the_command_is_accepted()
     {
         var logger = new RecordingLogger();
 
-        IntentHandOver.Observe(Task.FromException(new TimeoutException("the unit outlived the response timeout")), logger, Guid.NewGuid(), Guid.NewGuid(), heavy: true);
-        IntentHandOver.Observe(Task.FromException(new TimeoutException("the runner outlived the response timeout")), logger, Guid.NewGuid(), aggregateId: null, heavy: false);
+        IntentHandOver.Observe(Task.FromException(new TimeoutException("the pool did not accept in time")), logger, Guid.NewGuid(), Guid.NewGuid(), heavy: true);
+        IntentHandOver.Observe(Task.FromException(new TimeoutException("the runner did not accept in time")), logger, Guid.NewGuid(), aggregateId: null, heavy: false);
         IntentHandOver.Observe(Task.FromException(new InvalidOperationException("the pool refused the call")), logger, Guid.NewGuid(), Guid.NewGuid(), heavy: true);
         IntentHandOver.Observe(Task.CompletedTask, logger, Guid.NewGuid(), Guid.NewGuid(), heavy: false);
         await Task.Delay(50);
 
-        var entry = Assert.Single(logger.Entries);
-        Assert.Equal(LogEvents.Orleans.HandOverFailed, entry.EventId.Id);
-        Assert.IsType<InvalidOperationException>(entry.Exception);
+        Assert.Equal(3, logger.Entries.Count);
+        Assert.All(logger.Entries, entry => Assert.Equal(LogEvents.Orleans.HandOverFailed, entry.EventId.Id));
+        Assert.Equal(2, logger.Entries.Count(entry => entry.Exception is TimeoutException));
     }
 }

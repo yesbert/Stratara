@@ -35,7 +35,7 @@ internal sealed class HeavyWorkRunner : IHostedService
     private readonly ILogger<HeavyWorkRunner> _logger;
     private readonly TimeSpan _renewal;
     private readonly ResiliencePipeline<bool> _acquirePermit;
-    private Task[]? _workers;
+    private bool _started;
 
     public HeavyWorkRunner(
         IServiceProvider services,
@@ -118,27 +118,30 @@ internal sealed class HeavyWorkRunner : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _workers ??= [.. Enumerable.Range(0, HeavyWorkGrain.MaxLocalWorkers).Select(_ => WorkAsync())];
+        if (_started)
+        {
+            return Task.CompletedTask;
+        }
+
+        _started = true;
+        for (var worker = 0; worker < HeavyWorkGrain.MaxLocalWorkers; worker++)
+        {
+            WorkAsync().Ignore();
+        }
+
         return Task.CompletedTask;
     }
 
-    /// <summary>Ends the workers once what they hold has run, within the host's shutdown budget.</summary>
-    public async Task StopAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Stops taking units; the workers end once what they hold has run. A running unit is not waited for here: the host
+    /// stops this service before the silo it was registered after, and the unit is cancelled only once the silo stops,
+    /// so waiting here would hold the host up until its shutdown budget ran out. The pool grain's deactivation waits for
+    /// the unit within the deactivation budget and then cancels it.
+    /// </summary>
+    public Task StopAsync(CancellationToken cancellationToken)
     {
         _queued.Writer.TryComplete();
-        if (_workers is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await Task.WhenAll(_workers).WaitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            _workers = null;
-        }
+        return Task.CompletedTask;
     }
 
     private async Task WorkAsync()

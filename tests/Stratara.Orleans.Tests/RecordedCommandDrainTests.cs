@@ -307,6 +307,8 @@ public sealed class RecordedCommandDrainTests
 
             return new TaskCompletionSource().Task;
         }
+
+        public Task HoldAsync() => Task.CompletedTask;
     }
 
     private sealed record LogEvent(int Id, LogLevel Level, string Message);
