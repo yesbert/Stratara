@@ -10,7 +10,7 @@ namespace Stratara.Abstractions.Projections;
 /// <example>
 /// <code>
 /// await mediator.HandleAsync(command, cancellationToken);
-/// var mark = await progress.MarkAsync(cancellationToken);
+/// var mark = await progress.MarkAsync([command.OrderId], cancellationToken);
 /// var result = await progress.WaitAsync(typeof(OrdersProjection), mark, TimeSpan.FromSeconds(5), cancellationToken);
 /// if (!result.IsReached)
 /// {
@@ -43,6 +43,7 @@ public interface IProjectionProgress
     /// implementation that knows its partitions narrows it.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="streamIds"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="streamIds"/> names no stream (the framework's implementation).</exception>
     Task<StoreMark> MarkAsync(IEnumerable<Guid> streamIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(streamIds);
@@ -55,7 +56,7 @@ public interface IProjectionProgress
     /// retry may still apply the entry in time; a rebuild or a full replay during the wait is waited through.
     /// </summary>
     /// <param name="projectionName">The projection, by the name the framework gives it.</param>
-    /// <param name="mark">A mark taken with <see cref="MarkAsync(CancellationToken)"/>.</param>
+    /// <param name="mark">A mark taken with <see cref="MarkAsync(CancellationToken)"/> or <see cref="MarkAsync(IEnumerable{Guid}, CancellationToken)"/>.</param>
     /// <param name="timeout">How long to wait at most; <see cref="TimeSpan.Zero"/> answers without waiting.</param>
     /// <param name="cancellationToken">Ends the wait without an answer.</param>
     /// <returns>
@@ -72,7 +73,7 @@ public interface IProjectionProgress
     /// covers; otherwise as <see cref="WaitAsync(string, StoreMark, TimeSpan, CancellationToken)"/>.
     /// </summary>
     /// <param name="projectionType">The type of a registered projection.</param>
-    /// <param name="mark">A mark taken with <see cref="MarkAsync(CancellationToken)"/>.</param>
+    /// <param name="mark">A mark taken with <see cref="MarkAsync(CancellationToken)"/> or <see cref="MarkAsync(IEnumerable{Guid}, CancellationToken)"/>.</param>
     /// <param name="timeout">How long to wait at most; <see cref="TimeSpan.Zero"/> answers without waiting.</param>
     /// <param name="cancellationToken">Ends the wait without an answer.</param>
     /// <returns>Whether the projection reached the mark, and if not, why and in which partitions.</returns>

@@ -32,30 +32,32 @@ internal sealed class ProjectionProgress(
 
     private ProjectionNames? _names;
 
-    public async Task<StoreMark> MarkAsync(CancellationToken cancellationToken = default)
-    {
-        using var scope = scopeFactory.CreateScope();
-        var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>();
-        var positions = new long[commitOrder.Value.PartitionCount];
-        for (var partition = 0; partition < positions.Length; partition++)
-        {
-            positions[partition] = await reader.CommittedHeadAsync(partition, cancellationToken);
-        }
-
-        return new StoreMark(reader.Name, positions);
-    }
+    public Task<StoreMark> MarkAsync(CancellationToken cancellationToken = default) =>
+        MarkOfAsync(Enumerable.Range(0, commitOrder.Value.PartitionCount), cancellationToken);
 
     /// <summary>The committed head of the partitions the streams fall into, and <c>0</c> — reached at once — in every other.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="streamIds"/> is <see langword="null"/>.</exception>
-    public async Task<StoreMark> MarkAsync(IEnumerable<Guid> streamIds, CancellationToken cancellationToken = default)
+    /// <exception cref="ArgumentException"><paramref name="streamIds"/> names no stream.</exception>
+    public Task<StoreMark> MarkAsync(IEnumerable<Guid> streamIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(streamIds);
         var partitionCount = commitOrder.Value.PartitionCount;
         var touched = streamIds.Select(id => PartitionMap.PartitionOf(BucketCalculator.GetBucketId(id), partitionCount)).Distinct().ToList();
+        if (touched.Count == 0)
+        {
+            throw new ArgumentException("A mark of streams needs at least one stream; take MarkAsync() for everything committed.", nameof(streamIds));
+        }
+
+        return MarkOfAsync(touched, cancellationToken);
+    }
+
+    /// <summary>The committed head of <paramref name="partitions"/>, and <c>0</c> in every other.</summary>
+    private async Task<StoreMark> MarkOfAsync(IEnumerable<int> partitions, CancellationToken cancellationToken)
+    {
         using var scope = scopeFactory.CreateScope();
         var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>();
-        var positions = new long[partitionCount];
-        foreach (var partition in touched)
+        var positions = new long[commitOrder.Value.PartitionCount];
+        foreach (var partition in partitions)
         {
             positions[partition] = await reader.CommittedHeadAsync(partition, cancellationToken);
         }

@@ -1,7 +1,8 @@
 ## 1. The mark of streams
 
 - [x] 1.1 `IProjectionProgress.MarkAsync(IEnumerable<Guid> streamIds, CancellationToken)` with a default that answers `MarkAsync()`, documented with when to take which (`src/Stratara.Abstractions/Abstractions/Projections/IProjectionProgress.cs`)
-- [x] 1.2 `ProjectionProgress`: the committed head of the streams' partitions, 0 elsewhere (`src/Stratara.Orleans/Projections/ProjectionProgress.cs`)
+- [x] 1.2 `ProjectionProgress`: the committed head of the streams' partitions, 0 elsewhere, one shared builder with the whole-store mark, and a mark of no stream refused (`src/Stratara.Orleans/Projections/ProjectionProgress.cs`)
+- [x] 1.3 Review findings (design D3): MODIFIED delta, scenario wording, mark assertions, the empty-set refusal, XML docs and example, guide wording, and the refusing projection registered only where a test needs it
 
 ## 2. Tests
 

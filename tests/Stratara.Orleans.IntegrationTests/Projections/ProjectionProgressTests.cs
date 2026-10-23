@@ -135,10 +135,16 @@ public sealed class ProjectionProgressTests(PostgreSqlFixture postgres, RedisFix
         refused.Streams.TryAdd(stopped, true);
         await AppendAsync(app.Services, Guid.NewGuid(), stopped);
         await AppendAsync(app.Services, Guid.NewGuid(), own);
-        var ownWait = await progress.WaitAsync(nameof(RefusingCounterProjection), await progress.MarkAsync([own], TestContext.Current.CancellationToken), Patient, TestContext.Current.CancellationToken);
+        var ownMark = await progress.MarkAsync([own], TestContext.Current.CancellationToken);
+        var ownWait = await progress.WaitAsync(nameof(RefusingCounterProjection), ownMark, Patient, TestContext.Current.CancellationToken);
+        var probeWait = await progress.WaitAsync(typeof(RebuildProbeProjection), ownMark, Patient, TestContext.Current.CancellationToken);
         var storeWait = await progress.WaitAsync(nameof(RefusingCounterProjection), await progress.MarkAsync(TestContext.Current.CancellationToken), Short, TestContext.Current.CancellationToken);
 
+        Assert.True(ownMark.Positions[PartitionOf(own, partitions)] > 0, "the mark does not constrain the partition of the host's write");
+        Assert.All(Enumerable.Range(0, partitions).Where(p => p != PartitionOf(own, partitions)), p => Assert.Equal(0, ownMark.Positions[p]));
         Assert.True(ownWait.IsReached, $"the wait for the host's own write was held up: {ownWait.Outcome}");
+        Assert.True(probeWait.IsReached);
+        Assert.Equal(1, await CountAsync(app.Services, own));
         Assert.Equal(ProjectionWaitOutcome.Stalled, storeWait.Outcome);
         Assert.Equal(PartitionOf(stopped, partitions), Assert.Single(storeWait.Behind).Partition);
         await app.StopAsync();
@@ -170,8 +176,7 @@ public sealed class ProjectionProgressTests(PostgreSqlFixture postgres, RedisFix
             .AddTrustedType<CounterIncremented>()
             .AddScoped<IProjection, RebuildProbeProjection>()
             .AddSingleton(control)
-            .AddSingleton(refused ?? new RefusedStreams())
-            .AddScoped<IProjection, RefusingCounterProjection>()
+
             .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
@@ -180,6 +185,11 @@ public sealed class ProjectionProgressTests(PostgreSqlFixture postgres, RedisFix
                 options.PollInterval = TimeSpan.FromSeconds(1);
                 options.KeepAlivePeriod = TimeSpan.FromSeconds(5);
             });
+
+        if (refused is not null)
+        {
+            builder.Services.AddSingleton(refused).AddScoped<IProjection, RefusingCounterProjection>();
+        }
 
         var app = builder.Build();
         await using (var scope = app.Services.CreateAsyncScope())

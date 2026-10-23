@@ -16,9 +16,10 @@ namespace Stratara.Testing.Orleans.Tests;
 /// stopped at an entry or suspended by a replay is answered as such at the limit, never as reached, and a replay that
 /// ends within the time is waited through; partitions without entries count as reached; a mark of another partition
 /// count does not apply; an unknown projection is refused; and a cancelled wait ends without an answer. Scenarios of
-/// <em>A host can wait until a projection has applied its own write</em>: a mark of the host's streams is reached
-/// while another partition is stopped, which a mark of the whole store still waits for, and a mark of a stream with
-/// nothing committed is reached at once.
+/// <em>A host can wait until a projection has applied its own write</em>: a mark of the host's streams constrains only
+/// their partition and is reached, with the write applied, while another partition is stopped, which a mark of the
+/// whole store still waits for; a mark of streams in partitions with nothing committed is reached at once; and a mark
+/// of no stream is refused.
 /// </summary>
 public sealed class ProjectionProgressTests
 {
@@ -187,16 +188,31 @@ public sealed class ProjectionProgressTests
         await AppendOpenedAsync(host, own);
         var ownMark = await progress.MarkAsync([own], TestContext.Current.CancellationToken);
         var ownWait = await progress.WaitAsync(nameof(RefusingProjection), ownMark, Patient, TestContext.Current.CancellationToken);
+        var balanceWait = await progress.WaitAsync(typeof(BalanceProjection), ownMark, Patient, TestContext.Current.CancellationToken);
         var storeMark = await progress.MarkAsync(TestContext.Current.CancellationToken);
         var storeWait = await progress.WaitAsync(nameof(RefusingProjection), storeMark, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
+        Assert.True(ownMark.Positions[PartitionOf(own, partitions)] > 0, "the mark does not constrain the partition of the host's write");
+        Assert.All(Enumerable.Range(0, partitions).Where(p => p != PartitionOf(own, partitions)), p => Assert.Equal(0, ownMark.Positions[p]));
         Assert.True(ownWait.IsReached, $"the wait for the host's own write was held up: {ownWait.Outcome}");
+        Assert.True(balanceWait.IsReached);
+        Assert.True(runs.Balances.ContainsKey(own), "the wait answered reached before the projection applied the host's write");
         Assert.Equal(ProjectionWaitOutcome.Stalled, storeWait.Outcome);
         Assert.Equal(PartitionOf(refused, partitions), Assert.Single(storeWait.Behind).Partition);
     }
 
     [Fact]
-    public async Task A_mark_of_a_stream_nothing_was_committed_to_is_reached_at_once()
+    public async Task A_mark_of_no_stream_is_refused()
+    {
+        var runs = new Runs();
+        await using var host = await CreateAsync(runs);
+        var progress = host.Services.GetRequiredService<IProjectionProgress>();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => progress.MarkAsync([], TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_mark_of_a_stream_in_a_partition_nothing_was_committed_to_is_reached_at_once()
     {
         var runs = new Runs();
         await using var host = await CreateAsync(runs);

@@ -34,6 +34,16 @@ gained.
 default `MarkAsync(streamIds) => MarkAsync()` keeps the promise "covers every entry committed to those streams",
 because the global mark covers more.
 
+### D3: Review findings
+
+*As built after `/code-review high`.* The delta modifies the existing requirement instead of adding one beside it, so
+the spec no longer says that every mark constrains every partition. A mark of no stream is refused with
+`ArgumentException` rather than answered by an all-zero mark, which would read as reached at once. A mark of a stream
+with nothing committed is reached at once only where its partition holds nothing, and the scenario says so. Both
+marks share one builder. The tests assert that the mark constrains the written stream's partition and no other, and
+that the write is in the read model. *Kept:* the stream-to-partition expression is not lifted into a new public
+`PartitionMap` member, because that would be API for an internal convenience.
+
 ## Risks / Trade-offs
 
 - **[A host takes the stream mark for a decision that needs everything]** → The guide says when the global mark is
