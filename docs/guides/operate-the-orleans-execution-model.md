@@ -602,6 +602,30 @@ lease and the permit are renewed from timers of their own, off the activation's 
 that computes without yielding is renewed all the same: however long a handler runs, and whether or not it
 yields, it runs once.
 
+### A burst of heavy work
+
+Waiting costs a recorded command nothing. A burst of heavy commands many times the cluster-wide limit becomes a
+backlog that is worked off, and only a handler that runs and fails counts against
+`MessageRetry:MaxDeliveryAttempts`:
+
+- **The pool holds a bounded number.** One pool holds at most `HeavyWorkOptions.QueuedLimitPerPool` commands
+  (256 by default), running and waiting together. A hand-over beyond it is refused, its attempt given back, and it
+  is logged at debug (`117_133`). The command stays in the store and is handed over again after the grace, at most a
+  drain batch at a time. The whole cluster holds `pools × QueuedLimitPerPool` heavy commands in memory, and the rest
+  wait in the table, where they cost nothing.
+- **Holding costs one statement per renewal period per thousand commands.** A silo renews every command it holds —
+  in an aggregate's order, in a runner, in the heavy pool — in batches every third of the grace, through
+  `ICommandIntentStore.RenewManyAsync`, so the store load does not grow with the queue. A batch that fails is logged
+  once (`117_134`) and renewed again a third of the grace later.
+- **A lapse costs no attempt.** Should the renewals fail long enough for records to lapse, for example on an
+  exhausted connection pool, the drain hands those commands over again to the silo that still holds them. Those
+  hand-overs are dropped as duplicates and give their attempts back. A stop that ends waiting commands gives theirs
+  back too.
+
+A store of your own needs `RenewManyAsync` (its default renews one at a time) and `ReturnAttemptAsync` (its default
+gives nothing back, so waiting would count) to keep these promises. Size the connection pool of the store a silo
+uses for its handlers, readers and renewals together ([connection pools](../getting-started/di-composition.md)).
+
 The permits are kept in memory by one activation in the durable directory, and the bound holds across the
 loss of its silo. A keeper that is activated — after a failover, and on a cluster's first heavy command,
 because it cannot tell the two apart — admits no new unit for one `HeavyWorkOptions.PermitLease`, the

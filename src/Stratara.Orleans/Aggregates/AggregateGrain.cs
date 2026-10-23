@@ -114,6 +114,11 @@ internal sealed class AggregateGrain(IServiceScopeFactory scopeFactory, SiloStop
     {
         if (_heldIntents.ContainsKey(intentId))
         {
+            if (envelope.ClaimedAt is not null)
+            {
+                await IntentLease.GiveBackAsync(scopeFactory, intentId);
+            }
+
             return;
         }
 
@@ -368,6 +373,11 @@ internal sealed class CommandRunnerGrain(IServiceScopeFactory scopeFactory, Silo
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogIntentHandOverDropped(this.GetPrimaryKey());
+            }
+
+            if (envelope.ClaimedAt is not null)
+            {
+                await IntentLease.GiveBackAsync(scopeFactory, this.GetPrimaryKey());
             }
 
             return;

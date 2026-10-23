@@ -211,6 +211,18 @@ internal static partial class OrleansLog
     public static partial void LogIntentRenewalFailed(this ILogger logger, Exception exception, Guid intentId);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.IntentBatchRenewalFailed,
+        Level = LogLevel.Warning,
+        Message = "Renewing the hand-overs of {Count} held commands failed; the next renewal tries again.")]
+    public static partial void LogIntentBatchRenewalFailed(this ILogger logger, Exception exception, int count);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.HeavyPoolFull,
+        Level = LogLevel.Debug,
+        Message = "Heavy pool {Pool} holds {Limit} commands and refused command {IntentId}; its attempt is given back and the drain hands it over again after the grace.")]
+    public static partial void LogHeavyPoolFull(this ILogger logger, Guid intentId, long pool, int limit);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.PermitRenewalLost,
         Level = LogLevel.Warning,
         Message = "Heavy-work permit of running unit {UnitId} was no longer held when renewed; it is taken again.")]

@@ -30,6 +30,14 @@ public sealed class HeavyWorkOptions
     /// is activated, so the units still running under a lost keeper are counted again before new ones start.
     /// </summary>
     public TimeSpan PermitLease { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How many heavy commands one pool holds at once, running and waiting together. A hand-over beyond it is refused
+    /// and its attempt given back; the command stays recorded and is handed over again after the grace, so a burst waits
+    /// in the store, where it costs nothing, rather than in the silo's memory. There are as many pools as
+    /// <see cref="ClusterWideLimit"/> needs, one per eight units of it.
+    /// </summary>
+    public int QueuedLimitPerPool { get; set; } = 256;
 }
 
 /// <summary>A bounded pool of workers; the key names the pool, and the pools are placed on silos of the command role.</summary>
@@ -101,7 +109,9 @@ internal interface IHeavyWorkPermitGrain : IGrainWithIntegerKey
 internal sealed class HeavyWorkGrain(
     IServiceScopeFactory scopeFactory,
     HeavyWorkRunner runner,
-    SiloStopSignal stopSignal) : Grain, IHeavyWorkGrain
+    SiloStopSignal stopSignal,
+    IOptions<HeavyWorkOptions> options,
+    ILogger<HeavyWorkGrain> logger) : Grain, IHeavyWorkGrain
 {
     /// <summary>How many units one silo runs at once — the workers of its <see cref="HeavyWorkRunner"/>.</summary>
     public const int MaxLocalWorkers = 8;
@@ -123,10 +133,29 @@ internal sealed class HeavyWorkGrain(
     public async Task ExecuteIntentAsync(Guid intentId, AggregateCommandEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        if (!_held.Add(intentId))
+        if (_held.Contains(intentId))
         {
+            if (envelope.ClaimedAt is not null)
+            {
+                await IntentLease.GiveBackAsync(scopeFactory, intentId);
+            }
+
             return;
         }
+
+        var limit = options.Value.QueuedLimitPerPool;
+        if (_held.Count >= limit)
+        {
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogHeavyPoolFull(intentId, this.GetPrimaryKeyLong(), limit);
+            }
+
+            await IntentLease.GiveBackAsync(scopeFactory, intentId);
+            return;
+        }
+
+        _held.Add(intentId);
 
         var scope = scopeFactory.CreateScope();
         Task run;

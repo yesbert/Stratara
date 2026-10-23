@@ -102,6 +102,28 @@ public interface ICommandIntentStore
     Task RenewAsync(Guid intentId, DateTimeOffset now, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Renews the hand-overs of several commands whose handlers are running or waiting, so none of them becomes due again:
+    /// for each that is not kept, what <see cref="RenewAsync"/> does.
+    /// </summary>
+    /// <param name="intentIds">The recorded commands.</param>
+    /// <param name="now">The time of the renewal.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>A task that completes when the renewals are durable.</returns>
+    /// <remarks>
+    /// The default renews one command at a time through <see cref="RenewAsync"/>, one round trip each. A store that
+    /// overrides it renews the batch in a number of round trips that does not grow with the batch, so that a host
+    /// holding many commands pays per renewal period, not per command.
+    /// </remarks>
+    async Task RenewManyAsync(IReadOnlyList<Guid> intentIds, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(intentIds);
+        foreach (var intentId in intentIds)
+        {
+            await RenewAsync(intentId, now, cancellationToken);
+        }
+    }
+
+    /// <summary>
     /// Renews the hand-over of a command that is still recorded and not kept, and reports whether there was one: a late
     /// hand-over that finds the command gone — it completed through another run — or kept is not run.
     /// </summary>

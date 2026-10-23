@@ -142,6 +142,21 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
     }
 
+    /// <summary>One statement for the batch: every listed row that is not kept takes <paramref name="now"/> as its last hand-over.</summary>
+    public async Task RenewManyAsync(IReadOnlyList<Guid> intentIds, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(intentIds);
+        if (intentIds.Count == 0)
+        {
+            return;
+        }
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.Set<OutboxEntry>()
+            .Where(e => intentIds.Contains(e.Id) && e.KeptAt == null)
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastHandedOverAt, (DateTimeOffset?)now), cancellationToken);
+    }
+
     /// <summary>
     /// One guarded update: it touches the row only where the last hand-over is still the claim's, so of two hand-overs
     /// of one claim exactly one moves it, and a row that is gone touches nothing.

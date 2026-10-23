@@ -52,7 +52,8 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
     public ValidateOptionsResult Validate(string? name, HeavyWorkOptions options) => Result<HeavyWorkOptions>(
         Positive(options.ClusterWideLimit, nameof(options.ClusterWideLimit)),
         Positive(options.PermitRetry, nameof(options.PermitRetry)),
-        Positive(options.PermitLease, nameof(options.PermitLease)));
+        Positive(options.PermitLease, nameof(options.PermitLease)),
+        Positive(options.QueuedLimitPerPool, nameof(options.QueuedLimitPerPool)));
 
     public ValidateOptionsResult Validate(string? name, DurableTimerOptions options) => Result<DurableTimerOptions>(
         AtLeastReminderMinimum(options.RetryPeriod, nameof(options.RetryPeriod)),

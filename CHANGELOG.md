@@ -22,6 +22,8 @@ instead of needing a message broker. Additive API only; no schema change and no 
 
 ### Added
 
+- **`ICommandIntentStore.RenewManyAsync`** (default: one `RenewAsync` per command) and
+  **`HeavyWorkOptions.QueuedLimitPerPool`** (default 256). See *Fixed* for what they serve.
 - **`AddStrataraStoreWakeUps()`** (`Stratara.Orleans`). A host that commits facts on the Orleans execution model
   without hosting a reader can now wake the store readers instead of publishing bundles to the bus. Such a host is an
   Orleans client that runs command handlers in process, or a command silo without a store-reading role. After a
@@ -44,6 +46,20 @@ instead of needing a message broker. Additive API only; no schema change and no 
 
 ### Fixed
 
+- **Waiting no longer costs a recorded command its attempts.** Under a burst of heavy commands many times the
+  cluster-wide limit, every accepted command held a lease that renewed its record with a statement of its own. The
+  store load grew with the queue until the connection pool was exhausted. Renewals then failed, records lapsed, the
+  drain handed them over again, and each hand-over counted an attempt, so commands were kept for an operator although
+  no handler had failed. Now:
+  - a silo renews everything it holds in batches, one statement per thousand commands per renewal period;
+  - one heavy pool holds at most `QueuedLimitPerPool` commands, and a hand-over beyond it is refused with its attempt
+    given back, so the burst waits in the store;
+  - a hand-over that only finds its command still held, in the heavy pool, a runner or an aggregate's order, is
+    dropped and gives its attempt back.
+
+  A stop already gave back the attempts of what it ended. A handler that runs and fails still counts, and is kept at
+  the bound as before. New log events: `117_133` (`HeavyPoolFull`, Debug) and `117_134` (`IntentBatchRenewalFailed`,
+  Warning). A store of your own keeps these promises only with `RenewManyAsync` and `ReturnAttemptAsync`.
 - **A pool size the connection string names is kept.** The PostgreSQL registrations of the write, read and identity
   contexts rewrote every connection string whose maximum pool size was Npgsql's default of 100 to 15, including one
   that named `Maximum Pool Size=100` on purpose, and said nothing about it. They now apply 15 only where the
