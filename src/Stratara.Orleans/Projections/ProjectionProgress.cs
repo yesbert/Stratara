@@ -4,11 +4,13 @@ using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Projections.Abstractions;
+using Stratara.Shared.Partitioning;
 
 namespace Stratara.Orleans.Projections;
 
 /// <summary>
-/// Takes a mark from the reader's committed head of every partition, and waits by asking each partition's projection
+/// Takes a mark from the reader's committed head of every partition — or, for a mark of streams, of the partitions they
+/// fall into only — and waits by asking each partition's projection
 /// grain, in rounds, to answer once its checkpoint has reached the mark. A partition whose mark is <c>0</c> holds nothing
 /// the mark covers and counts as reached without a call. Every round asks every other partition, those that answered
 /// reached before included, and the wait answers reached only when all of them did in the same round: a rebuild or a
@@ -36,6 +38,24 @@ internal sealed class ProjectionProgress(
         var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>();
         var positions = new long[commitOrder.Value.PartitionCount];
         for (var partition = 0; partition < positions.Length; partition++)
+        {
+            positions[partition] = await reader.CommittedHeadAsync(partition, cancellationToken);
+        }
+
+        return new StoreMark(reader.Name, positions);
+    }
+
+    /// <summary>The committed head of the partitions the streams fall into, and <c>0</c> — reached at once — in every other.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="streamIds"/> is <see langword="null"/>.</exception>
+    public async Task<StoreMark> MarkAsync(IEnumerable<Guid> streamIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(streamIds);
+        var partitionCount = commitOrder.Value.PartitionCount;
+        var touched = streamIds.Select(id => PartitionMap.PartitionOf(BucketCalculator.GetBucketId(id), partitionCount)).Distinct().ToList();
+        using var scope = scopeFactory.CreateScope();
+        var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>();
+        var positions = new long[partitionCount];
+        foreach (var partition in touched)
         {
             positions[partition] = await reader.CommittedHeadAsync(partition, cancellationToken);
         }

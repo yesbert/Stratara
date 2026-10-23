@@ -21,7 +21,9 @@ namespace Stratara.Orleans.IntegrationTests.Projections;
 /// with the native reader: a host's own write is in the read model once the wait reached the mark; a write committed
 /// while another transaction is open is not answered as reached until the projection could apply it, which a mark taken
 /// at the held-back head would have done at once; and a wait started before a rebuild answers only once the rebuilt
-/// model holds the mark's entries.
+/// model holds the mark's entries. Scenario <em>A host waits for its own write while another partition lags</em>: a
+/// mark of the host's stream is reached while a projection is stopped in another partition, which a mark of the whole
+/// store still waits for.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class ProjectionProgressTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
@@ -114,7 +116,38 @@ public sealed class ProjectionProgressTests(PostgreSqlFixture postgres, RedisFix
         await app.StopAsync();
     }
 
-    private async Task<IHost> StartAsync(RebuildProbeControl control, string database, int siloPort, int gatewayPort)
+    [Fact]
+    public async Task A_host_waits_for_its_own_write_while_another_partition_is_stopped()
+    {
+        var control = new RebuildProbeControl();
+        var refused = new RefusedStreams();
+        using var app = await StartAsync(control, "poc_progress_own_stream", siloPort: 11484, gatewayPort: 30484, refused);
+        var progress = app.Services.GetRequiredService<IProjectionProgress>();
+        var partitions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<CommitOrderOptions>>().Value.PartitionCount;
+        var stopped = Guid.NewGuid();
+        Guid own;
+        do
+        {
+            own = Guid.NewGuid();
+        }
+        while (PartitionOf(own, partitions) == PartitionOf(stopped, partitions));
+
+        refused.Streams.TryAdd(stopped, true);
+        await AppendAsync(app.Services, Guid.NewGuid(), stopped);
+        await AppendAsync(app.Services, Guid.NewGuid(), own);
+        var ownWait = await progress.WaitAsync(nameof(RefusingCounterProjection), await progress.MarkAsync([own], TestContext.Current.CancellationToken), Patient, TestContext.Current.CancellationToken);
+        var storeWait = await progress.WaitAsync(nameof(RefusingCounterProjection), await progress.MarkAsync(TestContext.Current.CancellationToken), Short, TestContext.Current.CancellationToken);
+
+        Assert.True(ownWait.IsReached, $"the wait for the host's own write was held up: {ownWait.Outcome}");
+        Assert.Equal(ProjectionWaitOutcome.Stalled, storeWait.Outcome);
+        Assert.Equal(PartitionOf(stopped, partitions), Assert.Single(storeWait.Behind).Partition);
+        await app.StopAsync();
+    }
+
+    private static int PartitionOf(Guid streamId, int partitions) =>
+        PartitionMap.PartitionOf(Stratara.Shared.Partitioning.BucketCalculator.GetBucketId(streamId), partitions);
+
+    private async Task<IHost> StartAsync(RebuildProbeControl control, string database, int siloPort, int gatewayPort, RefusedStreams? refused = null)
     {
         var orleansConnectionString = postgres.ConnectionStringFor("poc_orleans");
         await PocSilo.EnsureSchemaAsync(orleansConnectionString);
@@ -137,6 +170,8 @@ public sealed class ProjectionProgressTests(PostgreSqlFixture postgres, RedisFix
             .AddTrustedType<CounterIncremented>()
             .AddScoped<IProjection, RebuildProbeProjection>()
             .AddSingleton(control)
+            .AddSingleton(refused ?? new RefusedStreams())
+            .AddScoped<IProjection, RefusingCounterProjection>()
             .Configure<PocCounterOptions>(options => options.MaintainPartitionCounter = false)
             .AddScoped<ICommittedPositionReader, PostgresTransactionIdReader<PocCommitOrderWriteDbContext>>()
             .AddStrataraProjectionCheckpoints<PocReadDbContext>()
@@ -195,5 +230,20 @@ public sealed class ProjectionProgressTests(PostgreSqlFixture postgres, RedisFix
         }
 
         return false;
+    }
+
+    /// <summary>The streams <see cref="RefusingCounterProjection"/> fails on, every time.</summary>
+    public sealed class RefusedStreams
+    {
+        public System.Collections.Concurrent.ConcurrentDictionary<Guid, bool> Streams { get; } = new();
+    }
+
+    public sealed class RefusingCounterProjection(RefusedStreams refused) : IProjection
+    {
+        [JetBrains.Annotations.UsedImplicitly]
+        public Task HandleAsync(IEvent<CounterCreated> @event, CancellationToken cancellationToken) =>
+            refused.Streams.ContainsKey(@event.StreamId)
+                ? throw new InvalidOperationException($"stream {@event.StreamId} is refused")
+                : Task.CompletedTask;
     }
 }

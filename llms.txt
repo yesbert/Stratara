@@ -161,9 +161,10 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   fails at start; every setting is validated at start. A failing entry stops its partition for the
   projection or saga that fails on it and is retried — it is not dead-lettered; each saga reads with a
   checkpoint of its own (`sagas:<SagaName>`), so the other sagas go on. A host that must read its own
-  write takes `IProjectionProgress.MarkAsync()` after the commit and `WaitAsync(typeof(TProjection), mark,
-  timeout)` (since 4.4.6): `Reached` only once the projection applied everything committed when the mark was
-  taken; otherwise `TimedOut`, `Stalled` or `Suspended` with the partitions behind, or `MarkNotApplicable` for a
+  write takes `IProjectionProgress.MarkAsync(streamIds)` after the commit — or `MarkAsync()` for everything
+  committed, for a decision across streams — and `WaitAsync(typeof(TProjection), mark, timeout)` (since 4.4.6; the
+  stream mark since 4.4.7): `Reached` only once the projection applied everything the mark covers, in the partitions
+  it constrains; otherwise `TimedOut`, `Stalled` or `Suspended` with the partitions behind, or `MarkNotApplicable` for a
   mark of another partition count — never a false success. Each entry is applied under the session it was recorded under, set
   before the projection, saga or process and their dependencies are resolved, so a service that takes its
   tenant at construction sees the entry's; a checkpoint advances only from the position its reader last saw

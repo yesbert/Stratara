@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Stratara.Orleans.CommitOrder;
+using Stratara.Shared.Partitioning;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
@@ -12,7 +15,10 @@ namespace Stratara.Testing.Orleans.Tests;
 /// portable reader: a host's own write is in the read model once the wait reached the mark; a projection that is slow,
 /// stopped at an entry or suspended by a replay is answered as such at the limit, never as reached, and a replay that
 /// ends within the time is waited through; partitions without entries count as reached; a mark of another partition
-/// count does not apply; an unknown projection is refused; and a cancelled wait ends without an answer.
+/// count does not apply; an unknown projection is refused; and a cancelled wait ends without an answer. Scenarios of
+/// <em>A host can wait until a projection has applied its own write</em>: a mark of the host's streams is reached
+/// while another partition is stopped, which a mark of the whole store still waits for, and a mark of a stream with
+/// nothing committed is reached at once.
 /// </summary>
 public sealed class ProjectionProgressTests
 {
@@ -163,6 +169,58 @@ public sealed class ProjectionProgressTests
         {
             gate.Open();
         }
+    }
+
+    [Fact]
+    public async Task A_host_waits_for_its_own_write_while_another_partition_is_stopped()
+    {
+        var runs = new Runs();
+        var refusals = new Refusals();
+        await using var host = await CreateAsync(runs, refusals: refusals);
+        var progress = host.Services.GetRequiredService<IProjectionProgress>();
+        var partitions = host.Services.GetRequiredService<IOptions<CommitOrderOptions>>().Value.PartitionCount;
+        var refused = Guid.NewGuid();
+        var own = InAnotherPartition(refused, partitions);
+        refusals.Accounts.TryAdd(refused, true);
+
+        await AppendOpenedAsync(host, refused);
+        await AppendOpenedAsync(host, own);
+        var ownMark = await progress.MarkAsync([own], TestContext.Current.CancellationToken);
+        var ownWait = await progress.WaitAsync(nameof(RefusingProjection), ownMark, Patient, TestContext.Current.CancellationToken);
+        var storeMark = await progress.MarkAsync(TestContext.Current.CancellationToken);
+        var storeWait = await progress.WaitAsync(nameof(RefusingProjection), storeMark, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        Assert.True(ownWait.IsReached, $"the wait for the host's own write was held up: {ownWait.Outcome}");
+        Assert.Equal(ProjectionWaitOutcome.Stalled, storeWait.Outcome);
+        Assert.Equal(PartitionOf(refused, partitions), Assert.Single(storeWait.Behind).Partition);
+    }
+
+    [Fact]
+    public async Task A_mark_of_a_stream_nothing_was_committed_to_is_reached_at_once()
+    {
+        var runs = new Runs();
+        await using var host = await CreateAsync(runs);
+        var progress = host.Services.GetRequiredService<IProjectionProgress>();
+
+        var mark = await progress.MarkAsync([Guid.NewGuid()], TestContext.Current.CancellationToken);
+        var result = await progress.WaitAsync(typeof(BalanceProjection), mark, TimeSpan.Zero, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsReached);
+    }
+
+    private static int PartitionOf(Guid streamId, int partitions) => PartitionMap.PartitionOf(BucketCalculator.GetBucketId(streamId), partitions);
+
+    private static Guid InAnotherPartition(Guid streamId, int partitions)
+    {
+        var partition = PartitionOf(streamId, partitions);
+        Guid other;
+        do
+        {
+            other = Guid.NewGuid();
+        }
+        while (PartitionOf(other, partitions) == partition);
+
+        return other;
     }
 
     private static Task<ExecutionModelTestHost> CreateAsync(Runs runs, Gate? gate = null, Refusals? refusals = null) =>
