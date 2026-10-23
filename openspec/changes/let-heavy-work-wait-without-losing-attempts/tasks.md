@@ -29,5 +29,5 @@
 ## 5. Verification
 
 - [x] 5.1 `openspec validate let-heavy-work-wait-without-losing-attempts --strict`
-- [ ] 5.2 `./scripts/local-gauntlet.sh` green
-- [ ] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker)
+- [x] 5.2 `./scripts/local-gauntlet.sh` green
+- [x] 5.3 `dotnet test tests/Stratara.Orleans.IntegrationTests` green (Docker)
