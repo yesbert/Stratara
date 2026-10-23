@@ -58,12 +58,6 @@ public sealed class ResumedOnceInOrderTests(PostgreSqlFixture postgres, RedisFix
         Assert.True(await GoneAsync(store, intent), "the command's record was not removed");
         await Task.Delay(Settle);
         Assert.Equal(1, probes.RunsOf(probe));
-        if (!namesAnAggregate)
-        {
-            // The runner of a command that names no aggregate holds nothing: the second hand-over waited behind the
-            // first and found the stamp moved, which only the fence refuses.
-            Assert.Contains(probes.Logs.Entries, e => e.EventId == LogEvents.Orleans.IntentHandOverDropped && e.Message.Contains(intent.ToString(), StringComparison.Ordinal));
-        }
 
         TestContext.Current.TestOutputHelper?.WriteLine($"claimed at {claimedAt:O}");
         await host.StopAsync();

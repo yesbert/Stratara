@@ -61,18 +61,18 @@ public sealed class IntentFailureLoggingTests
     }
 
     [Fact]
-    public async Task A_timeout_on_a_call_that_spans_a_heavy_unit_is_not_logged_but_any_other_fault_is()
+    public async Task A_timeout_on_any_hand_over_is_logged_because_a_hand_over_answers_once_the_command_is_accepted()
     {
         var logger = new RecordingLogger();
 
-        IntentHandOver.Observe(Task.FromException(new TimeoutException("the unit outlived the response timeout")), logger, Guid.NewGuid(), Guid.NewGuid(), heavy: true);
-        IntentHandOver.Observe(Task.FromException(new TimeoutException("the runner outlived the response timeout")), logger, Guid.NewGuid(), aggregateId: null, heavy: false);
+        IntentHandOver.Observe(Task.FromException(new TimeoutException("the pool did not accept in time")), logger, Guid.NewGuid(), Guid.NewGuid(), heavy: true);
+        IntentHandOver.Observe(Task.FromException(new TimeoutException("the runner did not accept in time")), logger, Guid.NewGuid(), aggregateId: null, heavy: false);
         IntentHandOver.Observe(Task.FromException(new InvalidOperationException("the pool refused the call")), logger, Guid.NewGuid(), Guid.NewGuid(), heavy: true);
         IntentHandOver.Observe(Task.CompletedTask, logger, Guid.NewGuid(), Guid.NewGuid(), heavy: false);
         await Task.Delay(50);
 
-        var entry = Assert.Single(logger.Entries);
-        Assert.Equal(LogEvents.Orleans.HandOverFailed, entry.EventId.Id);
-        Assert.IsType<InvalidOperationException>(entry.Exception);
+        Assert.Equal(3, logger.Entries.Count);
+        Assert.All(logger.Entries, entry => Assert.Equal(LogEvents.Orleans.HandOverFailed, entry.EventId.Id));
+        Assert.Equal(2, logger.Entries.Count(entry => entry.Exception is TimeoutException));
     }
 }

@@ -82,8 +82,12 @@ another aggregate, or a command dispatched through the mediator that names an ag
 cannot finish inside it is heavy work — mark the command `IHeavyCommand` — or the host sizes the timeout.
 The aggregate's own order is not bounded by it: the commands accepted into one aggregate's order run to the
 end however long the order takes, because the grain runs its order through a one-way call to itself.
-The hand-over of a heavy command or of a command that names no aggregate spans the whole unit, so a unit
-longer than the timeout ends that call with a timeout nobody waits for; it is not logged.
+The hand-over of a recorded command is not bounded by it either: whatever the command — one that names an
+aggregate, a heavy command, or one that names no aggregate — the hand-over is answered once a silo has accepted
+the command and its lease has started, and the command then runs on the silo however long it takes. A long heavy
+unit therefore leaves no timeout in the log of the host that dispatched it or of the silo that runs it. A hand-over
+that does time out means the silo did not accept the command in time; it is logged as a failed hand-over, and the
+drain hands the command over again after the grace.
 
 **A timeout does not mean the command did not run.** When a forwarded command's handler outlasts the
 timeout, the caller gets a `TimeoutException` while the handler goes on in the aggregate's activation, runs to

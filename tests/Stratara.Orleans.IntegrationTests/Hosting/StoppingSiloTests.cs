@@ -98,6 +98,49 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
         await third.StopAsync();
     }
 
+    [Fact]
+    public Task A_recorded_heavy_command_whose_handler_waits_on_its_token_observes_the_stop_and_completes_on_the_remaining_silo() =>
+        AnAcceptedLongCommandObservesTheStopAndCompletesElsewhereAsync(probe => new BlockingHeavyProbe(Guid.NewGuid(), probe), 11492, 30492, 11493, 30493);
+
+    [Fact]
+    public Task A_recorded_command_that_names_no_aggregate_whose_handler_waits_on_its_token_observes_the_stop_and_completes_on_the_remaining_silo() =>
+        AnAcceptedLongCommandObservesTheStopAndCompletesElsewhereAsync(probe => new BlockingUnscopedProbe(probe), 11494, 30494, 11495, 30495);
+
+    /// <summary>
+    /// Scenario <em>The silo stops while an accepted long command runs</em>: the hand-over of a heavy command, or of one
+    /// that names no aggregate, has been answered while its handler runs; stopping the silo still cancels the handler, the
+    /// record is not completed, and the command is resumed on the remaining silo and runs to its end.
+    /// </summary>
+    private async Task AnAcceptedLongCommandObservesTheStopAndCompletesElsewhereAsync(Func<Guid, ICommand> command, int firstSilo, int firstGateway, int secondSilo, int secondGateway)
+    {
+        var control = new StopProbeControl();
+        var cluster = $"stratara-poc-stop-long-{Guid.NewGuid():N}";
+        using var first = await StartSiloAsync(control, cluster, firstSilo, firstGateway, ShortBudget);
+        var probe = Guid.NewGuid();
+
+        Guid intentId;
+        await using (var scope = first.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(PocSessions.New());
+            intentId = await scope.ServiceProvider.GetRequiredService<ICommandOutboxDispatcher>().EnqueueCommandAsync(command(probe));
+        }
+
+        Assert.True(await WaitUntilAsync(() => control.Started(probe.ToString()) == 1, StartedTimeout), "the long command's handler never started");
+        using var second = await StartSiloAsync(control, cluster, secondSilo, secondGateway, ShortBudget);
+        await StopAsync(first);
+
+        Assert.Equal(1, control.Cancelled(probe.ToString()));
+        Assert.Equal(0, control.Completed(probe.ToString()));
+        var store = postgres.ConnectionStringFor("poc_stopping_store");
+        Assert.Equal(1, await RecordedIntentHost.ScalarAsync<long>(store, "SELECT count(*) FROM outbox_entry WHERE id = @id", ("id", intentId)));
+
+        control.Block = false;
+        Assert.True(await WaitUntilAsync(() => control.Completed(probe.ToString()) == 1, TakeoverTimeout), "the long command was not resumed and completed on the remaining silo");
+        Assert.Equal(2, control.Started(probe.ToString()));
+        Assert.True(await WaitUntilAsync(async () => await RecordedIntentHost.ScalarAsync<long>(store, "SELECT count(*) FROM outbox_entry WHERE id = @id", ("id", intentId)) == 0, TakeoverTimeout), "the long command's record was not completed");
+        await second.StopAsync();
+    }
+
     private static Task<int> AttemptsAsync(string store, Guid intentId) =>
         RecordedIntentHost.ScalarAsync<int>(store, "SELECT attempt_count FROM outbox_entry WHERE id = @id", ("id", intentId));
 
@@ -267,9 +310,14 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
             .AddNpgsqlWriteDbContextFactory<PocWriteDbContext>()
             .AddScoped<ICommandHandler<BlockingProbe>, BlockingProbeHandler>()
             .AddScoped<ICommandHandler<IgnoringProbe>, IgnoringProbeHandler>()
+            .AddScoped<ICommandHandler<BlockingHeavyProbe>, BlockingHeavyProbeHandler>()
+            .AddScoped<ICommandHandler<BlockingUnscopedProbe>, BlockingUnscopedProbeHandler>()
             .AddAggregatesFromAssemblyContaining<IntentScenario>()
             .AddTrustedType<BlockingProbe>()
             .AddTrustedType<IgnoringProbe>()
+            .AddTrustedType<BlockingHeavyProbe>()
+            .AddTrustedType<BlockingUnscopedProbe>()
+            .ConfigureStrataraHeavyWork(options => options.PermitLease = TimeSpan.FromSeconds(2))
             .AddStrataraAggregateGrains()
             .AddStrataraOrleansCommandDispatcher(options => options.IntentGrace = TimeSpan.FromSeconds(2))
             .AddStrataraIntentStore<PocWriteDbContext>()
@@ -312,6 +360,12 @@ public sealed class StoppingSiloTests(PostgreSqlFixture postgres, RedisFixture r
 
 /// <summary>A command whose handler waits on its token while the control blocks, and completes otherwise.</summary>
 public sealed record BlockingProbe(Guid AggregateId, Guid ProbeId) : ICommand, IAggregateScopedCommand;
+
+/// <summary>A heavy command whose handler waits on its token while the control blocks.</summary>
+public sealed record BlockingHeavyProbe(Guid AggregateId, Guid ProbeId) : ICommand, IAggregateScopedCommand, IHeavyCommand;
+
+/// <summary>A command that names no aggregate and whose handler waits on its token while the control blocks.</summary>
+public sealed record BlockingUnscopedProbe(Guid ProbeId) : ICommand;
 
 /// <summary>A command whose handler waits a fixed time without looking at its token.</summary>
 public sealed record IgnoringProbe(Guid AggregateId, Guid ProbeId, int DelayMs) : ICommand, IAggregateScopedCommand;
@@ -384,6 +438,16 @@ public sealed class StopProbeControl : ITimerOwners, ITimerHandler
 public sealed class BlockingProbeHandler(StopProbeControl control) : ICommandHandler<BlockingProbe>
 {
     public Task HandleAsync(BlockingProbe command, CancellationToken cancellationToken) => control.RunAsync(command.ProbeId.ToString(), cancellationToken);
+}
+
+public sealed class BlockingHeavyProbeHandler(StopProbeControl control) : ICommandHandler<BlockingHeavyProbe>
+{
+    public Task HandleAsync(BlockingHeavyProbe command, CancellationToken cancellationToken) => control.RunAsync(command.ProbeId.ToString(), cancellationToken);
+}
+
+public sealed class BlockingUnscopedProbeHandler(StopProbeControl control) : ICommandHandler<BlockingUnscopedProbe>
+{
+    public Task HandleAsync(BlockingUnscopedProbe command, CancellationToken cancellationToken) => control.RunAsync(command.ProbeId.ToString(), cancellationToken);
 }
 
 public sealed class IgnoringProbeHandler(StopProbeControl control) : ICommandHandler<IgnoringProbe>

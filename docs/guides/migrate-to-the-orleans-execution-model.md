@@ -43,12 +43,19 @@ builder.UseOrleans(silo => silo
 `AddStrataraOrleans` registers the storage-backed grain directory the model's single-activation grains
 use, under the name it passes to your callback, and the placement filters every silo of the model needs.
 A silo that runs the model's grains without it fails at start with a message naming this call. The
-ADO.NET providers create no tables: apply Orleans' main, clustering and reminders scripts for your database
-once, in that order, from the Orleans release you run — for PostgreSQL `PostgreSQL-Main.sql`,
-`PostgreSQL-Clustering.sql` and `PostgreSQL-Reminders.sql`, shipped inside the
-`Microsoft.Orleans.Clustering.AdoNet` and `Microsoft.Orleans.Reminders.AdoNet` packages (in the package's
-folder under your NuGet cache, or in the Orleans repository under `src/AdoNet`). The `orleans` connection
-string may point at the write-store database or at one of its own; the reset needs the same string.
+ADO.NET providers create no tables, and the `Microsoft.Orleans.Clustering.AdoNet` and
+`Microsoft.Orleans.Reminders.AdoNet` packages ship no scripts to create them: the host carries its own copy of
+Orleans' main, clustering and reminders scripts for its database, taken from the `dotnet/orleans` repository
+at the tag of the Orleans release it runs, and applies them once, in that order. For PostgreSQL they are:
+
+| Script | Path in `dotnet/orleans` |
+|---|---|
+| `PostgreSQL-Main.sql` | `src/AdoNet/Shared/PostgreSQL-Main.sql` |
+| `PostgreSQL-Clustering.sql` | `src/AdoNet/Orleans.Clustering.AdoNet/PostgreSQL-Clustering.sql` |
+| `PostgreSQL-Reminders.sql` | `src/AdoNet/Orleans.Reminders.AdoNet/PostgreSQL-Reminders.sql` |
+
+The `orleans` connection string may point at the write-store database or at one of its own; the reset needs
+the same string.
 
 A host that only dispatches commands — an API host — may join the cluster as an Orleans client with
 `UseOrleansClient` instead of running a silo: the dispatcher needs only the grain factory the client
