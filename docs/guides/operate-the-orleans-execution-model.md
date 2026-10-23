@@ -382,8 +382,10 @@ once every silo runs the new version.
 `IProjectionProgress` lets a host wait until a projection has applied what it committed (see
 [Read your own write](write-a-projection.md#read-your-own-write)). Three things decide how it behaves in operation.
 
-**A mark costs one query per partition.** `MarkAsync` asks the commit-order reader for the highest committed
-position of every partition, one query each, in sequence — sixteen at the default partition count. On the native
+**A mark costs one query per partition it constrains.** `MarkAsync()` asks the commit-order reader for the highest
+committed position of every partition, one query each, in sequence — sixteen at the default partition count;
+`MarkAsync(streamIds)` asks only for the partitions those streams fall into, and a wait for it is not held up by a
+partition that lags or is stopped elsewhere. On the native
 PostgreSQL reader each walks the transaction-id index from the top until it meets an entry of its partition: cheap
 for a partition with recent entries, a walk of the whole index for one that has none. A host that takes a mark on
 every request pays that on every request; take one only where a read follows a write. A reader of your own answers

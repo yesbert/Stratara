@@ -4,11 +4,13 @@ using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Projections.Abstractions;
+using Stratara.Shared.Partitioning;
 
 namespace Stratara.Orleans.Projections;
 
 /// <summary>
-/// Takes a mark from the reader's committed head of every partition, and waits by asking each partition's projection
+/// Takes a mark from the reader's committed head of every partition — or, for a mark of streams, of the partitions they
+/// fall into only — and waits by asking each partition's projection
 /// grain, in rounds, to answer once its checkpoint has reached the mark. A partition whose mark is <c>0</c> holds nothing
 /// the mark covers and counts as reached without a call. Every round asks every other partition, those that answered
 /// reached before included, and the wait answers reached only when all of them did in the same round: a rebuild or a
@@ -30,12 +32,32 @@ internal sealed class ProjectionProgress(
 
     private ProjectionNames? _names;
 
-    public async Task<StoreMark> MarkAsync(CancellationToken cancellationToken = default)
+    public Task<StoreMark> MarkAsync(CancellationToken cancellationToken = default) =>
+        MarkOfAsync(Enumerable.Range(0, commitOrder.Value.PartitionCount), cancellationToken);
+
+    /// <summary>The committed head of the partitions the streams fall into, and <c>0</c> — reached at once — in every other.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="streamIds"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="streamIds"/> names no stream.</exception>
+    public Task<StoreMark> MarkAsync(IEnumerable<Guid> streamIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(streamIds);
+        var partitionCount = commitOrder.Value.PartitionCount;
+        var touched = streamIds.Select(id => PartitionMap.PartitionOf(BucketCalculator.GetBucketId(id), partitionCount)).Distinct().ToList();
+        if (touched.Count == 0)
+        {
+            throw new ArgumentException("A mark of streams needs at least one stream; take MarkAsync() for everything committed.", nameof(streamIds));
+        }
+
+        return MarkOfAsync(touched, cancellationToken);
+    }
+
+    /// <summary>The committed head of <paramref name="partitions"/>, and <c>0</c> in every other.</summary>
+    private async Task<StoreMark> MarkOfAsync(IEnumerable<int> partitions, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>();
         var positions = new long[commitOrder.Value.PartitionCount];
-        for (var partition = 0; partition < positions.Length; partition++)
+        foreach (var partition in partitions)
         {
             positions[partition] = await reader.CommittedHeadAsync(partition, cancellationToken);
         }

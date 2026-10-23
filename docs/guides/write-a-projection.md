@@ -307,7 +307,7 @@ wait:
 ```csharp
 await mediator.HandleAsync(command, cancellationToken);
 
-var mark = await progress.MarkAsync(cancellationToken);
+var mark = await progress.MarkAsync([command.OrderId], cancellationToken);
 var result = await progress.WaitAsync(typeof(OrdersProjection), mark, TimeSpan.FromSeconds(5), cancellationToken);
 if (!result.IsReached)
 {
@@ -317,10 +317,16 @@ if (!result.IsReached)
 return Results.Ok(await orders.ListAsync(cancellationToken));
 ```
 
-A mark covers every entry committed when it is taken, in every partition — also one that committed while another
-write was still open. It does not cover a write whose transaction had not committed yet, so take it **after** the
-command has returned, never before. The projection is named by its type or by the name the framework gives it, the
-type's name.
+A mark of streams — `MarkAsync(streamIds)` — covers every entry committed to those streams when it is taken, also
+one that committed while another write was still open, and holds up the wait only in the partitions those streams
+fall into: however far the projection lags in any other partition, the wait answers once it has applied your write.
+Within your streams' partitions a projection applies entries in order, so an entry of another stream there that is
+slow or stopped still holds the wait up. A mark of no stream is refused. A mark of the
+whole store — `MarkAsync()` — covers every entry committed when it is taken, in every partition. Take it for a
+decision that needs everything committed across streams you did not write, such as refusing to remove something
+while any tenant's record still names it. Neither covers a write whose transaction had not committed yet, so take the
+mark **after** the command has returned, never before. The projection is named by its type or by the name the
+framework gives it, the type's name.
 
 The answer is one of five:
 

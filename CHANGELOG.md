@@ -22,6 +22,12 @@ instead of needing a message broker. Additive API only; no schema change and no 
 
 ### Added
 
+- **A mark of what a host just wrote:** `IProjectionProgress.MarkAsync(IEnumerable<Guid> streamIds)`. Taken after a
+  commit, it covers every entry committed to those streams and holds up `WaitAsync` only in the partitions they fall
+  into. A host reading its own write no longer waits for the projection to catch up with the whole store, and a
+  partition that lags or is stopped elsewhere does not hold it up. `MarkAsync()` stays the mark for decisions that
+  need everything committed. The default interface implementation answers the whole-store mark, so an implementation
+  of your own keeps compiling and keeps the promise.
 - **`ICommandIntentStore.RenewManyAsync`** (default: one `RenewAsync` per command) and
   **`HeavyWorkOptions.QueuedLimitPerPool`** (default 256). See *Fixed* for what they serve.
 - **`AddStrataraStoreWakeUps()`** (`Stratara.Orleans`). A host that commits facts on the Orleans execution model
