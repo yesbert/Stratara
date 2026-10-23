@@ -16,9 +16,16 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-On the Orleans execution model, a long heavy command, or a long command that names no aggregate, no longer leaves
-timeout warnings in the logs, and a host that commits facts without hosting a reader can wake the store readers
-instead of needing a message broker. Additive API only; no schema change and no migration.
+_No changes yet since `4.4.7`._
+
+## [4.4.7] — 2026-10-23
+
+A release for hosts on the Orleans execution model under load. A burst of heavy commands no longer costs
+attempts it never ran. A long heavy or runner unit no longer leaves timeout warnings in the logs. A host that
+commits facts without hosting a reader can wake the store readers instead of needing a message broker. A host can
+wait for exactly its own write. The PostgreSQL registrations keep the pool size a connection string names. The
+dependencies move to Orleans 10.4 and StackExchange.Redis 3.4. Additive API only; no schema change and no migration.
+Two behaviours change on purpose, see *Upgrade notes*.
 
 ### Added
 
@@ -46,6 +53,12 @@ instead of needing a message broker. Additive API only; no schema change and no 
 
 ### Changed
 
+- **Dependencies.** The packages now depend on `Microsoft.Orleans.*` `10.4.0` (from `10.3.1`) and
+  `StackExchange.Redis` `3.4.5` (from `3.1.31`), along with the current patch releases of `Microsoft.Extensions.*`,
+  ASP.NET Core and EF Core `10.0.13`, and OpenTelemetry `1.20.1`. A host that pins Orleans below 10.4 has to move with
+  them. StackExchange.Redis 3.4 reworks the buffer of its connection writer, in which 3.1 could crash the process
+  with an access violation while replaying its backlog after a reconnect. The Orleans Redis grain directory hit that
+  path in the framework's own tests.
 - *Migrate to the Orleans execution model* no longer says an API host commits nothing. Its broker table now
   separates a host that only dispatches from one that runs handlers in process, and names the registration that
   removes the broker from each.
@@ -103,6 +116,8 @@ instead of needing a message broker. Additive API only; no schema change and no 
   guide now lists the paths to take them from in the `dotnet/orleans` repository.
 ### Upgrade notes
 
+- **A connection string that names `Maximum Pool Size=100` now gets 100.** Before, the PostgreSQL registrations
+  rewrote it to 15 as if it named nothing. A host that named 100 and relied on getting 15 should name 15.
 - **`ICommandIntentStore` implementations of your own.** The framework's store now counts a resumed attempt in
   `TryRenewFromAsync` instead of in `TryClaimAsync`/`ClaimAsync`. A store that keeps counting at the claim still
   bounds resumption, but counts waiting as well; move the increment to keep waiting free. Implement `RenewManyAsync`
@@ -4729,7 +4744,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.6...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.7...main
+[4.4.7]: https://github.com/yesbert/Stratara/releases/tag/v4.4.7
 [4.4.6]: https://github.com/yesbert/Stratara/releases/tag/v4.4.6
 [4.4.5]: https://github.com/yesbert/Stratara/releases/tag/v4.4.5
 [4.4.4]: https://github.com/yesbert/Stratara/releases/tag/v4.4.4
