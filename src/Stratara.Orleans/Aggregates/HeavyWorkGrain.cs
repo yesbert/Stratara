@@ -187,7 +187,7 @@ internal sealed class HeavyWorkGrain(
 
         _inFlight.Add(run);
         SettleAsync(run, intentId, scope).Ignore();
-        Hold();
+        SendHold();
     }
 
     /// <summary>
@@ -248,7 +248,7 @@ internal sealed class HeavyWorkGrain(
     /// Asks the grain to hold itself, unless a hold is already running. A hold that was sent and never ran — the message
     /// was lost — is sent again with the next hand-over; one that cannot be sent leaves the unit running unheld.
     /// </summary>
-    private void Hold()
+    private void SendHold()
     {
         if (_holdRunning)
         {

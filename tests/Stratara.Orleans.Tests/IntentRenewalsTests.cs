@@ -105,6 +105,8 @@ public sealed class IntentRenewalsTests
         time.Advance(TimeSpan.FromSeconds(10));
 
         await renewed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        store.Verify(s => s.RenewManyAsync(It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Fact]
