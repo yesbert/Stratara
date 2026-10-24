@@ -1,9 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Orleans.Concurrency;
 using Orleans.Hosting;
 using Orleans.Runtime;
 using Orleans.GrainDirectory;
+using Orleans.Serialization.Invocation;
 using Stratara.Abstractions.Singleton;
 using Stratara.Orleans.Diagnostics;
 using Stratara.Orleans.Hosting;
@@ -14,6 +16,11 @@ namespace Stratara.Orleans.Singleton;
 [Alias("Stratara.Orleans.ISingletonWorkGrain")]
 internal interface ISingletonWorkGrain : IGrainWithStringKey
 {
+    /// <summary>
+    /// Starts the work's timer and registers its keep-alive. Interleaves with a run, so a silo that starts while the work
+    /// runs longer than the response timeout is not held up by it.
+    /// </summary>
+    [AlwaysInterleave]
     [Alias("EnsureRunningAsync")]
     Task EnsureRunningAsync();
 
@@ -26,8 +33,11 @@ internal interface ISingletonWorkGrain : IGrainWithStringKey
 /// call, and keeps a reminder so that a silo's loss brings the grain back somewhere else. The
 /// grain directory's single-activation guarantee is what makes this "once per cluster". A run that throws is logged
 /// and the timer's next tick runs the work again. Its settings are its work's: the host's settings for every singleton
-/// work with the work's own registration applied on top.
+/// work with the work's own registration applied on top. The keep-alive tick and the start call interleave with a run:
+/// each only makes sure the timer exists, so neither waits for a run that outlasts the response timeout. A run still
+/// never overlaps with another run or with any other call to the grain.
 /// </summary>
+[MayInterleave(nameof(MayInterleave))]
 [GrainDirectory(GrainDirectories.Durable)]
 [SingletonWorkPlacementFilter]
 internal sealed class SingletonWorkGrain(
@@ -42,6 +52,9 @@ internal sealed class SingletonWorkGrain(
     private TimeSpan _keepAlivePeriod;
     private IGrainTimer? _timer;
     private long _runs;
+
+    /// <summary>Lets the keep-alive tick interleave with a run; see <see cref="KeepAliveInterleaving"/>.</summary>
+    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsKeepAliveTick(request);
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {

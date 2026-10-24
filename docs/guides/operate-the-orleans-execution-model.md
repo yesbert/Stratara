@@ -451,7 +451,10 @@ attempt or hand-over), `117_114` (a heavy unit running outside the cluster-wide 
 reader's pause that lapsed — a rebuild or replay whose process died or stalled; run it again), `117_119` (a run of a
 singleton work that threw — the work runs again at its next period, so a work that fails every run logs it every
 period). `117_008` (a handler
-stopped with its silo) explains a second run of a command or a timer after a deploy. `117_116` and `117_118` (a
+stopped with its silo) explains a second run of a command or a timer after a deploy. The runtime's own
+`Could not deliver reminder tick` for a store reader or a singleton work is worth an alert: they answer their
+keep-alive at once, so the line means the silo could not reach the grain in time, not that it was busy — only a durable
+timer's long handler still leaves it as a matter of course (see *Reminder profile and clocks*). `117_116` and `117_118` (a
 recorded command whose signature does not verify) mean the record was altered or the key differs; alert on them. Worth routing to a
 dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded
 commands back and once when it releases them — a command that waits for the length of a replay is waiting, not
@@ -550,10 +553,17 @@ A timer's due time is computed on the host that registered it and its tick runs 
 its own. A tick earlier than the due time by less than `DurableTimerOptions.DueTolerance` fires instead of
 waiting a whole retry period.
 
+A store reader and a singleton work answer their keep-alive while they read or run. A reader's catch-up and a
+work's run may last longer than the response timeout, and the keep-alive tick, like a silo's start that makes sure
+each of them runs, does not wait for it. A catch-up of a large backlog or a long singleton run therefore leaves no
+reminder line in the silo's log.
+
 A timer fires once however long its handler runs. When a handler outlasts the reminder call's response
 timeout, the runtime delivers the next tick while it still runs; that tick does nothing, and the timer is
 unregistered once the handler has completed — or stays registered, and fires again on another silo, when the
-handler was stopped with its silo. A handler may register its own owner and purpose again, with the due time it
+handler was stopped with its silo. The tick whose handler outlasted the timeout is logged by the runtime at Error, as
+`Could not deliver reminder tick` with a `TimeoutException` from `ReceiveReminder`; that line says nothing about the
+timer, which has fired and runs to its end. Keep timer handlers short, or hand long work to a heavy command. A handler may register its own owner and purpose again, with the due time it
 fired for or a later one; the new timer is kept.
 
 An owner id is at most 139 characters and a purpose at most 130: the reminder table holds 150 for each, with the

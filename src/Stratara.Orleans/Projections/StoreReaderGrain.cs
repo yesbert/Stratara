@@ -5,6 +5,7 @@ using Polly.Registry;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.Diagnostics;
+using Stratara.Orleans.Hosting;
 using Stratara.Resilience;
 
 namespace Stratara.Orleans.Projections;
@@ -33,9 +34,13 @@ internal enum StoreReaderRetirement
 /// What every store-reading grain does, whatever it applies: parse its key into consumer and
 /// partition, run one catch-up loop at a time over its partition, read when nudged, when its poll
 /// fires and when its keep-alive reminder arrives, and wait for a running loop before it deactivates
-/// so a successor never applies beside it. A grain of a partition the host no longer has — its count was lowered —
-/// retires when it is activated: it unregisters its keep-alive, logs that it did, reads nothing and deactivates, and
-/// every call it still receives does nothing; so does a grain a derived grain says is superseded or unregistered. A
+/// so a successor never applies beside it. None of the three waits for the loop it requests: the loop, not the
+/// grain's turn, keeps one catch-up per partition, and a poll or a keep-alive that held the turn for a catch-up longer
+/// than the response timeout would leave the next tick undelivered. A derived grain lets the keep-alive tick interleave
+/// with <see cref="KeepAliveInterleaving"/>, so it waits for no other call either. A grain of a partition the host no
+/// longer has — its count was lowered — retires when it is activated: it unregisters its keep-alive, logs that it did,
+/// reads nothing and deactivates, and every call it still receives does nothing; so does a grain a derived grain says
+/// is superseded or unregistered. A
 /// derived grain says what applying a batch means, when reading is suspended beyond the pauses and the replay this one
 /// already counts, and where a consumer without a checkpoint starts.
 /// </summary>
@@ -212,7 +217,7 @@ internal abstract class StoreReaderGrain(
             PositionChanged = AnswerWaiters,
         };
         _poll ??= this.RegisterGrainTimer(
-            _ => PollAsync(),
+            _ => RequestPoll(),
             new GrainTimerCreationOptions
             {
                 DueTime = settings.PollInterval,
@@ -281,7 +286,8 @@ internal abstract class StoreReaderGrain(
         return new StoreReaderProgress(HasReached(position), State);
     }
 
-    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => Retired ? Task.CompletedTask : PollAsync();
+    /// <summary>Requests a poll and answers at once, whatever the reader is doing; see <see cref="RequestPoll"/>.</summary>
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => Retired ? Task.CompletedTask : RequestPoll();
 
     /// <summary>
     /// A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.
@@ -364,16 +370,19 @@ internal abstract class StoreReaderGrain(
 
     /// <summary>
     /// Lets every pause whose lease has passed lapse before reading, so a pauser that died leaves the reader paused for
-    /// no longer than its lease and a poll; the last pause to lapse forgets the cached position, as a resume does.
+    /// no longer than its lease and a poll; the last pause to lapse forgets the cached position, as a resume does. Then
+    /// requests a catch-up without waiting for it, as a nudge does: a running loop reads once more before it ends, and a
+    /// loop that fails is logged and counted by the loop itself.
     /// </summary>
-    private Task<int> PollAsync()
+    private Task RequestPoll()
     {
         if (Pausers.Lapse(logger, Consumer, Partition))
         {
             Loop.Invalidate();
         }
 
-        return RequestCatchUp();
+        RequestCatchUp().Ignore();
+        return Task.CompletedTask;
     }
 
     /// <summary>How the reader stands: suspended before stalled on an entry before stalled on a read.</summary>

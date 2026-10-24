@@ -16,7 +16,22 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.7`._
+### Fixed
+
+- **A busy store reader or singleton work answers its keep-alive.** On the Orleans execution model, a projection or
+  saga reader that caught up a backlog for longer than the runtime's response timeout made its keep-alive tick wait
+  behind the catch-up, and Orleans logged `Could not deliver reminder tick` at Error, once per partition and
+  keep-alive period. A singleton work whose run outlasted the timeout did the same. Nothing was lost, but a large
+  catch-up left dozens of errors on the silo. The keep-alive and the poll now request a catch-up without waiting
+  for it. A partition is still read by one catch-up at a time, and a tick during a catch-up makes it read once
+  more. A singleton work's keep-alive interleaves with its run, and runs still never overlap.
+- **A silo starts while a singleton work runs long.** A silo that started while a singleton work it registers ran
+  longer than the response timeout on another silo waited for that run in its own start. The start then failed
+  with a `TimeoutException`. The call a starting silo makes to each singleton work and store reader now
+  interleaves, so the start goes on.
+- *Operate the Orleans execution model* says that a durable timer whose handler outlasts the response timeout
+  still makes Orleans log `Could not deliver reminder tick` for that tick, and that the line says nothing about
+  the timer. It also says that the line is now worth an alert for a store reader or a singleton work.
 
 ## [4.4.7] — 2026-10-23
 
