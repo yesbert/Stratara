@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.GrainDirectory;
+using Orleans.Serialization.Invocation;
 using Polly.Registry;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
@@ -20,6 +21,10 @@ namespace Stratara.Orleans.Sagas;
 [Alias("Stratara.Orleans.ISagaReaderGrain")]
 internal interface ISagaReaderGrain : IGrainWithStringKey
 {
+    /// <summary>
+    /// Registers the keep-alive. Interleaves, so a silo that starts while the reader is busy is not held up by it.
+    /// </summary>
+    [AlwaysInterleave]
     [Alias("EnsureRunningAsync")]
     Task EnsureRunningAsync();
 
@@ -75,6 +80,7 @@ internal interface ISagaReaderGrain : IGrainWithStringKey
 /// run in parallel with each other and in order within each, the <c>sagas</c> guarantees, unchanged; existing
 /// stateless sagas run here without modification.
 /// </summary>
+[MayInterleave(nameof(MayInterleave))]
 [GrainDirectory(GrainDirectories.Durable)]
 [SagasRolePlacementFilter]
 internal sealed class SagaReaderGrain(
@@ -93,6 +99,9 @@ internal sealed class SagaReaderGrain(
 
     private Type? _sagaType;
     private EventRelevance? _relevance;
+
+    /// <summary>Lets the keep-alive tick interleave with a running catch-up or call; see <see cref="KeepAliveInterleaving"/>.</summary>
+    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsReminderTick(request);
 
     /// <summary>The consumer a saga reads under: <see cref="ConsumerPrefix"/> and the name the saga handler gives it.</summary>
     public static string ConsumerOf(string sagaName) => ConsumerPrefix + sagaName;

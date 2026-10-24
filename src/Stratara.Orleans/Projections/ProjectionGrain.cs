@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.GrainDirectory;
+using Orleans.Serialization.Invocation;
 using Polly.Registry;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
@@ -39,6 +40,10 @@ public sealed class ProjectionGrainOptions
 [Alias("Stratara.Orleans.IProjectionGrain")]
 internal interface IProjectionGrain : IGrainWithStringKey
 {
+    /// <summary>
+    /// Registers the keep-alive. Interleaves, so a silo that starts while the reader is busy is not held up by it.
+    /// </summary>
+    [AlwaysInterleave]
     [Alias("EnsureRunningAsync")]
     Task EnsureRunningAsync();
 
@@ -109,6 +114,7 @@ internal interface IProjectionGrain : IGrainWithStringKey
 /// missing prerequisite past the retry policy, or any other failure — stops the batch where it is,
 /// and the next nudge or poll tries again from there.
 /// </summary>
+[MayInterleave(nameof(MayInterleave))]
 [GrainDirectory(GrainDirectories.Durable)]
 [ProjectionsRolePlacementFilter]
 internal sealed class ProjectionGrain(
@@ -125,6 +131,9 @@ internal sealed class ProjectionGrain(
     private HashSet<string>? _relevant;
     private EventRelevance? _relevance;
     private Type? _projectionType;
+
+    /// <summary>Lets the keep-alive tick interleave with a running catch-up or call; see <see cref="KeepAliveInterleaving"/>.</summary>
+    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsReminderTick(request);
 
     /// <summary>
     /// One scope, one projection instance and one handler per session run — the consecutive entries recorded under one
