@@ -54,8 +54,8 @@ public sealed class KeepAliveInterleavingTests
         var predicate = grain.GetMethod("MayInterleave", BindingFlags.Public | BindingFlags.Static, [typeof(IInvokable)]);
         Assert.NotNull(predicate);
         Assert.Equal(typeof(bool), predicate.ReturnType);
-        Assert.Equal(true, predicate.Invoke(null, [RequestOf(typeof(IRemindable))]));
-        Assert.Equal(false, predicate.Invoke(null, [RequestOf(typeof(IGrainWithStringKey))]));
+        Assert.True(predicate.Invoke(null, [RequestOf(typeof(IRemindable))]) is true);
+        Assert.True(predicate.Invoke(null, [RequestOf(typeof(IGrainWithStringKey))]) is false);
     }
 
     [Theory]
