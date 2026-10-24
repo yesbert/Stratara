@@ -133,7 +133,7 @@ internal sealed class ProjectionGrain(
     private Type? _projectionType;
 
     /// <summary>Lets the keep-alive tick interleave with a running catch-up or call; see <see cref="KeepAliveInterleaving"/>.</summary>
-    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsKeepAliveTick(request);
+    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsReminderTick(request);
 
     /// <summary>
     /// One scope, one projection instance and one handler per session run — the consecutive entries recorded under one

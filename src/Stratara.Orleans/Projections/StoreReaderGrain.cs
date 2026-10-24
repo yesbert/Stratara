@@ -37,7 +37,7 @@ internal enum StoreReaderRetirement
 /// so a successor never applies beside it. None of the three waits for the loop it requests: the loop, not the
 /// grain's turn, keeps one catch-up per partition, and a poll or a keep-alive that held the turn for a catch-up longer
 /// than the response timeout would leave the next tick undelivered. A derived grain lets the keep-alive tick interleave
-/// with <see cref="KeepAliveInterleaving"/>, so it waits for no other call either. A grain of a partition the host no
+/// through <see cref="KeepAliveInterleaving"/>, so it waits for no other call either. A grain of a partition the host no
 /// longer has — its count was lowered — retires when it is activated: it unregisters its keep-alive, logs that it did,
 /// reads nothing and deactivates, and every call it still receives does nothing; so does a grain a derived grain says
 /// is superseded or unregistered. A
@@ -371,8 +371,10 @@ internal abstract class StoreReaderGrain(
     /// <summary>
     /// Lets every pause whose lease has passed lapse before reading, so a pauser that died leaves the reader paused for
     /// no longer than its lease and a poll; the last pause to lapse forgets the cached position, as a resume does. Then
-    /// requests a catch-up without waiting for it, as a nudge does: a running loop reads once more before it ends, and a
-    /// loop that fails is logged and counted by the loop itself.
+    /// starts a catch-up without waiting for it where none is running; a loop that fails is logged and counted by the
+    /// loop itself. A running loop is left alone: it reads until the store has nothing newer, a commit's nudge makes it
+    /// read once more, and a poll that did too would keep a loop stalled on an entry retrying it back to back, never
+    /// ending, instead of once per poll as before.
     /// </summary>
     private Task RequestPoll()
     {
@@ -381,7 +383,11 @@ internal abstract class StoreReaderGrain(
             Loop.Invalidate();
         }
 
-        RequestCatchUp().Ignore();
+        if (Loop.Running is null)
+        {
+            RequestCatchUp().Ignore();
+        }
+
         return Task.CompletedTask;
     }
 

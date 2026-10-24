@@ -46,9 +46,17 @@ See proposal.md, *Why*. These are the parts of 4.4.7 the approach depends on.
 
 ### D1 — Keep-alive tick and poll request a catch-up and return at once
 
-`ReceiveReminder` and the poll timer callback call `PollAsync()`, which lets lapsed pauses lapse and requests
-a catch-up. They then return without awaiting the loop: `PollAsync().Ignore()`, the shape `NudgeAsync`
-already has.
+`ReceiveReminder` and the poll timer callback call `RequestPoll()`. It lets lapsed pauses lapse, starts a
+catch-up where none is running without awaiting it (the shape `NudgeAsync` already has), and returns at once.
+
+- **A running loop is left alone (review finding, 2026-10-24).** The first cut requested a catch-up on every
+  tick, so each poll set `_dirty` on a running loop. A loop stalled on an entry whose retry outlasts the poll
+  interval was then re-dirtied every round, retried the entry back to back and never ended. `Running` never
+  cleared, and every deactivation had to cancel it. Before this change a poll could re-dirty a loop at most once,
+  because the tick then waited for it. Now a poll does not touch a running loop. It reads until the store has
+  nothing newer, and a commit's nudge still makes it read once more. A fact whose nudge was lost after the loop's
+  last read is read by the first poll after the loop ends, one poll interval at most. That is the promise of
+  *a wake-up that is lost costs latency and never a fact*.
 
 - **Why it is safe.** One loop per partition is kept by the loop, not by the turn, so a trigger that does not
   wait changes nothing about ordering or checkpoints. A failed loop is logged and counted by the loop itself,
@@ -70,9 +78,9 @@ already has.
 - **Store readers.** `IRemindable.ReceiveReminder` belongs to Orleans, so no attribute can go on that
   interface method. Instead the reader grains get `[MayInterleave(nameof(MayInterleave))]`. The predicate
   returns `true` for an `IInvokable` whose interface is `IRemindable`. `EnsureRunningAsync` gets
-  `[AlwaysInterleave]` on `IProjectionGrain` and `ISagaReaderGrain`. The retired `ISagaGrain` that keeps old
-  keep-alives stays as it is. It reads nothing and answers every call at once, so nothing can hold its keep-alive
-  up, and its contract stays exactly what silos before 4.2.0 compiled against.
+  `[AlwaysInterleave]` on `IProjectionGrain` and `ISagaReaderGrain`. The retired `ISagaGrain` interface stays as
+  it is, because its contract is what silos before 4.2.0 compiled against. Its grain reads nothing and gets the
+  predicate only so that every store reader carries it.
 - **Singleton work.** It gets the same predicate, and `[AlwaysInterleave]` on
   `ISingletonWorkGrain.EnsureRunningAsync`.
 - **Why it is safe for singleton work.** The run timer stays non-interleaving, so runs still never overlap.
@@ -81,12 +89,20 @@ already has.
 - **Why it is safe for readers.** The interleaving parts are `Pausers.Lapse`, `Loop.Invalidate` and
   `RequestCatchUp`. They run on the activation's scheduler and are already designed to interleave with a
   running loop, because pauses and nudges do it.
-- **Wire compatibility.** `[AlwaysInterleave]` is decided by the receiving silo's grain metadata. Aliases
-  stay, so 4.4.7 silos calling a new silo, and the other way round, work as before. A 4.4.7 receiver just
-  queues the call as today.
+- **Wire compatibility.** `[AlwaysInterleave]` travels with the message: the caller's generated proxy sets
+  the flag, and the receiver honours it. A first draft said the receiver's metadata decides, which is wrong. The
+  `[MayInterleave]` predicate is the receiver's. Aliases stay, so a mixed cluster works:
+  - **A 4.4.7 silo starts and calls a reader or work on a new silo.** It sends no flag, so its start call still
+    queues behind a long run, as today, until it is upgraded too.
+  - **A new silo calls a grain on a 4.4.7 silo.** The flag makes the old grain interleave the call. That is
+    safe there too, because its `EnsureRunningAsync` only registers the reminder and starts a timer that already
+    exists.
+  - **The reminder tick** is decided by each receiver's own predicate, so a new silo's grains answer at once
+    whoever delivers the tick.
 - **Where the predicate goes.** Orleans may or may not read `MayInterleave` from a base class. The attribute
-  goes on each concrete grain (`ProjectionGrain`, `SagaReaderGrain`, `SingletonWorkGrain`), calling one shared
-  static predicate (`KeepAliveInterleaving.IsKeepAliveTick`). The attribute's documentation requires a public
+  goes on each concrete grain (`ProjectionGrain`, `SagaReaderGrain`, `SagaGrain`, `SingletonWorkGrain`), calling
+  one shared static predicate (`KeepAliveInterleaving.IsReminderTick`). It matches every reminder, since it cannot
+  see the name, so these grains keep no reminder but their keep-alive. The attribute's documentation requires a public
   static method "declared on the same class", so each grain declares its own.
 - **Alternative rejected:** making the grains `[Reentrant]`. Every call, and the singleton's run timer, would
   interleave, and that gives up the turn-based guarantees the singleton relies on.
@@ -123,7 +139,18 @@ captured and checked for `Could not deliver reminder tick` and `Response did not
   with the reminder's.
 - [Interleaved `EnsureRunningAsync` on a reader racing with activation] → `OnActivateAsync` completes before
   any message, interleaving or not, is delivered. `EnsureRunningAsync` only registers or updates the
-  reminder, so two of them are idempotent.
+  reminder, so two of them are idempotent. Two that overlap now each upsert the same reminder with the same
+  period. The table's upsert has no ordering to lose, so the last writer writes what the first did.
+- [A pause's lease lapses while `PauseAsync` waits for a running loop, now that the tick interleaves] → nothing
+  new. `PauseAsync` interleaves, so a poll could already run `Lapse` during that wait. `PauseAsync` holds the
+  pause again once the loop has ended ("a pause that lapsed during that wait holds again"). Leases are minutes,
+  renewed every period.
+- [A new reader grain forgets the predicate] → `KeepAliveInterleavingTests` finds every concrete store reader
+  by reflection instead of listing them. The retired `SagaGrain` carries the predicate as well, so the rule has
+  no exception.
+- [A tick during a deactivation] → a reader or work that is being deactivated waits for its running catch-up or
+  run, and the runtime holds messages for it meanwhile, so a tick in that window can still time out. The spec
+  allows it, and the operating guide says so.
 - [Test timing flakiness with a 2 s timeout] → slow the apply by a fixed amount per entry, size the backlog
   for at least three keep-alive periods, and assert on the absence of a log line after the work ended, not on
   a count during it.

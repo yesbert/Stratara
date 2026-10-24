@@ -22,9 +22,10 @@ applies to the entire NuGet family.
   saga reader that caught up a backlog for longer than the runtime's response timeout made its keep-alive tick wait
   behind the catch-up, and Orleans logged `Could not deliver reminder tick` at Error, once per partition and
   keep-alive period. A singleton work whose run outlasted the timeout did the same. Nothing was lost, but a large
-  catch-up left dozens of errors on the silo. The keep-alive and the poll now request a catch-up without waiting
-  for it. A partition is still read by one catch-up at a time, and a tick during a catch-up makes it read once
-  more. A singleton work's keep-alive interleaves with its run, and runs still never overlap.
+  catch-up left dozens of errors on the silo. The keep-alive and the poll now start a catch-up where none is
+  running and do not wait for it. A partition is still read by one catch-up at a time, and a commit during a
+  catch-up is still applied by it. A singleton work's keep-alive interleaves with its run, and runs still never
+  overlap.
 - **A silo starts while a singleton work runs long.** A silo that started while a singleton work it registers ran
   longer than the response timeout on another silo waited for that run in its own start. The start then failed
   with a `TimeoutException`. The call a starting silo makes to each singleton work and store reader now

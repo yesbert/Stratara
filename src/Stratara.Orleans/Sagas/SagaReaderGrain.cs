@@ -101,7 +101,7 @@ internal sealed class SagaReaderGrain(
     private EventRelevance? _relevance;
 
     /// <summary>Lets the keep-alive tick interleave with a running catch-up or call; see <see cref="KeepAliveInterleaving"/>.</summary>
-    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsKeepAliveTick(request);
+    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsReminderTick(request);
 
     /// <summary>The consumer a saga reads under: <see cref="ConsumerPrefix"/> and the name the saga handler gives it.</summary>
     public static string ConsumerOf(string sagaName) => ConsumerPrefix + sagaName;

@@ -54,7 +54,7 @@ internal sealed class SingletonWorkGrain(
     private long _runs;
 
     /// <summary>Lets the keep-alive tick interleave with a run; see <see cref="KeepAliveInterleaving"/>.</summary>
-    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsKeepAliveTick(request);
+    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsReminderTick(request);
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {

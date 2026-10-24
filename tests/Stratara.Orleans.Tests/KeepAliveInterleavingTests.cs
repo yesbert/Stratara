@@ -16,21 +16,32 @@ namespace Stratara.Orleans.Tests;
 /// </summary>
 public sealed class KeepAliveInterleavingTests
 {
-    public static TheoryData<Type> Grains => [typeof(ProjectionGrain), typeof(SagaReaderGrain), typeof(SingletonWorkGrain)];
+    /// <summary>Every store reader the framework ships, found rather than listed, so a new one cannot miss the predicate.</summary>
+    public static TheoryData<Type> Grains =>
+    [
+        .. typeof(StoreReaderGrain).Assembly.GetTypes().Where(type => !type.IsAbstract && type.IsSubclassOf(typeof(StoreReaderGrain))),
+        typeof(SingletonWorkGrain),
+    ];
+
+    [Fact]
+    public void Every_store_reader_is_found()
+    {
+        Assert.Superset(new HashSet<Type> { typeof(ProjectionGrain), typeof(SagaReaderGrain), typeof(SagaGrain) }, Grains.Select(row => row.Data).ToHashSet());
+    }
 
     public static TheoryData<Type> GrainInterfaces => [typeof(IProjectionGrain), typeof(ISagaReaderGrain), typeof(ISingletonWorkGrain)];
 
     [Fact]
     public void The_reminder_tick_interleaves()
     {
-        Assert.True(KeepAliveInterleaving.IsKeepAliveTick(RequestOf(typeof(IRemindable))));
+        Assert.True(KeepAliveInterleaving.IsReminderTick(RequestOf(typeof(IRemindable))));
     }
 
     [Theory]
     [MemberData(nameof(GrainInterfaces))]
     public void A_call_of_the_grain_s_own_interface_does_not_interleave_through_the_predicate(Type grainInterface)
     {
-        Assert.False(KeepAliveInterleaving.IsKeepAliveTick(RequestOf(grainInterface)));
+        Assert.False(KeepAliveInterleaving.IsReminderTick(RequestOf(grainInterface)));
     }
 
     [Theory]

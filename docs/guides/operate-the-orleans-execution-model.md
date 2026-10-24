@@ -452,9 +452,11 @@ reader's pause that lapsed — a rebuild or replay whose process died or stalled
 singleton work that threw — the work runs again at its next period, so a work that fails every run logs it every
 period). `117_008` (a handler
 stopped with its silo) explains a second run of a command or a timer after a deploy. The runtime's own
-`Could not deliver reminder tick` for a store reader or a singleton work is worth an alert: they answer their
-keep-alive at once, so the line means the silo could not reach the grain in time, not that it was busy — only a durable
-timer's long handler still leaves it as a matter of course (see *Reminder profile and clocks*). `117_116` and `117_118` (a
+`Could not deliver reminder tick` for a store reader or a singleton work is worth a look outside a deploy: they
+answer their keep-alive at once while they read or run, so the line means the silo could not reach the grain in time.
+While a silo stops or a grain moves, a reader or a work being deactivated waits for its running catch-up or run, and a
+tick in that window can still time out; a durable timer's long handler leaves the line as a matter of course (see
+*Reminder profile and clocks*). `117_116` and `117_118` (a
 recorded command whose signature does not verify) mean the record was altered or the key differs; alert on them. Worth routing to a
 dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded
 commands back and once when it releases them — a command that waits for the length of a replay is waiting, not

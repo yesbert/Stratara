@@ -8,8 +8,10 @@ the reader or the work is doing. A reader that catches up longer than the respon
 whose run lasts longer than it, SHALL therefore leave no undelivered reminder tick in the silo's log. A silo that
 starts while a reader or a work is busy in this way SHALL start without waiting for it. Answering
 a keep-alive SHALL NOT change what the reader or the work does: a partition SHALL still be read by one catch-up
-at a time, a keep-alive or a poll that arrives during a catch-up SHALL make it read once more before it ends,
-and a singleton work's run SHALL still never overlap with another run of the same work. The documentation SHALL
+at a time, a keep-alive or a poll that arrives during a catch-up SHALL NOT start a second one, a fact committed
+during a catch-up SHALL be applied by it or by the next, and a singleton work's run SHALL still never overlap with
+another run of the same work. A reader or a work that is being deactivated MAY still leave a tick undelivered
+while it waits for its running catch-up or run. The documentation SHALL
 say that a durable timer whose handler outlasts the response timeout still makes the runtime log an undelivered
 reminder tick for that tick, and that the line says nothing about the timer, which fires once as before.
 
@@ -28,12 +30,12 @@ reminder tick for that tick, and that the line says nothing about the timer, whi
 - **THEN** the saga handles every entry once, in commit order, and the silo logs no undelivered reminder tick for
   the saga's readers
 
-#### Scenario: A keep-alive during a catch-up reads once more
+#### Scenario: A keep-alive during a catch-up starts no second one
 
-- **WHEN** a fact commits in a partition while its reader is catching up, and the reader's keep-alive arrives
-  during that catch-up
-- **THEN** the keep-alive is answered at once, no second catch-up runs beside the first, and the running catch-up
-  applies the fact before it ends
+- **WHEN** a fact commits in a partition while its reader is catching up, and the reader's keep-alive and poll
+  arrive during that catch-up
+- **THEN** the keep-alive is answered at once, no second catch-up runs beside the first, and the fact is applied
+  once
 
 #### Scenario: A singleton work runs longer than the response timeout
 
@@ -47,7 +49,7 @@ reminder tick for that tick, and that the line says nothing about the timer, whi
 - **WHEN** a second silo that registers the same singleton work starts while the work's run on the first silo
   lasts longer than the runtime's response timeout
 - **THEN** the second silo starts, the run is not interrupted and does not run a second time, and the work keeps
-  running in one place
+  running in one place. Verified where both silos run this release
 
 #### Scenario: The documentation names the reminder line a durable timer still leaves
 

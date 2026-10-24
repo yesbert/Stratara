@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.GrainDirectory;
+using Orleans.Serialization.Invocation;
 using Polly.Registry;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.Projections;
@@ -81,6 +82,7 @@ internal interface ISagaGrain : IGrainWithStringKey
 /// have a grain type of their own, so that no silo of the earlier release activates one. The checkpoint the shared
 /// reader left under <see cref="ConsumerName"/> stays where it was: it is where the sagas start.
 /// </summary>
+[MayInterleave(nameof(MayInterleave))]
 [GrainDirectory(GrainDirectories.Durable)]
 [SagasRolePlacementFilter]
 internal sealed class SagaGrain(
@@ -95,6 +97,9 @@ internal sealed class SagaGrain(
 {
     /// <summary>The consumer the shared reader kept its checkpoints under.</summary>
     public const string ConsumerName = "sagas";
+
+    /// <summary>Lets the keep-alive tick interleave, as every store reader does; see <see cref="KeepAliveInterleaving"/>.</summary>
+    public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsReminderTick(request);
 
     protected override StoreReaderRetirement RetiresAs => StoreReaderRetirement.Superseded;
 

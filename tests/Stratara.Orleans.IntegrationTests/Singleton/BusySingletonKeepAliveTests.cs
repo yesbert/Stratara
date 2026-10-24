@@ -14,7 +14,7 @@ namespace Stratara.Orleans.IntegrationTests.Singleton;
 /// Scenarios <em>A singleton work runs longer than the response timeout</em> and <em>A silo starts while a singleton
 /// work runs long</em>: under a two-second response timeout and a one-second keep-alive, a work whose first run takes
 /// fifteen seconds runs once to its end, no two runs overlap, the silo logs no reminder tick it could not deliver, and a
-/// second silo that registers the same work starts during that run without waiting for it.
+/// second silo that registers the same work starts during that run without waiting for or interrupting it.
 /// </summary>
 /// <remarks>
 /// The absence of the runtime's lines is read from their wording, which Orleans may change; the outcome — one long run,
@@ -27,6 +27,9 @@ public sealed class BusySingletonKeepAliveTests(PostgreSqlFixture postgres, Redi
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan KeepAlive = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan Hold = TimeSpan.FromSeconds(15);
+
+    // Long enough that a second silo's start, membership join included, ends inside it on a slow machine too.
+    private static readonly TimeSpan StartHold = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SettleTimeout = TimeSpan.FromSeconds(60);
     private static readonly string[] RuntimeReminderErrors = ["Could not deliver reminder tick", "Response did not arrive on time"];
 
@@ -49,7 +52,7 @@ public sealed class BusySingletonKeepAliveTests(PostgreSqlFixture postgres, Redi
     [Fact]
     public async Task A_silo_that_starts_while_a_singleton_work_runs_long_starts_without_waiting_for_it()
     {
-        var probe = new LongRunProbe(Hold);
+        var probe = new LongRunProbe(StartHold);
         var firstLogs = new RuntimeLogs();
         var secondLogs = new RuntimeLogs();
         var cluster = $"stratara-poc-busy-singleton-start-{Guid.NewGuid():N}";
@@ -60,14 +63,15 @@ public sealed class BusySingletonKeepAliveTests(PostgreSqlFixture postgres, Redi
         using var second = await StartSiloAsync(probe, secondLogs, cluster, siloPort: 11534, gatewayPort: 30534);
         var startTook = DateTimeOffset.UtcNow - startedAt;
 
-        Assert.False(probe.LongRunEnded, $"the second silo's start took {startTook}, past the long run it should not wait for");
+        Assert.False(probe.LongRunEnded, $"the second silo's start took {startTook} and ended after the long run, so the test proves nothing");
+        Assert.True(await WaitUntilAsync(() => probe.LongRunEnded || probe.LongRunCancelled), "the long run neither ended nor was cancelled");
+        Assert.False(probe.LongRunCancelled, "the second silo's start interrupted the long run");
         Assert.True(await WaitUntilAsync(() => probe.Runs >= 2), "the work did not run again after its long run");
         await Task.Delay(ResponseTimeout * 2, TestContext.Current.CancellationToken);
         await second.StopAsync();
         await first.StopAsync();
 
         Assert.Equal(1, probe.MaxConcurrent);
-        Assert.Equal(1, probe.LongRuns);
         Assert.Empty(firstLogs.Matching(RuntimeReminderErrors));
         Assert.Empty(secondLogs.Matching(RuntimeReminderErrors));
     }
@@ -107,7 +111,10 @@ public sealed class BusySingletonKeepAliveTests(PostgreSqlFixture postgres, Redi
         return app;
     }
 
-    /// <summary>Makes the first run of the work last a fixed time, and counts the runs and how many ran at once.</summary>
+    /// <summary>
+    /// Makes the first run of the work last a fixed time, records whether it ended or was cancelled, and counts the runs
+    /// and how many ran at once — a run that started twice would overlap or follow a cancellation.
+    /// </summary>
     public sealed class LongRunProbe(TimeSpan hold)
     {
         private int _runs;
@@ -116,16 +123,17 @@ public sealed class BusySingletonKeepAliveTests(PostgreSqlFixture postgres, Redi
         private int _maxConcurrent;
         private volatile bool _longRunStarted;
         private volatile bool _longRunEnded;
+        private volatile bool _longRunCancelled;
 
         public int Runs => Volatile.Read(ref _runs);
-
-        public int LongRuns => Volatile.Read(ref _longRuns);
 
         public int MaxConcurrent => Volatile.Read(ref _maxConcurrent);
 
         public bool LongRunStarted => _longRunStarted;
 
         public bool LongRunEnded => _longRunEnded;
+
+        public bool LongRunCancelled => _longRunCancelled;
 
         public async Task RunAsync(CancellationToken cancellationToken)
         {
@@ -141,7 +149,16 @@ public sealed class BusySingletonKeepAliveTests(PostgreSqlFixture postgres, Redi
                 if (Interlocked.CompareExchange(ref _longRuns, 1, 0) == 0)
                 {
                     _longRunStarted = true;
-                    await Task.Delay(hold, cancellationToken);
+                    try
+                    {
+                        await Task.Delay(hold, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _longRunCancelled = true;
+                        throw;
+                    }
+
                     _longRunEnded = true;
                 }
 
