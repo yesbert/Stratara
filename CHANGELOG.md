@@ -16,6 +16,15 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.8`._
+
+## [4.4.8] — 2026-10-24
+
+A fix for hosts on the Orleans execution model. A store reader that catches up a large backlog and a singleton
+work that runs long now answer their keep-alive, so neither leaves reminder errors in the silo's log. A silo that
+joins while a singleton work runs long on another silo no longer fails its start. No API change, no schema change
+and no migration.
+
 ### Fixed
 
 - **A busy store reader or singleton work answers its keep-alive.** On the Orleans execution model, a projection or
@@ -32,7 +41,8 @@ applies to the entire NuGet family.
   interleaves, so the start goes on.
 - *Operate the Orleans execution model* says that a durable timer whose handler outlasts the response timeout
   still makes Orleans log `Could not deliver reminder tick` for that tick, and that the line says nothing about
-  the timer. It also says that the line is now worth an alert for a store reader or a singleton work.
+  the timer. It also says that, outside a deploy, the line now points to an unreachable store reader or singleton
+  work rather than a busy one.
 
 ## [4.4.7] — 2026-10-23
 
@@ -4760,7 +4770,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.7...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.8...main
+[4.4.8]: https://github.com/yesbert/Stratara/releases/tag/v4.4.8
 [4.4.7]: https://github.com/yesbert/Stratara/releases/tag/v4.4.7
 [4.4.6]: https://github.com/yesbert/Stratara/releases/tag/v4.4.6
 [4.4.5]: https://github.com/yesbert/Stratara/releases/tag/v4.4.5
