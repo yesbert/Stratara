@@ -28,7 +28,8 @@ namespace Stratara.Orleans.IntegrationTests.Projections;
 /// leaves checkpoints and keep-alive reminders for both in every partition; started again with one of them removed,
 /// the removed projection's readers are brought back by their reminders once, retire, and neither read nor refuse
 /// anything, while their checkpoints stay; started a third time with the projection registered again, its readers
-/// resume from those checkpoints and apply only what was committed while it was absent.
+/// resume from those checkpoints and apply only what was committed while it was absent. A retired reader refuses a
+/// pause and answers a wait as not reached.
 /// </summary>
 [Collection(InfrastructureCollection.Name)]
 public sealed class UnregisteredProjectionReaderTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
@@ -84,6 +85,10 @@ public sealed class UnregisteredProjectionReaderTests(PostgreSqlFixture postgres
             Assert.DoesNotContain(logs.Entries, entry => entry.Message.Contains(UndeliveredTick, StringComparison.Ordinal) && entry.Message.Contains(removed, StringComparison.Ordinal));
             Assert.Equal(0, await RemindersAsync(app, removed));
             Assert.Equal(checkpoints, await CheckpointsAsync(app.Services, removed));
+
+            var reader = app.Services.GetRequiredService<IGrainFactory>().GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(removed, 0));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => reader.PauseAsync(Guid.NewGuid(), TimeSpan.FromMinutes(1)));
+            Assert.Equal(new StoreReaderProgress(false, StoreReaderState.Unregistered), await reader.WaitForAsync(checkpoints[0] + 1, TimeSpan.FromMilliseconds(200)));
             await app.StopAsync();
         }
 

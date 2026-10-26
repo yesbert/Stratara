@@ -86,6 +86,7 @@ public sealed class ProjectionProgressTests
     [InlineData((int)StoreReaderState.StalledOnRead, (int)StoreReaderState.Advancing, ProjectionWaitOutcome.Stalled)]
     [InlineData((int)StoreReaderState.Suspended, (int)StoreReaderState.Advancing, ProjectionWaitOutcome.Suspended)]
     [InlineData((int)StoreReaderState.Advancing, (int)StoreReaderState.Advancing, ProjectionWaitOutcome.TimedOut)]
+    [InlineData((int)StoreReaderState.Unregistered, (int)StoreReaderState.Advancing, ProjectionWaitOutcome.TimedOut)]
     public async Task At_the_limit_the_most_telling_state_is_the_outcome_and_every_partition_behind_is_named(
         int first, int second, ProjectionWaitOutcome expected)
     {
@@ -123,6 +124,18 @@ public sealed class ProjectionProgressTests
         var result = await progress.Progress.WaitAsync(Projection, Mark(0, 0, 1, 0), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(ProjectionWaitOutcome.MarkNotApplicable, result.Outcome);
+    }
+
+    [Fact]
+    public async Task A_reader_answering_from_a_silo_that_does_not_register_it_is_asked_again()
+    {
+        var setup = new Setup();
+        setup.Answer(2, Short(StoreReaderState.Unregistered), Reached());
+        var progress = setup.Build();
+
+        var result = await progress.Progress.WaitAsync(Projection, Mark(0, 0, 1, 0), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ProjectionWaitOutcome.Reached, result.Outcome);
     }
 
     [Fact]

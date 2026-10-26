@@ -25,7 +25,8 @@ applies to the entire NuGet family.
   retires the first time it is brought back, as a saga's reader already did: it unregisters its keep-alive, logs
   `117_136` `UnregisteredProjectionReaderRetired` (Information) once, reads nothing and deactivates. Its checkpoints
   stay, so a projection registered again resumes where it stopped; *Operate the Orleans execution model* says how to
-  delete them.
+  delete them. In a rolling deployment that adds a projection, a reader that lands on a silo of the earlier version
+  refuses a rebuild's or a replay's pause, which then fails naming it, and a wait counts its partition as behind.
 - **A retired store reader logs its retirement once.** A reader that retired as it was activated — of a partition
   beyond a lowered partition count, or of a saga the silo no longer registers — deactivated before it answered the
   call that activated it. Orleans forwarded that call to a new activation, which retired again, so the retirement was

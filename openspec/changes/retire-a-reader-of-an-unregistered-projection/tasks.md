@@ -73,6 +73,23 @@
 - [x] 5.4 `CHANGELOG.md`: an entry under `[Unreleased]`, *Fixed*. The CHANGELOG names no consumer findings, so
   F-029 is named in the proposal and the pull request instead
 
+## 5a. Review findings (`/code-review high`; Copilot's quota was exhausted)
+
+- [x] 5a.1 A reader retired as unregistered refuses a pause, so a rebuild or a replay that meets it fails naming it
+  instead of believing the partition stopped (design D7) (`StoreReaderGrain.RefusePauseWhereUnregistered`,
+  asserted in `UnregisteredProjectionReaderTests`)
+- [x] 5a.2 Such a reader answers a wait as `StoreReaderState.Unregistered` after its budget, and `ProjectionProgress`
+  counts it as behind instead of `MarkNotApplicable` (design D7) (`ProjectionProgressTests`,
+  `UnregisteredProjectionReaderTests`)
+- [x] 5a.3 The grain stores the retirement kind instead of a flag, and `Retired` is private (design D7)
+- [x] 5a.4 `ProjectionRegistrations` builds its set under a lock instead of `LazyThreadSafetyMode.PublicationOnly`,
+  so concurrent first activations construct the projections once
+- [x] 5a.5 The guide, the log-event reference and the CHANGELOG no longer promise one retirement per reader: it is one
+  per time a reader is brought back, which a rolling deployment repeats. The guide names the checkpoint column under
+  either naming, and says what a rolling deployment does to a rebuild and a wait
+- [x] 5a.6 Answered without a change: a projection whose construction throws fails every reader's activation (design,
+  *Risks*); consolidating the four places that name projections is out of scope
+
 ## 6. Verification
 
 - [x] 6.1 `openspec validate retire-a-reader-of-an-unregistered-projection --strict`

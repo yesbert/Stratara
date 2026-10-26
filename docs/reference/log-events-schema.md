@@ -91,7 +91,7 @@ Even hundreds are info/debug, the `_1xx` band is error (e.g. `100_002` info, `10
 | `117_133` | HeavyPoolFull | Debug | A heavy hand-over found its pool holding as many commands as `HeavyWorkOptions.QueuedLimitPerPool` allows; it was refused, its attempt given back, and the drain hands it over again after the grace; carries the intent, the pool and the limit |
 | `117_134` | IntentBatchRenewalFailed | Warning | Renewing a batch of the commands a silo holds failed; carries the batch size, and the next renewal — a third of the grace later — tries again, so one failure does not let a hand-over lapse |
 | `117_135` | AttemptGiveBackFailed | Warning | Giving back the attempt of a hand-over that ran nothing — refused by a full heavy pool, or a duplicate of a command still held — failed, so the attempt stays counted; carries the intent |
-| `117_136` | UnregisteredProjectionReaderRetired | Information | A projection's reader was brought back — by its keep-alive or a call — on a silo that registers no projection of its name, the projection having been removed or renamed; it unregistered its keep-alive, reads nothing and deactivates, and its checkpoints stay; logged once per reader; carries the projection and the partition |
+| `117_136` | UnregisteredProjectionReaderRetired | Information | A projection's reader was brought back — by its keep-alive or a call — on a silo that registers no projection of its name, the projection having been removed or renamed; it unregistered its keep-alive, reads nothing and deactivates, and its checkpoints stay; logged once each time such a reader is brought back; carries the projection and the partition |
 
 ## Authoring a new log event
 

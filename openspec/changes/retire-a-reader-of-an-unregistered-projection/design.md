@@ -127,6 +127,29 @@ activating message is not guaranteed, and if it runs first the message is forwar
 the assertions added to `RetiredReaderTests` and `SagaIsolationTests`. Both failed against the old base grain with
 three retirements and passed with the change.
 
+### D7 — Where another silo registers the consumer, a retired reader refuses a pause and answers a wait as behind
+
+Found in review (`/code-review high`, standing in for Copilot, whose quota was exhausted). In a rolling deployment
+that adds a projection, a silo of the new version can reach a reader activated on a silo of the earlier version.
+Before this change that reader was paused like any other and stalled on its entries. Retired, it would have:
+
+- answered a pause by doing nothing, so a rebuild or a replay believed the partition stopped while the next
+  activation, on a silo that registers the projection, read beside the truncation;
+- answered a wait with `StoreReaderState.Retired`, which `ProjectionProgress` turns into `MarkNotApplicable` — an
+  answer documented for a mark taken under another reader or partition count.
+
+A reader retired as `Unregistered` therefore throws from `PauseAsync`. `StoreReaderPause.PauseAllAsync` already
+turns a failed pause into "resume the paused ones and fail naming the reader", which is the guarantee the rebuild
+requirement gives. A renewal is left a no-op: renewals are already quiet, and a renewal that reaches a fresh
+activation pauses it again. `WaitForAsync` waits out its budget, as a reader behind does, and answers
+`StoreReaderState.Unregistered`, a new value that `ProjectionProgress` counts as behind (`TimedOut` at the limit). An
+earlier release reads the value as behind too, because it maps unknown states that way. The grain stores the
+retirement kind (`StoreReaderRetirement`, with a new `BeyondPartitionCount` that only the base grain sets) instead of
+a flag, so these answers and the deactivation read from one place, and `Retired` became private.
+
+*Evidence:* `UnregisteredProjectionReaderTests` (pause refused, wait answered as `Unregistered`) and
+`ProjectionProgressTests` (an `Unregistered` answer is asked again and counts as timed out).
+
 ## Risks / Trade-offs
 
 - **[Rolling deployment that adds a projection]** A silo of the earlier version can be chosen for the new
@@ -142,6 +165,14 @@ three retirements and passed with the change.
   so the cache adds nothing new.
 - **[Registry built before the container is complete]** → It is built lazily, on the first activation that asks.
   That always happens after the silo is active.
+- **[A projection that cannot be constructed without a session, or whose construction fails transiently]** The
+  registry's construction throws inside the reader's activation, so every projection reader on that silo fails to
+  activate until it succeeds. → The failure is not cached, so the next activation tries again. The same construction
+  already runs at silo start and on every wake-up (`ProjectionNudgeTarget`), so such a projection already fails the
+  host there. Not swallowed on purpose: a reader that cannot tell would have to guess, and guessing "registered" is
+  the defect this change removes.
+- **[Concurrent first activations]** → The registry builds its set under a lock, so readers activated together build
+  the projections once (review finding).
 
 ## Migration Plan
 

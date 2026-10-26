@@ -26,8 +26,14 @@ internal enum StoreReaderRetirement
     /// <summary>The host reads what the grain read under other names now; the grain answers calls until it is collected.</summary>
     Superseded,
 
-    /// <summary>The grain's consumer is not registered on this silo; the grain deactivates once it has answered the call that activated it.</summary>
+    /// <summary>
+    /// The grain's consumer is not registered on this silo; the grain deactivates once it has answered the call that
+    /// activated it, refuses a pause and answers a wait as not reached.
+    /// </summary>
     Unregistered,
+
+    /// <summary>The grain's partition is beyond the host's partition count; the grain decides this itself, a derived grain never does.</summary>
+    BeyondPartitionCount,
 }
 
 /// <summary>
@@ -62,7 +68,7 @@ internal abstract class StoreReaderGrain(
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
     private StoreReaderPausers? _pausers;
-    private bool _deactivatesOnceAnswered;
+    private StoreReaderRetirement _retirement;
 
     /// <summary>The consumer this grain reads for, from its key.</summary>
     protected string Consumer { get; private set; } = string.Empty;
@@ -78,7 +84,7 @@ internal abstract class StoreReaderGrain(
     protected StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
     /// <summary>Whether the grain's partition is beyond the host's partition count, or its reader was superseded or is not registered, so the grain reads nothing.</summary>
-    protected bool Retired { get; private set; }
+    private bool Retired => _retirement != StoreReaderRetirement.None;
 
     /// <summary>Whether reading stops at the next batch boundary; a replay suspends every reader, and so does a pauser.</summary>
     protected virtual bool Suspended => Pausers.Any || replayState.IsReplayActive;
@@ -95,9 +101,16 @@ internal abstract class StoreReaderGrain(
     /// a pause that lapsed during that wait holds again. A pause of a pauser released within the last lease — delivered
     /// after its own resume — does nothing.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The grain's consumer is not registered on this silo, so it cannot be held paused here.</exception>
     public async Task PauseAsync(Guid pauser, TimeSpan lease)
     {
-        if (AnswersAsRetired() || !Pausers.Hold(pauser, lease))
+        if (AnswersAsRetired())
+        {
+            RefusePauseWhereUnregistered();
+            return;
+        }
+
+        if (!Pausers.Hold(pauser, lease))
         {
             return;
         }
@@ -108,10 +121,12 @@ internal abstract class StoreReaderGrain(
     }
 
     /// <summary>A pause of an older silo, which cannot renew it: held for an anonymous pauser for <see cref="AnonymousLease"/>.</summary>
+    /// <exception cref="InvalidOperationException">The grain's consumer is not registered on this silo, so it cannot be held paused here.</exception>
     public async Task PauseAsync()
     {
         if (AnswersAsRetired())
         {
+            RefusePauseWhereUnregistered();
             return;
         }
 
@@ -193,7 +208,7 @@ internal abstract class StoreReaderGrain(
         _pausers = new StoreReaderPausers(_time);
         if (partition >= settings.PartitionCount)
         {
-            await RetireAsync(deactivatesOnceAnswered: true);
+            await RetireAsync(StoreReaderRetirement.BeyondPartitionCount);
             logger.LogStoreReaderRetired(Consumer, Partition, settings.PartitionCount);
             await base.OnActivateAsync(cancellationToken);
             return;
@@ -201,7 +216,7 @@ internal abstract class StoreReaderGrain(
 
         if (RetiresAs is var retirement and not StoreReaderRetirement.None)
         {
-            await RetireAsync(deactivatesOnceAnswered: retirement == StoreReaderRetirement.Unregistered);
+            await RetireAsync(retirement);
             LogRetirement();
             await base.OnActivateAsync(cancellationToken);
             return;
@@ -258,7 +273,13 @@ internal abstract class StoreReaderGrain(
     {
         if (AnswersAsRetired())
         {
-            return new StoreReaderProgress(false, StoreReaderState.Retired);
+            if (_retirement != StoreReaderRetirement.Unregistered)
+            {
+                return new StoreReaderProgress(false, StoreReaderState.Retired);
+            }
+
+            await Task.Delay(budget, _time);
+            return new StoreReaderProgress(false, StoreReaderState.Unregistered);
         }
 
         if (!HasReached(position))
@@ -323,10 +344,9 @@ internal abstract class StoreReaderGrain(
         await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
-    private async Task RetireAsync(bool deactivatesOnceAnswered)
+    private async Task RetireAsync(StoreReaderRetirement retirement)
     {
-        Retired = true;
-        _deactivatesOnceAnswered = deactivatesOnceAnswered;
+        _retirement = retirement;
         if (await this.GetReminder(KeepAliveReminder) is { } keepAlive)
         {
             await this.UnregisterReminder(keepAlive);
@@ -341,12 +361,27 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     private bool AnswersAsRetired()
     {
-        if (Retired && _deactivatesOnceAnswered)
+        if (_retirement is StoreReaderRetirement.Unregistered or StoreReaderRetirement.BeyondPartitionCount)
         {
             this.DeactivateOnIdle();
         }
 
         return Retired;
+    }
+
+    /// <summary>
+    /// A reader whose consumer this silo does not register refuses a pause rather than pretend to hold it: the next
+    /// activation, on a silo that registers the consumer, would read while the pauser believes the partition stopped.
+    /// The pauser fails naming the reader and releases the readers it did pause.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The grain's consumer is not registered on this silo.</exception>
+    private void RefusePauseWhereUnregistered()
+    {
+        if (_retirement == StoreReaderRetirement.Unregistered)
+        {
+            throw new InvalidOperationException(
+                $"The reader of '{Consumer}' on partition {Partition} answered from a silo that does not register '{Consumer}', so it cannot be held paused; pause again once every silo registers it.");
+        }
     }
 
     /// <summary>

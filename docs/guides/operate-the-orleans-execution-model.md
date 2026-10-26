@@ -346,18 +346,23 @@ A projection removed from the host, or renamed, leaves the keep-alive reminders 
 when a reminder brings it back on a silo that registers no projection of its name, retires: it unregisters its
 keep-alive, logs `117_136` (Information) naming the projection and the partition, reads nothing, counts no stall and
 deactivates, so a silo that still registers the projection — a rolling deployment — can host it. The event appears
-once per reader, as `117_126` does for a saga's reader. A retired reader leaves its checkpoints where they were, and
+once each time such a reader is brought back, as `117_126` does for a saga's reader: once per reader after a
+deployment that removed the projection everywhere, and again for each wake-up that a silo still registering it sends
+during a rolling deployment. A retired reader leaves its checkpoints where they were, and
 a host that registers the projection again resumes it from them rather than from the beginning of the store. The
 [reset](#reset-what-the-model-keeps) does not remove them, because it touches only the consumers the host registers.
 Once no silo registers the consumer any more, delete its rows from the checkpoint table yourself —
 `DELETE FROM projection_checkpoint WHERE projection = 'OrderSummaryProjection'`, with the projection's name, or
-`sagas:<SagaName>` for a saga.
+`sagas:<SagaName>` for a saga. The column is `projection` under the snake-case names the PostgreSQL registrations
+apply; a read store mapped without them names it `Projection`.
 
 A rolling deployment that adds a projection or a saga can place one of its readers on a silo of the earlier version,
 which does not register it: the reader retires there and unregisters the keep-alive the new silo registered. It still
 reads on every commit's wake-up, so no fact is missed, but it has no keep-alive to bring it back after a silo is lost
 until a silo that registers the consumer starts again. Where that matters, restart one silo once every silo runs the
-new version.
+new version. A rebuild or a full replay that meets such a reader fails naming it and releases the readers it paused,
+because the reader cannot be held paused on a silo that does not run it; run it again once every silo runs the new
+version. A wait for the projection counts such a partition as behind, not as a mark that does not apply.
 
 ## A rebuild or a replay that does not finish
 
