@@ -16,6 +16,14 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Changed
+
+- **A commit no longer constructs every projection.** On the Orleans execution model, every command that committed
+  facts constructed each registered projection, with its dependencies, only to learn the names of the store readers to
+  wake. The names are now worked out once per silo, and the wait for a projection, the rebuild and the full replay's
+  checkpoint reset use the same list. A rebuild of a name that is not registered is refused before any reader is
+  paused, with the same message as before.
+
 ### Fixed
 
 - **A durable timer answers its tick while its handler runs.** On the Orleans execution model, a durable timer's

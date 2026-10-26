@@ -27,6 +27,7 @@ internal sealed class ProjectionRebuilder(
     IServiceScopeFactory scopeFactory,
     IOptions<CommitOrderOptions> commitOrder,
     IProjectionReplayState replayState,
+    ProjectionRegistrations registrations,
     StoreReaderLease lease) : IProjectionRebuilder
 {
     /// <exception cref="InvalidOperationException">A full replay is active, or the projection is unknown or not rebuildable.</exception>
@@ -35,6 +36,11 @@ internal sealed class ProjectionRebuilder(
         if (replayState.IsReplayActive)
         {
             throw new InvalidOperationException($"Projection '{projectionName}' cannot be rebuilt while a full replay is active: the replay empties and refills every projection, this one included. Rebuild it once the replay has ended.");
+        }
+
+        if (!registrations.Contains(projectionName))
+        {
+            throw new InvalidOperationException($"No projection named '{projectionName}' is registered.");
         }
 
         var partitions = Enumerable.Range(0, commitOrder.Value.PartitionCount)

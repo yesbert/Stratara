@@ -63,6 +63,7 @@ public sealed class ProjectionRebuilderTests
             services.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(new CommitOrderOptions { PartitionCount = Partitions }),
             NoReplay(),
+            new ProjectionRegistrations(services.GetRequiredService<IServiceScopeFactory>()),
             Lease());
 
         var rebuild = rebuilder.RebuildAsync("View");
@@ -147,7 +148,7 @@ public sealed class ProjectionRebuilderTests
             .AddScoped(_ => checkpoints.Object)
             .AddScoped(_ => reader.Object)
             .BuildServiceProvider();
-        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), Lease());
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), new ProjectionRegistrations(services.GetRequiredService<IServiceScopeFactory>()), Lease());
 
         await rebuilder.RebuildAsync("View");
 
@@ -239,7 +240,7 @@ public sealed class ProjectionRebuilderTests
             .AddScoped(_ => checkpoints.Object)
             .AddScoped(_ => reader.Object)
             .BuildServiceProvider();
-        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), Lease());
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), new ProjectionRegistrations(services.GetRequiredService<IServiceScopeFactory>()), Lease());
 
         var failed = await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
 
@@ -275,7 +276,7 @@ public sealed class ProjectionRebuilderTests
             .AddScoped(_ => new Mock<IProjectionCheckpointStore>().Object)
             .AddScoped(_ => reader.Object)
             .BuildServiceProvider();
-        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), Lease());
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), new ProjectionRegistrations(services.GetRequiredService<IServiceScopeFactory>()), Lease());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));
 
@@ -364,7 +365,7 @@ public sealed class ProjectionRebuilderTests
 
         var services = collection.BuildServiceProvider();
 
-        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), Lease());
+        var rebuilder = new ProjectionRebuilder(grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), NoReplay(), new ProjectionRegistrations(services.GetRequiredService<IServiceScopeFactory>()), Lease());
         return (rebuilder, projection, checkpoints);
     }
 
@@ -379,11 +380,13 @@ public sealed class ProjectionRebuilderTests
             .Returns((string _, string? _) => new FakeGrain(() => Interlocked.Increment(ref paused), () => Task.CompletedTask));
         var replay = new Mock<IProjectionReplayState>();
         replay.SetupGet(r => r.IsReplayActive).Returns(true);
+        var scopes = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var rebuilder = new ProjectionRebuilder(
             grainFactory.Object,
-            new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            scopes,
             Options.Create(new CommitOrderOptions { PartitionCount = Partitions }),
             replay.Object,
+            new ProjectionRegistrations(scopes),
             Lease());
 
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => rebuilder.RebuildAsync("View"));

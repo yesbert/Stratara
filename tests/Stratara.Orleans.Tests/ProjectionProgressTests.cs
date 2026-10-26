@@ -226,6 +226,7 @@ public sealed class ProjectionProgressTests
                 grains.Object,
                 services.GetRequiredService<IServiceScopeFactory>(),
                 Options.Create(new CommitOrderOptions { PartitionCount = 4 }),
+                new ProjectionRegistrations(services.GetRequiredService<IServiceScopeFactory>()),
                 clock);
             return (progress, projection.GetType());
         }
