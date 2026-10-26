@@ -23,9 +23,9 @@ applies to the entire NuGet family.
   Orleans log `Could not deliver reminder tick` at Error for every tick it outlasted. The tick is now answered at once
   and the handler runs in a call that carries no response timeout. The timer still fires once per due time, a tick
   during its handler still does nothing, and a handler stopped with its silo still fires again on the next one.
-- **A failing timer handler is logged.** A durable timer's handler that threw was visible only as Orleans' reminder
-  error line. It is now logged as `117_137` `TimerHandlerFailed` (Error) with the owner, the purpose and the
-  exception, and the timer fires again after its retry period as before.
+- **A failing timer is logged.** A durable timer whose handler threw — or whose owner check or unregistration
+  failed — was visible only as Orleans' reminder error line. It is now logged as `117_137` `TimerFiringFailed` (Error)
+  with the owner, the purpose and the exception, and the timer fires again after its retry period as before.
 
 ## [4.4.9] — 2026-10-26
 

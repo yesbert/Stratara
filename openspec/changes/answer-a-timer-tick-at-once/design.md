@@ -36,10 +36,11 @@ a request, it keeps the activation busy, and idle collection leaves it alone.
 ### D1 — The tick sends a one-way self-call and returns
 
 `ITimerOwnerGrain` gains a `[OneWay]` method, `FireDueAsync(string reminderName)`, with its own alias.
-`ReceiveReminder` sends it through `this.AsReference<ITimerOwnerGrain>()` and returns a completed task. The
-continuation is attached only on fault, as `AggregateGrain` does it. A send that fails means the activation is on
-its way out. The reminder is still registered, so the next tick or the next activation fires it, and nothing needs
-cleaning up.
+`ReceiveReminder` sends it through `this.AsReference<ITimerOwnerGrain>()` and returns a completed task. A tick whose
+handler already runs sends nothing, which saves a message per retry period during a long handler (review finding).
+The authoritative guard stays in `FireDueAsync` (D2). `.Ignore()` observes a send that fails. Unlike `AggregateGrain`,
+nothing needs cleaning up: a failed send means the activation is on its way out, and the reminder is still
+registered, so the next tick or the next activation fires it.
 
 *Alternative rejected:* run `FireAsync` without awaiting it, inside `ReceiveReminder`. Once the reminder call
 returns, the activation has no request in flight, so idle collection could deactivate it mid-handler. The deactivation
@@ -65,19 +66,24 @@ leave behind.
 |---|---|---|
 | Cancelled while the silo stops | `117_008`, as today | stays, fires on the next silo |
 | `CommittedEventsNotPublishedException` | `117_129`, as today | unregistered |
-| Any other exception | new `117_137` `TimerHandlerFailed`, Error, owner, purpose, exception | stays, fires again a retry period later |
+| Any other exception — of the handler, or of the owner check, port resolution, reminder lookup or unregistration around it | new `117_137` `TimerFiringFailed`, Error, owner, purpose, exception | stays, fires again a retry period later |
 
 The self-call does not rethrow. A one-way call has no caller to tell, and a rethrow would only add a runtime line
 next to the framework's own. The level is Error, because a failing timer is what the reminder service's error line
-used to stand for.
+used to stand for. The event is named for the firing, not the handler, because the catch also sees failures around
+the handler (review finding). The purpose is taken by `ReminderName.PurposeOf`, which never throws, so a reminder name
+that cannot be decoded is still logged.
 
 *Evidence:* the spec scenario *A timer's handler fails*, tested with a handler that throws once and then returns.
 
 ### D4 — Rolling deployments
 
-The new method is only ever called by an activation on itself, so the message stays on the silo, and therefore on
-the version, that sent it. An activation on a silo of the earlier version still awaits its handler in the reminder
-call, as before.
+The new method is only ever called by an activation on itself, so the message normally stays on the silo that sent
+it. It is addressed by grain id, though. If the activation deactivates between the send and the delivery, the
+runtime forwards the call to the next activation, which can be on a silo of the earlier version. There the alias is
+unknown, the runtime logs the failed invocation and that tick is lost. The reminder is still registered, so the timer
+fires on its next tick (review finding). An activation on a silo of the earlier version still awaits its handler in
+the reminder call, as before.
 
 ## Risks / Trade-offs
 

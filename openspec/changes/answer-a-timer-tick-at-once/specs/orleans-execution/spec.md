@@ -18,10 +18,11 @@ timer's handler does, so that a handler that runs longer than the response timeo
 tick in the silo's log. Answering the tick SHALL NOT change what the timer guarantees: it SHALL fire once per due
 time, a tick that arrives while its handler runs SHALL NOT start the handler again, the timer SHALL be unregistered
 only once its handler has completed, a handler stopped with its silo SHALL leave the timer registered to fire on the
-next silo, and a timer registered for the same owner and purpose from its own handler SHALL be kept. A handler that
-fails, other than with the failure saying its events were committed but could not be published, SHALL be logged at
-error level with an event of the framework's own that names the owner and the purpose and carries the failure, and
-the timer SHALL stay registered and fire again after its retry period. A timer owner that is being deactivated MAY
+next silo, and a timer registered for the same owner and purpose from its own handler SHALL be kept. A firing
+that fails — the handler, other than with the failure saying its events were committed but could not be published,
+or the owner check or unregistration around it — SHALL be logged at error level with an event of the framework's own
+that names the owner and the purpose and carries the failure, and the timer SHALL stay registered and fire again after
+its retry period. A timer owner that is being deactivated MAY
 still leave a tick undelivered while it waits for a running handler. The documentation SHALL say that store readers,
 singleton work and durable timers answer their reminder tick while busy, and SHALL name the event a failing timer
 handler logs.

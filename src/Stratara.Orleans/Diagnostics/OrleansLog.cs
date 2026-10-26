@@ -73,10 +73,10 @@ internal static partial class OrleansLog
     public static partial void LogTimerCommittedNotPublished(this ILogger logger, Exception exception, string owner, string purpose);
 
     [LoggerMessage(
-        EventId = LogEvents.Orleans.TimerHandlerFailed,
+        EventId = LogEvents.Orleans.TimerFiringFailed,
         Level = LogLevel.Error,
-        Message = "The handler of timer {Purpose} of {Owner} failed; the timer stays registered and fires again after its retry period.")]
-    public static partial void LogTimerHandlerFailed(this ILogger logger, Exception exception, string owner, string purpose);
+        Message = "Firing timer {Purpose} of {Owner} failed; the timer stays registered and fires again after its retry period.")]
+    public static partial void LogTimerFiringFailed(this ILogger logger, Exception exception, string owner, string purpose);
 
     [LoggerMessage(
         EventId = LogEvents.Orleans.SagaStepAftermathFailed,

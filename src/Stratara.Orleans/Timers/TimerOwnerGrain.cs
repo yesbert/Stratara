@@ -130,19 +130,25 @@ internal sealed class TimerOwnerGrain(
     }
 
     /// <summary>
-    /// Asks the grain itself to fire the timer and answers at once. A request that cannot be sent — the activation is on
-    /// its way out — leaves the reminder registered, so the next tick or the next activation fires it.
+    /// Asks the grain itself to fire the timer and answers at once; a tick whose handler already runs asks for nothing. A
+    /// request that cannot be sent — the activation is on its way out — leaves the reminder registered, so the next tick
+    /// or the next activation fires it.
     /// </summary>
     Task IRemindable.ReceiveReminder(string reminderName, TickStatus status)
     {
-        this.AsReference<ITimerOwnerGrain>().FireDueAsync(reminderName).Ignore();
+        if (!_firing.Contains(reminderName))
+        {
+            this.AsReference<ITimerOwnerGrain>().FireDueAsync(reminderName).Ignore();
+        }
+
         return Task.CompletedTask;
     }
 
     /// <summary>
     /// Fires the timer unless its handler already runs. A handler stopped with its silo is logged as such and leaves the
-    /// reminder for the next silo; any other failure is logged and leaves the reminder for the next retry period. Nothing
-    /// is rethrown: a one-way call has no caller to tell.
+    /// reminder for the next silo; any other failure — of the handler, or of the owner check or unregistration around
+    /// it — is logged and leaves the reminder for the next retry period. Nothing is rethrown: a one-way call has no
+    /// caller to tell.
     /// </summary>
     public async Task FireDueAsync(string reminderName)
     {
@@ -161,14 +167,12 @@ internal sealed class TimerOwnerGrain(
         {
             if (logger.IsEnabled(LogLevel.Information))
             {
-                var (purpose, _) = ReminderName.Decode(reminderName);
-                logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {purpose}");
+                logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {ReminderName.PurposeOf(reminderName)}");
             }
         }
         catch (Exception exception)
         {
-            var (purpose, _) = ReminderName.Decode(reminderName);
-            logger.LogTimerHandlerFailed(exception, this.GetPrimaryKeyString(), purpose);
+            logger.LogTimerFiringFailed(exception, this.GetPrimaryKeyString(), ReminderName.PurposeOf(reminderName));
         }
         finally
         {
@@ -296,6 +300,13 @@ internal static class ReminderName
     {
         EnsureValidPurpose(purpose);
         return string.Concat(purpose, Separator, dueAt.UtcTicks.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>The purpose a reminder name carries, or the whole name where it carries no due time; never throws, so a failure about the name can still be logged with it.</summary>
+    public static string PurposeOf(string reminderName)
+    {
+        var separator = reminderName.LastIndexOf(Separator);
+        return separator < 0 ? reminderName : reminderName[..separator];
     }
 
     public static (string Purpose, DateTimeOffset DueAt) Decode(string reminderName)

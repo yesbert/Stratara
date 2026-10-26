@@ -49,7 +49,7 @@ public sealed class FailingHandlerTimerTests(PostgreSqlFixture postgres, RedisFi
 
         Assert.Equal(2, host.Attempts(owner));
         Assert.Empty(await timers.ListAsync(owner));
-        var failure = Assert.Single(logs.Entries, entry => entry.EventId == LogEvents.Orleans.TimerHandlerFailed && entry.Message.Contains(owner, StringComparison.Ordinal));
+        var failure = Assert.Single(logs.Entries, entry => entry.EventId == LogEvents.Orleans.TimerFiringFailed && entry.Message.Contains(owner, StringComparison.Ordinal));
         Assert.Equal(LogLevel.Error, failure.Level);
         Assert.Contains(Purpose, failure.Message, StringComparison.Ordinal);
         Assert.IsType<InvalidOperationException>(failure.Exception);

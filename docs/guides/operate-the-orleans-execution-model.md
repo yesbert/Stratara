@@ -477,9 +477,9 @@ stopped with its silo) explains a second run of a command or a timer after a dep
 `Could not deliver reminder tick` for a store reader, a singleton work or a durable timer is worth a look outside a
 deploy: they answer their tick at once while they read, run or handle it, so the line means the silo could not reach
 the grain in time. While a silo stops or a grain moves, a grain being deactivated waits for its running catch-up, run
-or handler, and a tick in that window can still time out. `117_137` (a durable timer's handler that failed — the timer
-fires again after its retry period, so a handler that fails every time logs it every retry period) belongs with the
-alerts. `117_116` and `117_118` (a
+or handler, and a tick in that window can still time out. `117_137` (firing a durable timer failed — its handler, or the owner check or unregistration
+around it; the timer fires again after its retry period, so a timer that fails every time logs it every retry period)
+belongs with the alerts. `117_116` and `117_118` (a
 recorded command whose signature does not verify) mean the record was altered or the key differs; alert on them. Worth routing to a
 dashboard rather than an alert: `117_006` and `117_007`, logged once when a full replay starts holding recorded
 commands back and once when it releases them — a command that waits for the length of a replay is waiting, not
@@ -585,9 +585,9 @@ singleton run or a long timer handler therefore leaves no reminder line in the s
 
 A timer fires once however long its handler runs. A tick that arrives while the handler still runs does nothing, and
 the timer is unregistered once the handler has completed — or stays registered, and fires again on another silo, when
-the handler was stopped with its silo (`117_008`). A handler that fails is logged as `117_137` (Error) with the owner,
-the purpose and the exception; the timer stays registered and fires again after its retry period, so a handler should
-be safe to run again. Keep timer handlers short where the work can wait for a command: a heavy command spreads long
+the handler was stopped with its silo (`117_008`). A handler that fails — or an owner check or unregistration around it
+— is logged as `117_137` (Error) with the owner, the purpose and the exception; the timer stays registered and fires
+again after its retry period, so a handler should be safe to run again. Keep timer handlers short where the work can wait for a command: a heavy command spreads long
 work across the cluster, a timer's handler holds its owner's grain. A handler may register its own owner and purpose
 again, with the due time it fired for or a later one; the new timer is kept.
 

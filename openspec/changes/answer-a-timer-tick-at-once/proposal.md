@@ -35,7 +35,7 @@ owner and the purpose, and the timer fires again after its retry period as it do
   - a handler whose events were committed but not published still counts as fired (`117_129`);
   - re-registering from the handler keeps the new timer;
   - the owner check, the due-time tolerance and the registration limits.
-- **A failing handler is logged.** It gets a new Error event, `117_137` `TimerHandlerFailed`, which names the owner
+- **A failing handler is logged.** It gets a new Error event, `117_137` `TimerFiringFailed`, which names the owner
   and the purpose and carries the exception. The timer stays registered and fires again after its retry period.
   This is the same behaviour as today, now visible as the framework's own event.
 - **Documentation:** `docs/guides/operate-the-orleans-execution-model.md`:

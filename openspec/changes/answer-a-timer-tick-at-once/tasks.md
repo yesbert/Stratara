@@ -21,7 +21,7 @@
 - [x] 2.3 `FireDueAsync` owns `_firing`, `_ticks` and `_renewed` as `ReceiveReminder` did. It logs `117_008` on a
   stop and `117_137` on any other failure, and does not rethrow (design D2, D3). Update the class's XML summary
   (`TimerOwnerGrain.cs`)
-- [x] 2.4 `LogEvents.Orleans.TimerHandlerFailed = 117_137` and `OrleansLog.LogTimerHandlerFailed(exception, owner,
+- [x] 2.4 `LogEvents.Orleans.TimerFiringFailed = 117_137` and `OrleansLog.LogTimerFiringFailed(exception, owner,
   purpose)` at Error (`src/Stratara.Diagnostics/LogEvents.cs`, `src/Stratara.Orleans/Diagnostics/OrleansLog.cs`)
 
 ## 3. Green
@@ -45,6 +45,19 @@
 - [x] 4.4 Check `docs/concepts/orleans-execution-model.md`, the other guides and `llms.txt` for a claim about timer
   handlers and reminder lines that this change contradicts
 - [x] 4.5 `CHANGELOG.md` under `[Unreleased]`, *Fixed*
+
+## 4a. Review findings (`/code-review high`; Copilot's quota was exhausted)
+
+- [x] 4a.1 The event is `TimerFiringFailed`, not `TimerHandlerFailed`. The catch also sees failures of the owner check,
+  port resolution, reminder lookup and unregistration around the handler, and the guide, the log reference and the
+  spec say so (design D3)
+- [x] 4a.2 The purpose for both log lines comes from `ReminderName.PurposeOf`, which never throws, so a reminder name that
+  cannot be decoded no longer escapes the catch unlogged (`TimerOwnerGrain.cs`)
+- [x] 4a.3 `ReceiveReminder` sends nothing while the timer's handler runs (design D1)
+- [x] 4a.4 Design D1 describes `.Ignore()` as built, and D4 says that a forwarded self-call can reach an earlier version
+  and lose that tick, recovered by the next one
+- [x] 4a.5 Answered without a change: the log assertion's filter on the owner matched both lines in the red run, so it
+  is not vacuous; the duplicated capturing logger providers are a test-wide refactor of their own
 
 ## 5. Verification
 
