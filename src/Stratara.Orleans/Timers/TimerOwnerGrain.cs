@@ -14,9 +14,11 @@ namespace Stratara.Orleans.Timers;
 
 /// <summary>
 /// The grain behind <see cref="IDurableTimers"/>. Each timer is a reminder whose name carries the
-/// purpose and the due time, so the reminder table is the only state. A reminder that fires checks
-/// the owner, waits if it is early, hands the timer to the host's handler once it is due, and
-/// unregisters itself afterwards — or at once, if the owner is gone. The grain is reentrant: its only state
+/// purpose and the due time, so the reminder table is the only state. A reminder that fires is answered at once: the
+/// tick asks the grain itself, one-way, to fire the timer, so a handler longer than the runtime's response timeout
+/// leaves no undelivered tick. Firing checks the owner, waits if it is early, hands the timer to the host's handler once
+/// it is due, and unregisters the reminder afterwards — or at once, if the owner is gone; a handler that fails leaves the
+/// reminder, so the timer fires again after its retry period, and is logged. The grain is reentrant: its only state
 /// is the reminder table, and registering or cancelling by name is idempotent, so a handler that cancels or
 /// reschedules its owner's timers, or a fact that reaches the owner while a tick runs, does not wait on the
 /// tick's own turn. A tick whose handler outlasts the deactivation budget of a stopping silo has its token cancelled: a
@@ -127,7 +129,28 @@ internal sealed class TimerOwnerGrain(
         return [.. (await this.GetReminders()).Select(reminder => reminder.ReminderName)];
     }
 
-    async Task IRemindable.ReceiveReminder(string reminderName, TickStatus status)
+    /// <summary>
+    /// Asks the grain itself to fire the timer and answers at once; a tick whose handler already runs asks for nothing. A
+    /// request that cannot be sent — the activation is on its way out — leaves the reminder registered, so the next tick
+    /// or the next activation fires it.
+    /// </summary>
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status)
+    {
+        if (!_firing.Contains(reminderName))
+        {
+            this.AsReference<ITimerOwnerGrain>().FireDueAsync(reminderName).Ignore();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Fires the timer unless its handler already runs. A handler stopped with its silo is logged as such and leaves the
+    /// reminder for the next silo; any other failure — of the handler, or of the owner check or unregistration around
+    /// it — is logged and leaves the reminder for the next retry period. Nothing is rethrown: a one-way call has no
+    /// caller to tell.
+    /// </summary>
+    public async Task FireDueAsync(string reminderName)
     {
         if (!_firing.Add(reminderName))
         {
@@ -144,11 +167,12 @@ internal sealed class TimerOwnerGrain(
         {
             if (logger.IsEnabled(LogLevel.Information))
             {
-                var (purpose, _) = ReminderName.Decode(reminderName);
-                logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {purpose}");
+                logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {ReminderName.PurposeOf(reminderName)}");
             }
-
-            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogTimerFiringFailed(exception, this.GetPrimaryKeyString(), ReminderName.PurposeOf(reminderName));
         }
         finally
         {
@@ -276,6 +300,13 @@ internal static class ReminderName
     {
         EnsureValidPurpose(purpose);
         return string.Concat(purpose, Separator, dueAt.UtcTicks.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>The purpose a reminder name carries, or the whole name where it carries no due time; never throws, so a failure about the name can still be logged with it.</summary>
+    public static string PurposeOf(string reminderName)
+    {
+        var separator = reminderName.LastIndexOf(Separator);
+        return separator < 0 ? reminderName : reminderName[..separator];
     }
 
     public static (string Purpose, DateTimeOffset DueAt) Decode(string reminderName)

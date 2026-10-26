@@ -24,6 +24,17 @@ applies to the entire NuGet family.
   checkpoint reset use the same list. A rebuild of a name that is not registered is refused before any reader is
   paused, with the same message as before.
 
+### Fixed
+
+- **A durable timer answers its tick while its handler runs.** On the Orleans execution model, a durable timer's
+  reminder call stayed open until its handler returned, so a handler longer than the runtime's response timeout made
+  Orleans log `Could not deliver reminder tick` at Error for every tick it outlasted. The tick is now answered at once
+  and the handler runs in a call that carries no response timeout. The timer still fires once per due time, a tick
+  during its handler still does nothing, and a handler stopped with its silo still fires again on the next one.
+- **A failing timer is logged.** A durable timer whose handler threw — or whose owner check or unregistration
+  failed — was visible only as Orleans' reminder error line. It is now logged as `117_137` `TimerFiringFailed` (Error)
+  with the owner, the purpose and the exception, and the timer fires again after its retry period as before.
+
 ## [4.4.9] — 2026-10-26
 
 A fix for hosts on the Orleans execution model. A host that removed or renamed a projection no longer has that
