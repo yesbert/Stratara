@@ -63,5 +63,5 @@
 
 - [x] 5.1 `openspec validate answer-a-timer-tick-at-once --strict`
 - [x] 5.2 `./scripts/local-gauntlet.sh` green
-- [ ] 5.3 Sonar on `main` once this and `name-the-projections-once` are merged, before the tag
-  (`gh workflow run sonar.yml --ref main`)
+- [x] 5.3 Sonar on `main` once this and `name-the-projections-once` are merged, before the tag
+  (`gh workflow run sonar.yml --ref main`). Result: green on `f4cf2ae` (run `40352813518`)

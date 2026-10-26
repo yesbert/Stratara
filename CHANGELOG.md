@@ -16,6 +16,15 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.10`._
+
+## [4.4.10] — 2026-10-26
+
+A release for hosts on the Orleans execution model. A durable timer now answers its tick while its handler runs, so a
+long handler leaves no reminder error in the silo's log, and a timer that fails is logged by the framework with its
+owner and purpose. A commit no longer constructs every registered projection to learn which store readers to wake. No
+API change, no schema change and no migration.
+
 ### Changed
 
 - **A commit no longer constructs every projection.** On the Orleans execution model, every command that committed
@@ -4811,7 +4820,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.9...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.10...main
+[4.4.10]: https://github.com/yesbert/Stratara/releases/tag/v4.4.10
 [4.4.9]: https://github.com/yesbert/Stratara/releases/tag/v4.4.9
 [4.4.8]: https://github.com/yesbert/Stratara/releases/tag/v4.4.8
 [4.4.7]: https://github.com/yesbert/Stratara/releases/tag/v4.4.7
