@@ -16,6 +16,15 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.4.9`._
+
+## [4.4.9] — 2026-10-26
+
+A fix for hosts on the Orleans execution model. A host that removed or renamed a projection no longer has that
+projection's store readers come back on every start and fail each entry; they retire once, as a saga's readers do. A
+retired store reader now logs its retirement once instead of three times, and leaves no reminder error behind. No
+API change, no schema change and no migration.
+
 ### Fixed
 
 - **A reader of a removed projection retires.** On the Orleans execution model, a host that removed or renamed a
@@ -4785,7 +4794,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.8...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.9...main
+[4.4.9]: https://github.com/yesbert/Stratara/releases/tag/v4.4.9
 [4.4.8]: https://github.com/yesbert/Stratara/releases/tag/v4.4.8
 [4.4.7]: https://github.com/yesbert/Stratara/releases/tag/v4.4.7
 [4.4.6]: https://github.com/yesbert/Stratara/releases/tag/v4.4.6
