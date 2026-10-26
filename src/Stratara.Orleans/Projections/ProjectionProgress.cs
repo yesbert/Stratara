@@ -3,7 +3,6 @@ using Microsoft.Extensions.Options;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.CommitOrder;
-using Stratara.Projections.Abstractions;
 using Stratara.Shared.Partitioning;
 
 namespace Stratara.Orleans.Projections;
@@ -19,18 +18,17 @@ namespace Stratara.Orleans.Projections;
 /// answers at once. Each call carries a budget of the time left, capped at <see cref="MaximumBudget"/> — well below the
 /// runtime's response timeout, and short because a waiting call holds its grain's deactivation for as long. A mark
 /// taken under another reader name, which carries the partition count, is not compared with positions it does not
-/// belong to. The projections' names are resolved once: the registered projections do not change while the host runs.
+/// belong to. The projections' names come from the silo's <see cref="ProjectionRegistrations"/>.
 /// </summary>
 internal sealed class ProjectionProgress(
     IGrainFactory grainFactory,
     IServiceScopeFactory scopeFactory,
     IOptions<CommitOrderOptions> commitOrder,
+    ProjectionRegistrations registrations,
     TimeProvider time) : IProjectionProgress
 {
     /// <summary>The longest a single call to a grain waits.</summary>
     internal static readonly TimeSpan MaximumBudget = TimeSpan.FromSeconds(2);
-
-    private ProjectionNames? _names;
 
     public Task<StoreMark> MarkAsync(CancellationToken cancellationToken = default) =>
         MarkOfAsync(Enumerable.Range(0, commitOrder.Value.PartitionCount), cancellationToken);
@@ -71,7 +69,7 @@ internal sealed class ProjectionProgress(
     {
         ArgumentException.ThrowIfNullOrEmpty(projectionName);
         return WaitAsync(
-            names => names.ByName.Contains(projectionName)
+            names => names.Contains(projectionName)
                 ? projectionName
                 : throw new InvalidOperationException($"No projection named '{projectionName}' is registered."),
             mark,
@@ -85,7 +83,7 @@ internal sealed class ProjectionProgress(
     {
         ArgumentNullException.ThrowIfNull(projectionType);
         return WaitAsync(
-            names => names.ByType.TryGetValue(projectionType, out var name)
+            names => names.NameOf(projectionType) is { } name
                 ? name
                 : throw new InvalidOperationException($"No projection of type {projectionType.FullName} is registered."),
             mark,
@@ -113,7 +111,7 @@ internal sealed class ProjectionProgress(
     }
 
     private async Task<ProjectionWaitResult> WaitAsync(
-        Func<ProjectionNames, string> name,
+        Func<ProjectionRegistrations, string> name,
         StoreMark mark,
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -125,11 +123,10 @@ internal sealed class ProjectionProgress(
         using (var scope = scopeFactory.CreateScope())
         {
             var services = scope.ServiceProvider;
-            _names ??= ProjectionNames.Of(services.GetRequiredService<IProjectionHandler>(), services.GetServices<IProjection>());
             readerName = services.GetRequiredService<ICommittedPositionReader>().Name;
         }
 
-        var projectionName = name(_names);
+        var projectionName = name(registrations);
 
         var partitionCount = commitOrder.Value.PartitionCount;
         if (mark.Reader != readerName || mark.Positions.Count != partitionCount)
@@ -171,20 +168,5 @@ internal sealed class ProjectionProgress(
         }
 
         return new ProjectionWaitResult(ProjectionWaitOutcome.Reached, []);
-    }
-
-    /// <summary>The registered projections' names, by name and by type.</summary>
-    private sealed record ProjectionNames(IReadOnlySet<string> ByName, IReadOnlyDictionary<Type, string> ByType)
-    {
-        public static ProjectionNames Of(IProjectionHandler handler, IEnumerable<IProjection> projections)
-        {
-            var byType = new Dictionary<Type, string>();
-            foreach (var projection in projections)
-            {
-                byType.TryAdd(projection.GetType(), handler.GetProjectionName(projection));
-            }
-
-            return new ProjectionNames(byType.Values.ToHashSet(StringComparer.Ordinal), byType);
-        }
     }
 }

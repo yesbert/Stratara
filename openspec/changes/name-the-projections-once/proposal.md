@@ -1,6 +1,6 @@
 # Name the projections once
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 

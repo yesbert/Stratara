@@ -319,12 +319,15 @@ internal interface INudgeTarget
     ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) => ValueTask.FromResult(StoreReaderHold.Nothing());
 }
 
-/// <summary>Every registered projection's grain for the partition.</summary>
-internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler, IEnumerable<IProjection> projections, StoreReaderLease lease) : INudgeTarget
+/// <summary>
+/// Every registered projection's grain for the partition. The names come from the silo's
+/// <see cref="ProjectionRegistrations"/>, so resolving the target — which every commit does — constructs no projection.
+/// </summary>
+internal sealed class ProjectionNudgeTarget(ProjectionRegistrations registrations, StoreReaderLease lease) : INudgeTarget
 {
-    private readonly List<string> _names = [.. projections.Select(projectionHandler.GetProjectionName).Distinct()];
+    private IReadOnlyList<string> Names => registrations.Names;
 
-    public IReadOnlyList<string> ConsumerNames => _names;
+    public IReadOnlyList<string> ConsumerNames => Names;
 
     /// <summary>
     /// Wakes every projection of the partition. A wake-up that cannot even be sent is collected rather than thrown
@@ -335,7 +338,7 @@ internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler
     public Task NudgeAsync(IGrainFactory grainFactory, int partition)
     {
         List<Exception>? failures = null;
-        foreach (var name in _names)
+        foreach (var name in Names)
         {
             try
             {
@@ -352,14 +355,14 @@ internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler
 
     public async Task EnsureRunningAsync(IGrainFactory grainFactory, int partition)
     {
-        foreach (var name in _names)
+        foreach (var name in Names)
         {
             await grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)).EnsureRunningAsync();
         }
     }
 
     public ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) =>
-        StoreReaderPause.PauseAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))], lease);
+        StoreReaderPause.PauseAllAsync([.. Names.Select(name => Reader(grainFactory, name, partition))], lease);
 
     private static PausedReader Reader(IGrainFactory grainFactory, string name, int partition)
     {

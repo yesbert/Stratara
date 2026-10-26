@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using Stratara.Abstractions.Projections;
 using Stratara.Orleans.Projections;
 using Stratara.Projections.Abstractions;
 
@@ -48,6 +49,55 @@ public sealed class ProjectionRegistrationsTests
         Assert.Throws<InvalidOperationException>(() => registrations.Contains("Orders"));
         Assert.True(registrations.Contains("Orders"));
     }
+
+    [Fact]
+    public void The_names_keep_registration_order_and_drop_a_second_projection_of_the_same_name()
+    {
+        var totals = new TotalsProjection();
+        var handler = new Mock<IProjectionHandler>();
+        handler.Setup(h => h.GetProjectionName(Orders)).Returns("Orders");
+        handler.Setup(h => h.GetProjectionName(totals)).Returns("Totals");
+        var services = new ServiceCollection()
+            .AddScoped(_ => handler.Object)
+            .AddScoped<IProjection>(_ => totals)
+            .AddScoped(_ => Orders)
+            .AddScoped<IProjection>(_ => totals);
+        var registrations = new ProjectionRegistrations(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+
+        Assert.Equal(["Totals", "Orders"], registrations.Names);
+        Assert.Equal("Totals", registrations.NameOf(typeof(TotalsProjection)));
+        Assert.Null(registrations.NameOf(typeof(ProjectionRegistrationsTests)));
+    }
+
+    [Fact]
+    public async Task A_commit_constructs_no_projection_to_learn_the_readers_it_wakes()
+    {
+        var constructed = 0;
+        var handler = new Mock<IProjectionHandler>();
+        handler.Setup(h => h.GetProjectionName(It.IsAny<IProjection>())).Returns<IProjection>(p => p.GetType().Name);
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(new Mock<IGrainFactory>().Object)
+            .AddSingleton(new Mock<IProjectionReplayState>().Object)
+            .AddScoped(_ => handler.Object)
+            .AddScoped<IProjection>(_ =>
+            {
+                Interlocked.Increment(ref constructed);
+                return new TotalsProjection();
+            })
+            .AddStrataraProjectionGrains();
+        await using var provider = services.BuildServiceProvider();
+        Assert.True(provider.GetRequiredService<ProjectionRegistrations>().Contains(nameof(TotalsProjection)));
+        var before = Volatile.Read(ref constructed);
+
+        await using var scope = provider.CreateAsyncScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<OrleansEventBundleDispatcher>();
+
+        Assert.NotNull(dispatcher);
+        Assert.Equal(before, Volatile.Read(ref constructed));
+    }
+
+    private sealed class TotalsProjection : IProjection;
 
     private static ProjectionRegistrations RegistrationsOf(Action<IServiceCollection> registerProjections)
     {

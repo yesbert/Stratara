@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.Projections;
 using Stratara.Orleans.CommitOrder;
-using Stratara.Projections.Abstractions;
 
 namespace Stratara.Orleans.Projections;
 
@@ -23,6 +22,7 @@ internal sealed class ReplayCheckpointResetTruncator(
     IGrainFactory grainFactory,
     IServiceScopeFactory scopeFactory,
     IOptions<CommitOrderOptions> commitOrder,
+    ProjectionRegistrations registrations,
     StoreReaderLease lease) : IProjectionViewTruncator
 {
     private readonly int _partitionCount = commitOrder.Value.PartitionCount;
@@ -31,8 +31,7 @@ internal sealed class ReplayCheckpointResetTruncator(
     {
         using var scope = scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-        var handler = services.GetRequiredService<IProjectionHandler>();
-        var names = services.GetServices<IProjection>().Select(handler.GetProjectionName).Distinct(StringComparer.Ordinal).ToList();
+        var names = registrations.Names;
         var grains = names
             .SelectMany(name => Enumerable.Range(0, _partitionCount).Select(partition => Reader(StoreReaderGrainKey.Of(name, partition))))
             .ToList();
