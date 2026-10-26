@@ -31,6 +31,12 @@ internal static partial class OrleansLog
     public static partial void LogUnregisteredSagaReaderRetired(this ILogger logger, string saga, int partition);
 
     [LoggerMessage(
+        EventId = LogEvents.Orleans.UnregisteredProjectionReaderRetired,
+        Level = LogLevel.Information,
+        Message = "The reader of projection {Projection} on partition {Partition} retired: no projection of that name is registered on this silo; its keep-alive is unregistered.")]
+    public static partial void LogUnregisteredProjectionReaderRetired(this ILogger logger, string projection, int partition);
+
+    [LoggerMessage(
         EventId = LogEvents.Orleans.ResumeHeldBackByReplay,
         Level = LogLevel.Information,
         Message = "Recorded commands are held back while a full replay is active; they are resumed once it ends.")]

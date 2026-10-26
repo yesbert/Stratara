@@ -11,6 +11,7 @@ using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Diagnostics;
 using Stratara.Projections.Abstractions;
 using Stratara.Orleans.Hosting;
 
@@ -112,7 +113,8 @@ internal interface IProjectionGrain : IGrainWithStringKey
 /// entry to its projection through the framework's projection handler, under the session recorded
 /// with the entry. The checkpoint moves only past entries that applied; an entry that fails — a
 /// missing prerequisite past the retry policy, or any other failure — stops the batch where it is,
-/// and the next nudge or poll tries again from there.
+/// and the next nudge or poll tries again from there. A reader whose projection the silo does not
+/// register retires when it is activated, and leaves its checkpoint where it was.
 /// </summary>
 [MayInterleave(nameof(MayInterleave))]
 [GrainDirectory(GrainDirectories.Durable)]
@@ -134,6 +136,16 @@ internal sealed class ProjectionGrain(
 
     /// <summary>Lets the keep-alive tick interleave with a running catch-up or call; see <see cref="KeepAliveInterleaving"/>.</summary>
     public static bool MayInterleave(IInvokable request) => KeepAliveInterleaving.IsReminderTick(request);
+
+    /// <summary>
+    /// A reader whose projection this silo does not register — the projection was removed or renamed, or the silo runs
+    /// a version without it — retires and deactivates, so that it neither stalls on every entry nor keeps its
+    /// keep-alive, and a silo that registers the projection can host it.
+    /// </summary>
+    protected override StoreReaderRetirement RetiresAs =>
+        ServiceProvider.GetRequiredService<ProjectionRegistrations>().Contains(Consumer) ? StoreReaderRetirement.None : StoreReaderRetirement.Unregistered;
+
+    protected override void LogRetirement() => logger.LogUnregisteredProjectionReaderRetired(Consumer, Partition);
 
     /// <summary>
     /// One scope, one projection instance and one handler per session run — the consecutive entries recorded under one

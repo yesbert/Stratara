@@ -19,6 +19,12 @@ internal enum StoreReaderState
 
     /// <summary>The reader reads nothing: its partition is beyond the host's count, or its consumer is not read here.</summary>
     Retired,
+
+    /// <summary>
+    /// The silo that answered does not register the reader's consumer — a rolling deployment — so it did not read there;
+    /// an activation on a silo that registers the consumer reads. A silo of an earlier release reads the value as behind.
+    /// </summary>
+    Unregistered,
 }
 
 /// <summary>A store-reading grain's answer to a wait for a position.</summary>

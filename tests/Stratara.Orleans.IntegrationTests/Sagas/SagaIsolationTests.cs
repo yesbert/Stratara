@@ -35,6 +35,7 @@ namespace Stratara.Orleans.IntegrationTests.Sagas;
 [Collection(InfrastructureCollection.Name)]
 public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture redis, RabbitMqFixture rabbit)
 {
+    private const long RemovedSagaCheckpoint = 42;
     private static readonly string ReaderName = $"postgres-transaction-id/{new CommitOrderOptions().PartitionCount}";
     private static readonly string Steady = SagaReaderGrain.ConsumerOf(nameof(SteadySaga));
     private static readonly string Failing = SagaReaderGrain.ConsumerOf(nameof(FailingSaga));
@@ -111,7 +112,13 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
             Assert.Equal(["created"], after.Seen(nameof(LateSaga), later));
             Assert.Equal(["incremented:1"], after.Seen(nameof(SteadySaga), earlier));
 
-            var removed = app.Services.GetRequiredService<IGrainFactory>().GetGrain<ISagaReaderGrain>(StoreReaderGrainKey.Of(SagaReaderGrain.ConsumerOf("RemovedSaga"), 0));
+            var removedConsumer = SagaReaderGrain.ConsumerOf("RemovedSaga");
+            await using (var scope = app.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>().SetAsync(removedConsumer, 0, ReaderName, RemovedSagaCheckpoint);
+            }
+
+            var removed = app.Services.GetRequiredService<IGrainFactory>().GetGrain<ISagaReaderGrain>(StoreReaderGrainKey.Of(removedConsumer, 0));
             var reminders = app.Services.GetRequiredService<IReminderTable>();
             await reminders.UpsertRow(new ReminderEntry
             {
@@ -129,8 +136,12 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
                 "the removed saga's keep-alive was not unregistered and its retirement logged");
             Assert.DoesNotContain(logs.Entries, entry =>
                 entry.EventId is LogEvents.Orleans.PartitionStalled or LogEvents.Orleans.CatchUpFaulted && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
+            Assert.Equal(RemovedSagaCheckpoint, await CheckpointAsync(app.Services, removedConsumer, 0));
             await StopAsync(app);
         }
+
+        Assert.Single(logs.Entries, entry => entry.EventId == LogEvents.Orleans.UnregisteredSagaReaderRetired && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Entries, entry => entry.Message.Contains("Could not deliver reminder tick", StringComparison.Ordinal) && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
     }
 
     [Fact]
