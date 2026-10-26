@@ -16,7 +16,21 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.8`._
+### Fixed
+
+- **A reader of a removed projection retires.** On the Orleans execution model, a host that removed or renamed a
+  projection kept the keep-alive reminders of its store readers. On every start of the silo they brought the readers
+  back, and each one read the next entry of its partition, failed it because no projection of its name was
+  registered, and tried again on the next tick, without end — a warning per partition and entry. Such a reader now
+  retires the first time it is brought back, as a saga's reader already did: it unregisters its keep-alive, logs
+  `117_136` `UnregisteredProjectionReaderRetired` (Information) once, reads nothing and deactivates. Its checkpoints
+  stay, so a projection registered again resumes where it stopped; *Operate the Orleans execution model* says how to
+  delete them.
+- **A retired store reader logs its retirement once.** A reader that retired as it was activated — of a partition
+  beyond a lowered partition count, or of a saga the silo no longer registers — deactivated before it answered the
+  call that activated it. Orleans forwarded that call to a new activation, which retired again, so the retirement was
+  logged three times per reader and the keep-alive tick ended in `Could not deliver reminder tick` at Error. The
+  reader now answers the call first and deactivates after it.
 
 ## [4.4.8] — 2026-10-24
 

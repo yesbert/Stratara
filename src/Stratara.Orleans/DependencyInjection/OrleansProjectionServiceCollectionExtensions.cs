@@ -62,6 +62,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         AddStoreReaderCore(services, hybrid);
         RolePlacement.Publish(services, ExecutionRole.Projections);
         AddNudgeTarget<ProjectionNudgeTarget>(services);
+        services.TryAddSingleton<ProjectionRegistrations>();
         services.TryAddSingleton<IProjectionRebuilder, ProjectionRebuilder>();
         services.TryAddSingleton<IProjectionProgress, ProjectionProgress>();
         ReplayCheckpointResetTruncator.Decorate(services, Instantiate);

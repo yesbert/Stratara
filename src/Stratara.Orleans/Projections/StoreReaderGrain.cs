@@ -26,7 +26,7 @@ internal enum StoreReaderRetirement
     /// <summary>The host reads what the grain read under other names now; the grain answers calls until it is collected.</summary>
     Superseded,
 
-    /// <summary>The grain's consumer is not registered on this silo; the grain deactivates at once.</summary>
+    /// <summary>The grain's consumer is not registered on this silo; the grain deactivates once it has answered the call that activated it.</summary>
     Unregistered,
 }
 
@@ -39,8 +39,8 @@ internal enum StoreReaderRetirement
 /// than the response timeout would leave the next tick undelivered. A derived grain lets the keep-alive tick interleave
 /// through <see cref="KeepAliveInterleaving"/>, so it waits for no other call either. A grain of a partition the host no
 /// longer has — its count was lowered — retires when it is activated: it unregisters its keep-alive, logs that it did,
-/// reads nothing and deactivates, and every call it still receives does nothing; so does a grain a derived grain says
-/// is superseded or unregistered. A
+/// reads nothing and deactivates once it has answered the call that activated it, and every call it still receives does
+/// nothing; so does a grain a derived grain says is superseded or unregistered. A
 /// derived grain says what applying a batch means, when reading is suspended beyond the pauses and the replay this one
 /// already counts, and where a consumer without a checkpoint starts.
 /// </summary>
@@ -62,6 +62,7 @@ internal abstract class StoreReaderGrain(
     private StoreReaderLoop? _loop;
     private IGrainTimer? _poll;
     private StoreReaderPausers? _pausers;
+    private bool _deactivatesOnceAnswered;
 
     /// <summary>The consumer this grain reads for, from its key.</summary>
     protected string Consumer { get; private set; } = string.Empty;
@@ -76,7 +77,7 @@ internal abstract class StoreReaderGrain(
     /// <exception cref="InvalidOperationException">The grain has not been activated.</exception>
     protected StoreReaderLoop Loop => _loop ?? throw new InvalidOperationException("The grain has not been activated.");
 
-    /// <summary>Whether the grain's partition is beyond the host's partition count, or its reader was superseded, so the grain reads nothing.</summary>
+    /// <summary>Whether the grain's partition is beyond the host's partition count, or its reader was superseded or is not registered, so the grain reads nothing.</summary>
     protected bool Retired { get; private set; }
 
     /// <summary>Whether reading stops at the next batch boundary; a replay suspends every reader, and so does a pauser.</summary>
@@ -96,7 +97,7 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public async Task PauseAsync(Guid pauser, TimeSpan lease)
     {
-        if (Retired || !Pausers.Hold(pauser, lease))
+        if (AnswersAsRetired() || !Pausers.Hold(pauser, lease))
         {
             return;
         }
@@ -109,7 +110,7 @@ internal abstract class StoreReaderGrain(
     /// <summary>A pause of an older silo, which cannot renew it: held for an anonymous pauser for <see cref="AnonymousLease"/>.</summary>
     public async Task PauseAsync()
     {
-        if (Retired)
+        if (AnswersAsRetired())
         {
             return;
         }
@@ -127,7 +128,7 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public Task ResumeAsync(Guid pauser)
     {
-        if (Retired)
+        if (AnswersAsRetired())
         {
             return Task.CompletedTask;
         }
@@ -147,7 +148,7 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public Task ResumeAsync()
     {
-        if (Retired)
+        if (AnswersAsRetired())
         {
             return Task.CompletedTask;
         }
@@ -169,7 +170,7 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public Task RenewPauseAsync(Guid pauser, TimeSpan lease)
     {
-        if (Retired)
+        if (AnswersAsRetired())
         {
             return Task.CompletedTask;
         }
@@ -192,8 +193,7 @@ internal abstract class StoreReaderGrain(
         _pausers = new StoreReaderPausers(_time);
         if (partition >= settings.PartitionCount)
         {
-            await RetireAsync();
-            this.DeactivateOnIdle();
+            await RetireAsync(deactivatesOnceAnswered: true);
             logger.LogStoreReaderRetired(Consumer, Partition, settings.PartitionCount);
             await base.OnActivateAsync(cancellationToken);
             return;
@@ -201,12 +201,7 @@ internal abstract class StoreReaderGrain(
 
         if (RetiresAs is var retirement and not StoreReaderRetirement.None)
         {
-            await RetireAsync();
-            if (retirement == StoreReaderRetirement.Unregistered)
-            {
-                this.DeactivateOnIdle();
-            }
-
+            await RetireAsync(deactivatesOnceAnswered: retirement == StoreReaderRetirement.Unregistered);
             LogRetirement();
             await base.OnActivateAsync(cancellationToken);
             return;
@@ -229,7 +224,7 @@ internal abstract class StoreReaderGrain(
         await base.OnActivateAsync(cancellationToken);
     }
 
-    public Task EnsureRunningAsync() => Retired ? Task.CompletedTask : this.RegisterOrUpdateReminder(KeepAliveReminder, settings.KeepAlivePeriod, settings.KeepAlivePeriod);
+    public Task EnsureRunningAsync() => AnswersAsRetired() ? Task.CompletedTask : this.RegisterOrUpdateReminder(KeepAliveReminder, settings.KeepAlivePeriod, settings.KeepAlivePeriod);
 
     /// <summary>
     /// Requests a catch-up without waiting for it. A catch-up that fails is logged and counted by the loop itself,
@@ -237,7 +232,7 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public Task NudgeAsync()
     {
-        if (Retired)
+        if (AnswersAsRetired())
         {
             return Task.CompletedTask;
         }
@@ -246,9 +241,9 @@ internal abstract class StoreReaderGrain(
         return Task.CompletedTask;
     }
 
-    public Task<int> CatchUpAsync() => Retired ? Task.FromResult(0) : RequestCatchUp();
+    public Task<int> CatchUpAsync() => AnswersAsRetired() ? Task.FromResult(0) : RequestCatchUp();
 
-    public Task<long> PositionAsync() => Retired ? Task.FromResult(0L) : Loop.PositionAsync();
+    public Task<long> PositionAsync() => AnswersAsRetired() ? Task.FromResult(0L) : Loop.PositionAsync();
 
     /// <summary>
     /// Answers once the reader has applied up to <paramref name="position"/> and is not suspended, or once
@@ -261,7 +256,7 @@ internal abstract class StoreReaderGrain(
     /// </summary>
     public async Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget)
     {
-        if (Retired)
+        if (AnswersAsRetired())
         {
             return new StoreReaderProgress(false, StoreReaderState.Retired);
         }
@@ -287,7 +282,7 @@ internal abstract class StoreReaderGrain(
     }
 
     /// <summary>Requests a poll and answers at once, whatever the reader is doing; see <see cref="RequestPoll"/>.</summary>
-    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => Retired ? Task.CompletedTask : RequestPoll();
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status) => AnswersAsRetired() ? Task.CompletedTask : RequestPoll();
 
     /// <summary>
     /// A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.
@@ -328,9 +323,10 @@ internal abstract class StoreReaderGrain(
         await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
-    private async Task RetireAsync()
+    private async Task RetireAsync(bool deactivatesOnceAnswered)
     {
         Retired = true;
+        _deactivatesOnceAnswered = deactivatesOnceAnswered;
         if (await this.GetReminder(KeepAliveReminder) is { } keepAlive)
         {
             await this.UnregisterReminder(keepAlive);
@@ -338,12 +334,28 @@ internal abstract class StoreReaderGrain(
     }
 
     /// <summary>
+    /// Whether the grain retired, so the call does nothing. A retired grain that deactivates does so once the call is
+    /// answered, not while it is activated: an activation that deactivates before it has answered the call that
+    /// activated it has the runtime forward the call to a new activation, which retires again, until the runtime
+    /// rejects the call — for a keep-alive tick, an undelivered reminder logged at Error.
+    /// </summary>
+    private bool AnswersAsRetired()
+    {
+        if (Retired && _deactivatesOnceAnswered)
+        {
+            this.DeactivateOnIdle();
+        }
+
+        return Retired;
+    }
+
+    /// <summary>
     /// Whether the grain's key names a reader the host does not run, so the grain retires when it is activated, as one
     /// beyond the partition count does; the default is <see cref="StoreReaderRetirement.None"/>. A superseded reader is
     /// left to the runtime's idle collection rather than deactivated at once: a silo of an earlier release still calls
     /// it in a rolling cluster, and the call that activated it is answered, doing nothing, instead of being forwarded to
-    /// an activation that retires again until the runtime rejects it. An unregistered reader deactivates at once, so
-    /// that a silo that registers its consumer can host it.
+    /// an activation that retires again until the runtime rejects it. An unregistered reader deactivates once it has
+    /// answered that call, so that a silo that registers its consumer can host it.
     /// </summary>
     protected virtual StoreReaderRetirement RetiresAs => StoreReaderRetirement.None;
 

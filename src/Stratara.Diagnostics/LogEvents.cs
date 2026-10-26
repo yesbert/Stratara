@@ -431,5 +431,7 @@ public static class LogEvents
         public const int IntentBatchRenewalFailed = 117_134;
         /// <summary>Giving back the attempt of a hand-over that ran nothing failed, so the attempt stays counted (warning).</summary>
         public const int AttemptGiveBackFailed = 117_135;
+        /// <summary>A projection's reader was brought back on a silo that registers no projection of its name and retired: it unregistered its keep-alive, reads nothing and deactivates.</summary>
+        public const int UnregisteredProjectionReaderRetired = 117_136;
     }
 }

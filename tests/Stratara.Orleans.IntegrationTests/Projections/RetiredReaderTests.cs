@@ -52,6 +52,8 @@ public sealed class RetiredReaderTests(PostgreSqlFixture postgres, RedisFixture 
         Assert.DoesNotContain(logs.Entries, e => e.EventId is LogEvents.Orleans.CatchUpFaulted or LogEvents.Orleans.PartitionStalled);
         Assert.DoesNotContain(logs.Entries, e => e.EventId == LogEvents.Orleans.StoreReaderStarted && e.Message.Contains($"partition {RetiredPartition}.", StringComparison.Ordinal));
         await after.StopAsync();
+        Assert.Single(logs.Entries, e => e.EventId == LogEvents.Orleans.StoreReaderRetired && e.Message.Contains($"partition {RetiredPartition} ", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Entries, e => e.Message.Contains("Could not deliver reminder tick", StringComparison.Ordinal) && e.Message.Contains(key, StringComparison.Ordinal));
     }
 
     private static async Task<List<ReminderEntry>> ReminderRowsAsync(IHost host, string key)

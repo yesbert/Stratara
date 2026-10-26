@@ -342,6 +342,23 @@ still runs 4.1.x, it unregisters its keep-alive, logs `117_125` (Information) na
 nothing. The checkpoint it left under `sagas` stays where it was — it is where the sagas start — until the
 [reset](#reset-what-the-model-keeps) removes it.
 
+A projection removed from the host, or renamed, leaves the keep-alive reminders of its readers behind. Such a reader,
+when a reminder brings it back on a silo that registers no projection of its name, retires: it unregisters its
+keep-alive, logs `117_136` (Information) naming the projection and the partition, reads nothing, counts no stall and
+deactivates, so a silo that still registers the projection — a rolling deployment — can host it. The event appears
+once per reader, as `117_126` does for a saga's reader. A retired reader leaves its checkpoints where they were, and
+a host that registers the projection again resumes it from them rather than from the beginning of the store. The
+[reset](#reset-what-the-model-keeps) does not remove them, because it touches only the consumers the host registers.
+Once no silo registers the consumer any more, delete its rows from the checkpoint table yourself —
+`DELETE FROM projection_checkpoint WHERE projection = 'OrderSummaryProjection'`, with the projection's name, or
+`sagas:<SagaName>` for a saga.
+
+A rolling deployment that adds a projection or a saga can place one of its readers on a silo of the earlier version,
+which does not register it: the reader retires there and unregisters the keep-alive the new silo registered. It still
+reads on every commit's wake-up, so no fact is missed, but it has no keep-alive to bring it back after a silo is lost
+until a silo that registers the consumer starts again. Where that matters, restart one silo once every silo runs the
+new version.
+
 ## A rebuild or a replay that does not finish
 
 A projection's rebuild and a full replay pause the projection's store readers while they return the checkpoints
