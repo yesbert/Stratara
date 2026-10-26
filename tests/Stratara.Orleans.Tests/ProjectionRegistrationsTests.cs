@@ -70,14 +70,17 @@ public sealed class ProjectionRegistrationsTests
     }
 
     [Fact]
-    public async Task A_commit_constructs_no_projection_to_learn_the_readers_it_wakes()
+    public async Task Commits_construct_each_projection_once_per_silo_to_learn_the_readers_they_wake()
     {
         var constructed = 0;
         var handler = new Mock<IProjectionHandler>();
         handler.Setup(h => h.GetProjectionName(It.IsAny<IProjection>())).Returns<IProjection>(p => p.GetType().Name);
+        var grains = new Mock<IGrainFactory>();
+        var nudged = 0;
+        grains.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns(new IdleGrain(() => Interlocked.Increment(ref nudged)));
         var services = new ServiceCollection()
             .AddLogging()
-            .AddSingleton(new Mock<IGrainFactory>().Object)
+            .AddSingleton(grains.Object)
             .AddSingleton(new Mock<IProjectionReplayState>().Object)
             .AddScoped(_ => handler.Object)
             .AddScoped<IProjection>(_ =>
@@ -85,16 +88,56 @@ public sealed class ProjectionRegistrationsTests
                 Interlocked.Increment(ref constructed);
                 return new TotalsProjection();
             })
+            .AddScoped<IProjection>(_ =>
+            {
+                Interlocked.Increment(ref constructed);
+                return new OrdersProjection();
+            })
             .AddStrataraProjectionGrains();
         await using var provider = services.BuildServiceProvider();
-        Assert.True(provider.GetRequiredService<ProjectionRegistrations>().Contains(nameof(TotalsProjection)));
-        var before = Volatile.Read(ref constructed);
 
-        await using var scope = provider.CreateAsyncScope();
-        var dispatcher = scope.ServiceProvider.GetRequiredService<OrleansEventBundleDispatcher>();
+        for (var commit = 0; commit < 3; commit++)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            Assert.NotNull(scope.ServiceProvider.GetRequiredService<OrleansEventBundleDispatcher>());
+            foreach (var target in scope.ServiceProvider.GetServices<INudgeTarget>())
+            {
+                await target.NudgeAsync(grains.Object, 0);
+            }
+        }
 
-        Assert.NotNull(dispatcher);
-        Assert.Equal(before, Volatile.Read(ref constructed));
+        Assert.Equal(2, Volatile.Read(ref constructed));
+        Assert.Equal(6, Volatile.Read(ref nudged));
+    }
+
+    private sealed class OrdersProjection : IProjection;
+
+    /// <summary>A store reader that counts its wake-ups and answers every other call at once.</summary>
+    private sealed class IdleGrain(Action onNudge) : IProjectionGrain
+    {
+        public Task EnsureRunningAsync() => Task.CompletedTask;
+
+        public Task NudgeAsync()
+        {
+            onNudge();
+            return Task.CompletedTask;
+        }
+
+        public Task<int> CatchUpAsync() => Task.FromResult(0);
+
+        public Task<long> PositionAsync() => Task.FromResult(0L);
+
+        public Task PauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
+
+        public Task PauseAsync() => Task.CompletedTask;
+
+        public Task ResumeAsync(Guid pauser) => Task.CompletedTask;
+
+        public Task ResumeAsync() => Task.CompletedTask;
+
+        public Task RenewPauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
+
+        public Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget) => Task.FromResult(new StoreReaderProgress(true, StoreReaderState.Advancing));
     }
 
     private sealed class TotalsProjection : IProjection;

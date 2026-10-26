@@ -41,6 +41,19 @@
 - [x] 4.1 `CHANGELOG.md` under `[Unreleased]`, *Changed*: on the Orleans execution model a commit no longer
   constructs every registered projection to learn the readers it wakes. The names are worked out once per silo
 
+## 4a. Review findings (`/code-review high`; Copilot's quota was exhausted)
+
+- [x] 4a.1 `ProjectionNudgeTarget` reads its names when it is built, as it did before, not on every use. A silo that
+  cannot work them out fails where the target is resolved again, not inside a nudge's `catch`. The wake-up grain's
+  activation fails as before, `TargetsOf`'s "fixed when they are built" holds, and the double forwarding is gone
+  (`ProjectionGrain.cs`)
+- [x] 4a.2 The commit-path test registers two projections, measures without a warm-up, resolves the dispatcher in
+  three scopes, nudges through every target, and asserts two constructions and six wake-ups
+  (`ProjectionRegistrationsTests.Commits_construct_each_projection_once_per_silo_to_learn_the_readers_they_wake`)
+- [x] 4a.3 Answered without a change: a failure built again under the lock, the synchronous disposal of the
+  registry's scope, the refusal of a non-rebuildable projection after the pause, and the rebuilder's fallback
+  message. See the PR comment
+
 ## 5. Verification
 
 - [x] 5.1 `openspec validate name-the-projections-once --strict`
