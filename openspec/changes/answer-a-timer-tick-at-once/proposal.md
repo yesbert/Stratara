@@ -1,6 +1,6 @@
 # Answer a timer tick at once
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 
