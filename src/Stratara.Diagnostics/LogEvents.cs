@@ -433,5 +433,7 @@ public static class LogEvents
         public const int AttemptGiveBackFailed = 117_135;
         /// <summary>A projection's reader was brought back on a silo that registers no projection of its name and retired: it unregistered its keep-alive, reads nothing and deactivates.</summary>
         public const int UnregisteredProjectionReaderRetired = 117_136;
+        /// <summary>A durable timer's handler failed; the timer stays registered and fires again after its retry period (error).</summary>
+        public const int TimerHandlerFailed = 117_137;
     }
 }

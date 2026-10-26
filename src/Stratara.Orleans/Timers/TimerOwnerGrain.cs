@@ -14,9 +14,11 @@ namespace Stratara.Orleans.Timers;
 
 /// <summary>
 /// The grain behind <see cref="IDurableTimers"/>. Each timer is a reminder whose name carries the
-/// purpose and the due time, so the reminder table is the only state. A reminder that fires checks
-/// the owner, waits if it is early, hands the timer to the host's handler once it is due, and
-/// unregisters itself afterwards — or at once, if the owner is gone. The grain is reentrant: its only state
+/// purpose and the due time, so the reminder table is the only state. A reminder that fires is answered at once: the
+/// tick asks the grain itself, one-way, to fire the timer, so a handler longer than the runtime's response timeout
+/// leaves no undelivered tick. Firing checks the owner, waits if it is early, hands the timer to the host's handler once
+/// it is due, and unregisters the reminder afterwards — or at once, if the owner is gone; a handler that fails leaves the
+/// reminder, so the timer fires again after its retry period, and is logged. The grain is reentrant: its only state
 /// is the reminder table, and registering or cancelling by name is idempotent, so a handler that cancels or
 /// reschedules its owner's timers, or a fact that reaches the owner while a tick runs, does not wait on the
 /// tick's own turn. A tick whose handler outlasts the deactivation budget of a stopping silo has its token cancelled: a
@@ -127,7 +129,22 @@ internal sealed class TimerOwnerGrain(
         return [.. (await this.GetReminders()).Select(reminder => reminder.ReminderName)];
     }
 
-    async Task IRemindable.ReceiveReminder(string reminderName, TickStatus status)
+    /// <summary>
+    /// Asks the grain itself to fire the timer and answers at once. A request that cannot be sent — the activation is on
+    /// its way out — leaves the reminder registered, so the next tick or the next activation fires it.
+    /// </summary>
+    Task IRemindable.ReceiveReminder(string reminderName, TickStatus status)
+    {
+        this.AsReference<ITimerOwnerGrain>().FireDueAsync(reminderName).Ignore();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Fires the timer unless its handler already runs. A handler stopped with its silo is logged as such and leaves the
+    /// reminder for the next silo; any other failure is logged and leaves the reminder for the next retry period. Nothing
+    /// is rethrown: a one-way call has no caller to tell.
+    /// </summary>
+    public async Task FireDueAsync(string reminderName)
     {
         if (!_firing.Add(reminderName))
         {
@@ -147,8 +164,11 @@ internal sealed class TimerOwnerGrain(
                 var (purpose, _) = ReminderName.Decode(reminderName);
                 logger.LogHandlerStoppedWithSilo("timer", $"owner {this.GetPrimaryKeyString()}, purpose {purpose}");
             }
-
-            throw;
+        }
+        catch (Exception exception)
+        {
+            var (purpose, _) = ReminderName.Decode(reminderName);
+            logger.LogTimerHandlerFailed(exception, this.GetPrimaryKeyString(), purpose);
         }
         finally
         {

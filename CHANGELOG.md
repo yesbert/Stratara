@@ -16,7 +16,16 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.9`._
+### Fixed
+
+- **A durable timer answers its tick while its handler runs.** On the Orleans execution model, a durable timer's
+  reminder call stayed open until its handler returned, so a handler longer than the runtime's response timeout made
+  Orleans log `Could not deliver reminder tick` at Error for every tick it outlasted. The tick is now answered at once
+  and the handler runs in a call that carries no response timeout. The timer still fires once per due time, a tick
+  during its handler still does nothing, and a handler stopped with its silo still fires again on the next one.
+- **A failing timer handler is logged.** A durable timer's handler that threw was visible only as Orleans' reminder
+  error line. It is now logged as `117_137` `TimerHandlerFailed` (Error) with the owner, the purpose and the
+  exception, and the timer fires again after its retry period as before.
 
 ## [4.4.9] — 2026-10-26
 
