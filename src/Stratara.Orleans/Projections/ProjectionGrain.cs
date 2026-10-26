@@ -319,10 +319,15 @@ internal interface INudgeTarget
     ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) => ValueTask.FromResult(StoreReaderHold.Nothing());
 }
 
-/// <summary>Every registered projection's grain for the partition.</summary>
-internal sealed class ProjectionNudgeTarget(IProjectionHandler projectionHandler, IEnumerable<IProjection> projections, StoreReaderLease lease) : INudgeTarget
+/// <summary>
+/// Every registered projection's grain for the partition. The names come from the silo's
+/// <see cref="ProjectionRegistrations"/> and are fixed when the target is built, so resolving the target — which every
+/// commit does — constructs no projection once the silo knows its names, and a silo that cannot work them out fails
+/// where the target is resolved rather than where it nudges.
+/// </summary>
+internal sealed class ProjectionNudgeTarget(ProjectionRegistrations registrations, StoreReaderLease lease) : INudgeTarget
 {
-    private readonly List<string> _names = [.. projections.Select(projectionHandler.GetProjectionName).Distinct()];
+    private readonly IReadOnlyList<string> _names = registrations.Names;
 
     public IReadOnlyList<string> ConsumerNames => _names;
 

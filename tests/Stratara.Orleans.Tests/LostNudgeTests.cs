@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -63,7 +64,14 @@ public sealed class LostNudgeTests
         var woken = new List<string>();
         var handler = new Mock<IProjectionHandler>();
         var projections = new[] { Named(handler, "first"), Named(handler, "second"), Named(handler, "third") };
-        var target = new ProjectionNudgeTarget(handler.Object, projections, new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
+        var services = new ServiceCollection().AddSingleton(handler.Object);
+        foreach (var projection in projections)
+        {
+            services.AddSingleton(projection);
+        }
+
+        var registrations = new ProjectionRegistrations(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+        var target = new ProjectionNudgeTarget(registrations, new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
         var grains = Names.ToDictionary(
             name => StoreReaderGrainKey.Of(name, 0),
             name => name == "second" ? Refusing() : Woken(woken, name));

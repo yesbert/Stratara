@@ -102,7 +102,7 @@ public sealed class ReplayCheckpointResetTests
             .AddScoped(_ => reader.Object)
             .BuildServiceProvider();
 
-        return new ReplayCheckpointResetTruncator(inner, grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
+        return new ReplayCheckpointResetTruncator(inner, grainFactory.Object, services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CommitOrderOptions { PartitionCount = Partitions }), new ProjectionRegistrations(services.GetRequiredService<IServiceScopeFactory>()), new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System));
     }
 
     /// <summary>
