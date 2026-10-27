@@ -132,10 +132,54 @@ migration from that context and the database enforces them:
 | `command_log_entry` | index on `bucket_id` | — |
 | `outbox_entry` | index on `bucket_id` | — |
 
+The store reads one stream, and one stream's snapshot, within the partition its stream id gives it, so
+the unique index over `bucket_id`, `stream_id`, `version` answers every such read. Loading an aggregate
+then costs what its stream and its snapshot hold, however large the store grows. The model also declares
+the indexes that reading the store in sequence order and chaining it need:
+
+| Index | Over | What it serves |
+|---|---|---|
+| `ix_event_stream_entry_sequence_number` | `event_stream_entry.sequence_number`, unique | Reading in sequence order and the store's head. Declared only where the sequence number is not the key |
+| `ix_event_stream_entry_unhashed_sequence_number` | `event_stream_entry.sequence_number` where `hash` is null | The hashing worker's read of the entries not yet chained |
+| `ix_event_chain_anchor_sequence_number` | `event_chain_anchor.sequence_number` | Finding the latest anchor |
+
+The framework keys the event stream by its sequence number. `ApplyGlobalEntityConfiguration()` keys it
+by `id` instead, as it does every entity, and the first index above then takes the key's place. The
+context declares it once the model is final, so it holds whichever of the two keys your context leaves.
+That is done in `WriteDbContext<TContext>.ConfigureConventions`: if your context overrides
+`ConfigureConventions`, call `base.ConfigureConventions`, or the first two indexes are missing. The
+filter of the second index names the column your model maps the hash to, quoted as your provider
+quotes it. The names are fixed whatever naming convention you apply. If you declared any of these
+indexes yourself under the same name and definition, remove your declaration and the migration you
+generate leaves the index as it is.
+
 The table and column names are the ones the `AddNpgsql*DbContextFactory` registrations produce, which
 apply a snake_case naming convention. Keep these constraints in the migration as generated. A schema
 you maintain by hand, or with another tool, has to carry them too — without the unique constraint on
 the event stream, a version collision is no longer refused by the database.
+
+Creating an index on a populated table blocks writes to it for as long as the index takes to build. On
+a large store you can avoid that. Generate the migration as usual, then replace the `CreateIndex` calls
+in its `Up` with `CREATE INDEX CONCURRENTLY`, run outside a transaction:
+
+```csharp
+protected override void Up(MigrationBuilder migrationBuilder)
+{
+    migrationBuilder.Sql(
+        "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS ix_event_stream_entry_sequence_number " +
+        "ON event_stream_entry (sequence_number);", suppressTransaction: true);
+    migrationBuilder.Sql(
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_event_stream_entry_unhashed_sequence_number " +
+        "ON event_stream_entry (sequence_number) WHERE hash IS NULL;", suppressTransaction: true);
+    migrationBuilder.Sql(
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_event_chain_anchor_sequence_number " +
+        "ON event_chain_anchor (sequence_number);", suppressTransaction: true);
+}
+```
+
+Leave out the first statement if your context keeps the framework's key. Qualify the tables with your
+schema if your context sets one. The model snapshot generated with the migration stays as it is, so the
+next migration is empty.
 
 ### A context applies only its own configurations
 

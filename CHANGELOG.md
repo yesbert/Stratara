@@ -16,7 +16,47 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.4.10`._
+A release about reads that cost more the more the store holds. Loading an aggregate read its stream and its
+snapshot through every partition of the store, so every command grew slower as the store grew. A write context
+that applies `ApplyGlobalEntityConfiguration()` also lost the index on the event stream's sequence number, which
+left the hashing worker, reading in sequence order and the store's head without an index. Every read of one stream
+is now confined to its partition, and the write model declares the indexes it was missing, whichever key the
+context gives the event stream. No API change. The write context needs a migration.
+
+**Upgrading:**
+- **Generate an EF Core migration for your write context.** It adds up to three indexes and changes no table or
+  column: `ix_event_stream_entry_sequence_number` (unique, only where the event stream is not keyed by its sequence
+  number, which `ApplyGlobalEntityConfiguration()` makes it), `ix_event_stream_entry_unhashed_sequence_number`
+  (the entries whose hash is still null) and `ix_event_chain_anchor_sequence_number`. A host that does not migrate
+  fails at `Migrate()` on pending model changes, as with any schema addition.
+- **If you declared these indexes yourself, remove your declarations first.** Under the same names and
+  definitions, the migration then leaves them as they are. A `(stream_id, version)` index you added to bridge the
+  stream reads is no longer needed and can be dropped.
+- **On a large store, create the indexes without blocking writes.** The schema section of the composition guide
+  shows a migration that creates them with `CREATE INDEX CONCURRENTLY`.
+- **A context that overrides `ConfigureConventions` calls `base.ConfigureConventions`.** `WriteDbContext<TContext>`
+  declares the sequence-number indexes there.
+- **An entry or snapshot written outside the framework has to carry its stream's partition.** The store writes
+  each one with the partition its stream id gives it, through `BucketCalculator.GetBucketId`, and now reads one
+  stream only there. A row a host inserted itself under another partition, in a test fixture or an import, is no
+  longer found by the reads of its stream.
+
+### Fixed
+
+- **Loading an aggregate costs what its stream holds.** The reads of one stream (whether it exists, its first entry,
+  a range of versions, its current version) and of its snapshot conditioned on the stream id alone. The indexes that
+  serve them begin with the partition, so PostgreSQL before 18 walked the whole index for each of them, and a
+  command loads several. They now condition on the partition as well. On 300,000 events, reading a stream of three
+  went from 2,404 pages to 6.
+- **The sequence number stays indexed under `ApplyGlobalEntityConfiguration()`.** That convention keys every entity
+  by `Id`, the event stream included, which dropped the key the framework had put on the sequence number. The
+  hashing worker's reads, reading the store in sequence order and the store's head then scanned the whole table on
+  every pass. The write model now declares a unique index on the sequence number wherever it is not the key.
+- **The hashing worker reads only what is still unchained.** An index over the entries whose hash is null lets
+  each pass read the backlog and not the chained history before it. Its filter names the column your model maps the
+  hash to.
+- **The latest anchor is found by index.** The hash chain's anchors are indexed by sequence number, so finding the
+  last one no longer sorts every anchor on every pass.
 
 ## [4.4.10] — 2026-10-26
 

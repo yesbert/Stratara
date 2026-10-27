@@ -5,6 +5,7 @@ using Stratara.Abstractions.EventSourcing;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.EventSourcing.EntityFrameworkCore.Extensions;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing;
+using Stratara.Shared.Partitioning;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.Tests;
 
@@ -83,7 +84,7 @@ public class TenantFilteredStoreReadTests
             AggregateTypeName = "TestAggregate",
             DataJson = "{}",
             Timestamp = DateTimeOffset.UtcNow,
-            BucketId = 3,
+            BucketId = BucketCalculator.GetBucketId(SecondStream),
             TenantId = Second,
         });
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -102,7 +103,7 @@ public class TenantFilteredStoreReadTests
         Timestamp = DateTimeOffset.UtcNow.AddMinutes(-1),
         CorrelationId = Guid.NewGuid().ToString("N"),
         CausationId = Guid.NewGuid().ToString("N"),
-        BucketId = 3,
+        BucketId = BucketCalculator.GetBucketId(streamId),
         Id = Guid.NewGuid(),
         TenantId = tenantId,
         ActorTenantId = tenantId,

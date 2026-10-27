@@ -11,7 +11,9 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Co
 /// EF Core mapping for the <c>event_stream_entry</c> table backing
 /// <see cref="EventStreamEntry"/>. Uses <c>SequenceNumber</c> as the surrogate primary key
 /// (database-generated) and enforces a unique <c>(BucketId, StreamId, Version)</c> index so
-/// per-stream version numbers stay monotonic per bucket.
+/// per-stream version numbers stay monotonic per bucket. The indexes on the sequence number are declared
+/// once the model is final, by <see cref="SequenceNumberIndexConvention"/>, because a derived context may
+/// still change the key.
 /// </summary>
 [ExcludeFromCodeCoverage]
 internal sealed class EventStreamEntryConfiguration : IEntityTypeConfiguration<EventStreamEntry>
