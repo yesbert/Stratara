@@ -14,12 +14,12 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Co
 internal sealed class EventChainAnchorConfiguration : IEntityTypeConfiguration<EventChainAnchor>
 {
     /// <summary>The index on the anchors' sequence number.</summary>
-    public const string SequenceNumberIndex = "ix_event_chain_anchor_sequence_number";
+    public const string AnchorSequenceNumberIndex = "ix_event_chain_anchor_sequence_number";
 
     /// <inheritdoc/>
     public void Configure(EntityTypeBuilder<EventChainAnchor> b)
     {
         b.HasIndex(e => new { e.BucketId, e.SequenceNumber }).IsUnique();
-        b.HasIndex(e => e.SequenceNumber, SequenceNumberIndex).HasDatabaseName(SequenceNumberIndex);
+        b.HasIndex(e => e.SequenceNumber, AnchorSequenceNumberIndex).HasDatabaseName(AnchorSequenceNumberIndex);
     }
 }

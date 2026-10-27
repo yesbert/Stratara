@@ -138,6 +138,37 @@ into the shared model. The schema section of `docs/getting-started/di-compositio
 migration: `CREATE INDEX CONCURRENTLY` in a migration that suppresses its transaction. Indexes created that way
 match the model, so later migrations are empty.
 
+### D6 — A store written before 3.0.21 is checked and repaired in SQL, not read around
+
+The review found that until 2026-05-22 (archive commit `680f1fbe`), `BucketCalculator` computed
+`Math.Abs(hash) % 4096`. Since then it computes `(hash & int.MaxValue) % 4096`. For a negative hash the two differ
+unless the hash is a multiple of 4096, so about half of all stream ids. The first public release, 3.0.21, already
+carried the new formula. A store that internal builds wrote before that date holds streams wholly or partly in the
+old partition. The appends that came later went to the new partition, because the version was read without one.
+Under D1 such a stream reads as shorter than it is, or as missing, and the next command that creates it starts it
+a second time, which the unique index does not refuse across partitions.
+
+The repair moves the rows rather than having the reads look around them. `(hash & int.MaxValue) % 4096` is the low
+12 bits of the hash, because 4096 divides 2^31. `Guid.GetHashCode` XORs the four 32-bit words of the guid's memory
+layout. So the partition is the XOR of the low 12 bits of four words, and each comes from two bytes of
+`uuid_send(id)`, which is in RFC byte order. The documentation gives that as a session-scoped function
+(`pg_temp.stratara_bucket`), a check that counts the event and snapshot rows outside their partition, and a repair
+that updates them in one transaction. The hash chain's input does not include the partition, so the chain survives.
+A host that already reads in commit order is told not to run the repair as it stands, because an entry's position
+belongs to its partition.
+
+*Alternatives rejected:*
+- Falling back to a read without the partition when the partitioned read finds nothing. That costs every new
+  stream a second, full-index read, which is the cost this change removes. It also misses a stream split across
+  two partitions.
+- An index over `(stream_id, version)` instead of D1. That puts a permanent cost on every append to cover a state
+  that only internal builds produced and that a one-off statement repairs.
+
+*Evidence:* the archive history of `BucketCalculator.cs`, and `StreamPartitionRepairTests`. That test compares
+the function with `BucketCalculator.GetBucketId` for 20,000 random ids and three edge ids, shows a split stream
+and an early stream read wrongly before the repair and whole after it, and pins the guide's statements word for
+word.
+
 ## Risks / Trade-offs
 
 - [A consumer overrides `ConfigureConventions` without calling `base`.] → Then its model lacks the sequence-number
@@ -155,9 +186,11 @@ match the model, so later migrations are empty.
 - [The filter depends on the naming convention having run first.] → Task 1.3 pins the filter text under both naming
   conventions.
 - [A row a host inserted itself under a partition other than its stream id's is no longer found by the reads of its
-  stream.] → The framework never writes one: both writers derive the partition from the stream id. Two of the
-  framework's own test fixtures did, though (`SnapshotOwnerTests`, `TenantFilteredStoreReadTests`), and were
-  corrected. The CHANGELOG states the requirement for a host's fixtures and imports.
+  stream.] → The framework's published releases never write one: both writers derive the partition from the stream
+  id. Two of the framework's own test fixtures did, though (`SnapshotOwnerTests`, `TenantFilteredStoreReadTests`),
+  and were corrected. The CHANGELOG states the requirement for a host's fixtures and imports.
+- [Builds before 3.0.21 wrote rows under another partition (D6).] → The documentation gives a check and a repair, and
+  the CHANGELOG puts the check first among the upgrade steps.
 
 ## Migration Plan
 

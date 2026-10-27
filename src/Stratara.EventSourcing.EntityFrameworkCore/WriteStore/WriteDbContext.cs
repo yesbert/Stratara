@@ -1,8 +1,8 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
-using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Configurations;
 

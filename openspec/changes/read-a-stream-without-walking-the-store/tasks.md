@@ -97,6 +97,25 @@
   removes its declarations first. The CHANGELOG names no consumer findings, so SF-012 is named in the proposal and
   the pull request instead
 
+## 5a. Review findings (`/code-review high`; Copilot's quota was exhausted)
+
+- [x] 5a.1 Rows written before 3.0.21 lie under another partition (design D6): a session-scoped SQL function equal to
+  `BucketCalculator.GetBucketId`, a check and a repair in `docs/getting-started/di-composition.md`, the check first
+  in the CHANGELOG's upgrade steps, and the spec scenario *A store holds rows a build before the first public
+  release wrote* (`tests/Stratara.Orleans.IntegrationTests/EventStore/StreamPartitionRepairTests.cs`)
+- [x] 5a.2 The plan test names the index each read must use, so a missing or misfiltered partial index fails it
+  (`EventStoreLookupPlanTests`)
+- [x] 5a.3 The guide's concurrent-index migration drops `IF NOT EXISTS`, which would hide an invalid index left by a
+  failed concurrent build, and says how to recover from one
+- [x] 5a.4 The anchor index constant is `AnchorSequenceNumberIndex`, distinct from the event stream's; the usings of
+  `WriteDbContext` are sorted
+- [x] 5a.5 Answered without a change: a derived context that overrides `ConfigureConventions` without `base` lacks the
+  indexes (documented and pinned, design D2 on why an options extension would miss the design-time model); a
+  consumer convention that renames the hash column after ours runs is not supported, since a context that adds
+  conventions after `base` decides their order; an explicit `IsUnique(false)` of the consumer outranks the
+  framework's index of the same name, and an index of the consumer's own name over the sequence number is the
+  consumer's to rename (the guide names the framework's names)
+
 ## 6. Verification
 
 - [x] 6.1 `openspec validate read-a-stream-without-walking-the-store --strict`

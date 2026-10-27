@@ -83,7 +83,10 @@ versions, its current version — and every read of one stream's snapshot SHALL 
 stream's partition, which the store works out from the stream's identifier as it does when it
 writes. The schema the framework declares SHALL serve each of these reads by an index, so that the
 cost of rebuilding an aggregate depends on what its stream and its snapshot hold and not on how many
-other streams the store holds. What each read returns, and in what order, SHALL NOT change.
+other streams the store holds. What each read returns, and in what order, SHALL NOT change for a store
+the published releases wrote. Builds before the first public release worked the partition out
+differently. For a store they wrote, the documentation SHALL give a check that finds the rows lying
+outside their stream's partition and a repair that moves them there, needing nothing but the database.
 
 #### Scenario: An aggregate is loaded from a large store
 
@@ -95,6 +98,15 @@ other streams the store holds. What each read returns, and in what order, SHALL 
 
 #### Scenario: A stream is read on a store that was written before the change
 
-- **WHEN** a store holds streams written by an earlier version of the framework
+- **WHEN** a store holds streams written by an earlier published release of the framework
 - **THEN** each read returns the entries and the snapshot it returned before, because every entry
   and every snapshot was already written to the partition its stream identifier gives
+
+#### Scenario: A store holds rows a build before the first public release wrote
+
+- **WHEN** a store holds entries or snapshots under the partition an earlier formula gave their
+  stream, and the host runs the documented check
+- **THEN** the check counts them, the documented repair moves them to their stream's partition
+  without breaking the hash chain, and afterwards every read of those streams returns all their
+  entries and their snapshot — verified on PostgreSQL 17, together with the documented formula
+  giving the framework's partition for every one of 20,000 stream identifiers

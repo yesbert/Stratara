@@ -23,6 +23,9 @@ public sealed class EventStoreLookupPlanTests(PostgreSqlFixture postgres)
     private const int EventsPerStream = 5;
     private const int Unchained = 3;
     private const int Anchors = 4_000;
+    private const string SequenceNumberIndex = "ix_event_stream_entry_sequence_number";
+    private const string UnchainedIndex = "ix_event_stream_entry_unhashed_sequence_number";
+    private const string AnchorIndex = "ix_event_chain_anchor_sequence_number";
 
     [Fact]
     public async Task Every_lookup_is_answered_by_an_index_under_the_global_entity_key()
@@ -50,12 +53,12 @@ public sealed class EventStoreLookupPlanTests(PostgreSqlFixture postgres)
         await AssertStreamReadAsync(recorder, () => snapshots.GetLatestVersionOrDefaultAsync(streamId, aggregate, cancellation));
 
         var head = 0L;
-        await AssertIndexedAsync(recorder, async () => head = await events.GetMaxSequenceNumberAsync(cancellation));
-        await AssertIndexedAsync(recorder, () => events.GetUnhashedEventsAsync(100, DateTimeOffset.UtcNow, cancellation));
-        await AssertIndexedAsync(recorder, () => events.GetPreviousEventAsync(head - 1, cancellation));
-        await AssertIndexedAsync(recorder, () => events.GetLastHashedEventAsync(cancellation));
-        await AssertIndexedAsync(recorder, () => events.GetManyAfterSequenceAsync(head - 10, 100, cancellation));
-        await AssertIndexedAsync(recorder, () => chain.GetLastSequenceNumberOrDefaultAsync([], cancellation));
+        await AssertIndexedAsync(recorder, SequenceNumberIndex, async () => head = await events.GetMaxSequenceNumberAsync(cancellation));
+        await AssertIndexedAsync(recorder, UnchainedIndex, () => events.GetUnhashedEventsAsync(100, DateTimeOffset.UtcNow, cancellation));
+        await AssertIndexedAsync(recorder, SequenceNumberIndex, () => events.GetPreviousEventAsync(head - 1, cancellation));
+        await AssertIndexedAsync(recorder, SequenceNumberIndex, () => events.GetLastHashedEventAsync(cancellation));
+        await AssertIndexedAsync(recorder, SequenceNumberIndex, () => events.GetManyAfterSequenceAsync(head - 10, 100, cancellation));
+        await AssertIndexedAsync(recorder, AnchorIndex, () => chain.GetLastSequenceNumberOrDefaultAsync([], cancellation));
     }
 
     [Fact]
@@ -70,8 +73,8 @@ public sealed class EventStoreLookupPlanTests(PostgreSqlFixture postgres)
         await SeedAsync(context, recorder);
         var events = new EventStreamRepository(context);
 
-        await AssertIndexedAsync(recorder, () => events.GetUnhashedEventsAsync(100, DateTimeOffset.UtcNow, TestContext.Current.CancellationToken));
-        await AssertIndexedAsync(recorder, () => events.GetLastHashedEventAsync(TestContext.Current.CancellationToken));
+        await AssertIndexedAsync(recorder, UnchainedIndex, () => events.GetUnhashedEventsAsync(100, DateTimeOffset.UtcNow, TestContext.Current.CancellationToken));
+        await AssertIndexedAsync(recorder, SequenceNumberIndex, () => events.GetLastHashedEventAsync(TestContext.Current.CancellationToken));
     }
 
     private static async Task AssertStreamReadAsync(PlanRecorder recorder, Func<Task> read)
@@ -81,11 +84,11 @@ public sealed class EventStoreLookupPlanTests(PostgreSqlFixture postgres)
         Assert.Matches(@"Index Cond: \(\(bucket_id = .*\) AND \(stream_id = ", plan);
     }
 
-    private static async Task AssertIndexedAsync(PlanRecorder recorder, Func<Task> read)
+    private static async Task AssertIndexedAsync(PlanRecorder recorder, string index, Func<Task> read)
     {
         var plan = await PlanOfAsync(recorder, read);
         Assert.DoesNotContain("Seq Scan", plan, StringComparison.Ordinal);
-        Assert.Contains("Index", plan, StringComparison.Ordinal);
+        Assert.Contains($" using {index} ", plan + " ", StringComparison.Ordinal);
     }
 
     private static async Task<string> PlanOfAsync(PlanRecorder recorder, Func<Task> read)
