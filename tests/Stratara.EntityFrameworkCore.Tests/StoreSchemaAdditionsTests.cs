@@ -11,6 +11,7 @@ using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Configurations;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.Tests;
 
@@ -205,6 +206,15 @@ public sealed class StoreSchemaAdditionsTests
     }
 
     [Fact]
+    public void The_bridged_consumers_model_is_built_without_the_frameworks_sequence_number_convention()
+    {
+        using var context = new UnbridgedWriteContext(SnakeCaseNpgsql<UnbridgedWriteContext>());
+
+        Assert.DoesNotContain(Entity<EventStreamEntry>(context.Model).GetIndexes(),
+            index => index.GetDatabaseName() is SequenceNumberIndex or UnchainedIndex);
+    }
+
+    [Fact]
     public void A_consumer_that_bridged_the_indexes_adopts_the_frameworks_without_creating_or_dropping_them()
     {
         using var bridged = new BridgedWriteContext(SnakeCaseNpgsql<BridgedWriteContext>());
@@ -285,16 +295,39 @@ public sealed class StoreSchemaAdditionsTests
         }
     }
 
+    /// <summary>The write context the bridged one starts from: the framework's sequence-number convention taken out.</summary>
+    private sealed class UnbridgedWriteContext(DbContextOptions<UnbridgedWriteContext> options)
+        : WriteDbContext<UnbridgedWriteContext>(options)
+    {
+        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+        {
+            base.ConfigureConventions(configurationBuilder);
+            configurationBuilder.Conventions.Remove(typeof(SequenceNumberIndexConvention));
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.ApplyGlobalEntityConfiguration();
+        }
+    }
+
     /// <summary>
-    /// A consumer's write context before it adopts the framework's indexes: it declares them itself, under the names and
-    /// definitions the framework uses, together with stream indexes of its own. Its declarations are explicit and so
-    /// take precedence over the framework's, which then add nothing of their own.
+    /// A consumer's write context before it adopts the framework's indexes, as its model snapshot from before the
+    /// upgrade has it: the framework's sequence-number convention is taken out again, and the context declares the
+    /// indexes itself, under the names and definitions the framework uses, together with stream indexes of its own.
     /// </summary>
     private sealed class BridgedWriteContext(DbContextOptions<BridgedWriteContext> options)
         : WriteDbContext<BridgedWriteContext>(options)
     {
         public const string EventsByStream = "ix_event_stream_entry_stream_id_version";
         public const string SnapshotByStream = "ix_snapshot_stream_id_version";
+
+        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+        {
+            base.ConfigureConventions(configurationBuilder);
+            configurationBuilder.Conventions.Remove(typeof(SequenceNumberIndexConvention));
+        }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

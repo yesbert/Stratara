@@ -56,9 +56,9 @@ public class WriteDbContext<TContext>(DbContextOptions<TContext> options) : DbCo
         if (!_conventionsConfigured)
         {
             throw new InvalidOperationException(
-                $"{GetType().Name} overrides ConfigureConventions without calling base.ConfigureConventions. "
+                $"The write store's model conventions did not run for {GetType().FullName ?? GetType().Name} before its model was built. "
                 + "The write store declares the indexes on the event stream's sequence number there; "
-                + "call base.ConfigureConventions(configurationBuilder) in the override.");
+                + "an override of ConfigureConventions must call base.ConfigureConventions(configurationBuilder).");
         }
 
         base.OnModelCreating(modelBuilder);

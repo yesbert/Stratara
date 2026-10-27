@@ -41,6 +41,13 @@ check runs wherever the model can be correct.
 and 1.2 check this for the runtime model and for the design-time model, with the in-memory provider and with
 Npgsql.
 
+### D2 — A runtime refusal, not a sealed hook
+
+The review proposed sealing `ConfigureConventions` and offering a new virtual hook, so that a missing base call
+could not compile. That changes the public surface, breaks every override at compile time, including the ones that
+already call `base`, and takes from a derived context the choice of running its conventions before or after the
+framework's. The refusal breaks only the overrides that are actually wrong, and it names the fix.
+
 ## Risks / Trade-offs
 
 - [A consumer that overrides `ConfigureConventions` without `base` fails at start after upgrading.] → That is the

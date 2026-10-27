@@ -25,7 +25,8 @@ snapshot through every partition of the store, so every command grew slower as t
 that applies `ApplyGlobalEntityConfiguration()` also lost the index on the event stream's sequence number, which
 left the hashing worker, reading in sequence order and the store's head without an index. Every read of one stream
 is now confined to its partition, and the write model declares the indexes it was missing, whichever key the
-context gives the event stream. No API change. The write context needs a migration.
+context gives the event stream. No public type or member changes, but the write context needs a migration, and a
+write context that overrides `ConfigureConventions` without calling `base` is now refused at start-up.
 
 **Upgrading:**
 - **If your store holds events written before 3.0.0, check it first.** Releases before 3.0.0 worked out a
@@ -46,8 +47,8 @@ context gives the event stream. No API change. The write context needs a migrati
 - **A context that overrides `ConfigureConventions` calls `base.ConfigureConventions`.** `WriteDbContext<TContext>`
   declares the sequence-number indexes there. A write context whose override does not call it is now refused when
   its model is built, at start-up and in `dotnet ef` alike, with an `InvalidOperationException` that names the
-  context. Before, it would have run and migrated without the indexes. Add
-  `base.ConfigureConventions(configurationBuilder);` to the override.
+  context, so it never runs or migrates without the indexes. An override that was fine on 4.4 because the
+  method was empty there needs `base.ConfigureConventions(configurationBuilder);` now.
 - **An entry or snapshot written outside the framework has to carry its stream's partition.** The store writes
   each one with the partition its stream id gives it, through `BucketCalculator.GetBucketId`, and now reads one
   stream only there. A row a host inserted itself under another partition, in a test fixture or an import, is no

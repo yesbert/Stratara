@@ -32,6 +32,18 @@
 - [x] 4.2 `CHANGELOG.md`, section 4.5.0: the upgrade note on `ConfigureConventions` says that the model is refused,
   with the message's remedy
 
+## 4a. Review findings (`/code-review high`; Copilot's quota was exhausted)
+
+- [x] 4a.1 The 4.5.0 summary no longer says "No API change" without qualification. It names the refusal of a
+  context that skips `base.ConfigureConventions`, and the upgrade note no longer describes behaviour that was never
+  released (`CHANGELOG.md`)
+- [x] 4a.2 The message says that the write store's conventions did not run, then what an override must call, and
+  names the context by its full name (`WriteDbContext.cs`)
+- [x] 4a.3 The bridged-consumer test context takes the framework's convention out again, so it models a snapshot
+  from before the upgrade, and a test proves the removal (`StoreSchemaAdditionsTests`)
+- [x] 4a.4 Answered without a change: sealing `ConfigureConventions` behind a new virtual hook (design D2); a context
+  that replaces `base.OnModelCreating` and applies the store's configurations itself owns its model, as before
+
 ## 5. Verification
 
 - [x] 5.1 `openspec validate refuse-a-write-context-that-skips-its-conventions --strict`
