@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.5.0`._
+
+## [4.5.0] — 2026-10-27
+
 A release about reads that cost more the more the store holds. Loading an aggregate read its stream and its
 snapshot through every partition of the store, so every command grew slower as the store grew. A write context
 that applies `ApplyGlobalEntityConfiguration()` also lost the index on the event stream's sequence number, which
@@ -4865,7 +4869,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.10...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.5.0...main
+[4.5.0]: https://github.com/yesbert/Stratara/releases/tag/v4.5.0
 [4.4.10]: https://github.com/yesbert/Stratara/releases/tag/v4.4.10
 [4.4.9]: https://github.com/yesbert/Stratara/releases/tag/v4.4.9
 [4.4.8]: https://github.com/yesbert/Stratara/releases/tag/v4.4.8
