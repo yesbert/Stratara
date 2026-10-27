@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
 using Stratara.Abstractions.Security;
+using Stratara.Shared.Partitioning;
 using Stratara.Testing;
 using Stratara.Testing.EntityFrameworkCore;
 using Xunit;
@@ -145,7 +146,7 @@ public class SnapshotOwnerTests
                 AggregateTypeName = typeof(Diary).AssemblyQualifiedName!,
                 DataJson = await serializer.SerializeAsync(new Diary { Entry = "from before", Pages = 7 }, Tenant),
                 TenantId = Tenant,
-                BucketId = 0,
+                BucketId = BucketCalculator.GetBucketId(streamId),
                 Timestamp = DateTimeOffset.UtcNow
             });
             await transaction.SaveChangesAsync();

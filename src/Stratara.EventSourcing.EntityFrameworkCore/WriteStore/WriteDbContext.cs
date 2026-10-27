@@ -1,7 +1,10 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Configurations;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 
@@ -22,10 +25,23 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 /// position on every entry with its counter table, and on PostgreSQL the id of the inserting
 /// transaction. A host that does not read in commit order migrates these and never fills them.
 /// </para>
+/// <para>
+/// Once the model is final, the context indexes the event stream's sequence number where it is not the stream's key
+/// — <c>ApplyGlobalEntityConfiguration</c> keys it by <c>Id</c> — and the entries not yet chained, so reading in
+/// sequence order and chaining stay indexed whatever key the derived context leaves. A derived context that overrides
+/// <see cref="ConfigureConventions"/> calls <c>base.ConfigureConventions</c>; otherwise its model lacks those indexes.
+/// </para>
 /// </remarks>
 /// <param name="options">Options bound by the host's <c>AddNpgsqlWriteDbContextFactory</c> registration.</param>
 public class WriteDbContext<TContext>(DbContextOptions<TContext> options) : DbContext(options), IWriteDbContext where TContext : DbContext
 {
+    /// <inheritdoc/>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        base.ConfigureConventions(configurationBuilder);
+        configurationBuilder.Conventions.Add(services => new SequenceNumberIndexConvention(services.GetService<ISqlGenerationHelper>()));
+    }
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

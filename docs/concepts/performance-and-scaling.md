@@ -54,7 +54,10 @@ id always lands in the same bucket, which gives two things at once:
   writes to one aggregate while letting writes to different aggregates run fully in parallel —
   no global lock.
 - **Indexed partition scans.** Events, snapshots, the command log, and the outbox all carry a
-  bucket id and are indexed on it, so partition-scoped queries don't scan the whole table.
+  bucket id and are indexed on it, so partition-scoped queries don't scan the whole table. Reading
+  one stream, or its snapshot, is confined to the stream's bucket, so loading an aggregate costs
+  what its stream holds however large the store grows. Reading in sequence order and the hash
+  chain's worker have indexes of their own.
 
 Because the partitioning is deterministic, you scale by adding workers — not by changing code.
 

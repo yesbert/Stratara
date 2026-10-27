@@ -132,10 +132,101 @@ migration from that context and the database enforces them:
 | `command_log_entry` | index on `bucket_id` | — |
 | `outbox_entry` | index on `bucket_id` | — |
 
+The store reads one stream, and one stream's snapshot, within the partition its stream id gives it, so
+the unique index over `bucket_id`, `stream_id`, `version` answers every such read. Loading an aggregate
+then costs what its stream and its snapshot hold, however large the store grows. The model also declares
+the indexes that reading the store in sequence order and chaining it need:
+
+| Index | Over | What it serves |
+|---|---|---|
+| `ix_event_stream_entry_sequence_number` | `event_stream_entry.sequence_number`, unique | Reading in sequence order and the store's head. Declared only where the sequence number is not the key |
+| `ix_event_stream_entry_unhashed_sequence_number` | `event_stream_entry.sequence_number` where `hash` is null | The hashing worker's read of the entries not yet chained |
+| `ix_event_chain_anchor_sequence_number` | `event_chain_anchor.sequence_number` | Finding the latest anchor |
+
+The framework keys the event stream by its sequence number. `ApplyGlobalEntityConfiguration()` keys it
+by `id` instead, as it does every entity, and the first index above then takes the key's place. The
+context declares it once the model is final, so it holds whichever of the two keys your context leaves.
+That is done in `WriteDbContext<TContext>.ConfigureConventions`: if your context overrides
+`ConfigureConventions`, call `base.ConfigureConventions`, or the first two indexes are missing. The
+filter of the second index names the column your model maps the hash to, quoted as your provider
+quotes it. The names are fixed whatever naming convention you apply. If you declared any of these
+indexes yourself under the same name and definition, remove your declaration and the migration you
+generate leaves the index as it is.
+
 The table and column names are the ones the `AddNpgsql*DbContextFactory` registrations produce, which
 apply a snake_case naming convention. Keep these constraints in the migration as generated. A schema
 you maintain by hand, or with another tool, has to carry them too — without the unique constraint on
 the event stream, a version collision is no longer refused by the database.
+
+Creating an index on a populated table blocks writes to it for as long as the index takes to build. On
+a large store you can avoid that. Generate the migration as usual, then replace the `CreateIndex` calls
+in its `Up` with `CREATE INDEX CONCURRENTLY`, run outside a transaction:
+
+```csharp
+protected override void Up(MigrationBuilder migrationBuilder)
+{
+    migrationBuilder.Sql(
+        "CREATE UNIQUE INDEX CONCURRENTLY ix_event_stream_entry_sequence_number " +
+        "ON event_stream_entry (sequence_number);", suppressTransaction: true);
+    migrationBuilder.Sql(
+        "CREATE INDEX CONCURRENTLY ix_event_stream_entry_unhashed_sequence_number " +
+        "ON event_stream_entry (sequence_number) WHERE hash IS NULL;", suppressTransaction: true);
+    migrationBuilder.Sql(
+        "CREATE INDEX CONCURRENTLY ix_event_chain_anchor_sequence_number " +
+        "ON event_chain_anchor (sequence_number);", suppressTransaction: true);
+}
+```
+
+Leave out the first statement if your context keeps the framework's key. Qualify the tables with your
+schema if your context sets one. A concurrent build that fails part-way, for example on a lock timeout,
+leaves an invalid index behind under its name. The migration then fails on the name the next time it runs.
+Drop that index with `DROP INDEX CONCURRENTLY` and run the migration again. The model snapshot generated with the migration stays as it is, so the
+next migration is empty.
+
+### A store written before 3.0.21
+
+Builds of the framework before the first public release, 3.0.21, worked out a stream's partition with a
+different formula. For about half of all stream ids it gave another partition. A store that holds rows
+those builds wrote has streams, or parts of streams, outside the partition their id gives today. The
+store reads one stream only in that partition, so such a stream reads as shorter than it is, or as
+missing, and the next command that creates it would start it a second time. Check before you upgrade.
+The check needs nothing but the database. Run it in one session:
+
+```sql
+CREATE FUNCTION pg_temp.stratara_bucket(id uuid) RETURNS integer LANGUAGE sql IMMUTABLE AS $$
+    SELECT ((get_byte(b, 3) | ((get_byte(b, 2) & 15) << 8))
+          # (get_byte(b, 5) | ((get_byte(b, 4) & 15) << 8))
+          # (get_byte(b, 8) | ((get_byte(b, 9) & 15) << 8))
+          # (get_byte(b, 12) | ((get_byte(b, 13) & 15) << 8)))
+    FROM (SELECT uuid_send(id) AS b) AS bytes
+$$;
+
+SELECT 'event_stream_entry' AS rows_in, count(*) FROM event_stream_entry
+    WHERE bucket_id <> pg_temp.stratara_bucket(stream_id)
+UNION ALL
+SELECT 'snapshot', count(*) FROM snapshot
+    WHERE bucket_id <> pg_temp.stratara_bucket(stream_id);
+```
+
+`pg_temp.stratara_bucket` is `BucketCalculator.GetBucketId` in SQL, and the function lasts only as long
+as the session. If both counts are zero, there is nothing to do. Otherwise, in the same session, move
+the rows to their partition:
+
+```sql
+BEGIN;
+UPDATE event_stream_entry SET bucket_id = pg_temp.stratara_bucket(stream_id)
+    WHERE bucket_id <> pg_temp.stratara_bucket(stream_id);
+UPDATE snapshot SET bucket_id = pg_temp.stratara_bucket(stream_id)
+    WHERE bucket_id <> pg_temp.stratara_bucket(stream_id);
+COMMIT;
+```
+
+The hash chain does not cover the partition, so the chain stays intact. If the unique constraint over
+partition, stream and version refuses an update, the transaction is rolled back. That means two writers
+used the same version of one stream in two partitions, and the stream needs repairing by hand. Run the
+repair before the host reads the store in commit order, either with the Orleans execution model or with
+a commit-order reader. Every entry's position belongs to its partition, so a host that already reads in
+commit order and finds such rows does not run the repair as it stands.
 
 ### A context applies only its own configurations
 

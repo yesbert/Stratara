@@ -7,14 +7,19 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Co
 
 /// <summary>
 /// EF Core mapping for the event-chain anchor table. Enforces a unique
-/// <c>(BucketId, SequenceNumber)</c> pair so each bucket's hash chain is single-writer.
+/// <c>(BucketId, SequenceNumber)</c> pair so each bucket's hash chain is single-writer, and indexes the
+/// sequence number alone so the latest anchor is found without sorting every anchor.
 /// </summary>
 [ExcludeFromCodeCoverage]
 internal sealed class EventChainAnchorConfiguration : IEntityTypeConfiguration<EventChainAnchor>
 {
+    /// <summary>The index on the anchors' sequence number.</summary>
+    public const string AnchorSequenceNumberIndex = "ix_event_chain_anchor_sequence_number";
+
     /// <inheritdoc/>
     public void Configure(EntityTypeBuilder<EventChainAnchor> b)
     {
         b.HasIndex(e => new { e.BucketId, e.SequenceNumber }).IsUnique();
+        b.HasIndex(e => e.SequenceNumber, AnchorSequenceNumberIndex).HasDatabaseName(AnchorSequenceNumberIndex);
     }
 }

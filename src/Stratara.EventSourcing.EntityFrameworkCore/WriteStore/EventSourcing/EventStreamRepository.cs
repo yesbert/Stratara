@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.Abstractions;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Shared.EventSourcing;
+using Stratara.Shared.Partitioning;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing;
 
@@ -18,31 +19,38 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
     /// <summary>Every tenant's entries, whatever query filters the context declares.</summary>
     private IQueryable<EventStreamEntry> Entries => context.Set<EventStreamEntry>().AsNoTracking().IgnoreQueryFilters();
 
+    /// <summary>
+    /// The entries of one stream, within the partition its identifier gives it, so that the unique index over partition,
+    /// stream and version serves the read rather than every partition being searched for the stream.
+    /// </summary>
+    private IQueryable<EventStreamEntry> StreamEntries(Guid streamId)
+    {
+        var bucketId = BucketCalculator.GetBucketId(streamId);
+        return Entries.Where(e => e.BucketId == bucketId && e.StreamId == streamId);
+    }
+
     /// <inheritdoc/>
     public Task<bool> StreamExistsAsync(Guid streamId, CancellationToken cancellationToken = default) =>
-        Entries.AnyAsync(e => e.StreamId == streamId, cancellationToken);
+        StreamEntries(streamId).AnyAsync(cancellationToken);
 
     /// <inheritdoc/>
     public Task<EventStreamEntry?> GetFirstOrDefaultAsync(Guid streamId, CancellationToken cancellationToken = default) =>
-        Entries
-            .Where(e => e.StreamId == streamId)
+        StreamEntries(streamId)
             .OrderBy(e => e.Version)
             .FirstOrDefaultAsync(cancellationToken);
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<EventStreamEntry>> GetManyAsync(Guid streamId, long? fromVersion = null, long? toVersion = null,
         CancellationToken cancellationToken = default) =>
-        await Entries
-            .Where(e => e.StreamId == streamId &&
-                        (!fromVersion.HasValue || e.Version >= fromVersion) &&
+        await StreamEntries(streamId)
+            .Where(e => (!fromVersion.HasValue || e.Version >= fromVersion) &&
                         (!toVersion.HasValue || e.Version <= toVersion))
             .OrderBy(e => e.Version)
             .ToListAsync(cancellationToken);
 
     /// <inheritdoc/>
     public async Task<long> GetVersionOrDefaultAsync(Guid streamId, CancellationToken cancellationToken = default) =>
-        await Entries
-            .Where(e => e.StreamId == streamId)
+        await StreamEntries(streamId)
             .OrderByDescending(e => e.Version)
             .Select(e => (long?)e.Version)
             .FirstOrDefaultAsync(cancellationToken) ?? 0L;
