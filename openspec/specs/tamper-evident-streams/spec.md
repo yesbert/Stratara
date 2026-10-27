@@ -53,6 +53,10 @@ Chaining during the write would put a serialising dependency on the global seque
 path; waiting for settlement is what stops a concurrently committing transaction from being chained
 out of order.
 
+A pass SHALL find the events still waiting to be chained, and the last chained event it continues
+from, without reading the events chained before it, so that a pass costs what is waiting and not
+what the store has accumulated.
+
 #### Scenario: An event has just been committed
 
 - **WHEN** an event was committed within the settling interval
@@ -63,6 +67,13 @@ out of order.
 - **WHEN** more unchained events exist than one batch covers
 - **THEN** they are chained in batches until none remain, each batch continuing from the previous
   entry's hash
+
+#### Scenario: A pass runs on a large chained store
+
+- **WHEN** a pass runs on a store whose events are chained but for a few, whatever key the
+  consumer's write context gives the event stream
+- **THEN** the pass reads the waiting events and their predecessor by index, without a scan of the
+  whole event table — verified on PostgreSQL 17 by the plan of each read
 
 ### Requirement: The chaining process survives its own failures
 
@@ -88,6 +99,8 @@ unique per partition and sequence.
 An anchor is what turns "the chain is internally consistent" into "the chain was in this state at
 this point", which is what a full re-chain cannot forge once the anchor is out of reach.
 
+Finding the last anchor SHALL NOT read every anchor recorded before it.
+
 #### Scenario: The sequence advances past the anchor interval
 
 - **WHEN** the chain head's sequence number exceeds the last anchor's by at least the anchor
@@ -103,6 +116,12 @@ this point", which is what a full re-chain cannot forge once the anchor is out o
 
 - **WHEN** no chained event exists
 - **THEN** no anchor is recorded
+
+#### Scenario: Many anchors have been recorded
+
+- **WHEN** the store holds tens of thousands of anchors and a pass asks for the last one
+- **THEN** it is found by an index over the anchors' sequence number, without sorting every anchor —
+  verified on PostgreSQL 17 by the plan of the read
 
 ### Requirement: The framework preserves the evidence but does not check it
 

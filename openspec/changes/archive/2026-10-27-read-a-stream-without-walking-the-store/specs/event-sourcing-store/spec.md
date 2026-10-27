@@ -14,9 +14,9 @@ command names, which a bounded resume needs; and on
 the read side, a checkpoint table keyed by consumer and partition. A consumer that does not use the
 execution model SHALL be able to migrate these additions without any behaviour changing.
 
-The declaration SHALL also include what reading the store in sequence order and chaining it need: the
-event stream indexed by its sequence number, the entries not yet chained indexed apart from those
-that are, and the integrity anchors indexed by their sequence number. These indexes SHALL be declared
+On a relational store, the declaration SHALL also include what reading the store in sequence order
+and chaining it need: the event stream indexed by its sequence number, the entries not yet chained
+indexed apart from those that are, and the integrity anchors indexed by their sequence number. These indexes SHALL be declared
 whichever primary key the consumer's write context gives the event stream, including the key the
 framework's own entity-key convention gives it, and SHALL NOT be declared twice over the same column
 where that key already is the sequence number. They SHALL carry fixed names, which the documentation
@@ -84,8 +84,8 @@ stream's partition, which the store works out from the stream's identifier as it
 writes. The schema the framework declares SHALL serve each of these reads by an index, so that the
 cost of rebuilding an aggregate depends on what its stream and its snapshot hold and not on how many
 other streams the store holds. What each read returns, and in what order, SHALL NOT change for a store
-the published releases wrote. Builds before the first public release worked the partition out
-differently. For a store they wrote, the documentation SHALL give a check that finds the rows lying
+the releases from 3.0.0 on wrote. Releases before 3.0.0 worked the partition out differently. For a
+store they wrote, the documentation SHALL give a check that finds the rows lying
 outside their stream's partition and a repair that moves them there, needing nothing but the database.
 
 #### Scenario: An aggregate is loaded from a large store
@@ -98,11 +98,11 @@ outside their stream's partition and a repair that moves them there, needing not
 
 #### Scenario: A stream is read on a store that was written before the change
 
-- **WHEN** a store holds streams written by an earlier published release of the framework
+- **WHEN** a store holds streams written by a release of the framework from 3.0.0 on
 - **THEN** each read returns the entries and the snapshot it returned before, because every entry
   and every snapshot was already written to the partition its stream identifier gives
 
-#### Scenario: A store holds rows a build before the first public release wrote
+#### Scenario: A store holds rows a release before 3.0.0 wrote
 
 - **WHEN** a store holds entries or snapshots under the partition an earlier formula gave their
   stream, and the host runs the documented check

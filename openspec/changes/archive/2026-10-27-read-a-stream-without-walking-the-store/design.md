@@ -138,12 +138,13 @@ into the shared model. The schema section of `docs/getting-started/di-compositio
 migration: `CREATE INDEX CONCURRENTLY` in a migration that suppresses its transaction. Indexes created that way
 match the model, so later migrations are empty.
 
-### D6 — A store written before 3.0.21 is checked and repaired in SQL, not read around
+### D6 — A store written before 3.0.0 is checked and repaired in SQL, not read around
 
 The review found that until 2026-05-22 (archive commit `680f1fbe`), `BucketCalculator` computed
 `Math.Abs(hash) % 4096`. Since then it computes `(hash & int.MaxValue) % 4096`. For a negative hash the two differ
-unless the hash is a multiple of 4096, so about half of all stream ids. The first public release, 3.0.21, already
-carried the new formula. A store that internal builds wrote before that date holds streams wholly or partly in the
+unless the hash is a multiple of 4096, so about half of all stream ids. Release 3.0.0 was the first to carry the new
+formula (its CHANGELOG entry records the change); the review of the release pull request corrected an earlier
+reading that put the boundary at 3.0.21. A store that releases before 3.0.0 wrote holds streams wholly or partly in the
 old partition. The appends that came later went to the new partition, because the version was read without one.
 Under D1 such a stream reads as shorter than it is, or as missing, and the next command that creates it starts it
 a second time, which the unique index does not refuse across partitions.
@@ -189,7 +190,7 @@ word.
   stream.] → The framework's published releases never write one: both writers derive the partition from the stream
   id. Two of the framework's own test fixtures did, though (`SnapshotOwnerTests`, `TenantFilteredStoreReadTests`),
   and were corrected. The CHANGELOG states the requirement for a host's fixtures and imports.
-- [Builds before 3.0.21 wrote rows under another partition (D6).] → The documentation gives a check and a repair, and
+- [Releases before 3.0.0 wrote rows under another partition (D6).] → The documentation gives a check and a repair, and
   the CHANGELOG puts the check first among the upgrade steps.
 
 ## Migration Plan

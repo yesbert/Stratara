@@ -99,7 +99,7 @@
 
 ## 5a. Review findings (`/code-review high`; Copilot's quota was exhausted)
 
-- [x] 5a.1 Rows written before 3.0.21 lie under another partition (design D6): a session-scoped SQL function equal to
+- [x] 5a.1 Rows written before 3.0.0 lie under another partition (design D6): a session-scoped SQL function equal to
   `BucketCalculator.GetBucketId`, a check and a repair in `docs/getting-started/di-composition.md`, the check first
   in the CHANGELOG's upgrade steps, and the spec scenario *A store holds rows a build before the first public
   release wrote* (`tests/Stratara.Orleans.IntegrationTests/EventStore/StreamPartitionRepairTests.cs`)

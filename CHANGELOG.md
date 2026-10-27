@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.5.0`._
+
+## [4.5.0] — 2026-10-27
+
 A release about reads that cost more the more the store holds. Loading an aggregate read its stream and its
 snapshot through every partition of the store, so every command grew slower as the store grew. A write context
 that applies `ApplyGlobalEntityConfiguration()` also lost the index on the event stream's sequence number, which
@@ -24,11 +28,11 @@ is now confined to its partition, and the write model declares the indexes it wa
 context gives the event stream. No API change. The write context needs a migration.
 
 **Upgrading:**
-- **If your store holds events written before 3.0.21, check it first.** Builds of the framework before the first
-  public release worked out a stream's partition with another formula, and the store now reads a stream only in
-  the partition its id gives. The composition guide (*A store written before 3.0.21*) gives a check that needs
-  nothing but the database, and a repair that moves the rows to their partition without touching the hash chain.
-  A store that 3.0.21 or later wrote from its start has nothing to check.
+- **If your store holds events written before 3.0.0, check it first.** Releases before 3.0.0 worked out a
+  stream's partition with another formula, and the store now reads a stream only in the partition its id gives.
+  The composition guide (*A store written before 3.0.0*) gives a check that needs nothing but the database, and a
+  repair that moves the rows to their partition without touching the hash chain. A store that 3.0.0 or later wrote
+  from its start has nothing to check.
 - **Generate an EF Core migration for your write context.** It adds up to three indexes and changes no table or
   column: `ix_event_stream_entry_sequence_number` (unique, only where the event stream is not keyed by its sequence
   number, which `ApplyGlobalEntityConfiguration()` makes it), `ix_event_stream_entry_unhashed_sequence_number`
@@ -4865,7 +4869,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.4.10...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.5.0...main
+[4.5.0]: https://github.com/yesbert/Stratara/releases/tag/v4.5.0
 [4.4.10]: https://github.com/yesbert/Stratara/releases/tag/v4.4.10
 [4.4.9]: https://github.com/yesbert/Stratara/releases/tag/v4.4.9
 [4.4.8]: https://github.com/yesbert/Stratara/releases/tag/v4.4.8
