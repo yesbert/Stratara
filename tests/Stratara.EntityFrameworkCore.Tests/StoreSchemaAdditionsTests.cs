@@ -173,12 +173,35 @@ public sealed class StoreSchemaAdditionsTests
     }
 
     [Fact]
-    public void A_context_that_replaces_the_conventions_without_base_lacks_the_event_stream_indexes()
+    public void A_context_that_replaces_the_conventions_without_base_is_refused_when_its_model_is_built()
     {
         using var context = new ConventionlessWriteContext(SnakeCaseNpgsql<ConventionlessWriteContext>());
-        var entry = Entity<EventStreamEntry>(context.Model);
 
-        Assert.DoesNotContain(entry.GetIndexes(), index => index.GetDatabaseName() is SequenceNumberIndex or UnchainedIndex);
+        AssertRefused(Assert.Throws<InvalidOperationException>(() => context.Model));
+    }
+
+    [Fact]
+    public void A_context_that_replaces_the_conventions_without_base_is_refused_at_design_time()
+    {
+        using var context = new ConventionlessWriteContext(SnakeCaseNpgsql<ConventionlessWriteContext>());
+
+        AssertRefused(Assert.Throws<InvalidOperationException>(() => context.GetService<IDesignTimeModel>().Model));
+    }
+
+    [Fact]
+    public void A_context_that_replaces_the_conventions_without_base_is_refused_on_any_provider()
+    {
+        using var context = new ConventionlessWriteContext(new DbContextOptionsBuilder<ConventionlessWriteContext>()
+            .UseInMemoryDatabase($"schema-conventionless-{Guid.NewGuid():N}")
+            .Options);
+
+        AssertRefused(Assert.Throws<InvalidOperationException>(() => context.Model));
+    }
+
+    private static void AssertRefused(InvalidOperationException refusal)
+    {
+        Assert.Contains(nameof(ConventionlessWriteContext), refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("base.ConfigureConventions", refusal.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -263,19 +286,15 @@ public sealed class StoreSchemaAdditionsTests
     }
 
     /// <summary>
-    /// A consumer's write context before it adopts the framework's indexes: the framework declares none of its own
-    /// because the context replaces the conventions without calling <c>base</c>, and the context declares them itself,
-    /// under the names and definitions the framework uses, together with stream indexes of its own.
+    /// A consumer's write context before it adopts the framework's indexes: it declares them itself, under the names and
+    /// definitions the framework uses, together with stream indexes of its own. Its declarations are explicit and so
+    /// take precedence over the framework's, which then add nothing of their own.
     /// </summary>
     private sealed class BridgedWriteContext(DbContextOptions<BridgedWriteContext> options)
         : WriteDbContext<BridgedWriteContext>(options)
     {
         public const string EventsByStream = "ix_event_stream_entry_stream_id_version";
         public const string SnapshotByStream = "ix_snapshot_stream_id_version";
-
-        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-        {
-        }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

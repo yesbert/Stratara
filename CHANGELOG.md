@@ -44,7 +44,10 @@ context gives the event stream. No API change. The write context needs a migrati
 - **On a large store, create the indexes without blocking writes.** The schema section of the composition guide
   shows a migration that creates them with `CREATE INDEX CONCURRENTLY`.
 - **A context that overrides `ConfigureConventions` calls `base.ConfigureConventions`.** `WriteDbContext<TContext>`
-  declares the sequence-number indexes there.
+  declares the sequence-number indexes there. A write context whose override does not call it is now refused when
+  its model is built, at start-up and in `dotnet ef` alike, with an `InvalidOperationException` that names the
+  context. Before, it would have run and migrated without the indexes. Add
+  `base.ConfigureConventions(configurationBuilder);` to the override.
 - **An entry or snapshot written outside the framework has to carry its stream's partition.** The store writes
   each one with the partition its stream id gives it, through `BucketCalculator.GetBucketId`, and now reads one
   stream only there. A row a host inserted itself under another partition, in a test fixture or an import, is no

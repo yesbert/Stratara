@@ -29,22 +29,38 @@ namespace Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 /// Once the model is final, the context indexes the event stream's sequence number where it is not the stream's key
 /// — <c>ApplyGlobalEntityConfiguration</c> keys it by <c>Id</c> — and the entries not yet chained, so reading in
 /// sequence order and chaining stay indexed whatever key the derived context leaves. A derived context that overrides
-/// <see cref="ConfigureConventions"/> calls <c>base.ConfigureConventions</c>; otherwise its model lacks those indexes.
+/// <see cref="ConfigureConventions"/> calls <c>base.ConfigureConventions</c>; a context that does not is refused when
+/// its model is built, rather than running and migrating without those indexes.
 /// </para>
 /// </remarks>
 /// <param name="options">Options bound by the host's <c>AddNpgsqlWriteDbContextFactory</c> registration.</param>
 public class WriteDbContext<TContext>(DbContextOptions<TContext> options) : DbContext(options), IWriteDbContext where TContext : DbContext
 {
+    private bool _conventionsConfigured;
+
     /// <inheritdoc/>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
         configurationBuilder.Conventions.Add(services => new SequenceNumberIndexConvention(services.GetService<ISqlGenerationHelper>()));
+        _conventionsConfigured = true;
     }
 
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">
+    /// The derived context overrides <see cref="ConfigureConventions"/> without calling <c>base.ConfigureConventions</c>,
+    /// so the model would lack the indexes the store's reads in sequence order and its hash chain depend on.
+    /// </exception>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        if (!_conventionsConfigured)
+        {
+            throw new InvalidOperationException(
+                $"{GetType().Name} overrides ConfigureConventions without calling base.ConfigureConventions. "
+                + "The write store declares the indexes on the event stream's sequence number there; "
+                + "call base.ConfigureConventions(configurationBuilder) in the override.");
+        }
+
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(
             Assembly.GetAssembly(typeof(IWriteStoreMarker)) ?? throw new InvalidOperationException(),
