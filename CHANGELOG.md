@@ -28,11 +28,11 @@ is now confined to its partition, and the write model declares the indexes it wa
 context gives the event stream. No API change. The write context needs a migration.
 
 **Upgrading:**
-- **If your store holds events written before 3.0.21, check it first.** Builds of the framework before the first
-  public release worked out a stream's partition with another formula, and the store now reads a stream only in
-  the partition its id gives. The composition guide (*A store written before 3.0.21*) gives a check that needs
-  nothing but the database, and a repair that moves the rows to their partition without touching the hash chain.
-  A store that 3.0.21 or later wrote from its start has nothing to check.
+- **If your store holds events written before 3.0.0, check it first.** Releases before 3.0.0 worked out a
+  stream's partition with another formula, and the store now reads a stream only in the partition its id gives.
+  The composition guide (*A store written before 3.0.0*) gives a check that needs nothing but the database, and a
+  repair that moves the rows to their partition without touching the hash chain. A store that 3.0.0 or later wrote
+  from its start has nothing to check.
 - **Generate an EF Core migration for your write context.** It adds up to three indexes and changes no table or
   column: `ix_event_stream_entry_sequence_number` (unique, only where the event stream is not keyed by its sequence
   number, which `ApplyGlobalEntityConfiguration()` makes it), `ix_event_stream_entry_unhashed_sequence_number`

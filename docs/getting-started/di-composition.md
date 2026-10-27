@@ -183,11 +183,11 @@ leaves an invalid index behind under its name. The migration then fails on the n
 Drop that index with `DROP INDEX CONCURRENTLY` and run the migration again. The model snapshot generated with the migration stays as it is, so the
 next migration is empty.
 
-### A store written before 3.0.21
+### A store written before 3.0.0
 
-Builds of the framework before the first public release, 3.0.21, worked out a stream's partition with a
-different formula. For about half of all stream ids it gave another partition. A store that holds rows
-those builds wrote has streams, or parts of streams, outside the partition their id gives today. The
+Releases of the framework before 3.0.0 worked out a stream's partition with a different formula. For
+about half of all stream ids it gave another partition. A store that holds rows those releases wrote
+has streams, or parts of streams, outside the partition their id gives today. The
 store reads one stream only in that partition, so such a stream reads as shorter than it is, or as
 missing, and the next command that creates it would start it a second time. Check before you upgrade.
 The check needs nothing but the database. Run it in one session:

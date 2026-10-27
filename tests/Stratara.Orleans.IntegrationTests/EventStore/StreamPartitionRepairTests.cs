@@ -8,7 +8,7 @@ using Stratara.Shared.Partitioning;
 namespace Stratara.Orleans.IntegrationTests.EventStore;
 
 /// <summary>
-/// The check and the repair the composition guide gives for a store written before 3.0.21, whose builds worked out a
+/// The check and the repair the composition guide gives for a store written before 3.0.0, whose releases worked out a
 /// stream's partition as <c>Math.Abs(hash) % 4096</c>. The function is <see cref="BucketCalculator.GetBucketId"/> in
 /// SQL, the check counts the rows outside their stream's partition, and the repair moves them there, after which every
 /// read of the stream sees them again. The statements are the guide's, word for word, which the first test pins.
@@ -81,7 +81,7 @@ public sealed class StreamPartitionRepairTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
-    public async Task The_check_finds_and_the_repair_moves_the_rows_an_early_build_wrote()
+    public async Task The_check_finds_and_the_repair_moves_the_rows_an_early_release_wrote()
     {
         var database = "stream_partition_repair";
         var options = new DbContextOptionsBuilder<GlobalKeyPlanWriteDbContext>()
@@ -131,7 +131,7 @@ public sealed class StreamPartitionRepairTests(PostgreSqlFixture postgres)
         Assert.Equal(2L, (await snapshots.GetAsync(split, "Sample.Aggregate, Sample", cancellationToken: ct))?.Version);
     }
 
-    /// <summary>The partition the builds before 3.0.21 gave a stream id.</summary>
+    /// <summary>The partition the releases before 3.0.0 gave a stream id.</summary>
     private static int EarlyBucket(Guid id) => Math.Abs(id.GetHashCode()) % BucketConstants.TotalBucketCount;
 
     private static Guid StreamWhoseEarlyPartitionDiffers()
