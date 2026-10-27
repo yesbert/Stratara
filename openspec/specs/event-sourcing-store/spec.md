@@ -441,12 +441,15 @@ execution model SHALL be able to migrate these additions without any behaviour c
 
 On a relational store, the declaration SHALL also include what reading the store in sequence order
 and chaining it need: the event stream indexed by its sequence number, the entries not yet chained
-indexed apart from those that are, and the integrity anchors indexed by their sequence number. These indexes SHALL be declared
-whichever primary key the consumer's write context gives the event stream, including the key the
-framework's own entity-key convention gives it, and SHALL NOT be declared twice over the same column
-where that key already is the sequence number. They SHALL carry fixed names, which the documentation
-states, so that a consumer that declared the same indexes itself under those names migrates to the
-framework's without either index being created twice.
+indexed apart from those that are, and the integrity anchors indexed by their sequence number. These
+indexes SHALL be declared whichever primary key the consumer's write context gives the event stream,
+including the key the framework's own entity-key convention gives it, and SHALL NOT be declared twice
+over the same column where that key already is the sequence number. They SHALL carry fixed names,
+which the documentation states, so that a consumer that declared the same indexes itself under those
+names migrates to the framework's without either index being created twice. A write context that
+keeps the framework's own model conventions from running SHALL be refused when its model is built,
+with an error naming the context and what it has to call, rather than produce a model and a
+migration without these indexes.
 
 #### Scenario: A consumer migrates the store
 
@@ -498,6 +501,14 @@ framework's without either index being created twice.
   declarations and generates a migration
 - **THEN** the migration creates and drops no index on the event stream's sequence number or on the
   anchors' sequence number
+
+#### Scenario: A write context keeps the framework's conventions from running
+
+- **WHEN** a write context derived from the framework's overrides the hook that configures model
+  conventions without calling the framework's implementation, and its model is built at runtime or
+  for a migration
+- **THEN** building the model fails with an error that names the context and says to call the
+  framework's implementation, and no query runs and no migration is generated against that model
 
 ### Requirement: Events are immutable single facts and persisted values are never removed
 
