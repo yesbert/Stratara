@@ -147,7 +147,9 @@ The framework keys the event stream by its sequence number. `ApplyGlobalEntityCo
 by `id` instead, as it does every entity, and the first index above then takes the key's place. The
 context declares it once the model is final, so it holds whichever of the two keys your context leaves.
 That is done in `WriteDbContext<TContext>.ConfigureConventions`: if your context overrides
-`ConfigureConventions`, call `base.ConfigureConventions`, or the first two indexes are missing. The
+`ConfigureConventions`, call `base.ConfigureConventions`. A context that does not is refused when its
+model is built, with an `InvalidOperationException` naming the context, so it never runs or migrates
+without those indexes. The
 filter of the second index names the column your model maps the hash to, quoted as your provider
 quotes it. The names are fixed whatever naming convention you apply. If you declared any of these
 indexes yourself under the same name and definition, remove your declaration and the migration you

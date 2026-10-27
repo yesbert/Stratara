@@ -11,6 +11,7 @@ using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore;
 using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.CommitOrder;
+using Stratara.EventSourcing.EntityFrameworkCore.WriteStore.EventSourcing.Configurations;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.Tests;
 
@@ -173,12 +174,44 @@ public sealed class StoreSchemaAdditionsTests
     }
 
     [Fact]
-    public void A_context_that_replaces_the_conventions_without_base_lacks_the_event_stream_indexes()
+    public void A_context_that_replaces_the_conventions_without_base_is_refused_when_its_model_is_built()
     {
         using var context = new ConventionlessWriteContext(SnakeCaseNpgsql<ConventionlessWriteContext>());
-        var entry = Entity<EventStreamEntry>(context.Model);
 
-        Assert.DoesNotContain(entry.GetIndexes(), index => index.GetDatabaseName() is SequenceNumberIndex or UnchainedIndex);
+        AssertRefused(Assert.Throws<InvalidOperationException>(() => context.Model));
+    }
+
+    [Fact]
+    public void A_context_that_replaces_the_conventions_without_base_is_refused_at_design_time()
+    {
+        using var context = new ConventionlessWriteContext(SnakeCaseNpgsql<ConventionlessWriteContext>());
+
+        AssertRefused(Assert.Throws<InvalidOperationException>(() => context.GetService<IDesignTimeModel>().Model));
+    }
+
+    [Fact]
+    public void A_context_that_replaces_the_conventions_without_base_is_refused_on_any_provider()
+    {
+        using var context = new ConventionlessWriteContext(new DbContextOptionsBuilder<ConventionlessWriteContext>()
+            .UseInMemoryDatabase($"schema-conventionless-{Guid.NewGuid():N}")
+            .Options);
+
+        AssertRefused(Assert.Throws<InvalidOperationException>(() => context.Model));
+    }
+
+    private static void AssertRefused(InvalidOperationException refusal)
+    {
+        Assert.Contains(nameof(ConventionlessWriteContext), refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("base.ConfigureConventions", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_bridged_consumers_model_is_built_without_the_frameworks_sequence_number_convention()
+    {
+        using var context = new UnbridgedWriteContext(SnakeCaseNpgsql<UnbridgedWriteContext>());
+
+        Assert.DoesNotContain(Entity<EventStreamEntry>(context.Model).GetIndexes(),
+            index => index.GetDatabaseName() is SequenceNumberIndex or UnchainedIndex);
     }
 
     [Fact]
@@ -262,10 +295,27 @@ public sealed class StoreSchemaAdditionsTests
         }
     }
 
+    /// <summary>The write context the bridged one starts from: the framework's sequence-number convention taken out.</summary>
+    private sealed class UnbridgedWriteContext(DbContextOptions<UnbridgedWriteContext> options)
+        : WriteDbContext<UnbridgedWriteContext>(options)
+    {
+        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+        {
+            base.ConfigureConventions(configurationBuilder);
+            configurationBuilder.Conventions.Remove(typeof(SequenceNumberIndexConvention));
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.ApplyGlobalEntityConfiguration();
+        }
+    }
+
     /// <summary>
-    /// A consumer's write context before it adopts the framework's indexes: the framework declares none of its own
-    /// because the context replaces the conventions without calling <c>base</c>, and the context declares them itself,
-    /// under the names and definitions the framework uses, together with stream indexes of its own.
+    /// A consumer's write context before it adopts the framework's indexes, as its model snapshot from before the
+    /// upgrade has it: the framework's sequence-number convention is taken out again, and the context declares the
+    /// indexes itself, under the names and definitions the framework uses, together with stream indexes of its own.
     /// </summary>
     private sealed class BridgedWriteContext(DbContextOptions<BridgedWriteContext> options)
         : WriteDbContext<BridgedWriteContext>(options)
@@ -275,6 +325,8 @@ public sealed class StoreSchemaAdditionsTests
 
         protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
         {
+            base.ConfigureConventions(configurationBuilder);
+            configurationBuilder.Conventions.Remove(typeof(SequenceNumberIndexConvention));
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
