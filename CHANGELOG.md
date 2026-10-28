@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.6.0`._
+
+## [4.6.0] — 2026-10-28
+
 An erasure shreds every key that names the subject, and nothing stopped the next encryption for that subject
 from creating a new one: a key store asked for a scope it does not hold creates a first version. A job, a request
 in flight or a second process that encrypted for an erased subject afterwards got a fresh key, and what it wrote
@@ -4908,7 +4912,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.5.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.6.0...main
+[4.6.0]: https://github.com/yesbert/Stratara/releases/tag/v4.6.0
 [4.5.0]: https://github.com/yesbert/Stratara/releases/tag/v4.5.0
 [4.4.10]: https://github.com/yesbert/Stratara/releases/tag/v4.4.10
 [4.4.9]: https://github.com/yesbert/Stratara/releases/tag/v4.4.9
