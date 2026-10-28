@@ -138,6 +138,13 @@ A double that quietly ignores a guarantee turns every test that relies on it int
 - **THEN** rotation keeps earlier versions resolvable, revocation shreds one version, erasure shreds
   all of them, distinct scopes get distinct keys, and a returned key buffer is a copy
 
+#### Scenario: The key store double is given an erased subject
+
+- **WHEN** a test marks a subject erased through the in-memory key store and then requests or rotates
+  a key for a scope that names it
+- **THEN** the double refuses with the same exception the production key store throws, and creates
+  nothing
+
 #### Scenario: The membership store double is used
 
 - **WHEN** a test uses the in-memory membership store
@@ -303,4 +310,3 @@ across silos belongs to an integration test against real infrastructure.
 
 - **WHEN** a test sets the host's poll interval, keep-alive or retry period to one second
 - **THEN** the host starts, with the shortened periods in force
-

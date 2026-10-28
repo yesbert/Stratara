@@ -86,6 +86,17 @@ public sealed class DummyKeyStore : IKeyStore
     public ValueTask EraseScopeAsync(KeyScope scope, CancellationToken cancellationToken = default)
         => throw new NotSupportedException(EraseNotSupported("EraseScopeAsync"));
 
+    /// <summary>
+    /// Not supported. The development store hands every scope the same fixed key, so it cannot refuse
+    /// one subject's scopes without refusing everyone's, and marking would report a protection that
+    /// does not exist.
+    /// </summary>
+    /// <param name="subject">The subject to mark.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="NotSupportedException">Always.</exception>
+    public ValueTask MarkSubjectErasedAsync(KeySubject subject, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(EraseNotSupported("MarkSubjectErasedAsync"));
+
     private static string EraseNotSupported(string operation) =>
         $"DummyKeyStore.{operation} is not supported. The development key store derives a single key from a fixed " +
         "pass-phrase and stores no key material, so it cannot destroy any: completing successfully would report an " +

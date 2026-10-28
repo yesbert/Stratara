@@ -29,6 +29,18 @@ public class AesGcmSecureBlobEncryptorTests
     }
 
     [Fact]
+    public async Task Encrypt_ForAnErasedTenant_SurfacesTheKeyStoresRefusal()
+    {
+        var keyStore = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
+        await keyStore.MarkSubjectErasedAsync(KeySubject.Tenant(Tenant));
+
+        var refused = await Assert.ThrowsAsync<KeyScopeErasedException>(() =>
+            Encryptor(keyStore).EncryptAsync(new MemoryStream(Plain), Scope, "attachment"));
+
+        Assert.Equal(Scope, refused.Scope);
+    }
+
+    [Fact]
     public async Task V2_RoundTrip_RecoversPlaintext()
     {
         var keyStore = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));

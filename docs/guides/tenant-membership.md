@@ -240,6 +240,15 @@ value written for that user stays readable until its tenant is erased. Both eras
 key store for every key naming the subject, which reaches a key shared with someone who is no
 longer in the directory.
 
+**An erased subject is given no new key.** Before it sweeps any plane, the erasure marks the
+subject erased in the key store (`IKeyStore.MarkSubjectErasedAsync`). From then on the store refuses
+every key the erasure covers, whether or not it ever existed, with a `KeyScopeErasedException` that
+names the scope. A job, a request in flight or another process that encrypts for the subject after
+the erasure therefore fails instead of writing data under a fresh key that nothing would shred. An
+encryption that races the erasure and wins creates its key before the mark, and the listing shreds
+it with the rest. Map the exception to whatever your API answers for data that is gone. The mark is
+permanent: an erased subject's id cannot be used for encrypted data again.
+
 **If a plane fails, the erasure stops there** and raises `ErasureIncompleteException`, naming the
 plane and listing what was already swept. It does not continue, precisely so that a failed settings
 sweep never leads to the key being shredded anyway. Run the erasure again once the cause is fixed.
@@ -261,6 +270,9 @@ Every sweep is safe to repeat, and the planes already swept simply find nothing 
   store of your own that does not implement `IKeyStore.ListScopesAsync` leaves an erasure with the
   keys the directory names: a key shared with a former member, or with an operator acting in the
   tenant from outside it, is then not found.
+- **Keys a custom key store cannot refuse.** A key store of your own that does not implement
+  `IKeyStore.MarkSubjectErasedAsync` still has its keys shredded, but gives the subject a new key
+  when something encrypts for it afterwards. The erasure logs a warning when that happens.
 - **Snapshots written before 4.4.0, on a user's erasure.** They record no user and stay under their
   tenant alone. The 4.4.0 changelog gives the statement that removes them on upgrading.
 

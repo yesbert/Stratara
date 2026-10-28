@@ -44,7 +44,7 @@ The built-in production store ships in the dependency-light **`Stratara.Security
 builder.Services.AddStrataraFileKeyStore(builder.Configuration);
 ```
 
-`AddStrataraFileKeyStore` registers an `EnvelopeFileKeyStore` — it stores **KEK-wrapped, versioned per-`KeyScope` data-encryption keys** (the KEK comes from `IMasterKeyProvider`; the default `FileMasterKeyProvider` reads the base64 KEK from config). Generate the KEK with `openssl rand -base64 32` (it must decode to **exactly 32 bytes** — the KEK is used directly as an AES-256-GCM key) and supply it via a secret store, never source control. Prefer an HSM / Key Vault / KMS `IKeyStore` implementation for the KEK custody seam in regulated environments — register it the same way, before `AddSecurity()`. Implement `ListScopesAsync` on it too: an erasure asks the key store for every key naming the subject, and without the listing it can shred only the keys the directory names, which miss a key shared with a former member or with an operator acting in the tenant from outside it.
+`AddStrataraFileKeyStore` registers an `EnvelopeFileKeyStore` — it stores **KEK-wrapped, versioned per-`KeyScope` data-encryption keys** (the KEK comes from `IMasterKeyProvider`; the default `FileMasterKeyProvider` reads the base64 KEK from config). Generate the KEK with `openssl rand -base64 32` (it must decode to **exactly 32 bytes** — the KEK is used directly as an AES-256-GCM key) and supply it via a secret store, never source control. Prefer an HSM / Key Vault / KMS `IKeyStore` implementation for the KEK custody seam in regulated environments — register it the same way, before `AddSecurity()`. Implement `ListScopesAsync` on it too: an erasure asks the key store for every key naming the subject, and without the listing it can shred only the keys the directory names, which miss a key shared with a former member or with an operator acting in the tenant from outside it. Implement `MarkSubjectErasedAsync` as well: an erasure marks the subject before shredding, and from then on `GetOrCreateCurrentKeyAsync` and `RotateAsync` must throw `KeyScopeErasedException` for every scope `KeySubject.Covers`. Without it, work still running after an erasure is given a fresh key for the erased subject.
 
 ### Several processes, one key store
 
@@ -57,6 +57,15 @@ directory at `StorePath`. The file store is built for that:
   serialises through a lock file beside the store (`<StorePath>.lock`) and re-reads the file before it
   writes, so the second writer reuses the first writer's key instead of silently replacing it.
 - **Two processes creating keys for different scopes at once keep both.**
+- **A subject one process marks erased, every process refuses.** The mark is written to the file
+  under the same lock, and a process re-reads the file before it creates a key.
+
+**Upgrade every process that shares the file together.** 4.6.0 writes the file in format version 2,
+which adds the erased-subject marks. A process on an earlier release reads a version-2 file without
+complaint but does not know the marks: it creates keys for an erased subject and drops the marks the
+next time it writes the file. From 4.6.0 on, a store refuses to open a file in a format newer than it
+knows, naming both versions, and leaves the file untouched. A version-1 file needs no migration; it is
+written back as version 2 on the next change.
 
 Every process must use the same master key (`Stratara:KeyStore:MasterKeyBase64`), because the keys in
 the file are wrapped under it. A networked file system (NFS, SMB) is not supported: it guarantees
@@ -184,7 +193,9 @@ The scope stays usable. The next write that asks for the scope's current key
 new writes keep succeeding. The file store and `InMemoryKeyStore` from `Stratara.Testing` behave the
 same way. A scope does not go
 dead because its latest version was revoked. To destroy *every* version of a scope, which is the
-GDPR Art. 17 crypto-shred of a subject, use `EraseScopeAsync(scope)`.
+GDPR Art. 17 crypto-shred of a subject, use `EraseScopeAsync(scope)`. Revoking every version is not
+an erasure and leaves no mark; only `MarkSubjectErasedAsync` keeps a subject from being given a key
+again.
 
 ### Unreadable encrypted fields degrade rather than fail
 

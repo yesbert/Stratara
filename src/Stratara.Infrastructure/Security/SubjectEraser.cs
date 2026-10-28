@@ -86,6 +86,8 @@ public sealed partial class SubjectEraser : ISubjectEraser
 
         var swept = new List<ErasedPlane>();
 
+        await MarkErasedAsync(swept, KeySubject.User(Format(userId)), Describe(userId: userId), cancellationToken);
+
         await SweepAsync(swept, ErasurePlane.ApiKeys, [Describe(userId: userId)],
             () => apiKeys.RemoveAllForUserAsync(userId, cancellationToken));
 
@@ -135,6 +137,8 @@ public sealed partial class SubjectEraser : ISubjectEraser
             .ToList();
 
         var swept = new List<ErasedPlane>();
+
+        await MarkErasedAsync(swept, KeySubject.Tenant(Format(tenantId)), Describe(tenantId: tenantId), cancellationToken);
 
         await SweepAsync(swept, ErasurePlane.ApiKeys, [Describe(tenantId: tenantId)],
             () => apiKeys.RemoveAllForTenantAsync(tenantId, cancellationToken));
@@ -192,6 +196,32 @@ public sealed partial class SubjectEraser : ISubjectEraser
     }
 
     /// <summary>
+    /// Marks the subject erased in the key store before any plane is swept, so an encryption racing the
+    /// erasure either creates its key first — and the listing finds it — or is refused, and no encrypted
+    /// setting is written after the settings sweep under a key that is then shredded. A store that cannot
+    /// mark leaves the erasure as it was, with a warning.
+    /// </summary>
+    private async Task MarkErasedAsync(
+        List<ErasedPlane> swept,
+        KeySubject subject,
+        string description,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await keys.MarkSubjectErasedAsync(subject, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            LogSubjectNotMarkable(logger, keys.GetType().Name, description);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new ErasureIncompleteException(ErasurePlane.KeyMaterial, new ErasureReport(swept), ex);
+        }
+    }
+
+    /// <summary>
     /// The scopes the directory names, together with every scope the key store lists that names the
     /// subject — which reaches a key the subject shares with someone no longer in the directory. A
     /// store that cannot list its scopes leaves the directory's alone.
@@ -238,6 +268,12 @@ public sealed partial class SubjectEraser : ISubjectEraser
         Level = LogLevel.Warning,
         Message = "{KeyStore} cannot list its key scopes, so the erasure of {Subject} shreds only the keys the directory names; a key shared with someone no longer in the directory is left readable. Implement IKeyStore.ListScopesAsync to close the gap.")]
     private static partial void LogKeyScopesNotListable(ILogger logger, string keyStore, string subject);
+
+    [LoggerMessage(
+        EventId = LogEvents.KeyManagement.SubjectNotMarkable,
+        Level = LogLevel.Warning,
+        Message = "{KeyStore} cannot mark {Subject} erased, so the erasure shreds its keys but a key for it can be created again by work still running. Implement IKeyStore.MarkSubjectErasedAsync to close the gap.")]
+    private static partial void LogSubjectNotMarkable(ILogger logger, string keyStore, string subject);
 
     private static bool Names(string? scopeId, Guid id) =>
         string.Equals(scopeId, Format(id), StringComparison.OrdinalIgnoreCase);

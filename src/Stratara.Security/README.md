@@ -30,7 +30,9 @@ await using var plain = await encryptor.DecryptAsync(encrypted, scope);
   with AES-256-GCM (wrap AAD bound to the key id, so a wrapped DEK can't be moved to another scope).
   The store file holds only wrapped DEKs + metadata, never plaintext. `RotateAsync` adds a version;
   `RevokeAsync` makes one version undecryptable; `EraseScopeAsync` deletes all versions for a scope
-  (GDPR Art. 17 crypto-shred). DEKs are zeroed after use; the store file is written `0600` on Unix.
+  (GDPR Art. 17 crypto-shred); `MarkSubjectErasedAsync` records an erased subject in the file, and
+  every scope it covers is refused with `KeyScopeErasedException` from then on. DEKs are zeroed after
+  use; the store file is written `0600` on Unix. Every process sharing one file runs the same release.
 - **`FileMasterKeyProvider`** (`IMasterKeyProvider`) — KEK from `MasterKeyBase64`, validated to
   decode to exactly 32 bytes (AES-256) at startup. The custody seam: swap for an HSM / KMS / vault
   provider later without touching the stored data.

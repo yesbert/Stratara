@@ -341,6 +341,12 @@ Where a key store cannot list its keys, the erasure SHALL still shred the keys t
 SHALL warn that it could not reach the rest. An erasure SHALL refuse an empty id, which names no
 subject.
 
+Before it sweeps any plane, the erasure SHALL mark the subject erased in the key store, so that no
+key covered by the erasure is created for it afterwards. An encryption racing the
+erasure then either creates its key before the mark, and that key is shredded with the rest, or is
+refused. Where the key store cannot mark a subject, the erasure SHALL still shred the keys it reaches
+and SHALL warn that keys for the subject can be created again.
+
 The operation SHALL report what it covered, and the framework SHALL state what it does not cover, so
 a consumer can tell what remains their own responsibility.
 
@@ -372,6 +378,18 @@ a consumer can tell what remains their own responsibility.
 - **WHEN** a subject is erased through a key store that cannot list the keys it holds
 - **THEN** the keys the directory names are shredded, and a warning says that keys shared with
   someone no longer in the directory were not reached
+
+#### Scenario: Work for an erased subject encrypts after the erasure
+
+- **WHEN** a subject has been erased and work that was already running then encrypts a value under a
+  key the erasure covers
+- **THEN** the encryption is refused, and no key for the subject exists afterwards
+
+#### Scenario: The key store cannot mark a subject
+
+- **WHEN** a subject is erased through a key store that cannot mark a subject erased
+- **THEN** the keys are shredded as before, and a warning says that keys for the subject can be
+  created again
 
 #### Scenario: An empty id is given
 
