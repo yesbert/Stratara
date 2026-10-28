@@ -99,8 +99,13 @@ consumer's tests see production semantics.
 with the same message family as its `EraseScopeAsync` — the spec forbids it to simulate an erasure
 operation.
 
-**Eraser: mark first, inside the key-material plane.** In both `EraseUserAsync` and
-`EraseTenantAsync` the key-material sweep marks the subject, then lists and shreds. Marking first
+**Eraser: mark first, before any plane.** In both `EraseUserAsync` and `EraseTenantAsync` the
+subject is marked before the API-key sweep, and the key-material sweep then lists and shreds. Marking
+only inside the key-material plane — the first draft — left the API-key and settings sweeps open: an
+encrypted setting written after the settings sweep got a fresh key, survived as an orphaned row once
+that key was shredded. Marking refuses new keys but shreds nothing and leaves reads alone, so it
+cannot make a later plane's sweep fail; the order rationale of the planes is unaffected. Found in the
+code review of #227. Marking first
 closes the race: an encryption that wins the lock before the mark creates a key that the listing then
 finds and shreds; one that loses is refused. A `NotSupportedException` from the mark logs a warning
 (new id `LogEvents.KeyManagement.SubjectNotMarkable = 112_009`; the file store logs a mark it writes as `SubjectMarkedErased = 112_010`) naming the store and the subject and

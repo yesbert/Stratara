@@ -36,7 +36,7 @@ carrying the scope, so a consumer can map it to its own "gone" answer.
   survives a restart and every process sharing the file sees it; the in-memory store of the
   test-support package keeps it in memory. The development key store refuses it, as it refuses every
   other erasure operation.
-- The subject eraser marks the subject before it lists and shreds its keys, so an encryption racing
+- The subject eraser marks the subject before it sweeps any plane, so an encryption racing
   the erasure either lands before the mark — and its key is shredded with the rest — or is refused.
   A key store that cannot mark a subject leaves the erasure as it is today, with a warning that the
   subject's keys can be created again.

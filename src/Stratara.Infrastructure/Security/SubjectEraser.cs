@@ -86,6 +86,8 @@ public sealed partial class SubjectEraser : ISubjectEraser
 
         var swept = new List<ErasedPlane>();
 
+        await MarkErasedAsync(swept, KeySubject.User(Format(userId)), Describe(userId: userId), cancellationToken);
+
         await SweepAsync(swept, ErasurePlane.ApiKeys, [Describe(userId: userId)],
             () => apiKeys.RemoveAllForUserAsync(userId, cancellationToken));
 
@@ -105,7 +107,6 @@ public sealed partial class SubjectEraser : ISubjectEraser
             .SelectMany(level => tenantIds
                 .Select(t => new KeyScope(level, Format(t), Format(userId)))
                 .Prepend(new KeyScope(level, null, Format(userId))));
-        await MarkErasedAsync(swept, KeySubject.User(Format(userId)), Describe(userId: userId), cancellationToken);
         var keyScopes = await WithListedScopesAsync(swept, directoryScopes,
             scope => UserLevels.Contains(scope.Level) && Names(scope.UserId, userId), Describe(userId: userId), cancellationToken);
 
@@ -137,6 +138,8 @@ public sealed partial class SubjectEraser : ISubjectEraser
 
         var swept = new List<ErasedPlane>();
 
+        await MarkErasedAsync(swept, KeySubject.Tenant(Format(tenantId)), Describe(tenantId: tenantId), cancellationToken);
+
         await SweepAsync(swept, ErasurePlane.ApiKeys, [Describe(tenantId: tenantId)],
             () => apiKeys.RemoveAllForTenantAsync(tenantId, cancellationToken));
 
@@ -156,7 +159,6 @@ public sealed partial class SubjectEraser : ISubjectEraser
             .SelectMany(level => userIds
                 .Select(u => new KeyScope(level, Format(tenantId), Format(u)))
                 .Prepend(new KeyScope(level, Format(tenantId))));
-        await MarkErasedAsync(swept, KeySubject.Tenant(Format(tenantId)), Describe(tenantId: tenantId), cancellationToken);
         var keyScopes = await WithListedScopesAsync(swept, directoryScopes,
             scope => TenantLevels.Contains(scope.Level) && Names(scope.TenantId, tenantId), Describe(tenantId: tenantId), cancellationToken);
 
@@ -194,9 +196,10 @@ public sealed partial class SubjectEraser : ISubjectEraser
     }
 
     /// <summary>
-    /// Marks the subject erased in the key store before its keys are listed and shredded, so an encryption
-    /// racing the erasure either creates its key first — and the listing finds it — or is refused. A store
-    /// that cannot mark leaves the erasure as it was, with a warning.
+    /// Marks the subject erased in the key store before any plane is swept, so an encryption racing the
+    /// erasure either creates its key first — and the listing finds it — or is refused, and no encrypted
+    /// setting is written after the settings sweep under a key that is then shredded. A store that cannot
+    /// mark leaves the erasure as it was, with a warning.
     /// </summary>
     private async Task MarkErasedAsync(
         List<ErasedPlane> swept,

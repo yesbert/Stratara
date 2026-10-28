@@ -67,10 +67,7 @@ public sealed class InMemoryKeyStore : IKeyStore
         subject.ThrowIfDefault(nameof(subject));
         lock (_gate)
         {
-            if (!_erasedSubjects.Any(e => e.Kind == subject.Kind && string.Equals(e.Id, subject.Id, StringComparison.OrdinalIgnoreCase)))
-            {
-                _erasedSubjects.Add(subject);
-            }
+            _erasedSubjects.Add(subject);
         }
 
         return ValueTask.CompletedTask;

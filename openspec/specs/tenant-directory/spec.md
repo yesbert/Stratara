@@ -341,8 +341,8 @@ Where a key store cannot list its keys, the erasure SHALL still shred the keys t
 SHALL warn that it could not reach the rest. An erasure SHALL refuse an empty id, which names no
 subject.
 
-Before it lists and shreds a subject's keys, the erasure SHALL mark the subject erased in the key
-store, so that no key covered by the erasure is created for it afterwards. An encryption racing the
+Before it sweeps any plane, the erasure SHALL mark the subject erased in the key store, so that no
+key covered by the erasure is created for it afterwards. An encryption racing the
 erasure then either creates its key before the mark, and that key is shredded with the rest, or is
 refused. Where the key store cannot mark a subject, the erasure SHALL still shred the keys it reaches
 and SHALL warn that keys for the subject can be created again.

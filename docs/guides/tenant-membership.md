@@ -240,7 +240,7 @@ value written for that user stays readable until its tenant is erased. Both eras
 key store for every key naming the subject, which reaches a key shared with someone who is no
 longer in the directory.
 
-**An erased subject is given no new key.** Before it lists and shreds the keys, the erasure marks the
+**An erased subject is given no new key.** Before it sweeps any plane, the erasure marks the
 subject erased in the key store (`IKeyStore.MarkSubjectErasedAsync`). From then on the store refuses
 every key the erasure covers, whether or not it ever existed, with a `KeyScopeErasedException` that
 names the scope. A job, a request in flight or another process that encrypts for the subject after

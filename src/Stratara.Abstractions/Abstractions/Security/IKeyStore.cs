@@ -81,7 +81,7 @@ public interface IKeyStore
     /// nothing.
     /// </summary>
     /// <remarks>
-    /// An erasure marks the subject before it lists and shreds its keys, so an encryption racing it either
+    /// An erasure marks the subject before it sweeps anything, so an encryption racing it either
     /// creates its key first — and that key is shredded with the rest — or is refused. The default
     /// implementation throws <see cref="NotSupportedException"/>, and an erasure then warns that keys for
     /// the subject can be created again, so a key store should implement this.

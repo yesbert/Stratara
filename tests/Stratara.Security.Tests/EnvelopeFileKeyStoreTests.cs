@@ -366,6 +366,48 @@ public class EnvelopeFileKeyStoreTests
     }
 
     [Fact]
+    public async Task AFileInANewerFormat_IsRefusedByVersion_EvenWhenItHoldsValuesThisReleaseCannotParse()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        const string newer = """{ "version": 3, "scopes": {}, "erasedSubjects": [ { "kind": "Organization", "id": "x" } ] }""";
+        await File.WriteAllTextAsync(options.StorePath, newer);
+
+        var refused = Assert.Throws<InvalidOperationException>(() => TestSupport.NewKeyStore(options));
+
+        Assert.Contains("version 3", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(newer, await File.ReadAllTextAsync(options.StorePath));
+    }
+
+    [Theory]
+    [InlineData("""{ "kind": 7, "id": "x" }""")]
+    [InlineData("""{ "kind": "Tenant", "id": "" }""")]
+    [InlineData("""{ "kind": "User" }""")]
+    public async Task AMarkThatNamesNoSubject_IsRefused_RatherThanGuessedOrSkipped(string mark)
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var file = $$"""{ "version": 2, "scopes": {}, "erasedSubjects": [ {{mark}} ] }""";
+        await File.WriteAllTextAsync(options.StorePath, file);
+
+        var refused = Assert.Throws<InvalidOperationException>(() => TestSupport.NewKeyStore(options));
+
+        Assert.Contains("names no subject", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(file, await File.ReadAllTextAsync(options.StorePath));
+    }
+
+    [Fact]
+    public async Task ANullListOfMarks_OpensAsNoMarks()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        await File.WriteAllTextAsync(options.StorePath, """{ "version": 2, "scopes": {}, "erasedSubjects": null }""");
+        var store = TestSupport.NewKeyStore(options);
+
+        await store.MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant));
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () =>
+            await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.TenantScoped, ErasedTenant)));
+    }
+
+    [Fact]
     public async Task AVersionOneFile_Opens_AndIsWrittenBackAsTheCurrentVersion()
     {
         var options = TestSupport.NewOptions(TestSupport.NewKekBase64());

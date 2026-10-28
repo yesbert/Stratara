@@ -45,10 +45,23 @@ public class KeySubjectTests
     }
 
     [Fact]
+    public void Subjects_are_equal_when_their_ids_differ_only_in_case()
+    {
+        var lower = KeySubject.User(User);
+        var upper = KeySubject.User(User.ToUpperInvariant());
+
+        Assert.Equal(lower, upper);
+        Assert.Equal(lower.GetHashCode(), upper.GetHashCode());
+        Assert.Single(new HashSet<KeySubject> { lower, upper });
+        Assert.NotEqual(KeySubject.Tenant(User), lower);
+    }
+
+    [Fact]
     public void The_default_value_covers_nothing_and_is_refused_by_the_stores()
     {
         var none = default(KeySubject);
 
+        Assert.Equal(string.Empty, none.Id);
         Assert.False(none.Covers(new KeyScope(DataSensitivityLevel.Confidential)));
         Assert.False(none.Covers(new KeyScope(DataSensitivityLevel.UserScoped)));
         Assert.Throws<ArgumentException>(() => none.ThrowIfDefault("subject"));

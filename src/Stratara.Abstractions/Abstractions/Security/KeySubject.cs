@@ -5,20 +5,26 @@ namespace Stratara.Abstractions.Security;
 /// afterwards. <see cref="Covers"/> decides which scopes that is — the same keys the subject's erasure
 /// shreds.
 /// </summary>
+/// <remarks>
+/// Two subjects are equal when their kind matches and their ids match without regard to case, the
+/// same comparison <see cref="Covers"/> uses, so a set of subjects holds each one once.
+/// </remarks>
 public readonly record struct KeySubject
 {
     private KeySubject(KeySubjectKind kind, string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         Kind = kind;
-        Id = id;
+        _id = id;
     }
+
+    private readonly string? _id;
 
     /// <summary>Whether the subject is a tenant or a user.</summary>
     public KeySubjectKind Kind { get; }
 
-    /// <summary>The subject's id, as it appears in a <see cref="KeyScope"/>.</summary>
-    public string Id { get; }
+    /// <summary>The subject's id, as it appears in a <see cref="KeyScope"/>; empty on the default value, which names no subject.</summary>
+    public string Id => _id ?? string.Empty;
 
     /// <summary>Names a tenant.</summary>
     /// <param name="tenantId">The tenant id, as <see cref="KeyScope.TenantId"/> carries it.</param>
@@ -50,16 +56,26 @@ public readonly record struct KeySubject
     };
 
     private bool Matches(string? scopeId) =>
-        Id is not null && string.Equals(scopeId, Id, StringComparison.OrdinalIgnoreCase);
+        _id is not null && string.Equals(scopeId, _id, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Throws when the value is the default one, which names no subject.</summary>
     /// <param name="paramName">The name of the parameter that carried the subject.</param>
     /// <exception cref="ArgumentException">The subject was not created through <see cref="Tenant"/> or <see cref="User"/>.</exception>
     public void ThrowIfDefault(string paramName)
     {
-        if (Id is null)
+        if (_id is null)
         {
             throw new ArgumentException("The default KeySubject names no subject; create one with KeySubject.Tenant or KeySubject.User.", paramName);
         }
     }
+
+    /// <summary>Whether both name the same subject: the same kind, and ids equal without regard to case.</summary>
+    /// <param name="other">The subject to compare with.</param>
+    /// <returns><see langword="true"/> when both name the same subject.</returns>
+    public bool Equals(KeySubject other) =>
+        Kind == other.Kind && string.Equals(_id, other._id, StringComparison.OrdinalIgnoreCase);
+
+    /// <inheritdoc/>
+    public override int GetHashCode() =>
+        HashCode.Combine(Kind, _id is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(_id));
 }

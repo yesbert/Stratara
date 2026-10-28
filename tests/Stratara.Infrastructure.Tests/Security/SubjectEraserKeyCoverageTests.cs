@@ -304,8 +304,9 @@ public class SubjectEraserKeyCoverageTests
         Assert.DoesNotContain(LogEvents.KeyManagement.KeyScopesNotListable, logger.EventIds);
     }
 
+    /// <summary>The mark comes before every plane, so no encrypted setting is written between the settings sweep and the shred.</summary>
     [Fact]
-    public async Task A_mark_that_fails_stops_the_erasure_at_the_key_material()
+    public async Task A_mark_that_fails_stops_the_erasure_before_any_plane_is_swept()
     {
         var f = new Fixture();
 
@@ -313,7 +314,7 @@ public class SubjectEraserKeyCoverageTests
             f.Eraser(new FailingMarkKeyStore(f.Keys), NullLogger<SubjectEraser>.Instance).EraseTenantAsync(Tenant));
 
         Assert.Equal(ErasurePlane.KeyMaterial, failure.Plane);
-        Assert.Equal([ErasurePlane.ApiKeys, ErasurePlane.Settings], failure.Completed.Planes.Select(p => p.Plane));
+        Assert.Empty(failure.Completed.Planes);
     }
 
     private class NonMarkingKeyStore(IKeyStore inner) : NonListingKeyStore(inner), IKeyStore

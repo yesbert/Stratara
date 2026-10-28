@@ -13,7 +13,7 @@ internal sealed class KeyStoreFile
 
     public int Version { get; set; } = CurrentVersion;
     public Dictionary<string, ScopeEntry> Scopes { get; set; } = new();
-    public List<ErasedSubjectEntry> ErasedSubjects { get; set; } = [];
+    public List<ErasedSubjectEntry>? ErasedSubjects { get; set; } = [];
 }
 
 /// <summary>A subject marked erased: the store creates no key for a scope it covers.</summary>
@@ -24,8 +24,6 @@ internal sealed class ErasedSubjectEntry
     public KeySubjectKind Kind { get; set; }
     public string Id { get; set; } = string.Empty;
     public DateTimeOffset ErasedAt { get; set; }
-
-    public KeySubject ToSubject() => Kind == KeySubjectKind.Tenant ? KeySubject.Tenant(Id) : KeySubject.User(Id);
 }
 
 /// <summary>All key versions for one <see cref="Stratara.Abstractions.Security.KeyScope"/>.</summary>

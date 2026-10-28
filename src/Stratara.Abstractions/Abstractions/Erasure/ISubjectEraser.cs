@@ -14,7 +14,7 @@ namespace Stratara.Abstractions.Erasure;
 /// user-level keys naming the user, alone or together with each tenant it belongs to. It also asks
 /// the key store for every such key naming the subject, which reaches keys shared with someone no
 /// longer in the directory; a key store that cannot list its keys leaves that to the directory, and
-/// the erasure logs a warning. Before it shreds the keys it marks the subject erased in the key store
+/// the erasure logs a warning. Before it sweeps any plane it marks the subject erased in the key store
 /// (<see cref="Security.IKeyStore.MarkSubjectErasedAsync"/>), so work still running that encrypts for
 /// the subject afterwards is refused with <see cref="Security.KeyScopeErasedException"/> instead of being
 /// given a fresh key.

@@ -53,6 +53,7 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
     private readonly string _lockPath;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private KeyStoreFile _state = new();
+    private HashSet<KeySubject> _erasedSubjects = [];
     private DateTime _lastLoadedWriteUtc;
 
     public EnvelopeFileKeyStore(
@@ -214,12 +215,12 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
             using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
             ReloadStateUnlocked();
 
-            if (_state.ErasedSubjects.Any(e => IsSameSubject(e, subject)))
+            if (!_erasedSubjects.Add(subject))
             {
                 return;
             }
 
-            _state.ErasedSubjects.Add(new ErasedSubjectEntry { Kind = subject.Kind, Id = subject.Id, ErasedAt = DateTimeOffset.UtcNow });
+            (_state.ErasedSubjects ??= []).Add(new ErasedSubjectEntry { Kind = subject.Kind, Id = subject.Id, ErasedAt = DateTimeOffset.UtcNow });
             await PersistUnlockedAsync(cancellationToken);
             LogSubjectMarkedErased(_logger, subject.Kind, subject.Id);
         }
@@ -266,14 +267,47 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
 
     private void ThrowIfErased(KeyScope scope)
     {
-        if (_state.ErasedSubjects.Any(e => e.ToSubject().Covers(scope)))
+        if (_erasedSubjects.Any(subject => subject.Covers(scope)))
         {
             throw new KeyScopeErasedException(scope);
         }
     }
 
-    private static bool IsSameSubject(ErasedSubjectEntry entry, KeySubject subject) =>
-        entry.Kind == subject.Kind && string.Equals(entry.Id, subject.Id, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// The marks as subjects. A mark that names no known kind or no id is refused rather than skipped:
+    /// skipping it would hand the subject a key again, and guessing its kind would refuse the wrong scopes.
+    /// </summary>
+    private HashSet<KeySubject> ReadErasedSubjects(IEnumerable<ErasedSubjectEntry> entries)
+    {
+        var subjects = new HashSet<KeySubject>();
+        foreach (var entry in entries)
+        {
+            if (!Enum.IsDefined(entry.Kind) || string.IsNullOrWhiteSpace(entry.Id))
+            {
+                throw new InvalidOperationException(
+                    $"The key store file '{_filePath}' holds an erased-subject mark with kind '{entry.Kind}' and id " +
+                    $"'{entry.Id}', which names no subject. Restore the file from a backup; the file was left unchanged.");
+            }
+
+            subjects.Add(entry.Kind == KeySubjectKind.Tenant ? KeySubject.Tenant(entry.Id) : KeySubject.User(entry.Id));
+        }
+
+        return subjects;
+    }
+
+    /// <summary>
+    /// The format version, read before the file is deserialised: a newer format may hold values this
+    /// release cannot parse, and the refusal has to name the version rather than fail on one of them.
+    /// </summary>
+    private static int ReadVersion(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.ValueKind == JsonValueKind.Object
+               && document.RootElement.TryGetProperty("version", out var version)
+               && version.TryGetInt32(out var number)
+            ? number
+            : 1;
+    }
 
     private string? HighestNonRevokedKeyId(string scopeKey)
     {
@@ -392,21 +426,24 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         if (!File.Exists(_filePath))
         {
             _state = new KeyStoreFile();
+            _erasedSubjects = [];
             _lastLoadedWriteUtc = DateTime.MinValue;
             return;
         }
 
         var previousWriteUtc = _lastLoadedWriteUtc;
         var json = File.ReadAllText(_filePath);
-        var loaded = JsonSerializer.Deserialize<KeyStoreFile>(json, JsonOptions) ?? new KeyStoreFile();
-        if (loaded.Version > KeyStoreFile.CurrentVersion)
+        var version = ReadVersion(json);
+        if (version > KeyStoreFile.CurrentVersion)
         {
             throw new InvalidOperationException(
-                $"The key store file '{_filePath}' is in format version {loaded.Version}, and this release reads up to " +
+                $"The key store file '{_filePath}' is in format version {version}, and this release reads up to " +
                 $"version {KeyStoreFile.CurrentVersion}. It was written by a newer release; upgrade every process that " +
                 "shares the file together. The file was left unchanged.");
         }
 
+        var loaded = JsonSerializer.Deserialize<KeyStoreFile>(json, JsonOptions) ?? new KeyStoreFile();
+        _erasedSubjects = ReadErasedSubjects(loaded.ErasedSubjects ?? []);
         _state = loaded;
         _lastLoadedWriteUtc = File.GetLastWriteTimeUtc(_filePath);
 

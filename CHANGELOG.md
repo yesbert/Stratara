@@ -37,7 +37,7 @@ stayed readable for good. The key store now records an erased subject and refuse
   key, and create nothing. The blob encryptor, the encrypting settings store and the field-encrypting serializer
   pass it through. Code that erased a subject and then wrote encrypted data for it again now sees the exception;
   the mark is permanent and cannot be lifted. Revoking every version of a scope is not an erasure and marks nothing.
-- **`ISubjectEraser` marks the subject before it lists and shreds its keys**, so an encryption racing the erasure
+- **`ISubjectEraser` marks the subject before it sweeps any plane**, so an encryption racing the erasure
   either creates its key first, and that key is shredded with the rest, or is refused. A key store that cannot mark
   a subject leaves the erasure as before and logs `SubjectNotMarkable` (112009).
 - **The file-backed key store writes format version 2**, which holds the marks, and refuses to open a file in a
