@@ -231,4 +231,149 @@ public class EnvelopeFileKeyStoreTests
             new[] { rotated, systemWide }.OrderBy(s => s.ToString()),
             (await reader.ListScopesAsync()).OrderBy(s => s.ToString()));
     }
+
+    private static readonly string ErasedTenant = Guid.NewGuid().ToString("D");
+    private static readonly string ErasedUser = Guid.NewGuid().ToString("D");
+
+    [Fact]
+    public async Task MarkSubjectErased_RefusesAScopeThatHeldAKey_AndCreatesNothing()
+    {
+        var store = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
+        var scope = new KeyScope(DataSensitivityLevel.TenantScoped, ErasedTenant);
+        await store.GetOrCreateCurrentKeyAsync(scope);
+        await store.EraseScopeAsync(scope);
+
+        await store.MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant));
+
+        var refused = await Assert.ThrowsAsync<KeyScopeErasedException>(async () => await store.GetOrCreateCurrentKeyAsync(scope));
+        Assert.Equal(scope, refused.Scope);
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () => await store.RotateAsync(scope));
+        Assert.Empty(await store.ListScopesAsync());
+    }
+
+    [Fact]
+    public async Task MarkSubjectErased_RefusesEveryLevel_AndAScopeThatNeverHadAKey()
+    {
+        var store = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
+
+        await store.MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant));
+
+        foreach (var level in Enum.GetValues<DataSensitivityLevel>())
+        {
+            var scope = new KeyScope(level, ErasedTenant.ToUpperInvariant(), Guid.NewGuid().ToString("D"));
+            await Assert.ThrowsAsync<KeyScopeErasedException>(async () => await store.GetOrCreateCurrentKeyAsync(scope));
+        }
+
+        Assert.Empty(await store.ListScopesAsync());
+    }
+
+    [Fact]
+    public async Task MarkSubjectErased_LeavesAnotherSubjectUnaffected()
+    {
+        var store = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
+        var other = new KeyScope(DataSensitivityLevel.TenantScoped, Guid.NewGuid().ToString("D"));
+
+        await store.MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant));
+
+        var v1 = await store.GetOrCreateCurrentKeyAsync(other);
+        var v2 = await store.RotateAsync(other);
+        Assert.Equal(v2, (await store.GetOrCreateCurrentKeyAsync(other)).KeyId);
+        Assert.NotEqual(v1.KeyId, v2);
+    }
+
+    [Fact]
+    public async Task MarkSubjectErased_ForAUser_RefusesTheirUserLevelKeys_AndLeavesTheirTenantsKeys()
+    {
+        var store = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
+        var tenant = Guid.NewGuid().ToString("D");
+
+        await store.MarkSubjectErasedAsync(KeySubject.User(ErasedUser));
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () =>
+            await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.UserScoped, tenant, ErasedUser)));
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () =>
+            await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.UserScoped, null, ErasedUser)));
+        Assert.NotNull(await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.TenantScoped, tenant, ErasedUser)));
+        Assert.NotNull(await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.TenantScoped, tenant)));
+    }
+
+    [Fact]
+    public async Task MarkSubjectErased_Twice_ChangesNothing()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var store = TestSupport.NewKeyStore(options);
+
+        await store.MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant));
+        var once = await File.ReadAllTextAsync(options.StorePath);
+        await store.MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant.ToUpperInvariant()));
+
+        Assert.Equal(once, await File.ReadAllTextAsync(options.StorePath));
+    }
+
+    [Fact]
+    public async Task RevokingEveryVersion_IsNotAnErasure()
+    {
+        var store = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
+        var v1 = await store.GetOrCreateCurrentKeyAsync(Scope);
+        var v2 = await store.RotateAsync(Scope);
+
+        await store.RevokeAsync(v1.KeyId);
+        await store.RevokeAsync(v2);
+
+        var current = await store.GetOrCreateCurrentKeyAsync(Scope);
+        Assert.NotEqual(v2, current.KeyId);
+    }
+
+    [Fact]
+    public async Task MarkSubjectErased_SurvivesReopeningTheStore()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        await TestSupport.NewKeyStore(options).MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant));
+
+        var reopened = TestSupport.NewKeyStore(options);
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () =>
+            await reopened.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.TenantScoped, ErasedTenant)));
+    }
+
+    [Fact]
+    public async Task MarkSubjectErased_IsSeenByAnotherInstanceAlreadyRunning()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var first = TestSupport.NewKeyStore(options);
+        var second = TestSupport.NewKeyStore(options);
+        var scope = new KeyScope(DataSensitivityLevel.TenantScoped, ErasedTenant);
+        await second.GetOrCreateCurrentKeyAsync(scope);
+
+        await first.MarkSubjectErasedAsync(KeySubject.Tenant(ErasedTenant));
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () => await second.GetOrCreateCurrentKeyAsync(scope));
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () => await second.RotateAsync(scope));
+    }
+
+    [Fact]
+    public async Task AFileInANewerFormat_IsRefused_AndLeftUnchanged()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        const string newer = """{ "version": 3, "scopes": {}, "somethingNew": [1, 2] }""";
+        await File.WriteAllTextAsync(options.StorePath, newer);
+
+        var refused = Assert.Throws<InvalidOperationException>(() => TestSupport.NewKeyStore(options));
+
+        Assert.Contains("version 3", refused.Message, StringComparison.Ordinal);
+        Assert.Contains($"version {KeyStoreFile.CurrentVersion}", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(newer, await File.ReadAllTextAsync(options.StorePath));
+    }
+
+    [Fact]
+    public async Task AVersionOneFile_Opens_AndIsWrittenBackAsTheCurrentVersion()
+    {
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        await File.WriteAllTextAsync(options.StorePath, """{ "version": 1, "scopes": {} }""");
+        var store = TestSupport.NewKeyStore(options);
+
+        await store.GetOrCreateCurrentKeyAsync(Scope);
+
+        Assert.Contains($"\"version\": {KeyStoreFile.CurrentVersion}", await File.ReadAllTextAsync(options.StorePath), StringComparison.Ordinal);
+    }
 }

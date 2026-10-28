@@ -139,4 +139,69 @@ public class InMemoryKeyStoreTests
 
         Assert.Equal(kept.OrderBy(s => s.ToString()), (await store.ListScopesAsync()).OrderBy(s => s.ToString()));
     }
+
+    [Fact]
+    public async Task A_marked_tenant_is_refused_at_every_level_and_nothing_is_created()
+    {
+        var store = new InMemoryKeyStore();
+        var tenant = Guid.CreateVersion7();
+        var held = Scope(tenant);
+        await store.GetOrCreateCurrentKeyAsync(held);
+        await store.EraseScopeAsync(held);
+
+        await store.MarkSubjectErasedAsync(KeySubject.Tenant(tenant.ToString()));
+
+        var refused = await Assert.ThrowsAsync<KeyScopeErasedException>(async () => await store.GetOrCreateCurrentKeyAsync(held));
+        Assert.Equal(held, refused.Scope);
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () => await store.RotateAsync(held));
+        foreach (var level in Enum.GetValues<DataSensitivityLevel>())
+        {
+            await Assert.ThrowsAsync<KeyScopeErasedException>(async () =>
+                await store.GetOrCreateCurrentKeyAsync(new KeyScope(level, tenant.ToString().ToUpperInvariant(), Guid.CreateVersion7().ToString())));
+        }
+
+        Assert.Empty(await store.ListScopesAsync());
+    }
+
+    [Fact]
+    public async Task A_marked_user_is_refused_at_the_user_level_only_and_another_subject_is_unaffected()
+    {
+        var store = new InMemoryKeyStore();
+        var tenant = Guid.CreateVersion7().ToString();
+        var user = Guid.CreateVersion7().ToString();
+
+        await store.MarkSubjectErasedAsync(KeySubject.User(user));
+        await store.MarkSubjectErasedAsync(KeySubject.User(user));
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(async () =>
+            await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.UserScoped, tenant, user)));
+        Assert.NotNull(await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.TenantScoped, tenant, user)));
+        var other = Scope(Guid.CreateVersion7());
+        Assert.NotNull(await store.GetOrCreateCurrentKeyAsync(other));
+        Assert.NotNull(await store.RotateAsync(other));
+    }
+
+    [Fact]
+    public async Task The_default_subject_is_refused()
+    {
+        var store = new InMemoryKeyStore();
+
+        await Assert.ThrowsAsync<ArgumentException>(async () => await store.MarkSubjectErasedAsync(default));
+
+        Assert.NotNull(await store.GetOrCreateCurrentKeyAsync(new KeyScope(DataSensitivityLevel.Confidential)));
+    }
+
+    [Fact]
+    public async Task Revoking_every_version_is_not_an_erasure()
+    {
+        var store = new InMemoryKeyStore();
+        var scope = Scope(Guid.CreateVersion7());
+        var v1 = await store.GetOrCreateCurrentKeyAsync(scope);
+        var v2 = await store.RotateAsync(scope);
+
+        await store.RevokeAsync(v1.KeyId);
+        await store.RevokeAsync(v2);
+
+        Assert.NotEqual(v2, (await store.GetOrCreateCurrentKeyAsync(scope)).KeyId);
+    }
 }

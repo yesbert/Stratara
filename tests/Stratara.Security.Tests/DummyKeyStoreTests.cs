@@ -87,6 +87,16 @@ public class DummyKeyStoreTests
     }
 
     [Fact]
+    public async Task MarkSubjectErased_Throws_RatherThanSimulatingAnErasure()
+    {
+        var sut = new DummyKeyStore(DevEnvironment());
+
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(async () => await sut.MarkSubjectErasedAsync(KeySubject.Tenant("acme")));
+
+        Assert.Contains("MarkSubjectErasedAsync", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Constructor_DoesNotThrow_InDevelopment()
         => Assert.NotNull(new DummyKeyStore(DevEnvironment()));
 

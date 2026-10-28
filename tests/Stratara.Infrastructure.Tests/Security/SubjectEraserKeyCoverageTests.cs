@@ -235,8 +235,120 @@ public class SubjectEraserKeyCoverageTests
         Assert.Equal([ErasurePlane.ApiKeys, ErasurePlane.Settings], failure.Completed.Planes.Select(p => p.Plane));
     }
 
+    /// <summary>Work that was already running when the tenant was erased encrypts afterwards: refused, whether the key existed or not.</summary>
+    [Fact]
+    public async Task Work_for_an_erased_tenant_that_encrypts_afterwards_is_refused()
+    {
+        var f = new Fixture();
+        var outsider = Guid.CreateVersion7();
+        await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
+        await f.WriteAsync(new TenantLevelNote { Text = "before" }, Tenant, Member);
+
+        await f.Eraser().EraseTenantAsync(Tenant);
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(() =>
+            f.WriteAsync(new TenantLevelNote { Text = "after" }, Tenant, Member));
+        await Assert.ThrowsAsync<KeyScopeErasedException>(() =>
+            f.WriteAsync(new TenantLevelNote { Text = "first time" }, Tenant, outsider));
+        Assert.DoesNotContain(await f.Keys.ListScopesAsync(), s => KeySubject.Tenant(Tenant.ToString("D")).Covers(s));
+        Assert.NotNull(await f.WriteAsync(new TenantLevelNote { Text = "kept" }, OtherTenant, outsider));
+    }
+
+    [Fact]
+    public async Task Work_for_an_erased_user_that_encrypts_afterwards_is_refused_and_their_tenant_still_writes()
+    {
+        var f = new Fixture();
+        await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
+
+        await f.Eraser().EraseUserAsync(Member);
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(() =>
+            f.WriteAsync(new DefaultLevelNote { Text = "after" }, OtherTenant, Member));
+        Assert.NotNull(await f.WriteAsync(new TenantLevelNote { Text = "kept" }, Tenant, Member));
+    }
+
+    [Fact]
+    public async Task The_subject_is_marked_before_its_keys_are_listed()
+    {
+        var f = new Fixture();
+        var recording = new RecordingKeyStore(f.Keys);
+
+        await f.Eraser(recording, NullLogger<SubjectEraser>.Instance).EraseTenantAsync(Tenant);
+
+        Assert.Equal(["mark", "list"], recording.Calls.Where(c => c is "mark" or "list"));
+    }
+
+    [Fact]
+    public async Task An_erasure_run_again_marks_again_without_failing()
+    {
+        var f = new Fixture();
+
+        await f.Eraser().EraseTenantAsync(Tenant);
+        var report = await f.Eraser().EraseTenantAsync(Tenant);
+
+        Assert.Contains(ErasurePlane.KeyMaterial, report.Planes.Select(p => p.Plane));
+    }
+
+    /// <summary>A key store of the consumer's own that lists but cannot mark: keys are shredded, and the erasure says they can come back.</summary>
+    [Fact]
+    public async Task A_key_store_that_cannot_mark_still_shreds_and_warns()
+    {
+        var f = new Fixture();
+        var logger = new CapturingLogger();
+        var json = await f.WriteAsync(new TenantLevelNote { Text = "secret" }, Tenant, Member);
+
+        await f.Eraser(new NonMarkingKeyStore(f.Keys), logger).EraseTenantAsync(Tenant);
+
+        Assert.Null(await f.ReadAsync<TenantLevelNote>(json, Tenant, Member));
+        Assert.Contains(LogEvents.KeyManagement.SubjectNotMarkable, logger.EventIds);
+        Assert.DoesNotContain(LogEvents.KeyManagement.KeyScopesNotListable, logger.EventIds);
+    }
+
+    [Fact]
+    public async Task A_mark_that_fails_stops_the_erasure_at_the_key_material()
+    {
+        var f = new Fixture();
+
+        var failure = await Assert.ThrowsAsync<ErasureIncompleteException>(() =>
+            f.Eraser(new FailingMarkKeyStore(f.Keys), NullLogger<SubjectEraser>.Instance).EraseTenantAsync(Tenant));
+
+        Assert.Equal(ErasurePlane.KeyMaterial, failure.Plane);
+        Assert.Equal([ErasurePlane.ApiKeys, ErasurePlane.Settings], failure.Completed.Planes.Select(p => p.Plane));
+    }
+
+    private class NonMarkingKeyStore(IKeyStore inner) : NonListingKeyStore(inner), IKeyStore
+    {
+        public ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default)
+            => Inner.ListScopesAsync(cancellationToken);
+    }
+
+    private sealed class FailingMarkKeyStore(IKeyStore inner) : NonMarkingKeyStore(inner), IKeyStore
+    {
+        public ValueTask MarkSubjectErasedAsync(KeySubject subject, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("the key store is down");
+    }
+
+    private sealed class RecordingKeyStore(IKeyStore inner) : NonMarkingKeyStore(inner), IKeyStore
+    {
+        public List<string> Calls { get; } = [];
+
+        public ValueTask MarkSubjectErasedAsync(KeySubject subject, CancellationToken cancellationToken = default)
+        {
+            Calls.Add("mark");
+            return Inner.MarkSubjectErasedAsync(subject, cancellationToken);
+        }
+
+        public new ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("list");
+            return Inner.ListScopesAsync(cancellationToken);
+        }
+    }
+
     private class NonListingKeyStore(IKeyStore inner) : IKeyStore
     {
+        protected IKeyStore Inner => inner;
+
         public ValueTask<KeyMaterial> GetOrCreateCurrentKeyAsync(KeyScope scope, CancellationToken cancellationToken = default)
             => inner.GetOrCreateCurrentKeyAsync(scope, cancellationToken);
 

@@ -13,7 +13,8 @@ or RabbitMQ testcontainers.
   aggregate from events, using the same `Apply(...)` dispatch as production. Throws on an unmapped
   event so a forgotten overload fails the test (opt out with `IgnoringUnmappedEvents()`).
 - `InMemoryKeyStore` — an `IKeyStore` that mints random 256-bit DEKs per scope and supports
-  rotation / revocation / scope-erasure, without a master KEK or key file.
+  rotation / revocation / scope-erasure, without a master KEK or key file. A subject marked erased
+  is refused with `KeyScopeErasedException`, as the production store refuses it.
 - `TestBlobEncryptor.CreateAesGcm()` — the **real** AES-GCM `ISecureBlobEncryptor` over an
   `InMemoryKeyStore`, so blob round-trips exercise production encryption.
 - `InMemoryMessageBus` — an `IMessageBus` with synchronous in-process dispatch and a `Published`

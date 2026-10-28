@@ -14,7 +14,10 @@ namespace Stratara.Abstractions.Erasure;
 /// user-level keys naming the user, alone or together with each tenant it belongs to. It also asks
 /// the key store for every such key naming the subject, which reaches keys shared with someone no
 /// longer in the directory; a key store that cannot list its keys leaves that to the directory, and
-/// the erasure logs a warning.
+/// the erasure logs a warning. Before it shreds the keys it marks the subject erased in the key store
+/// (<see cref="Security.IKeyStore.MarkSubjectErasedAsync"/>), so work still running that encrypts for
+/// the subject afterwards is refused with <see cref="Security.KeyScopeErasedException"/> instead of being
+/// given a fresh key.
 /// </para>
 /// <para>
 /// <strong>What it does not cover, and why it matters.</strong> Read models a consumer's own
@@ -35,8 +38,9 @@ namespace Stratara.Abstractions.Erasure;
 /// user's erasure. Confidential values written with an empty tenant share one system-wide key that
 /// no erasure shreds. A key store that cannot list its scopes leaves an erasure with the keys the
 /// directory names; a key shared with a former member, or with an operator acting in a tenant from
-/// outside it, is then not found. A snapshot written before 4.4.0 records no user and stays under its
-/// tenant alone, so a user's erasure does not reach it unless the host removed such snapshots on
+/// outside it, is then not found. A key store that cannot mark a subject erased shreds its keys but can
+/// create one for it again afterwards; the erasure logs a warning. A snapshot written before 4.4.0
+/// records no user and stays under its tenant alone, so a user's erasure does not reach it unless the host removed such snapshots on
 /// upgrading.
 /// </para>
 /// </remarks>

@@ -16,7 +16,42 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.5.0`._
+An erasure shreds every key that names the subject, and nothing stopped the next encryption for that subject
+from creating a new one: a key store asked for a scope it does not hold creates a first version. A job, a request
+in flight or a second process that encrypted for an erased subject afterwards got a fresh key, and what it wrote
+stayed readable for good. The key store now records an erased subject and refuses to create a key for it again.
+
+### Added
+
+- **`IKeyStore.MarkSubjectErasedAsync(KeySubject)`** records that a tenant or user has been erased. It has a
+  default implementation that throws `NotSupportedException`, so an existing key store still compiles.
+- **`KeySubject`** names the tenant or user, and `KeySubject.Covers(KeyScope)` states which keys belong to its
+  erasure: for a tenant, a key of any level that names it; for a user, a user-level key that names it.
+- **`KeyScopeErasedException`** (an `InvalidOperationException`) is what a key store throws for such a scope. It
+  carries the refused `Scope`.
+
+### Changed
+
+- **An encryption for an erased subject fails.** After a subject's erasure, `GetOrCreateCurrentKeyAsync` and
+  `RotateAsync` throw `KeyScopeErasedException` for every scope the subject covers, whether or not it ever held a
+  key, and create nothing. The blob encryptor, the encrypting settings store and the field-encrypting serializer
+  pass it through. Code that erased a subject and then wrote encrypted data for it again now sees the exception;
+  the mark is permanent and cannot be lifted. Revoking every version of a scope is not an erasure and marks nothing.
+- **`ISubjectEraser` marks the subject before it lists and shreds its keys**, so an encryption racing the erasure
+  either creates its key first, and that key is shredded with the rest, or is refused. A key store that cannot mark
+  a subject leaves the erasure as before and logs `SubjectNotMarkable` (112009).
+- **The file-backed key store writes format version 2**, which holds the marks, and refuses to open a file in a
+  newer format than it knows. `InMemoryKeyStore` refuses an erased subject as the file store does; `DummyKeyStore`
+  refuses to mark one, as it refuses every erasure operation.
+
+**Upgrading:**
+- **Upgrade every process that shares a key store file in one step.** A process on an earlier release reads a
+  version-2 file, ignores the marks, creates keys for an erased subject and drops the marks the next time it writes
+  the file. A version-1 file needs no migration. Rolling back is possible but loses the marks on the first write.
+- **Map `KeyScopeErasedException` to your answer for data that is gone**, if a request can reach an encryption for
+  a subject after its erasure.
+- **A key store of your own implements `MarkSubjectErasedAsync`**, refusing in `GetOrCreateCurrentKeyAsync` and
+  `RotateAsync` every scope a marked subject `Covers`. Without it the erasure warns and the gap stays open.
 
 ## [4.5.0] — 2026-10-27
 

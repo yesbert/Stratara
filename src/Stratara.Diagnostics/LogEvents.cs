@@ -315,6 +315,10 @@ public static class LogEvents
         public const int ScopeCannotIsolate = 112_007;
         /// <summary>An erasure's key store cannot list its scopes, so only the keys the directory names are shredded (warning).</summary>
         public const int KeyScopesNotListable = 112_008;
+        /// <summary>An erasure's key store cannot mark the subject erased, so keys for it can be created again (warning).</summary>
+        public const int SubjectNotMarkable = 112_009;
+        /// <summary>A subject was marked erased in the key store; no key covered by its erasure is created again.</summary>
+        public const int SubjectMarkedErased = 112_010;
     }
 
     /// <summary>External-login provisioning event-IDs (115_000s) — emitted by the JIT external-login provisioning service.</summary>

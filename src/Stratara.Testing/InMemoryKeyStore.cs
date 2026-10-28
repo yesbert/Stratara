@@ -7,7 +7,7 @@ namespace Stratara.Testing;
 /// <summary>
 /// In-memory <see cref="IKeyStore"/> test double. Generates a random 256-bit data-encryption key
 /// (DEK) per <see cref="KeyScope"/> on first use, hands the embedded key id back on lookup, and
-/// supports rotation, revocation, and scope erasure with the same observable semantics as the
+/// supports rotation, revocation, scope erasure and marking a subject erased with the same observable semantics as the
 /// production <c>EnvelopeFileKeyStore</c> — but without KEK wrapping, on-disk files, or a
 /// <see cref="IMasterKeyProvider"/>.
 /// </summary>
@@ -24,6 +24,7 @@ public sealed class InMemoryKeyStore : IKeyStore
 
     private readonly ConcurrentDictionary<string, byte[]> _keysById = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _currentByScope = new(StringComparer.Ordinal);
+    private readonly HashSet<KeySubject> _erasedSubjects = [];
     private readonly Lock _gate = new();
     private int _counter;
 
@@ -32,6 +33,7 @@ public sealed class InMemoryKeyStore : IKeyStore
     {
         lock (_gate)
         {
+            ThrowIfErased(scope);
             var scopeKey = ScopeKey(scope);
             if (!_currentByScope.TryGetValue(scopeKey, out var keyId))
             {
@@ -54,7 +56,31 @@ public sealed class InMemoryKeyStore : IKeyStore
     {
         lock (_gate)
         {
+            ThrowIfErased(scope);
             return ValueTask.FromResult(CreateKey(ScopeKey(scope)));
+        }
+    }
+
+    /// <inheritdoc />
+    public ValueTask MarkSubjectErasedAsync(KeySubject subject, CancellationToken cancellationToken = default)
+    {
+        subject.ThrowIfDefault(nameof(subject));
+        lock (_gate)
+        {
+            if (!_erasedSubjects.Any(e => e.Kind == subject.Kind && string.Equals(e.Id, subject.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                _erasedSubjects.Add(subject);
+            }
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void ThrowIfErased(KeyScope scope)
+    {
+        if (_erasedSubjects.Any(subject => subject.Covers(scope)))
+        {
+            throw new KeyScopeErasedException(scope);
         }
     }
 

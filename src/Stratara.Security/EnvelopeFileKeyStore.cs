@@ -19,6 +19,10 @@ namespace Stratara.Security;
 /// unwrapped only transiently in memory and zeroed after use. <see cref="RevokeAsync"/> marks a
 /// version unusable; <see cref="EraseScopeAsync"/> deletes every wrapped DEK for a scope, making
 /// its ciphertext permanently undecryptable (GDPR Art. 17 crypto-shred).
+/// <see cref="MarkSubjectErasedAsync"/> records an erased subject in the file, and every scope it
+/// covers is refused from then on, in every process sharing the file. A file in a newer format than
+/// <see cref="KeyStoreFile.CurrentVersion"/> is refused rather than read partially and written back
+/// without what this release does not understand.
 /// </remarks>
 /// <remarks>
 /// The store is safe for several processes that share one store file (for example containers
@@ -78,6 +82,7 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
             // Re-evaluate on the freshest on-disk state so a scope another process created after our
             // start is reused instead of being recreated with a colliding ":v1" / divergent DEK.
             ReloadStateUnlocked();
+            ThrowIfErased(scope);
 
             var currentKeyId = HighestNonRevokedKeyId(scopeKey);
             if (currentKeyId is null)
@@ -141,6 +146,7 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         {
             using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
             ReloadStateUnlocked();
+            ThrowIfErased(scope);
 
             var keyId = CreateKeyUnlocked(scopeKey, kek.Span);
             await PersistUnlockedAsync(cancellationToken);
@@ -199,6 +205,31 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
     }
 
     /// <inheritdoc/>
+    public async ValueTask MarkSubjectErasedAsync(KeySubject subject, CancellationToken cancellationToken = default)
+    {
+        subject.ThrowIfDefault(nameof(subject));
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var fileLock = await AcquireCrossProcessLockAsync(cancellationToken);
+            ReloadStateUnlocked();
+
+            if (_state.ErasedSubjects.Any(e => IsSameSubject(e, subject)))
+            {
+                return;
+            }
+
+            _state.ErasedSubjects.Add(new ErasedSubjectEntry { Kind = subject.Kind, Id = subject.Id, ErasedAt = DateTimeOffset.UtcNow });
+            await PersistUnlockedAsync(cancellationToken);
+            LogSubjectMarkedErased(_logger, subject.Kind, subject.Id);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc/>
     public async ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken);
@@ -232,6 +263,17 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         var userId = scopeKey[(last + 1)..];
         return new KeyScope(level, tenantId.Length == 0 ? null : tenantId, userId.Length == 0 ? null : userId);
     }
+
+    private void ThrowIfErased(KeyScope scope)
+    {
+        if (_state.ErasedSubjects.Any(e => e.ToSubject().Covers(scope)))
+        {
+            throw new KeyScopeErasedException(scope);
+        }
+    }
+
+    private static bool IsSameSubject(ErasedSubjectEntry entry, KeySubject subject) =>
+        entry.Kind == subject.Kind && string.Equals(entry.Id, subject.Id, StringComparison.OrdinalIgnoreCase);
 
     private string? HighestNonRevokedKeyId(string scopeKey)
     {
@@ -356,7 +398,16 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
 
         var previousWriteUtc = _lastLoadedWriteUtc;
         var json = File.ReadAllText(_filePath);
-        _state = JsonSerializer.Deserialize<KeyStoreFile>(json, JsonOptions) ?? new KeyStoreFile();
+        var loaded = JsonSerializer.Deserialize<KeyStoreFile>(json, JsonOptions) ?? new KeyStoreFile();
+        if (loaded.Version > KeyStoreFile.CurrentVersion)
+        {
+            throw new InvalidOperationException(
+                $"The key store file '{_filePath}' is in format version {loaded.Version}, and this release reads up to " +
+                $"version {KeyStoreFile.CurrentVersion}. It was written by a newer release; upgrade every process that " +
+                "shares the file together. The file was left unchanged.");
+        }
+
+        _state = loaded;
         _lastLoadedWriteUtc = File.GetLastWriteTimeUtc(_filePath);
 
         // Only the initial load has no prior mtime; an unchanged reload is a no-op. Log solely when we
@@ -404,6 +455,7 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         EnsureDirectoryExists();
 
         var tempPath = _filePath + ".tmp";
+        _state.Version = KeyStoreFile.CurrentVersion;
         var json = JsonSerializer.Serialize(_state, JsonOptions);
         await File.WriteAllTextAsync(tempPath, json, cancellationToken);
         RestrictToOwner(tempPath);
@@ -433,6 +485,9 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
 
     [LoggerMessage(EventId = LogEvents.KeyManagement.ScopeErased, Level = LogLevel.Information, Message = "Erased all key versions for scope {ScopeKey} (crypto-shred).")]
     private static partial void LogScopeErased(ILogger logger, string scopeKey);
+
+    [LoggerMessage(EventId = LogEvents.KeyManagement.SubjectMarkedErased, Level = LogLevel.Information, Message = "Marked {SubjectKind} {SubjectId} erased; no key is created for it again.")]
+    private static partial void LogSubjectMarkedErased(ILogger logger, KeySubjectKind subjectKind, string subjectId);
 
     [LoggerMessage(EventId = LogEvents.KeyManagement.KeyStoreReloaded, Level = LogLevel.Debug, Message = "Reloaded key-store state from {FilePath} to pick up keys written by another process.")]
     private static partial void LogKeyStoreReloaded(ILogger logger, string filePath);

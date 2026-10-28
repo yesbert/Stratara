@@ -6,7 +6,9 @@ namespace Stratara.Abstractions.Security;
 /// <see cref="ISecureJsonSerializer"/>. Keys are scoped by <see cref="KeyScope"/>
 /// (<see cref="DataSensitivityLevel"/> + optional tenant / user) and versioned, so rotation
 /// keeps older ciphertext decryptable while <see cref="RevokeAsync"/> /
-/// <see cref="EraseScopeAsync"/> implement GDPR Art. 17 crypto-shredding.
+/// <see cref="EraseScopeAsync"/> implement GDPR Art. 17 crypto-shredding, and
+/// <see cref="MarkSubjectErasedAsync"/> keeps an erased subject from being given a key again.
+/// Revoking a version marks nothing: a scope whose every version was revoked is given a new one.
 /// </summary>
 public interface IKeyStore
 {
@@ -17,6 +19,9 @@ public interface IKeyStore
     /// <param name="scope">The key scope to resolve.</param>
     /// <param name="cancellationToken">Propagated to the underlying store.</param>
     /// <returns>The resolved <see cref="KeyMaterial"/> (key id + raw bytes).</returns>
+    /// <exception cref="KeyScopeErasedException">
+    /// The scope names a subject marked erased through <see cref="MarkSubjectErasedAsync"/>; nothing is created.
+    /// </exception>
     ValueTask<KeyMaterial> GetOrCreateCurrentKeyAsync(KeyScope scope, CancellationToken cancellationToken = default);
 
     /// <summary>Return the raw key bytes for the id, or <see langword="null"/> if revoked / erased / unknown.</summary>
@@ -31,6 +36,9 @@ public interface IKeyStore
     /// <param name="scope">The key scope to rotate.</param>
     /// <param name="cancellationToken">Propagated to the underlying store.</param>
     /// <returns>The id of the newly created current key.</returns>
+    /// <exception cref="KeyScopeErasedException">
+    /// The scope names a subject marked erased through <see cref="MarkSubjectErasedAsync"/>; nothing is created.
+    /// </exception>
     ValueTask<string> RotateAsync(KeyScope scope, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -64,4 +72,24 @@ public interface IKeyStore
     /// <exception cref="NotSupportedException">The store cannot list its scopes.</exception>
     ValueTask<IReadOnlyList<KeyScope>> ListScopesAsync(CancellationToken cancellationToken = default) =>
         throw new NotSupportedException($"{GetType().Name} cannot list its key scopes.");
+
+    /// <summary>
+    /// Record that a subject has been erased, so that the store creates no key for it again: from then
+    /// on <see cref="GetOrCreateCurrentKeyAsync"/> and <see cref="RotateAsync"/> throw
+    /// <see cref="KeyScopeErasedException"/> for every scope the subject <see cref="KeySubject.Covers"/>,
+    /// whether or not it ever held a key. The mark is permanent, and marking a subject twice changes
+    /// nothing.
+    /// </summary>
+    /// <remarks>
+    /// An erasure marks the subject before it lists and shreds its keys, so an encryption racing it either
+    /// creates its key first — and that key is shredded with the rest — or is refused. The default
+    /// implementation throws <see cref="NotSupportedException"/>, and an erasure then warns that keys for
+    /// the subject can be created again, so a key store should implement this.
+    /// </remarks>
+    /// <param name="subject">The erased tenant or user.</param>
+    /// <param name="cancellationToken">Propagated to the underlying store.</param>
+    /// <exception cref="NotSupportedException">The store cannot mark a subject erased.</exception>
+    /// <exception cref="ArgumentException"><paramref name="subject"/> is the default value, which names no subject.</exception>
+    ValueTask MarkSubjectErasedAsync(KeySubject subject, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException($"{GetType().Name} cannot mark a subject erased.");
 }
