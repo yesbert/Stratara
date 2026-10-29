@@ -585,7 +585,8 @@ internal static class CommandExecution
     /// hand-over created, every later one in a scope of its own, so it reads the stream again in a fresh unit of work.
     /// The pipeline runs with the captured context, so every attempt continues on the scheduler the first ran on — the
     /// aggregate's activation for an aggregate's command. Only a conflict the command may still be run again for reaches
-    /// the pipeline as itself; anything else passes through it untouched and leaves as it was thrown. A conflict is
+    /// the pipeline as an exception; anything else is handed through it as the attempt's result, which the pipeline does
+    /// not retry, and is thrown again afterwards as it was thrown. A conflict is
     /// recorded where it happens, in <paramref name="conflicts"/>, so the caller does not record it a second time; while
     /// the store counts conflicts, the hand-over's attempt stays counted until the command leaves on a conflict, so it is
     /// given back once however often the command ran. Without the pipeline there is one attempt.
@@ -598,34 +599,36 @@ internal static class CommandExecution
         var conflictBound = services.GetService<IOptions<MessageRetryOptions>>()?.Value.MaxConflictRequeues ?? new MessageRetryOptions().MaxConflictRequeues;
         var attempt = 0;
         var context = ResilienceContextPool.Shared.Get(continueOnCapturedContext: true, stopping);
+        Exception? failure;
         try
         {
-            await pipeline.ExecuteAsync(async _ =>
+            failure = await pipeline.ExecuteAsync(async _ =>
             {
                 if (++attempt == 1)
                 {
-                    await AttemptAsync(services);
-                    return;
+                    return await AttemptAsync(services);
                 }
 
                 await using var scope = services.GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
-                await AttemptAsync(scope.ServiceProvider);
+                return await AttemptAsync(scope.ServiceProvider);
             }, context);
-        }
-        catch (PassedThrough passed)
-        {
-            ExceptionDispatchInfo.Capture(passed.InnerException ?? passed).Throw();
         }
         finally
         {
             ResilienceContextPool.Shared.Return(context);
         }
 
-        async Task AttemptAsync(IServiceProvider attemptServices)
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+
+        async Task<Exception?> AttemptAsync(IServiceProvider attemptServices)
         {
             try
             {
                 await InvokeAsync(attemptServices, envelope, throughMediator: true, stopping);
+                return null;
             }
             catch (ConcurrencyException conflict)
             {
@@ -636,11 +639,11 @@ internal static class CommandExecution
                     throw;
                 }
 
-                throw new PassedThrough(conflict);
+                return conflict;
             }
             catch (Exception ex) when (ex is not ConcurrencyException)
             {
-                throw new PassedThrough(ex);
+                return ex;
             }
         }
     }
@@ -661,9 +664,6 @@ internal static class CommandExecution
             AttemptHeld |= attemptHeld;
         }
     }
-
-    /// <summary>Carries an exception through the conflict pipeline without the pipeline retrying it.</summary>
-    private sealed class PassedThrough(Exception inner) : Exception(inner.Message, inner);
 
     private static Func<Task> Wrap(Func<Task> run, Func<Func<Task>, Task>? around) =>
         around is null ? run : () => around(run);

@@ -67,6 +67,9 @@ public sealed class StoreWakeUpTests
         Assert.Equal(2, grains.SagaCalls);
     }
 
+    private static readonly string[] CreatedAndIncremented = ["Created", "Incremented"];
+    private static readonly string[] CreatedOnly = ["Created"];
+
     [Fact]
     public void The_event_types_travel_beside_the_call_and_leave_the_callers_context_as_it_was()
     {
@@ -75,9 +78,9 @@ public sealed class StoreWakeUpTests
         global::Orleans.Runtime.RequestContext.Set(WakeUpEventTypes.Key, "the caller's own");
         try
         {
-            wakeUps.Wake(grains.Factory, [(5, ["Created", "Incremented"])]);
+            wakeUps.Wake(grains.Factory, [(5, CreatedAndIncremented)]);
 
-            Assert.Equal(new[] { "Created", "Incremented" }, grains.ProjectionCarriedTypes);
+            Assert.Equal(CreatedAndIncremented, grains.ProjectionCarriedTypes);
             Assert.Equal("the caller's own", global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
         }
         finally
@@ -85,7 +88,7 @@ public sealed class StoreWakeUpTests
             global::Orleans.Runtime.RequestContext.Remove(WakeUpEventTypes.Key);
         }
 
-        wakeUps.Wake(grains.Factory, [(5, ["Created"])]);
+        wakeUps.Wake(grains.Factory, [(5, CreatedOnly)]);
         Assert.Null(global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
 
         wakeUps.Wake(grains.Factory, [5]);
@@ -95,9 +98,9 @@ public sealed class StoreWakeUpTests
     [Fact]
     public void A_silo_takes_the_event_types_out_of_the_context_and_reads_none_where_the_host_sent_none()
     {
-        global::Orleans.Runtime.RequestContext.Set(WakeUpEventTypes.Key, new[] { "Created" });
+        global::Orleans.Runtime.RequestContext.Set(WakeUpEventTypes.Key, CreatedOnly);
 
-        Assert.Equal(new[] { "Created" }, WakeUpEventTypes.Take());
+        Assert.Equal(CreatedOnly, WakeUpEventTypes.Take());
         Assert.Null(global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
         Assert.Null(WakeUpEventTypes.Take());
     }
