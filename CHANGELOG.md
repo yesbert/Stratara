@@ -16,7 +16,43 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.6.1`._
+A release for one person who belongs to several tenants — and, sharing one identity store, to several applications.
+
+### Added
+
+- **`MembershipStatus.Former`** records a member who has left. It confers nothing — no role, permission or
+  cross-tenant access, never the tenant at sign-in, never a selection — and stays listed until the user's or the
+  tenant's erasure removes it.
+- **`AddCheckedMembershipTenantClaim<TUser>()`**, a third tenant-claim mode: the claim is stamped at sign-in, kept when
+  the security-stamp validator refreshes a cookie sign-in, and checked on every request. A request whose user is no
+  longer an active member of the carried tenant loses the claim and resolves to the reserved default tenant, without
+  another tenant substituted. The tenant changes only when the host re-issues the sign-in. Combining it with
+  `AddMembershipTenantClaimsTransformation()` throws. Use it where several applications share one identity store:
+  `active_tenant` holds one selection per account, so live resolution moves every open session when any of them
+  switches.
+- **`EventSubject.ForUser(userId)`** and **`EventSubject.NamesAnOwner`**: a stream can be created for a user alone,
+  for data that belongs to a person rather than to any of their tenants. It is recorded under the reserved default
+  tenant, keeps that owner for every later event whatever tenant the session names, and its user-level fields are
+  keyed to the person: shredded by the person's erasure, untouched by any tenant's.
+
+### Changed
+
+- **Setting a membership to a status other than `Active` clears a selection that pointed at it**, as removing it
+  already did.
+- **An explicit subject that names a user and no tenant is accepted** by `AppendOnBehalfOfAsync` and
+  `CreateOnBehalfOfAsync`; one that names neither is refused as before. A session whose tenant resolved to the
+  reserved default still gives an event no owner.
+- **BREAKING (behaviour): an event or aggregate type marked `[EncryptData]` as a whole stops the host from starting.**
+  `EncryptionMetadataDriftGuard` refuses every registered aggregate, and every event type a registered aggregate
+  applies, that carries the attribute on the type; an event type no aggregate applies is refused when it is appended,
+  before anything is written. Once its subject was erased such a payload had nothing left to deliver, and a replay or
+  rebuild stopped there for good. Mark the properties instead; payloads already written as a whole are still read.
+  Commands and other types may still be marked as a whole.
+
+### Fixed
+
+- **A user's erasure shreds their own data through a key store that cannot list its scopes.** The eraser names the
+  user's key under the reserved default tenant itself; until now only a listing reached it.
 
 ## [4.6.1] — 2026-10-29
 

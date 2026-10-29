@@ -91,15 +91,15 @@
 
 ## 6. Documentation and release notes
 
-- [ ] 6.1 `docs/guides/tenant-membership.md`: former members; the three claim modes with when changes
+- [x] 6.1 `docs/guides/tenant-membership.md`: former members; the three claim modes with when changes
   take effect and the recommendation for a shared identity store; a host's re-issue is the switch; the
   bearer-refresh limitation.
-- [ ] 6.2 `docs/guides/encrypt-data-setup.md`: writing a person's own data (session with the reserved
-  default tenant, a non-tenant-scoped command, the stream keeps its owner); the scope is fixed at
-  write; nullable types for erasable fields; whole-type marking refused for events and aggregates and
-  what that means for payloads already written.
-- [ ] 6.3 `src/Stratara.Identity.AspNetCore/README.md`, `llms-full.txt`: the new registration and
+- [x] 6.2 `docs/guides/encrypt-data-setup.md`: writing a person's own data (`EventSubject.ForUser`, the
+  stream keeps its owner, only a stated owner creates one); the scope is fixed at write; nullable types for
+  erasable fields; whole-type marking refused for events and aggregates and what that means for payloads
+  already written.
+- [x] 6.3 `src/Stratara.Identity.AspNetCore/README.md`, `llms-full.txt`: the new registration and
   status.
-- [ ] 6.4 `CHANGELOG.md`: Added (former status, kept-and-checked mode), Fixed (person's own scope in
+- [x] 6.4 `CHANGELOG.md`: Added (former status, kept-and-checked mode), Fixed (person's own scope in
   the erasure), Changed — breaking behaviour (whole-type encryption of event and aggregate types).
-- [ ] 6.5 `./scripts/local-gauntlet.sh` green; `openspec validate let-one-person-span-tenants --strict`.
+- [x] 6.5 `./scripts/local-gauntlet.sh` green; `openspec validate let-one-person-span-tenants --strict`.

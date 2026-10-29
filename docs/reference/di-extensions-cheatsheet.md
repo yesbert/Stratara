@@ -247,6 +247,7 @@ through unchecked.
 | `builder.AddDevelopmentNoOpEmailSender<TUser>()` | Stub `IEmailSender` for Development — throws on every other environment name, including Staging (3.4.0; Production-only before) |
 | `services.AddMembershipTenantClaim<TUser>()` | Stamps `stratara:tenant_id` into every issued principal (claims-factory decorator) |
 | `services.AddMembershipTenantClaimsTransformation()` | Resolves `stratara:tenant_id` live per request — a tenant switch applies without re-issuing the sign-in |
+| `services.AddCheckedMembershipTenantClaim<TUser>()` | Stamps `stratara:tenant_id` at issuance, keeps it across a cookie refresh and drops it on the next request once the membership is no longer active — for an identity store several applications share; not combinable with the transformation |
 | `services.AddStrataraPermissionPolicies()` | Turns every catalog permission into an on-demand policy → `[Authorize("sims.read")]` |
 | `services.AddStrataraExternalLoginProvisioning<TUser>(opts?)` | JIT create/link of the local account on first external sign-in (fail-closed) |
 | `services.AddStrataraProblemDetails()` | Turns a validation rejection into a 400 with the failures grouped by field, and an authorization or tenant-access refusal into a 403 — one shape for all three. A caller that is not authenticated gets 401 for a refusal and for a `SessionRequiredException`, through the host's challenge where it has a scheme |

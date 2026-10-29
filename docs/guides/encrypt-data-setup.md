@@ -201,9 +201,10 @@ again.
 
 Erasing a subject's key must not make every record that mentions the subject unreadable. When
 `ISecureJsonSerializer` deserializes an object whose `[EncryptData]` field was encrypted under a key
-that no longer exists, **that field reads as absent** and the object's other fields are recovered
-normally. An event carrying one shredded field still rehydrates, and a projection still
-sees everything else in it.
+that no longer exists — revoked, its scope erased, or its subject erased — **that field reads as
+absent** and the object's other fields are recovered normally. An event carrying one shredded field
+still rehydrates, and a projection still sees everything else in it. A replay that meets an erased
+subject's events delivers every one of them, in order, with those fields absent, and runs to the end.
 
 Two consequences to design for:
 
@@ -212,18 +213,54 @@ Two consequences to design for:
   type such as `decimal` comes back as its default, `0`, which a reader cannot tell apart from a
   stored zero.
 - **`[EncryptData]` on a class encrypts the object as one unit.** If that key is gone, the whole
-  object reads as `null`, not just one field.
+  object reads as `null`, not just one field. That is why an event or aggregate type may not be
+  marked as a whole (below): nothing of it would be left to deliver, and the replay would stop.
 
 **Data written before a type was marked for encryption stays readable.** If you add `[EncryptData]`
 to a type that already has ordinary serialized data, that data is read as ordinary data rather than
 rejected. A field that is stored in the clear is taken as it is, while a field stored encrypted is
 decrypted. New writes are encrypted from the moment the attribute is in place.
 
+## Data that belongs to a person
+
+Some data is a person's, not a tenant's: a profile with their name, e-mail and language that follows
+them into every tenant they belong to. Keyed to one of those tenants, it would be shredded when that
+tenant is erased. Record it for an owner that names the user alone:
+
+<!-- stratara-snippet-ignore: narrative fragment - the event source, the stream id and the person come from the surrounding text -->
+```csharp
+public sealed record PersonProfileCreated(
+    Guid PersonId,
+    [property: EncryptData] string? DisplayName,
+    [property: EncryptData] string? Email,
+    string Language);
+
+await events.CreateOnBehalfOfAsync<PersonProfile>(
+    profileId, new PersonProfileCreated(personId, "Ada", "ada@example.com", "en"), EventSubject.ForUser(personId));
+await events.SaveChangesAsync();
+```
+
+The stream records the person and no tenant — the reserved default tenant, `Guid.Empty` — and keeps
+that owner for every later event, whatever tenant the session that appends to it names. Its
+user-level fields are encrypted under a key of the person alone: the person's erasure shreds it, and
+no tenant's erasure reaches it. It reads normally from a session of any of the person's tenants.
+
+- **Only a stated owner creates such a stream.** A session whose tenant failed closed to the reserved
+  default still gives an event no owner, so a request without a tenant never writes data that
+  belongs to nobody in particular.
+- **The scope is fixed when the data is written.** The ciphertext is bound to the owner it was
+  written for, so data already written under one of the person's tenants stays that tenant's and is
+  shredded with it. Moving it means writing it anew.
+- **What a tenant may keep about a former member is the tenant's data**, and is keyed to the tenant
+  as before.
+
 ## EncryptionMetadataDriftGuard
 
 At host-start, `EncryptionMetadataDriftGuard` (registered as `IHostedService` by `AddSecurity()`) walks the **Trusted-Type-Allowlist** and checks every type's `EncryptionMetadata.RequiresEncryption` against the actual `[EncryptData]` attributes. If they drift (someone removed `[EncryptData]` but didn't update the metadata), the host fails-fast.
 
 This catches a class of bugs that's easy to introduce: marking a property `[EncryptData]` initially, then dropping the attribute in a refactor — without re-keying the historical events.
+
+**What a stream stores is encrypted field by field.** The same guard refuses to start a host in which a registered aggregate, or an event type a registered aggregate applies, carries `[EncryptData]` on the type itself. Such a payload has no field left once its subject is erased: the event cannot be delivered and the snapshot cannot be restored, so a replay or a rebuild stops at the erasure — and keeps stopping there. An event type no aggregate applies is refused when it is appended, before anything is written. Mark the properties that hold personal data instead. Payloads already written as a whole are still read — the serializer recognises the envelope by its shape — but after their subject's erasure they still stop a replay, and an upcaster cannot help, since it sees ciphertext only. Commands and other types may still be marked as a whole.
 
 ## Operational considerations
 
