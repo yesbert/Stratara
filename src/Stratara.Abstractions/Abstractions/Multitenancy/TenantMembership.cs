@@ -17,7 +17,8 @@ namespace Stratara.Abstractions.Multitenancy;
 /// </para>
 /// <para>
 /// A membership with <see cref="MembershipStatus.Pending"/> status represents an invitation that
-/// has not been accepted yet and confers no access.
+/// has not been accepted yet and confers no access; one with <see cref="MembershipStatus.Former"/>
+/// status records a member who has left and confers no access either.
 /// </para>
 /// </remarks>
 /// <param name="UserId">The user who holds the membership.</param>

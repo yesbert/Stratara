@@ -159,4 +159,40 @@ public class EfTenantMembershipStoreTests
 
         Assert.Equal(tenantB, await fixture.Store.GetActiveTenantAsync(userId));
     }
+
+    [Theory]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task A_selected_membership_that_stops_being_active_clears_the_selection(MembershipStatus status)
+    {
+        using var fixture = new SqliteDirectoryFixture();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+        var otherTenant = Guid.CreateVersion7();
+
+        await fixture.Store.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        await fixture.Store.SetMembershipAsync(new TenantMembership(userId, otherTenant, []));
+        await fixture.Store.SetActiveTenantAsync(userId, tenantId);
+
+        await fixture.Store.SetMembershipAsync(new TenantMembership(userId, otherTenant, [], status));
+        Assert.Equal(tenantId, await fixture.Store.GetActiveTenantAsync(userId));
+
+        await fixture.Store.SetMembershipAsync(new TenantMembership(userId, tenantId, [], status));
+        Assert.Null(await fixture.Store.GetActiveTenantAsync(userId));
+    }
+
+    [Fact]
+    public async Task A_former_membership_cannot_be_selected_and_stays_listed()
+    {
+        using var fixture = new SqliteDirectoryFixture();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+
+        await fixture.Store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"], MembershipStatus.Former));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Store.SetActiveTenantAsync(userId, tenantId));
+        Assert.Equal(MembershipStatus.Former, Assert.Single(await fixture.Store.GetMembersAsync(tenantId)).Status);
+        Assert.Equal(MembershipStatus.Former, Assert.Single(await fixture.Store.GetMembershipsAsync(userId)).Status);
+    }
 }

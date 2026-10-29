@@ -56,6 +56,11 @@ public sealed class InMemoryTenantMembershipStore : ITenantMembershipStore
         lock (_gate)
         {
             _memberships[(membership.UserId, membership.TenantId)] = membership;
+            if (membership.Status != MembershipStatus.Active
+                && _activeTenants.GetValueOrDefault(membership.UserId) == membership.TenantId)
+            {
+                _activeTenants.Remove(membership.UserId);
+            }
         }
 
         return Task.CompletedTask;

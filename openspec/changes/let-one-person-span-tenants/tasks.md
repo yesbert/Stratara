@@ -9,28 +9,28 @@
 - [ ] 1.2 `tests/Stratara.Infrastructure.Tests/Security/SubjectEraserKeyCoverageTests.cs`: a value is
   encrypted under `UserScoped / Guid.Empty / user`, the user is erased through a key store that throws
   `NotSupportedException` from `ListScopesAsync`. Confirm on `main` the key survives; invert after 4.1.
-- [ ] 1.3 `tests/Stratara.Identity.EntityFrameworkCore.Tests/EfTenantMembershipStoreTests.cs`: a
+- [x] 1.3 `tests/Stratara.Identity.EntityFrameworkCore.Tests/EfTenantMembershipStoreTests.cs`: a
   selected membership is rewritten with status `Pending`; confirm on `main` that
   `GetActiveTenantAsync` still returns it; invert after 2.2.
 
 ## 2. Former membership
 
-- [ ] 2.1 `src/Stratara.Abstractions/Abstractions/Multitenancy/MembershipStatus.cs`: `Former = 2`,
+- [x] 2.1 `src/Stratara.Abstractions/Abstractions/Multitenancy/MembershipStatus.cs`: `Former = 2`,
   documented as recording a past member that confers nothing; the type remarks name both non-active
   states. `TenantMembership.cs` and `ITenantMembershipStore.cs` documentation say list views return
   every status.
-- [ ] 2.2 `src/Stratara.Identity.EntityFrameworkCore/EfTenantMembershipStore.cs` and
+- [x] 2.2 `src/Stratara.Identity.EntityFrameworkCore/EfTenantMembershipStore.cs` and
   `src/Stratara.Testing/InMemoryTenantMembershipStore.cs`: `SetMembershipAsync` deletes the selection
   for `(user, tenant)` when the written status is not `Active`. Tests in `EfTenantMembershipStoreTests`
   and `tests/Stratara.Testing.Tests/InMemoryTenantMembershipStoreTests.cs`: set to `Former` and to
   `Pending` clears the selection; `SetActiveTenantAsync` on a former membership is refused; a former
   membership is listed by `GetMembersAsync` and `GetMembershipsAsync`.
-- [ ] 2.3 A former membership confers nothing, one test per check:
+- [x] 2.3 A former membership confers nothing, one test per check:
   `MembershipAuthorizationProviderTests` (role), `CatalogPermissionResolverTests` (permission),
   `MembershipCrossTenantAuthorizerTests` (cross-tenant), `EfApiKeyStoreTests` (machine-key
   materialisation), `tests/Stratara.Identity.AspNetCore.Tests/MembershipClaimsBridgeTests.cs`
   (not chosen at sign-in, a selection pointing at it yields no claim).
-- [ ] 2.4 `tests/Stratara.Infrastructure.Tests/Security/SubjectEraserTests.cs`: a user's and a tenant's
+- [x] 2.4 `tests/Stratara.Infrastructure.Tests/Security/SubjectEraserTests.cs`: a user's and a tenant's
   erasure removes former memberships.
 
 ## 3. Reading after an erasure, and whole-type encryption in a stream

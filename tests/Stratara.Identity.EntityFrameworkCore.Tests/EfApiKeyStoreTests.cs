@@ -193,6 +193,18 @@ public class EfApiKeyStoreTests
     }
 
     [Fact]
+    public async Task Personal_access_token_is_refused_for_a_former_member()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], MembershipStatus.Former));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId)));
+    }
+
+    [Fact]
     public async Task Imported_key_validates_and_materializes_its_membership()
     {
         using var fixture = new ApiKeyFixture();
