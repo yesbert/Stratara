@@ -122,7 +122,12 @@ public sealed class ClientWakeUpTests(PostgreSqlFixture postgres, RedisFixture r
         await CommitOnClientAsync(client, Guid.NewGuid());
 
         Assert.True(await WaitUntilAsync(() => log.Count("saga") == 6, Woken), $"the saga silo that joined was not woken: {log}");
-        Assert.Contains(logs.Entries, entry => entry.EventId == LogEvents.Orleans.StoreWakeUpRoleBack);
+
+        // The saga's keep-alive poll may apply the fact before the host has handled the wake-up's answer, which is
+        // where the role's return is logged; wait for the log rather than read it the moment the saga has the fact.
+        Assert.True(
+            await WaitUntilAsync(() => logs.Entries.Any(entry => entry.EventId == LogEvents.Orleans.StoreWakeUpRoleBack), Woken),
+            "the host did not log that the saga role is back");
 
         await client.StopAsync();
         await sagas.StopAsync();
