@@ -45,6 +45,9 @@ differently, and no fact is missed.
   wake-up from a host of the previous version names no event types and wakes every reader of the partition as before.
   A silo of the previous version ignores the types and wakes every reader too. Checkpoints keep their form, so either
   version reads the other's.
+- **The in-process test host waits for the readers' positions.** `ExecutionModelTestHost.WaitForReadersAsync`
+  compared the stored checkpoints with the head, so it would have waited out a checkpoint held back. It now asks
+  each reader where it has read to. Found by the sample's smoke test during implementation.
 - **Unchanged:** commit order and the guarantee that a committed fact reaches every projection and saga, the
   checkpoint's fencing, pauses, rebuilds and replays, seeding at the head, waiting for a projection, retirement,
   stalls and their metrics, the poll interval's option and default, and the bus path.
@@ -60,6 +63,8 @@ _None._
 
 ### Modified Capabilities
 
+- `test-support`: *A test can run the execution model in one process* says that a reader counts as having reached
+  the head once it has read to it, whether or not it has written its checkpoint there.
 - `orleans-execution`:
   - *Projections and sagas read the store in commit order and never miss a committed fact* changes from "a commit
     wakes the readers of the partitions it touched" to the readers of those partitions whose consumer handles one of
@@ -76,6 +81,8 @@ _None._
   `ProjectionGrainOptions`, the interval after which a deferred checkpoint is written. The
   wake-up grains keep their interface, and the event types travel in the call's request context, so a rolling
   deployment mixes silos and hosts of both versions. No other public type changes, and no stored form changes.
+- **Test support:** `Stratara.Testing.Orleans`, where `WaitForReadersAsync` reads the readers' positions. No public
+  member changes.
 - **Tests:** `tests/Stratara.Orleans.IntegrationTests` on the PostgreSQL store with the native reader, and the
   portable reader where the poll's head check is concerned. A unit test in `tests/Stratara.Orleans.Tests` covers the
   relevance decision for a wake-up.

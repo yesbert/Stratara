@@ -49,6 +49,9 @@ idle silo asks the store a few questions per partition and poll interval.
   wake-up is applied within about one and a half poll intervals rather than one. A committed position reader that
   does not override `ICommittedPositionReader.HeadAsync` keeps polling as before.
 
+- **`ExecutionModelTestHost.WaitForReadersAsync` waits for the readers' positions**, not their stored checkpoints,
+  so it returns once every reader has read to the head, whether or not it has written its checkpoint there yet.
+
 **Upgrading:** nothing to do. Hosts and silos of 4.6.0 and of this release mix in a rolling deployment: the cluster
 wake-up keeps its form, an earlier host's wake-up wakes every reader, and an earlier silo wakes every reader of a newer
 host's wake-up. Checkpoints keep their form.

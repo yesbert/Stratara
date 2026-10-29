@@ -33,6 +33,33 @@ public sealed class ExecutionModelTestHostTests
         Assert.True(clock.Elapsed < Budget, $"took {clock.Elapsed}");
     }
 
+    /// <summary>
+    /// Scenario <em>A projection's reader holds its checkpoint back</em>: a projection that applies none of the facts
+    /// holds its checkpoint back for a minute, and the wait still returns once its reader has read past them.
+    /// </summary>
+    [Fact]
+    public async Task The_wait_for_the_readers_returns_while_a_reader_holds_its_checkpoint_back()
+    {
+        var clock = Stopwatch.StartNew();
+        var runs = new Runs();
+        await using var host = await ExecutionModelTestHost.CreateAsync(services => Commands(services, runs)
+            .AddScoped<IProjection, DepositsOnlyProjection>()
+            .AddStrataraProjectionGrains(options => options.IdleCheckpointInterval = TimeSpan.FromMinutes(1)));
+        var accountId = Guid.NewGuid();
+
+        await host.DispatchAsync(new OpenAccount(accountId, 100m), TestContext.Current.CancellationToken);
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(100m, runs.Balances[accountId]);
+        Assert.True(clock.Elapsed < Budget, $"took {clock.Elapsed}");
+    }
+
+    /// <summary>A projection that applies only deposits, so an opened account is nothing to it.</summary>
+    public sealed class DepositsOnlyProjection : IProjection
+    {
+        public Task HandleAsync(IEvent<AmountDeposited> @event, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     [Fact]
     public async Task A_timer_fires_within_seconds()
     {

@@ -82,12 +82,7 @@ public sealed class CommitWakeUpTargetTests
             new SagaRelevances(services.GetRequiredService<IServiceScopeFactory>(), registrations));
         var woken = new List<string>();
         var grains = new Mock<IGrainFactory>();
-        grains.Setup(f => f.GetGrain<ISagaReaderGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) =>
-        {
-            var grain = new Mock<ISagaReaderGrain>();
-            grain.Setup(g => g.NudgeAsync()).Callback(() => woken.Add(key)).Returns(Task.CompletedTask);
-            return grain.Object;
-        });
+        grains.Setup(f => f.GetGrain<ISagaReaderGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => new NudgedReader(woken, key));
 
         await target.NudgeAsync(grains.Object, partition: 2, [Incremented]);
         Assert.Equal([StoreReaderGrainKey.Of(SagaReaderGrain.ConsumerOf(process.GetType().Name), 2)], woken);
@@ -120,12 +115,7 @@ public sealed class CommitWakeUpTargetTests
 
         var woken = new List<string>();
         var grains = new Mock<IGrainFactory>();
-        grains.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) =>
-        {
-            var grain = new Mock<IProjectionGrain>();
-            grain.Setup(g => g.NudgeAsync()).Callback(() => woken.Add(key)).Returns(Task.CompletedTask);
-            return grain.Object;
-        });
+        grains.Setup(f => f.GetGrain<IProjectionGrain>(It.IsAny<string>(), null)).Returns((string key, string? _) => new NudgedReader(woken, key));
         return (target, grains.Object, woken);
     }
 
@@ -135,6 +125,34 @@ public sealed class CommitWakeUpTargetTests
         handler.Setup(h => h.GetProjectionName(projection.Object)).Returns(name);
         handler.Setup(h => h.GetRelevantEventTypes(projection.Object)).Returns([applies]);
         return projection.Object;
+    }
+
+    /// <summary>A store reader that records its wake-up under its key; the internal grain interfaces cannot be mocked.</summary>
+    private sealed class NudgedReader(List<string> woken, string key) : IProjectionGrain, ISagaReaderGrain
+    {
+        public Task NudgeAsync()
+        {
+            woken.Add(key);
+            return Task.CompletedTask;
+        }
+
+        public Task EnsureRunningAsync() => Task.CompletedTask;
+
+        public Task<int> CatchUpAsync() => Task.FromResult(0);
+
+        public Task<long> PositionAsync() => Task.FromResult(0L);
+
+        public Task<StoreReaderProgress> WaitForAsync(long position, TimeSpan budget) => Task.FromResult(new StoreReaderProgress(false, StoreReaderState.Advancing));
+
+        public Task PauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
+
+        public Task RenewPauseAsync(Guid pauser, TimeSpan lease) => Task.CompletedTask;
+
+        public Task ResumeAsync(Guid pauser) => Task.CompletedTask;
+
+        public Task PauseAsync() => Task.CompletedTask;
+
+        public Task ResumeAsync() => Task.CompletedTask;
     }
 
     private sealed record ProbeCreated(Guid Id);

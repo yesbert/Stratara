@@ -111,6 +111,11 @@
 - [x] 6.2 XML docs of `PollInterval` on both options say the poll reads only when the partition has moved
 - [x] 6.3 `CHANGELOG.md` `[Unreleased]`: Changed (wake-up and poll cost), Added (`IdleCheckpointInterval`), naming the
   measured before/after from 1.1 and 1.4
+- [x] 6.5 `ExecutionModelTestHost.WaitForReadersAsync` asks each projection and saga reader for its position
+  instead of reading the stored checkpoint (`src/Stratara.Testing.Orleans/ExecutionModelTestHost.cs`). Found by
+  `OrleansExecutionModelSampleSmokeTests` in the gauntlet. *A projection's reader holds its checkpoint back*:
+  `ExecutionModelTestHostTests.The_wait_for_the_readers_returns_while_a_reader_holds_its_checkpoint_back` times out
+  against the old wait and passes against the new one
 - [ ] 6.4 `openspec validate wake-only-the-readers-a-commit-concerns --strict`, `./scripts/local-gauntlet.sh`, and the
   integration classes touched here (`CommitWakesItsReadersTests`, `IdlePollTests`, `DeferredCheckpointKillTests`,
   `RebuildEndToEndTests`, the store wake-ups and saga tests of 2.5 and 3.3)
