@@ -24,9 +24,9 @@ jobs:
   integration:
     name: Integration suite (Testcontainers)
     runs-on: ubuntu-latest
-    # The Orleans suite alone takes around 18 minutes once its kill tests actually run; the build
-    # and the container pulls come on top.
-    timeout-minutes: 45
+    # The Orleans suite alone takes around 40 minutes on a hosted runner, its kill tests included; the
+    # build and the container pulls come on top. Every run since 4.4 took 40 to 45 minutes in all.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
