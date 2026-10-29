@@ -10,7 +10,8 @@ namespace Stratara.Orleans.Projections;
 
 /// <summary>
 /// The wake-up hint after a commit: instead of publishing the bundle, nudge the store-reading grains
-/// of every target for the partitions the bundle touched. The nudge is fire-and-forget and may be
+/// of every target for the partitions the bundle touched whose consumer applies one of the events the bundle wrote in
+/// that partition. The nudge is fire-and-forget and may be
 /// lost; the store is the truth and the poll is the safety net, so a lost nudge costs latency, never
 /// a fact. With an inner dispatcher the bundle is also published as before — the hybrid shape. With the store wake-ups
 /// registered, the readers of every store-reading role this host does not host are woken through the cluster as well.
@@ -43,8 +44,14 @@ internal sealed class OrleansEventBundleDispatcher(
 
         if (!replayState.IsReplayActive)
         {
-            var buckets = eventBundle.Events.Select(e => BucketCalculator.GetBucketId(e.StreamId)).Distinct().ToList();
-            var partitions = buckets.Select(bucket => PartitionMap.PartitionOf(bucket, _partitionCount)).Distinct().ToList();
+            var buckets = eventBundle.Events
+                .GroupBy(e => BucketCalculator.GetBucketId(e.StreamId))
+                .Select(group => (Bucket: group.Key, EventTypeNames: NamesOf(group)))
+                .ToList();
+            var partitions = eventBundle.Events
+                .GroupBy(e => PartitionMap.PartitionOf(BucketCalculator.GetBucketId(e.StreamId), _partitionCount))
+                .Select(group => (Partition: group.Key, EventTypeNames: NamesOf(group)))
+                .ToList();
             await LocalNudges.NudgeAsync(targets, grainFactory, partitions, logger);
             clusterWakeUps?.Wake(grainFactory, buckets);
         }
@@ -54,6 +61,9 @@ internal sealed class OrleansEventBundleDispatcher(
             await inner.EnqueueEventBundleAsync(eventBundle, cancellationToken);
         }
     }
+
+    private static IReadOnlyCollection<string>? NamesOf(IEnumerable<EventMessage> events) =>
+        [.. events.Select(e => e.EventTypeName).Distinct(StringComparer.Ordinal)];
 
     public Task EnqueueOutboxEntriesAsync(IEnumerable<OutboxEntry> outboxEntries, CancellationToken cancellationToken = default) =>
         inner?.EnqueueOutboxEntriesAsync(outboxEntries, cancellationToken) ?? Task.CompletedTask;

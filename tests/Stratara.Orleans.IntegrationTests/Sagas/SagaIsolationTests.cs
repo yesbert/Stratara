@@ -144,6 +144,46 @@ public sealed class SagaIsolationTests(PostgreSqlFixture postgres, RedisFixture 
         Assert.DoesNotContain(logs.Entries, entry => entry.Message.Contains("Could not deliver reminder tick", StringComparison.Ordinal) && entry.Message.Contains("RemovedSaga", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Scenario <em>A saga reader reads a batch that applies nothing</em>: a saga reader caught up over a fact its saga
+    /// does not handle writes its checkpoint past it at once, so a saga added afterwards starts past that fact and
+    /// reacts to none of it — the reason a saga reader does not hold its checkpoint back as a projection reader does.
+    /// </summary>
+    [Fact]
+    public async Task A_saga_reader_writes_its_checkpoint_past_a_batch_its_saga_applied_nothing_of()
+    {
+        const string database = "poc_saga_nothing_applied";
+        var tenantId = Guid.NewGuid();
+        var earlier = Guid.NewGuid();
+        var later = Guid.NewGuid();
+        var consumer = SagaReaderGrain.ConsumerOf(nameof(CreationOnlySaga));
+
+        var before = new IsolationLog();
+        using (var app = await StartAsync(database, before, new CapturedLogs(), [typeof(CreationOnlySaga)], siloPort: 11562, gatewayPort: 30562))
+        {
+            await AppendAsync(app.Services, tenantId, earlier, new CounterCreated(earlier));
+            await WaitForAsync(() => before.Seen(nameof(CreationOnlySaga), earlier).Count == 1, "the creation saga did not apply the creation");
+            var created = await CheckpointAsync(app.Services, consumer, PartitionOf(earlier));
+
+            await AppendAsync(app.Services, tenantId, earlier, new CounterIncremented(earlier, 1));
+            await app.Services.GetRequiredService<IGrainFactory>().GetGrain<ISagaReaderGrain>(StoreReaderGrainKey.Of(consumer, PartitionOf(earlier))).CatchUpAsync();
+
+            Assert.True(await CheckpointAsync(app.Services, consumer, PartitionOf(earlier)) > created, "the saga reader held its checkpoint back");
+            await StopAsync(app);
+        }
+
+        var after = new IsolationLog();
+        using (var app = await StartAsync(database, after, new CapturedLogs(), [typeof(CreationOnlySaga), typeof(LateSaga)], siloPort: 11563, gatewayPort: 30563))
+        {
+            await AppendAsync(app.Services, tenantId, later, new CounterCreated(later));
+            await WaitForAsync(() => after.Seen(nameof(LateSaga), later).Count == 1, "the late saga did not apply the later fact");
+            await Task.Delay(TimeSpan.FromSeconds(3));
+
+            Assert.Empty(after.Seen(nameof(LateSaga), earlier));
+            await StopAsync(app);
+        }
+    }
+
     [Fact]
     public async Task Every_saga_starts_at_the_checkpoint_the_sagas_shared_and_the_shared_reader_retires()
     {
@@ -475,6 +515,16 @@ public sealed class FailingSaga(IsolationLog log) : ISaga
 }
 
 /// <summary>A saga registered after the others.</summary>
+public sealed class CreationOnlySaga(IsolationLog log) : ISaga
+{
+    [UsedImplicitly]
+    public Task HandleAsync(CounterCreated @event, CancellationToken cancellationToken)
+    {
+        log.Record(nameof(CreationOnlySaga), @event.CounterId, "created");
+        return Task.CompletedTask;
+    }
+}
+
 public sealed class LateSaga(IsolationLog log) : ISaga
 {
     [UsedImplicitly]

@@ -19,7 +19,11 @@ public sealed class SagaGrainOptions
     /// <summary>How many entries one read from the store returns.</summary>
     public int BatchSize { get; set; } = 500;
 
-    /// <summary>The safety net: how often the grain reads the store without having been nudged.</summary>
+    /// <summary>
+    /// The safety net: how often the grain looks for entries it was not woken for. A poll reads the store only where the
+    /// grain's partition holds something past the grain's position, which the silo asks the store once for all its
+    /// grains, at most every half of this interval.
+    /// </summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>How often the cluster brings a lost grain back; not shorter than the minimum reminder period.</summary>
@@ -106,5 +110,5 @@ internal sealed class SagaGrain(
     protected override void LogRetirement() => logger.LogSharedSagaReaderRetired(Partition);
 
     /// <summary>Never reached: the grain retires when it is activated.</summary>
-    protected override Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken) => Task.FromResult(0);
+    protected override Task<BatchOutcome> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken) => Task.FromResult(new BatchOutcome(0, 0));
 }

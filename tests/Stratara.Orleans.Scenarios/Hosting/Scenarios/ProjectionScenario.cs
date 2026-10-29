@@ -10,6 +10,7 @@ using Stratara.Abstractions.Session;
 using Stratara.Contracts.Messages;
 using Stratara.Contracts.Session;
 using Stratara.Orleans.CommitOrder;
+using Stratara.Orleans.Projections;
 using Stratara.Orleans.IntegrationTests.Projections;
 using Stratara.Orleans.IntegrationTests.Store;
 using Stratara.Abstractions.CommitOrder;
@@ -33,7 +34,8 @@ public enum ProjectionPath
 /// T1 of the expectations: a host that appends events and projects them on one of the two paths,
 /// with a bundle dispatcher that can be armed to end the process the moment it is called — which is
 /// after the commit and before any publish or nudge. Commands: <c>arm-kill</c>,
-/// <c>append streamId</c>, <c>view streamId timeoutMs</c>.
+/// <c>append streamId</c>, <c>view streamId timeoutMs</c>; and, for a reader that holds its checkpoint back,
+/// <c>append-unhandled streamId</c>, <c>catch-up projection streamId</c> and <c>checkpoint projection streamId</c>.
 /// </summary>
 public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles = false) : IPocScenario
 {
@@ -73,6 +75,7 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
             .AddNpgsqlReadDbContextFactoryOn<PocReadDbContext>(settings.ReadStoreConnectionString)
             .AddAggregatesFromAssemblyContaining<ProjectionScenario>()
             .AddTrustedType<Counter>()
+            .AddTrustedType<CounterNoted>()
             .AddProjectionsFromAssemblyContaining<ProjectionScenario>()
             .AddSingleton(new ProjectionProbeControl())
             .AddSingleton(new KillSwitch())
@@ -89,6 +92,7 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
                     options =>
                     {
                         options.PollInterval = TimeSpan.FromSeconds(2);
+                        options.IdleCheckpointInterval = TimeSpan.FromMinutes(10);
                         if (settings.Profile == PocSiloProfile.Test)
                         {
                             // Below the production minimum reminder period, which the test profile lowers.
@@ -133,6 +137,28 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
                 await events.SaveChangesAsync();
                 return "ok";
             }
+            case "append-unhandled":
+            {
+                var streamId = Guid.Parse(parts[1]);
+                await using var scope = services.CreateAsyncScope();
+                scope.ServiceProvider.GetRequiredService<ISessionContextProvider>().Set(PocSessions.New());
+                var events = scope.ServiceProvider.GetRequiredService<IEventSource>();
+                await events.CreateAsync<Counter>(streamId, new CounterNoted(streamId));
+                await events.SaveChangesAsync();
+                return "ok";
+            }
+            case "catch-up":
+            {
+                var grain = services.GetRequiredService<IGrainFactory>().GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(parts[1], PartitionOf(Guid.Parse(parts[2]))));
+                return (await grain.CatchUpAsync()).ToString(CultureInfo.InvariantCulture);
+            }
+            case "checkpoint":
+            {
+                await using var scope = services.CreateAsyncScope();
+                var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>();
+                var position = await scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>().FindAsync(parts[1], PartitionOf(Guid.Parse(parts[2])), reader.Name);
+                return (position ?? 0).ToString(CultureInfo.InvariantCulture);
+            }
             case "view":
             {
                 var streamId = Guid.Parse(parts[1]);
@@ -174,6 +200,9 @@ public sealed class ProjectionScenario(ProjectionPath path, bool durableBundles 
                 return "error unknown command " + parts[0];
         }
     }
+
+    private static int PartitionOf(Guid streamId) =>
+        Stratara.Orleans.CommitOrder.PartitionMap.PartitionOf(Stratara.Shared.Partitioning.BucketCalculator.GetBucketId(streamId), new CommitOrderOptions().PartitionCount);
 }
 
 public sealed class KillSwitch

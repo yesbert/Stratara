@@ -293,7 +293,7 @@ cause of its failure, and it continues from the entry it stopped at.
 
 A reader per saga costs what a reader per projection does. With S sagas and P partitions a saga silo runs S×P
 reader activations and S×P keep-alive reminders where it ran P, a silo's start ensures S×P readers, and every wake-up
-costs a read of the store per saga. A reader's first catch-up after it is activated asks the checkpoint store once
+costs a read of the store per saga it concerns ([wake-ups after a commit](#wake-ups-after-a-commit)). A reader's first catch-up after it is activated asks the checkpoint store once
 per saga of the host whether that saga has a checkpoint in the partition, so a cold start of the cluster costs S×S×P
 such queries. Size the read and write stores' connection pools for that many readers catching up at once, as for
 projections. A silo's command handlers, readers, drain and hand-over renewals all draw from the pools of the
@@ -449,11 +449,41 @@ whose partition lives there fails with the grain call's error. Adopt the wait on
 
 ## Wake-ups after a commit
 
-A commit wakes the readers of the partitions it touched. On a silo with a store-reading role the role's own
-registration does it. On any other host that commits — an Orleans client that runs handlers in process, or a
-command silo without a reader — `AddStrataraStoreWakeUps()` does it through the cluster: one call per role and
-key of the commit, to a grain on a silo of the role, which wakes that silo's readers. Nothing waits for a
-wake-up, and a lost one costs at most the readers' `PollInterval`.
+A commit wakes, in the partitions it touched, the readers whose projection or saga applies one of the committed
+event types. On a silo with a store-reading role the role's own registration does it. On any other host that
+commits — an Orleans client that runs handlers in process, or a command silo without a reader —
+`AddStrataraStoreWakeUps()` does it through the cluster: one call per role and key of the commit, to a grain on a
+silo of the role, which wakes the readers on that silo that the commit concerns. The event types travel beside the
+call, so the call itself is the one earlier versions make: a wake-up from a host of 4.6.0 or earlier wakes every
+reader of the partition, and so does a silo of 4.6.0 or earlier that a newer host wakes. Nothing waits for a wake-up.
+
+The silo decides as the reader does when it maps the entries: an event type that an upcaster renames is decided by
+the type it is upcast to. Three kinds of reader are woken by every commit in their partitions: a stateful saga
+process, which decides from the event itself whether it handles it; every reader, when the commit holds an event type
+the silo cannot resolve, or one whose upcaster refuses an empty payload, since the wake-up carries no payload; and
+every reader of a host whose upcaster pipeline is its own rather than the framework's, which may decide from the
+payload. A commit that writes to several streams wakes, in each partition, the readers of the events it wrote there.
+A reader woken in vain reads and applies nothing.
+
+### What a reader writes, and what a poll reads
+
+A projection's reader that reads entries and applies nothing for them keeps the position past them and answers a
+wait for its projection from it, but writes it as its checkpoint only with the next batch that applies something,
+once `ProjectionGrainOptions.IdleCheckpointInterval` (30 seconds by default) has passed, or when it deactivates.
+A reader whose silo dies before that reads those entries again after it is brought back and applies nothing for
+them. `TimeSpan.Zero` writes the checkpoint after every batch, as releases before 4.6.1 did. A rebuild or a replay
+pauses the readers and discards a position they hold back, so a checkpoint returned to the beginning is not moved
+past what the rebuild must read again. A saga's reader always writes its checkpoint once it has read a batch: a saga
+added to a running deployment starts at the furthest checkpoint the host's sagas hold, and must not react to
+anything before the position they reached.
+
+A reader's poll reads the store only when its partition holds something past the reader's position. Each silo
+asks the store for a partition's head at most once per half of the poll interval, whichever of its readers asks,
+so an idle silo costs the store a few queries per partition and poll interval rather than one read per reader. A
+fact whose wake-up was lost is therefore applied within about one and a half poll intervals. A committed position
+reader of your own that does not override `ICommittedPositionReader.HeadAsync`, whose default walks the partition,
+is not asked: its readers poll as before. While a partition moves with facts a reader does not apply, that reader
+still reads once per poll.
 
 A role no silo of the cluster hosts is set aside for `StoreWakeUpOptions.AbsentRoleRetry` (ten seconds by default)
 instead of being called on every commit, and the host logs `117_131` once. A placement can also fail for a moment while
