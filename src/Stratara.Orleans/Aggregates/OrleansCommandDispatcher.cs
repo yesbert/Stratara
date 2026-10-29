@@ -287,7 +287,7 @@ internal sealed class IntentResumer(
     /// destination.
     /// </summary>
     internal bool IsExhausted(RecordedIntent intent) =>
-        intent.AttemptCount >= _maxAttempts || intent.ConflictCount > _maxConflicts;
+        intent.AttemptCount >= _maxAttempts || !IntentFailure.WithinConflictBound(intent.ConflictCount, _maxConflicts);
 
     /// <summary>
     /// Verifies the record under the host's integrity mode. A record that does not verify is kept at once under strict
@@ -358,6 +358,12 @@ internal static class IntentFailure
     /// here.
     /// </summary>
     public static bool IsConflict(Exception exception) => exception is ConcurrencyException;
+
+    /// <summary>
+    /// Whether a command that has met <paramref name="conflicts"/> conflicts may still run again under the conflict
+    /// bound <paramref name="bound"/> — the drain's resumption and the rerun after a conflict decide it alike.
+    /// </summary>
+    public static bool WithinConflictBound(int conflicts, int bound) => conflicts <= bound;
 }
 
 /// <summary>Settings for the Orleans-backed command dispatcher.</summary>

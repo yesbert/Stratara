@@ -1,8 +1,14 @@
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
+using Polly;
+using Polly.Registry;
+using Stratara.Abstractions.Messaging;
+using Stratara.Resilience;
 using Orleans.Runtime;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Mediator;
@@ -518,7 +524,9 @@ internal static class CommandExecution
     /// <summary>
     /// Runs a recorded intent under a lease that is already renewing its hand-over, and takes the lease over: it ends
     /// the lease after the handler, records the failure of an attempt that throws, and hands the record to the
-    /// completion queue once the handler has completed. A concurrency conflict is recorded as a conflict. A handler
+    /// completion queue once the handler has completed. A concurrency conflict is recorded as a conflict, and the
+    /// command runs again at once in a scope of its own, as the framework's concurrency-conflict pipeline retries,
+    /// while its recorded conflicts leave room under the conflict bound; after that it is left to the drain. A handler
     /// cancelled because the silo stops is logged and gives back the attempt its hand-over counted; the lease ends, so the
     /// drain resumes the intent elsewhere after the grace. A cancellation the silo's stop did not cause — a timeout
     /// inside the handler — is a failed attempt like any other.
@@ -530,9 +538,10 @@ internal static class CommandExecution
 
         await using (lease)
         {
+            var conflicts = new ConflictLedger();
             try
             {
-                await Wrap(() => InvokeAsync(services, envelope, throughMediator: true, stopping), around)();
+                await Wrap(() => RunAttemptsAsync(services, envelope, lease, aggregateId, conflicts, stopping), around)();
             }
             catch (CommittedEventsNotPublishedException committed)
             {
@@ -555,13 +564,106 @@ internal static class CommandExecution
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !stopping.IsCancellationRequested)
             {
-                await lease.RecordFailureAsync(ex, envelope.CommandTypeName, aggregateId);
+                if (!ReferenceEquals(ex, conflicts.Last))
+                {
+                    await lease.RecordFailureAsync(ex, envelope.CommandTypeName, aggregateId);
+                }
+                else if (conflicts.AttemptHeld)
+                {
+                    await lease.ReturnAttemptAsync();
+                }
+
                 throw;
             }
         }
 
         await services.GetRequiredService<IntentCompletionQueue>().CompleteAsync(intentId);
     }
+
+    /// <summary>
+    /// Runs the command's attempts through the framework's concurrency-conflict pipeline: the first in the scope the
+    /// hand-over created, every later one in a scope of its own, so it reads the stream again in a fresh unit of work.
+    /// The pipeline runs with the captured context, so every attempt continues on the scheduler the first ran on — the
+    /// aggregate's activation for an aggregate's command. Only a conflict the command may still be run again for reaches
+    /// the pipeline as itself; anything else passes through it untouched and leaves as it was thrown. A conflict is
+    /// recorded where it happens, in <paramref name="conflicts"/>, so the caller does not record it a second time; while
+    /// the store counts conflicts, the hand-over's attempt stays counted until the command leaves on a conflict, so it is
+    /// given back once however often the command ran. Without the pipeline there is one attempt.
+    /// </summary>
+    private static async Task RunAttemptsAsync(IServiceProvider services, AggregateCommandEnvelope envelope, IntentLease lease, Guid? aggregateId, ConflictLedger conflicts, CancellationToken stopping)
+    {
+        var pipeline = services.GetService<ResiliencePipelineProvider<string>>() is { } provider && provider.TryGetPipeline(ResilienceNames.ConcurrencyConflict, out var found)
+            ? found
+            : ResiliencePipeline.Empty;
+        var conflictBound = services.GetService<IOptions<MessageRetryOptions>>()?.Value.MaxConflictRequeues ?? new MessageRetryOptions().MaxConflictRequeues;
+        var attempt = 0;
+        var context = ResilienceContextPool.Shared.Get(continueOnCapturedContext: true, stopping);
+        try
+        {
+            await pipeline.ExecuteAsync(async _ =>
+            {
+                if (++attempt == 1)
+                {
+                    await AttemptAsync(services);
+                    return;
+                }
+
+                await using var scope = services.GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+                await AttemptAsync(scope.ServiceProvider);
+            }, context);
+        }
+        catch (PassedThrough passed)
+        {
+            ExceptionDispatchInfo.Capture(passed.InnerException ?? passed).Throw();
+        }
+        finally
+        {
+            ResilienceContextPool.Shared.Return(context);
+        }
+
+        async Task AttemptAsync(IServiceProvider attemptServices)
+        {
+            try
+            {
+                await InvokeAsync(attemptServices, envelope, throughMediator: true, stopping);
+            }
+            catch (ConcurrencyException conflict)
+            {
+                var count = await lease.CountConflictAsync(conflict, envelope.CommandTypeName, aggregateId);
+                conflicts.Recorded(conflict, attemptHeld: count is not null);
+                if (count is { } counted && IntentFailure.WithinConflictBound(counted, conflictBound))
+                {
+                    throw;
+                }
+
+                throw new PassedThrough(conflict);
+            }
+            catch (Exception ex) when (ex is not ConcurrencyException)
+            {
+                throw new PassedThrough(ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The conflict an attempt recorded last, and whether the hand-over's attempt is still counted for it — it is where
+    /// the store counted the conflict without giving the attempt back.
+    /// </summary>
+    private sealed class ConflictLedger
+    {
+        public Exception? Last { get; private set; }
+
+        public bool AttemptHeld { get; private set; }
+
+        public void Recorded(Exception conflict, bool attemptHeld)
+        {
+            Last = conflict;
+            AttemptHeld |= attemptHeld;
+        }
+    }
+
+    /// <summary>Carries an exception through the conflict pipeline without the pipeline retrying it.</summary>
+    private sealed class PassedThrough(Exception inner) : Exception(inner.Message, inner);
 
     private static Func<Task> Wrap(Func<Task> run, Func<Func<Task>, Task>? around) =>
         around is null ? run : () => around(run);

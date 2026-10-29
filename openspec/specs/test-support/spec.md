@@ -260,7 +260,9 @@ period the execution model keeps as a reminder or a poll SHALL be short enough o
 projection applies and a timer fires within seconds, and a test SHALL be able to shorten or lengthen
 them. The host SHALL expose the session it operates under, the timers, the seeding and the reset the
 execution model offers, and a wait that returns once every registered store reader has reached the
-store's head, so that a test asserts on a read model without polling it.
+store's head, so that a test asserts on a read model without polling it. A reader SHALL count as having
+reached the head when it has read to it, whether or not it has written its checkpoint there yet, so that the
+wait does not wait for a checkpoint a projection's reader holds back past entries it applied nothing for.
 
 The host's reset SHALL be usable while the host runs, because that is where a test between two tests
 uses it: it SHALL leave every registered store reader reading on from what the store holds at that
@@ -310,3 +312,9 @@ across silos belongs to an integration test against real infrastructure.
 
 - **WHEN** a test sets the host's poll interval, keep-alive or retry period to one second
 - **THEN** the host starts, with the shortened periods in force
+
+#### Scenario: A projection's reader holds its checkpoint back
+
+- **WHEN** a test commits facts that one projection applies and another does not, and waits for the readers
+- **THEN** the wait returns within seconds, although the other projection's reader has not written its checkpoint
+  past those facts

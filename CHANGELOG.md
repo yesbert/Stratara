@@ -16,18 +16,26 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-On the Orleans execution model, a commit woke every projection and saga reader of each partition it touched,
-whatever it had committed. Every one of them read the new entries and wrote its checkpoint, also when it applied
-nothing, and every reader polled the store on its own. The cost grew with consumers × partitions rather than with
-the work: with 68 projections and sagas, ten single-event commands cost 680 checkpoint writes, and an idle silo
-kept the store busy with hundreds of reads a second. A commit now costs work only for the readers it concerns, and an
-idle silo asks the store a few questions per partition and poll interval.
+A release about two costs of the Orleans execution model that grew with the deployment rather than with the work.
+
+A commit woke every projection and saga reader of each partition it touched, whatever it had committed. Every one of
+them read the new entries and wrote its checkpoint, also when it applied nothing, and every reader polled the store on
+its own: with 68 projections and sagas, ten single-event commands cost 680 checkpoint writes, and an idle silo kept the
+store busy with hundreds of reads a second. A commit now costs work only for the readers it concerns, and an idle silo
+asks the store a few questions per partition and poll interval.
+
+A recorded command whose handler met a concurrency conflict waited for its hand-over to lapse, 30 seconds by default,
+before the drain ran it again; on the bus a conflicting message is redelivered at once. It now runs again within
+moments.
 
 ### Added
 
 - **`ProjectionGrainOptions.IdleCheckpointInterval`** (default 30 seconds) bounds how long a projection's reader may
   hold its checkpoint back past entries it applied nothing for. `TimeSpan.Zero` writes the checkpoint after every
   batch, as before.
+- **`ICommandIntentStore.CountConflictAsync`** counts a conflict and records it without giving the attempt back, and
+  answers how many conflicts the command has met. The default records through `RecordConflictAsync` and answers
+  `null`, so an intent store of your own compiles and behaves as before; the framework's store implements it.
 
 ### Changed
 
@@ -50,13 +58,20 @@ idle silo asks the store a few questions per partition and poll interval.
   readers polling every 500 ms read the store about 960 times in five seconds before and not at all now. A lost
   wake-up is applied within about one and a half poll intervals rather than one. A committed position reader that
   does not override `ICommittedPositionReader.HeadAsync` keeps polling as before.
-
+- **A conflicting recorded command runs again at once.** The silo that ran it runs it again in a unit of work of its
+  own while it still holds the hand-over, pausing as the `ResilienceNames.ConcurrencyConflict` pipeline does (five
+  retries from 50 ms), on the aggregate activation's scheduler. A heavy command keeps its permit. Every conflict is
+  still recorded and counted, and the command runs again only while its conflicts stay within
+  `MessageRetryOptions.MaxConflictRequeues`, so a command that conflicts on every attempt runs as often as before and
+  is kept. The hand-over's attempt is given back once when the command leaves on a conflict, however often it ran.
+  After the pipeline's retries the drain resumes it as before.
 - **`ExecutionModelTestHost.WaitForReadersAsync` waits for the readers' positions**, not their stored checkpoints,
   so it returns once every reader has read to the head, whether or not it has written its checkpoint there yet.
 
 **Upgrading:** nothing to do. Hosts and silos of 4.6.0 and of this release mix in a rolling deployment: the cluster
 wake-up keeps its form, an earlier host's wake-up wakes every reader, and an earlier silo wakes every reader of a newer
-host's wake-up. Checkpoints keep their form.
+host's wake-up. Checkpoints keep their form. An intent store of your own keeps the old timing after a conflict until
+it implements `CountConflictAsync`.
 
 ## [4.6.0] — 2026-10-28
 
