@@ -212,7 +212,7 @@ public sealed class StoreReaderLoopTests
         Assert.Equal(3, position);
         Assert.False(loop.DeferralDue);
 
-        await loop.FlushDeferredAsync();
+        await loop.FlushDeferredAsync(CancellationToken.None);
 
         Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
     }
@@ -240,7 +240,7 @@ public sealed class StoreReaderLoopTests
         await loop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, 0)), static () => false, CancellationToken.None);
 
         loop.Invalidate();
-        await loop.FlushDeferredAsync();
+        await loop.FlushDeferredAsync(CancellationToken.None);
 
         Assert.Equal(0, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
     }

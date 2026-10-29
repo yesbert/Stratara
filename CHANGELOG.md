@@ -34,9 +34,11 @@ idle silo asks the store a few questions per partition and poll interval.
 - **A commit wakes only the readers whose projection or saga applies one of its event types.** This holds for the
   wake-up on a silo with a store-reading role and for `AddStrataraStoreWakeUps()`. Woken by every commit as before:
   a stateful saga process, which decides from the event itself, and every reader when the commit holds an event type
-  the silo cannot resolve, one an upcaster is registered for, or when the host's upcaster pipeline is its own. In a
-  test host with six projections of which one applied the commit, ten commits cost 59 store reads before and only the
-  applying projection's reads now; a commit nobody applies costs none.
+  the silo cannot resolve or whose upcaster refuses an empty payload, or when the host's upcaster pipeline is its own.
+  A multi-stream commit wakes, in each partition, the readers of the events it wrote there. In a test host with six
+  projections of which one applied the commit, ten commits cost 59 store reads before and only the applying
+  projection's reads now, and a commit nobody applies costs no read when it is made. A reader whose partition moved
+  past it still reads once at its next poll, and then waits again.
 - **A projection's reader writes its checkpoint past entries it applied nothing for later**: with the next batch that
   applies something, once `IdleCheckpointInterval` has passed, or when it deactivates. It answers waits for its
   projection from the position it holds. A reader whose silo dies before the write reads those entries again and

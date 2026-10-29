@@ -319,22 +319,8 @@ internal sealed class SagaNudgeTarget(SagaRegistrations registrations, StoreRead
     public ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) =>
         StoreReaderPause.PauseAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))], lease);
 
-    private bool Concerns(string consumer, IReadOnlyCollection<string>? eventTypeNames)
-    {
-        if (eventTypeNames is null || relevance is null || sagas is null)
-        {
-            return true;
-        }
-
-        try
-        {
-            return relevance.Concerns(sagas.RelevanceOf(consumer), eventTypeNames);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return true;
-        }
-    }
+    private bool Concerns(string consumer, IReadOnlyCollection<string>? eventTypeNames) =>
+        sagas is null || CommitRelevance.Concerns(relevance, () => sagas.RelevanceOf(consumer), eventTypeNames);
 
     private static PausedReader Reader(IGrainFactory grainFactory, string name, int partition)
     {

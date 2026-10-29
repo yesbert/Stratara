@@ -48,20 +48,22 @@ internal sealed class PartitionHeads(IServiceScopeFactory scopeFactory)
                 return asking;
             }
 
-            var ask = AskAsync(partition);
+            var ask = AskAsync(partition, maxAge * 2);
             _asking[partition] = ask;
             return ask;
         }
     }
 
     /// <summary>
-    /// Asks the store for the head. The time it is recorded with is taken before the question, so a head is never
-    /// thought younger than it is.
+    /// Asks the store for the head, for no longer than <paramref name="timeout"/>, so that a question the store does not
+    /// answer holds the polls that wait for it for no longer than a poll interval. The time it is recorded with is taken
+    /// before the question, so a head is never thought younger than it is.
     /// </summary>
-    private async Task<long?> AskAsync(int partition)
+    private async Task<long?> AskAsync(int partition, TimeSpan timeout)
     {
         await Task.Yield();
         var takenAt = Stopwatch.GetTimestamp();
+        using var expiry = new CancellationTokenSource(timeout);
         try
         {
             using var scope = scopeFactory.CreateScope();
@@ -72,7 +74,7 @@ internal sealed class PartitionHeads(IServiceScopeFactory scopeFactory)
                 return null;
             }
 
-            var head = await reader.HeadAsync(partition);
+            var head = await reader.HeadAsync(partition, expiry.Token);
             lock (_gate)
             {
                 _heads[partition] = (head, takenAt);
@@ -80,8 +82,9 @@ internal sealed class PartitionHeads(IServiceScopeFactory scopeFactory)
 
             return head;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || expiry.IsCancellationRequested)
         {
+            _ = ex;
             return null;
         }
         finally

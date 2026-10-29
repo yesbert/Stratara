@@ -78,7 +78,7 @@ public sealed class CommitWakeUpTargetTests
         var target = new SagaNudgeTarget(
             registrations,
             new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System),
-            new CommitRelevance(Resolver(), new EventUpcasterPipeline([]), []),
+            new CommitRelevance(Resolver(), new EventUpcasterPipeline([])),
             new SagaRelevances(services.GetRequiredService<IServiceScopeFactory>(), registrations));
         var woken = new List<string>();
         var grains = new Mock<IGrainFactory>();
@@ -110,7 +110,7 @@ public sealed class CommitWakeUpTargetTests
             .AddSingleton(Projection(handler, "increment", typeof(ProbeIncremented)));
         var registrations = new ProjectionRegistrations(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
 
-        var relevance = new CommitRelevance(Resolver(), new EventUpcasterPipeline([]), []);
+        var relevance = new CommitRelevance(Resolver(), new EventUpcasterPipeline([]));
         var target = new ProjectionNudgeTarget(registrations, new StoreReaderLease(StoreReaderLease.DefaultDuration, TimeProvider.System), relevance);
 
         var woken = new List<string>();

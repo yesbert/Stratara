@@ -8,7 +8,9 @@ namespace Stratara.Orleans.Sagas;
 /// The events each saga the host registers applies, by its consumer, as its reader decides them, which decide whether a
 /// commit wakes the saga's readers: the types a stateless saga declares a handler for, or any resolvable type for a
 /// stateful process, which decides from the event itself. Worked out once, the first time they are asked for, by
-/// building each saga in a scope of its own; a failure to work them out is not kept, so the next question tries again.
+/// building the sagas in a scope of their own. Where they cannot be built there — a saga that needs a session to be
+/// constructed — none of them has a relevance, and every commit wakes every saga, as before; the answer is kept either
+/// way, so a commit never pays for building the sagas.
 /// </summary>
 internal sealed class SagaRelevances(IServiceScopeFactory scopeFactory, SagaRegistrations registrations)
 {
@@ -27,10 +29,20 @@ internal sealed class SagaRelevances(IServiceScopeFactory scopeFactory, SagaRegi
                 return known;
             }
 
+            var byConsumer = Build();
+            Volatile.Write(ref _byConsumer, byConsumer);
+            return byConsumer;
+        }
+    }
+
+    private Dictionary<string, EventRelevance> Build()
+    {
+        var byConsumer = new Dictionary<string, EventRelevance>(StringComparer.Ordinal);
+        try
+        {
             using var scope = scopeFactory.CreateScope();
             var handler = scope.ServiceProvider.GetRequiredService<ISagaHandler>();
             var sagas = scope.ServiceProvider.GetServices<ISaga>().ToList();
-            var byConsumer = new Dictionary<string, EventRelevance>(StringComparer.Ordinal);
             foreach (var consumer in registrations.Consumers)
             {
                 var type = registrations.TypeOf(consumer[SagaReaderGrain.ConsumerPrefix.Length..]);
@@ -41,9 +53,13 @@ internal sealed class SagaRelevances(IServiceScopeFactory scopeFactory, SagaRegi
                         : EventRelevance.ForTypes(handler.GetRelevantEventTypes(saga));
                 }
             }
-
-            Volatile.Write(ref _byConsumer, byConsumer);
-            return byConsumer;
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            byConsumer.Clear();
+        }
+
+        return byConsumer;
     }
 }

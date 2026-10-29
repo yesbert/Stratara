@@ -175,11 +175,21 @@ internal sealed class ProjectionGrain(
 
         return await Loop.ApplyEachAsync(batch, async (entry, entryToken) =>
         {
+            IReadOnlyList<IEvent>? events = null;
+            if (_relevance is { } knownRelevance && _relevant is { } knownNames)
+            {
+                events = await eventMapperFactory.MapToEventsAsync([entry], knownRelevance, entryToken);
+                if (!events.Any(e => knownNames.Contains(e.EventTypeName)))
+                {
+                    return false;
+                }
+            }
+
             var (handler, projection) = await runs.EnterAsync(entry);
             _relevant ??= new HashSet<string>(handler.GetRelevantEventTypeNames(projection), StringComparer.Ordinal);
             _relevance ??= EventRelevance.ForTypes(handler.GetRelevantEventTypes(projection));
 
-            var events = await eventMapperFactory.MapToEventsAsync([entry], _relevance, entryToken);
+            events ??= await eventMapperFactory.MapToEventsAsync([entry], _relevance, entryToken);
             var relevantEvents = events.Where(e => _relevant.Contains(e.EventTypeName)).ToList();
             if (relevantEvents.Count == 0)
             {
@@ -364,7 +374,7 @@ internal sealed class ProjectionNudgeTarget(ProjectionRegistrations registration
     /// <exception cref="AggregateException">A wake-up could not be sent for one or more projections.</exception>
     public Task NudgeAsync(IGrainFactory grainFactory, int partition, IReadOnlyCollection<string>? eventTypeNames) =>
         LocalNudges.Send(
-            _names.Where(name => eventTypeNames is null || relevance is null || relevance.Concerns(registrations.RelevanceOf(name), eventTypeNames)),
+            _names.Where(name => CommitRelevance.Concerns(relevance, () => registrations.RelevanceOf(name), eventTypeNames)),
             name => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)).NudgeAsync());
 
     public async Task EnsureRunningAsync(IGrainFactory grainFactory, int partition)

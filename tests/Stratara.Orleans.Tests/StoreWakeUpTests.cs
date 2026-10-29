@@ -75,7 +75,7 @@ public sealed class StoreWakeUpTests
         global::Orleans.Runtime.RequestContext.Set(WakeUpEventTypes.Key, "the caller's own");
         try
         {
-            wakeUps.Wake(grains.Factory, [5], ["Created", "Incremented"]);
+            wakeUps.Wake(grains.Factory, [(5, ["Created", "Incremented"])]);
 
             Assert.Equal(new[] { "Created", "Incremented" }, grains.ProjectionCarriedTypes);
             Assert.Equal("the caller's own", global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
@@ -85,7 +85,7 @@ public sealed class StoreWakeUpTests
             global::Orleans.Runtime.RequestContext.Remove(WakeUpEventTypes.Key);
         }
 
-        wakeUps.Wake(grains.Factory, [5], ["Created"]);
+        wakeUps.Wake(grains.Factory, [(5, ["Created"])]);
         Assert.Null(global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
 
         wakeUps.Wake(grains.Factory, [5]);

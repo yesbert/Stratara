@@ -54,7 +54,10 @@ internal sealed class ProjectionRegistrations(IServiceScopeFactory scopeFactory)
                 if (byName.Add(name))
                 {
                     names.Add(name);
-                    relevance[name] = EventRelevance.ForTypes(handler.GetRelevantEventTypes(projection));
+                    if (RelevanceOf(handler, projection) is { } applies)
+                    {
+                        relevance[name] = applies;
+                    }
                 }
 
                 byType.TryAdd(projection.GetType(), name);
@@ -63,6 +66,23 @@ internal sealed class ProjectionRegistrations(IServiceScopeFactory scopeFactory)
             snapshot = new Snapshot(names, byName, byType, relevance);
             Volatile.Write(ref _snapshot, snapshot);
             return snapshot;
+        }
+    }
+
+    /// <summary>
+    /// The events <paramref name="projection"/> applies, or <see langword="null"/> where they cannot be worked out — then
+    /// every commit wakes its readers, and its own reader reports the failure where it applies.
+    /// </summary>
+    private static EventRelevance? RelevanceOf(IProjectionHandler handler, IProjection projection)
+    {
+        try
+        {
+            return EventRelevance.ForTypes(handler.GetRelevantEventTypes(projection));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return null;
         }
     }
 

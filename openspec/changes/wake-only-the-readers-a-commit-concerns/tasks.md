@@ -28,9 +28,9 @@
   (`src/Stratara.Shared/EventSourcing/Mapping/EventMapperFactory.cs`, note in this file). Result: the mapper decides
   `Reads(name, payload, relevance)` after `IEventUpcasterPipeline.Upcast`. The framework's `EventUpcasterPipeline`
   keys upcasters by the source type's version-independent name, and a pipeline of the host's own may read the
-  payload. A wake-up carries no payload, so a name is undecidable when an upcaster's source carries its simple name,
-  when the type resolver does not know it, when the pipeline is not the framework's, or when no resolver is
-  registered. An undecidable name wakes every reader
+  payload. A wake-up carries no payload, so the name is upcast through the framework's pipeline with an empty payload
+  and the name it ends at is resolved; it is undecidable, and wakes every reader, when that fails, when the pipeline
+  is not the framework's, or when no resolver is registered (design D1, revised after the code review)
 - [x] 2.2 `ProjectionRegistrations` keeps, per projection name, the relevant event type names it already builds the
   projections for. `SagaRegistrations` does the same, with "always" for a saga whose relevance `IsAnyResolvable`
   (`src/Stratara.Orleans/Projections/ProjectionRegistrations.cs`, `src/Stratara.Orleans/Sagas/SagaRegistrations.cs`)

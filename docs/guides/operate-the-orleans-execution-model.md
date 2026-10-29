@@ -443,11 +443,13 @@ silo of the role, which wakes the readers on that silo that the commit concerns.
 call, so the call itself is the one earlier versions make: a wake-up from a host of 4.6.0 or earlier wakes every
 reader of the partition, and so does a silo of 4.6.0 or earlier that a newer host wakes. Nothing waits for a wake-up.
 
-Three kinds of reader are woken by every commit in their partitions: a stateful saga process, which decides from
-the event itself whether it handles it; every reader, when the commit holds an event type the silo cannot resolve
-or one an upcaster is registered for, since the type it upcasts to is known only from the payload; and every
-reader of a host whose upcaster pipeline is its own rather than the framework's. A reader woken in vain reads and
-applies nothing.
+The silo decides as the reader does when it maps the entries: an event type that an upcaster renames is decided by
+the type it is upcast to. Three kinds of reader are woken by every commit in their partitions: a stateful saga
+process, which decides from the event itself whether it handles it; every reader, when the commit holds an event type
+the silo cannot resolve, or one whose upcaster refuses an empty payload, since the wake-up carries no payload; and
+every reader of a host whose upcaster pipeline is its own rather than the framework's, which may decide from the
+payload. A commit that writes to several streams wakes, in each partition, the readers of the events it wrote there.
+A reader woken in vain reads and applies nothing.
 
 ### What a reader writes, and what a poll reads
 

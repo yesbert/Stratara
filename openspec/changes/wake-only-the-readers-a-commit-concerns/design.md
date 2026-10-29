@@ -47,9 +47,17 @@ process (`EventRelevance.IsAnyResolvable`) is marked "always". `INudgeTarget.Nud
 (`EventMessage.EventTypeName` of the bundle's events) and nudges a consumer's grain only when one of the names is in
 its set, when the consumer is "always", or when a name is undecidable.
 
-A name is **undecidable** when the silo has an upcaster registered for it, or cannot resolve it to an event type.
-After upcasting, the reader might map such an event to a type a consumer handles, so every reader is woken. The rule
-leans to waking: a wrongly woken reader costs one read, a wrongly skipped one costs poll latency.
+The silo decides a name as the mapper does: it upcasts it through the host's `EventUpcasterPipeline` with an empty
+payload, which is enough because that pipeline chains upcasters by name, and resolves the name it ends at. A name is
+**undecidable**, and wakes every reader, when the type resolver does not know the name it ends at, when an upcaster
+refuses the empty payload, when the host's pipeline is its own (it may decide from the payload), or when no resolver
+or pipeline is registered. The rule leans to waking: a wrongly woken reader costs one read, a wrongly skipped one costs
+poll latency. The names are grouped per partition (per key for the cluster wake-up), so a commit that writes to
+several streams wakes, in each partition, only the readers of the events it wrote there. A relevance that cannot be
+worked out — a projection whose handler throws for its types, sagas that cannot be built without a session — leaves
+that consumer woken by every commit, and is kept that way, so the commit path never pays for the failure again.
+*Revised after the code review of 2026-10-29*, which found that the first rule took the upcasters from the
+container rather than from the pipeline the mapper uses.
 *Evidence:* the matching in `ProjectionGrain.ApplyBatchAsync` (lines 164–175) and `SagaReaderGrain`; task 2.1 checks
 how `EventMapperFactory` keys its upcasters, so the undecidable test asks exactly what the mapper would.
 

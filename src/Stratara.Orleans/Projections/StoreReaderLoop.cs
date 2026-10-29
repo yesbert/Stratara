@@ -268,10 +268,10 @@ internal sealed class StoreReaderLoop(
 
     /// <summary>
     /// Writes the position the loop holds back, if it holds one, so a deactivation does not leave a successor to read
-    /// again what applied nothing. Called only while no catch-up runs and reading is not suspended; a write that fails is
-    /// given up, and the successor reads those entries again.
+    /// again what applied nothing. Called only while no catch-up runs and reading is not suspended; a write that fails or
+    /// is cancelled is given up, and the successor reads those entries again.
     /// </summary>
-    public async Task FlushDeferredAsync()
+    public async Task FlushDeferredAsync(CancellationToken cancellationToken)
     {
         if (!_positionKnown || _deferredSince is null || Running is not null)
         {
@@ -282,18 +282,19 @@ internal sealed class StoreReaderLoop(
         {
             using var scope = scopeFactory.CreateScope();
             var (reader, checkpoints) = Resolve(scope.ServiceProvider);
-            await WriteAsync(checkpoints, reader.Name, _position);
+            await WriteAsync(checkpoints, reader.Name, _position, cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
+            _ = ex;
             Invalidate();
         }
     }
 
     /// <summary>Advances the checkpoint from the position last written to <paramref name="to"/>, and holds nothing back afterwards.</summary>
-    private async Task WriteAsync(IProjectionCheckpointStore checkpoints, string readerName, long to)
+    private async Task WriteAsync(IProjectionCheckpointStore checkpoints, string readerName, long to, CancellationToken cancellationToken = default)
     {
-        await checkpoints.AdvanceAsync(consumer, partition, readerName, _written, to, CancellationToken.None);
+        await checkpoints.AdvanceAsync(consumer, partition, readerName, _written, to, cancellationToken);
         _written = to;
         _position = to;
         _deferredSince = null;

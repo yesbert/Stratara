@@ -344,7 +344,7 @@ internal abstract class StoreReaderGrain(
 
             if (!Suspended)
             {
-                await Loop.FlushDeferredAsync();
+                await Loop.FlushDeferredAsync(cancellationToken);
             }
 
             Loop.Withdraw();
