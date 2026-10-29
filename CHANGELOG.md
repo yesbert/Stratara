@@ -16,7 +16,47 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.6.0`._
+On the Orleans execution model, a commit woke every projection and saga reader of each partition it touched,
+whatever it had committed. Every one of them read the new entries and wrote its checkpoint, also when it applied
+nothing, and every reader polled the store on its own. The cost grew with consumers × partitions rather than with
+the work: with 68 projections and sagas, ten single-event commands cost 680 checkpoint writes, and an idle silo
+kept the store busy with hundreds of reads a second. A commit now costs work only for the readers it concerns, and an
+idle silo asks the store a few questions per partition and poll interval.
+
+### Added
+
+- **`ProjectionGrainOptions.IdleCheckpointInterval`** (default 30 seconds) bounds how long a projection's reader may
+  hold its checkpoint back past entries it applied nothing for. `TimeSpan.Zero` writes the checkpoint after every
+  batch, as before.
+
+### Changed
+
+- **A commit wakes only the readers whose projection or saga applies one of its event types.** This holds for the
+  wake-up on a silo with a store-reading role and for `AddStrataraStoreWakeUps()`. Woken by every commit as before:
+  a stateful saga process, which decides from the event itself, and every reader when the commit holds an event type
+  the silo cannot resolve or whose upcaster refuses an empty payload, or when the host's upcaster pipeline is its own.
+  A multi-stream commit wakes, in each partition, the readers of the events it wrote there. In a test host with six
+  projections of which one applied the commit, ten commits cost 59 store reads before and only the applying
+  projection's reads now, and a commit nobody applies costs no read when it is made. A reader whose partition moved
+  past it still reads once at its next poll, and then waits again.
+- **A projection's reader writes its checkpoint past entries it applied nothing for later**: with the next batch that
+  applies something, once `IdleCheckpointInterval` has passed, or when it deactivates. It answers waits for its
+  projection from the position it holds. A reader whose silo dies before the write reads those entries again and
+  applies nothing for them. A rebuild or a replay discards a position held back. A saga's reader writes its checkpoint
+  after every batch as before, because a saga added to a running deployment starts where the host's sagas have
+  written they read.
+- **A poll reads the store only when its partition holds something past the reader's position.** Each silo asks the
+  store for a partition's head at most once per half poll interval, for all its readers. In the test host, 96 idle
+  readers polling every 500 ms read the store about 960 times in five seconds before and not at all now. A lost
+  wake-up is applied within about one and a half poll intervals rather than one. A committed position reader that
+  does not override `ICommittedPositionReader.HeadAsync` keeps polling as before.
+
+- **`ExecutionModelTestHost.WaitForReadersAsync` waits for the readers' positions**, not their stored checkpoints,
+  so it returns once every reader has read to the head, whether or not it has written its checkpoint there yet.
+
+**Upgrading:** nothing to do. Hosts and silos of 4.6.0 and of this release mix in a rolling deployment: the cluster
+wake-up keeps its form, an earlier host's wake-up wakes every reader, and an earlier silo wakes every reader of a newer
+host's wake-up. Checkpoints keep their form.
 
 ## [4.6.0] — 2026-10-28
 

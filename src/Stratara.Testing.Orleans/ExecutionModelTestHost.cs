@@ -236,7 +236,8 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
 
     /// <summary>
     /// Returns once every registered store reader has applied the store up to its head in every partition — the moment a
-    /// test asserts on a read model or on what a saga did.
+    /// test asserts on a read model or on what a saga did. A reader answers with the position it has read to, so the
+    /// wait does not wait for a checkpoint a projection's reader holds back past entries it applied nothing for.
     /// </summary>
     /// <param name="timeout">How long to wait; ten seconds when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
@@ -288,21 +289,48 @@ public sealed class ExecutionModelTestHost : IAsyncDisposable
 
         var reader = scope.ServiceProvider.GetRequiredService<ICommittedPositionReader>();
         var checkpoints = scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+        var targets = scope.ServiceProvider.GetServices<INudgeTarget>().ToList();
+        var readers = new StoreReaders(
+            targets.OfType<ProjectionNudgeTarget>().SelectMany(target => target.ConsumerNames).ToHashSet(StringComparer.Ordinal),
+            targets.OfType<SagaNudgeTarget>().SelectMany(target => target.ConsumerNames).ToHashSet(StringComparer.Ordinal));
+        var grains = Services.GetRequiredService<IGrainFactory>();
         var partitions = scope.ServiceProvider.GetRequiredService<IOptions<CommitOrderOptions>>().Value.PartitionCount;
         for (var partition = 0; partition < partitions; partition++)
         {
             var head = await reader.HeadAsync(partition, cancellationToken);
             foreach (var consumer in consumers)
             {
-                var checkpoint = await checkpoints.GetAsync(consumer, partition, reader.Name, cancellationToken);
-                if (checkpoint < head)
+                var position = await readers.PositionAsync(grains, checkpoints, reader.Name, consumer, partition, cancellationToken);
+                if (position < head)
                 {
-                    return (consumer, partition, checkpoint, head);
+                    return (consumer, partition, position, head);
                 }
             }
         }
 
         return null;
+    }
+
+    /// <summary>The consumers of the host's projection and saga readers.</summary>
+    private sealed record StoreReaders(HashSet<string> Projections, HashSet<string> Sagas)
+    {
+        /// <summary>
+        /// Where a reader has read to: the reader's own answer — the position it holds where it knows it, the checkpoint
+        /// otherwise — and the checkpoint store's for a consumer that is neither a projection nor a saga, as a test's own
+        /// target stands for.
+        /// </summary>
+        public async Task<long> PositionAsync(IGrainFactory grains, IProjectionCheckpointStore checkpoints, string readerName, string consumer, int partition, CancellationToken cancellationToken)
+        {
+            var key = StoreReaderGrainKey.Of(consumer, partition);
+            if (Sagas.Contains(consumer))
+            {
+                return await grains.GetGrain<ISagaReaderGrain>(key).PositionAsync();
+            }
+
+            return Projections.Contains(consumer)
+                ? await grains.GetGrain<IProjectionGrain>(key).PositionAsync()
+                : await checkpoints.GetAsync(consumer, partition, readerName, cancellationToken);
+        }
     }
 
     private static IHost Build(string connectionString, ExecutionModelTestHostOptions settings, TestSessionContextProvider session, Action<IServiceCollection>? configure)

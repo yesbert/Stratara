@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -8,6 +9,15 @@ using Stratara.Diagnostics;
 using Stratara.Orleans.Diagnostics;
 
 namespace Stratara.Orleans.Projections;
+
+/// <summary>What applying one batch came to: how far it got, and how many of those entries handed anything to a handler.</summary>
+/// <param name="Processed">The index of the first entry not applied — the batch's count when every entry applied.</param>
+/// <param name="Effective">How many of the applied entries handed anything to a handler.</param>
+internal readonly record struct BatchOutcome(int Processed, int Effective)
+{
+    /// <summary>Every one of <paramref name="processed"/> entries counts as effective: what a batch that cannot tell reports.</summary>
+    public static BatchOutcome AllEffective(int processed) => new(processed, processed);
+}
 
 /// <summary>
 /// The catch-up every store-reading grain runs: read after the checkpoint, apply batch by batch, and
@@ -23,7 +33,11 @@ namespace Stratara.Orleans.Projections;
 /// failed — a checkpoint the store refused to advance among the reasons. Before it first reads the checkpoint it
 /// runs the grain's start once, which may give a consumer without a checkpoint one; a start that fails is run again
 /// by the next catch-up. The grain is the only writer of its
-/// checkpoint otherwise, so the cached position is the stored one. A partition that
+/// checkpoint otherwise, so the cached position is the stored one — or, where a batch applied nothing and
+/// <see cref="IdleCheckpointInterval"/> lets the write wait, ahead of it: the position past such a batch is written with
+/// the next batch that applies something, by the first catch-up that ends once the interval has passed, or by
+/// <see cref="FlushDeferredAsync"/>, and forgetting the position forgets that write, since whoever made the loop forget
+/// may have changed the checkpoint. A partition that
 /// stops at an entry is logged with the entry and counted as stalled until it advances again, and the
 /// time recorded with the oldest entry it has not applied is reported for the lag gauge. The token a
 /// catch-up receives reaches every store read it makes, and a cancelled catch-up stops at the next
@@ -45,6 +59,8 @@ internal sealed class StoreReaderLoop(
     ];
 
     private long _position;
+    private long _written;
+    private long? _deferredSince;
     private bool _positionKnown;
     private long _invalidations;
     private bool _started = start is null;
@@ -61,6 +77,15 @@ internal sealed class StoreReaderLoop(
     /// the loop runs on, so a grain can answer whoever waits for a position.
     /// </summary>
     public Action? PositionChanged { get; set; }
+
+    /// <summary>
+    /// How long the position past batches that applied nothing may go unwritten; <see cref="TimeSpan.Zero"/>, the default,
+    /// writes it after every batch.
+    /// </summary>
+    public TimeSpan IdleCheckpointInterval { get; init; }
+
+    /// <summary>Whether the loop holds a position it has not written and the interval for writing it has passed.</summary>
+    public bool DeferralDue => _positionKnown && _deferredSince is { } since && Stopwatch.GetElapsedTime(since) >= IdleCheckpointInterval;
 
     /// <summary>Whether the partition is stopped at an entry it cannot apply.</summary>
     public bool StalledOnEntry => _stalledOnEntry;
@@ -84,6 +109,7 @@ internal sealed class StoreReaderLoop(
     public void Invalidate()
     {
         _positionKnown = false;
+        _deferredSince = null;
         _invalidations++;
     }
 
@@ -128,11 +154,11 @@ internal sealed class StoreReaderLoop(
     /// finds reading suspended forgets its position, because whoever suspends it — a pause, a
     /// replay — may change the checkpoint before reading resumes.
     /// </summary>
-    /// <param name="applyBatch">What one batch means; see <see cref="CatchUpAsync(Func{CommittedBatch, CancellationToken, Task{int}}, Func{bool}, CancellationToken)"/>.</param>
+    /// <param name="applyBatch">What one batch means; see <see cref="CatchUpAsync(Func{CommittedBatch, CancellationToken, Task{BatchOutcome}}, Func{bool}, CancellationToken)"/>.</param>
     /// <param name="suspended">Whether reading is off for now — paused, or a replay is active.</param>
     /// <param name="cancellationToken">Stops a new loop at the next batch boundary; a running loop keeps the token it started with.</param>
     /// <returns>The loop; completes with how many entries it applied.</returns>
-    public Task<int> RequestCatchUp(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken = default)
+    public Task<int> RequestCatchUp(Func<CommittedBatch, CancellationToken, Task<BatchOutcome>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken = default)
     {
         _dirty = true;
         if (Running is { } running)
@@ -144,7 +170,7 @@ internal sealed class StoreReaderLoop(
         return _running;
     }
 
-    private async Task<int> RunLoopAsync(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
+    private async Task<int> RunLoopAsync(Func<CommittedBatch, CancellationToken, Task<BatchOutcome>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
     {
         var total = 0;
         while (_dirty && !cancellationToken.IsCancellationRequested)
@@ -187,11 +213,18 @@ internal sealed class StoreReaderLoop(
         CatchUpAsync(applyBatch, static () => false, CancellationToken.None);
 
     /// <summary>
+    /// <see cref="CatchUpAsync(Func{CommittedBatch, CancellationToken, Task{BatchOutcome}}, Func{bool}, CancellationToken)"/> for a batch that
+    /// reports only how far it got: every entry it applied counts as effective, so the checkpoint is written after every batch.
+    /// </summary>
+    public Task<int> CatchUpAsync(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken) =>
+        CatchUpAsync(async (batch, token) => BatchOutcome.AllEffective(await applyBatch(batch, token)), suspended, cancellationToken);
+
+    /// <summary>
     /// Reads and applies until a batch says the store had nothing more, a batch applies only partly,
     /// <paramref name="suspended"/> says to stop at the next batch boundary — a pause does not wait for a
     /// partition that is far behind to catch up first — or <paramref name="cancellationToken"/> is cancelled.
     /// </summary>
-    public async Task<int> CatchUpAsync(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
+    public async Task<int> CatchUpAsync(Func<CommittedBatch, CancellationToken, Task<BatchOutcome>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
     {
         try
         {
@@ -213,15 +246,69 @@ internal sealed class StoreReaderLoop(
     /// is advanced from the position the loop last saw, so a store that guards it refuses a write from an activation
     /// that another has overtaken; an entry that
     /// cannot be applied is the batch's own affair. The checkpoint for the entries a batch applied — cut or whole — is
-    /// written with a token of its own, because those entries are applied whether or not the catch-up was cancelled.
+    /// written with a token of its own, because those entries are applied whether or not the catch-up was cancelled. A
+    /// position the loop held back is written once the catch-up ends, where the interval has passed and reading is not
+    /// suspended.
     /// </summary>
-    private async Task<int> ReadAndApplyAsync(Func<CommittedBatch, CancellationToken, Task<int>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
+    private async Task<int> ReadAndApplyAsync(Func<CommittedBatch, CancellationToken, Task<BatchOutcome>> applyBatch, Func<bool> suspended, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var (reader, checkpoints) = Resolve(scope.ServiceProvider);
         var readerName = reader.Name;
         await EnsurePositionAsync(checkpoints, readerName, cancellationToken);
 
+        var total = await ReadAndApplyBatchesAsync(reader, checkpoints, applyBatch, suspended, cancellationToken);
+        if (DeferralDue && !suspended())
+        {
+            await WriteAsync(checkpoints, readerName, _position);
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// Writes the position the loop holds back, if it holds one, so a deactivation does not leave a successor to read
+    /// again what applied nothing. Called only while no catch-up runs and reading is not suspended; a write that fails or
+    /// is cancelled is given up, and the successor reads those entries again.
+    /// </summary>
+    public async Task FlushDeferredAsync(CancellationToken cancellationToken)
+    {
+        if (!_positionKnown || _deferredSince is null || Running is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var (reader, checkpoints) = Resolve(scope.ServiceProvider);
+            await WriteAsync(checkpoints, reader.Name, _position, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _ = ex;
+            Invalidate();
+        }
+    }
+
+    /// <summary>Advances the checkpoint from the position last written to <paramref name="to"/>, and holds nothing back afterwards.</summary>
+    private async Task WriteAsync(IProjectionCheckpointStore checkpoints, string readerName, long to, CancellationToken cancellationToken = default)
+    {
+        await checkpoints.AdvanceAsync(consumer, partition, readerName, _written, to, cancellationToken);
+        _written = to;
+        _position = to;
+        _deferredSince = null;
+        PositionChanged?.Invoke();
+    }
+
+    private async Task<int> ReadAndApplyBatchesAsync(
+        ICommittedPositionReader reader,
+        IProjectionCheckpointStore checkpoints,
+        Func<CommittedBatch, CancellationToken, Task<BatchOutcome>> applyBatch,
+        Func<bool> suspended,
+        CancellationToken cancellationToken)
+    {
+        var readerName = reader.Name;
         var total = 0;
 
         while (!suspended() && !cancellationToken.IsCancellationRequested)
@@ -235,7 +322,8 @@ internal sealed class StoreReaderLoop(
             }
 
             StoreReaderLag.Report(consumer, partition, batch.Entries[0].Entry.Timestamp);
-            var applied = await applyBatch(batch, cancellationToken);
+            var outcome = await applyBatch(batch, cancellationToken);
+            var applied = outcome.Processed;
             total += applied;
             if (applied > 0)
             {
@@ -246,20 +334,26 @@ internal sealed class StoreReaderLoop(
             {
                 StoreReaderLag.Report(consumer, partition, batch.Entries[applied].Entry.Timestamp);
                 var resumeAt = batch.ResumePositionBefore(applied, _position);
-                if (resumeAt != _position)
+                if (resumeAt != _written)
                 {
-                    await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, resumeAt, CancellationToken.None);
-                    _position = resumeAt;
-                    PositionChanged?.Invoke();
+                    await WriteAsync(checkpoints, readerName, resumeAt);
                 }
 
                 return total;
             }
 
             MarkAdvancing(onRead: false);
-            await checkpoints.AdvanceAsync(consumer, partition, readerName, _position, batch.Position, CancellationToken.None);
-            _position = batch.Position;
-            PositionChanged?.Invoke();
+            if (outcome.Effective > 0 || IdleCheckpointInterval <= TimeSpan.Zero)
+            {
+                await WriteAsync(checkpoints, readerName, batch.Position);
+            }
+            else
+            {
+                _position = batch.Position;
+                _deferredSince ??= Stopwatch.GetTimestamp();
+                PositionChanged?.Invoke();
+            }
+
             if (!batch.HasMore)
             {
                 StoreReaderLag.Clear(consumer, partition);
@@ -276,21 +370,26 @@ internal sealed class StoreReaderLoop(
     /// failed attempt is logged; the entry the batch stops at is logged and counts the partition as
     /// stalled. A cancellation is not a failure: it ends the batch without counting a stall.
     /// </summary>
-    /// <returns>The index of the first entry that did not apply, or the batch's count.</returns>
-    public async Task<int> ApplyEachAsync(CommittedBatch batch, Func<EventStreamEntry, CancellationToken, Task> applyEntry, CancellationToken cancellationToken = default)
+    /// <param name="batch">The batch.</param>
+    /// <param name="applyEntry">Applies one entry; answers whether it handed anything to a handler.</param>
+    /// <param name="cancellationToken">Ends the batch at the entry it reaches.</param>
+    /// <returns>The index of the first entry that did not apply, or the batch's count, and how many applied entries were effective.</returns>
+    public async Task<BatchOutcome> ApplyEachAsync(CommittedBatch batch, Func<EventStreamEntry, CancellationToken, Task<bool>> applyEntry, CancellationToken cancellationToken = default)
     {
+        var effective = 0;
         for (var i = 0; i < batch.Entries.Count; i++)
         {
             var entry = batch.Entries[i].Entry;
             var attempt = 0;
             try
             {
+                var handled = false;
                 await precedingFactPipeline.ExecuteAsync(async ct =>
                 {
                     attempt++;
                     try
                     {
-                        await applyEntry(entry, ct);
+                        handled = await applyEntry(entry, ct);
                     }
                     catch (Exception ex) when (ex is not (OperationCanceledException or CommittedEventsNotPublishedException))
                     {
@@ -298,26 +397,28 @@ internal sealed class StoreReaderLoop(
                         throw;
                     }
                 }, cancellationToken);
+                effective += handled ? 1 : 0;
             }
             catch (CommittedEventsNotPublishedException committed)
             {
                 // The handler's events are recorded. Applying the entry again would record them a second time.
                 logger.LogEntryCommittedNotPublished(committed, consumer, partition, entry.Id);
+                effective++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                return i;
+                return new BatchOutcome(i, effective);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 MarkStalled(onRead: false);
                 logger.LogPartitionStalled(ex, consumer, partition, entry.Id, entry.SequenceNumber);
-                return i;
+                return new BatchOutcome(i, effective);
             }
         }
 
         MarkAdvancing(onRead: false);
-        return batch.Entries.Count;
+        return new BatchOutcome(batch.Entries.Count, effective);
     }
 
     /// <summary>Whether the partition counts as stalled: on an entry it cannot apply, or on a read it cannot make.</summary>
@@ -378,6 +479,8 @@ internal sealed class StoreReaderLoop(
 
         var invalidations = _invalidations;
         _position = await checkpoints.GetAsync(consumer, partition, readerName, cancellationToken);
+        _written = _position;
+        _deferredSince = null;
         _positionKnown = invalidations == _invalidations;
         PositionChanged?.Invoke();
     }

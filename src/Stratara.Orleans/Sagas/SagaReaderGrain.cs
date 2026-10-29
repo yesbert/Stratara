@@ -127,7 +127,7 @@ internal sealed class SagaReaderGrain(
     /// relevance — the event types a stateless saga declares, or any resolvable type for a process — the mapper leaves an
     /// entry outside it unread, and no scope is built for it.
     /// </summary>
-    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
+    protected override async Task<BatchOutcome> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
         await using var runs = new SessionRuns<SagaReaderRun>(ScopeFactory, services =>
         {
@@ -145,16 +145,19 @@ internal sealed class SagaReaderGrain(
                 events = await eventMapperFactory.MapToEventsAsync([entry], known, entryToken);
                 if (events.Count == 0)
                 {
-                    return;
+                    return false;
                 }
             }
 
             var run = await runs.EnterAsync(entry);
             events ??= await eventMapperFactory.MapToEventsAsync([entry], run.Relevance, entryToken);
-            if (events.Count > 0)
+            if (events.Count == 0)
             {
-                await run.ApplyAsync(entry, events, entryToken);
+                return false;
             }
+
+            await run.ApplyAsync(entry, events, entryToken);
+            return true;
         }, cancellationToken);
     }
 
@@ -281,7 +284,7 @@ internal static class SagaStart
 }
 
 /// <summary>Every registered saga's reader for the partition, named from the registrations without building a saga.</summary>
-internal sealed class SagaNudgeTarget(SagaRegistrations registrations, StoreReaderLease lease) : INudgeTarget
+internal sealed class SagaNudgeTarget(SagaRegistrations registrations, StoreReaderLease lease, CommitRelevance? relevance = null, SagaRelevances? sagas = null) : INudgeTarget
 {
     private readonly IReadOnlyList<string> _names = registrations.Consumers;
 
@@ -289,29 +292,21 @@ internal sealed class SagaNudgeTarget(SagaRegistrations registrations, StoreRead
 
     public IReadOnlyList<string> SupersededConsumerNames { get; } = [SagaGrain.ConsumerName];
 
+    /// <summary>Wakes every saga's reader of the partition; see <see cref="NudgeAsync(IGrainFactory, int, IReadOnlyCollection{string})"/>.</summary>
+    /// <exception cref="AggregateException">A wake-up could not be sent for one or more sagas.</exception>
+    public Task NudgeAsync(IGrainFactory grainFactory, int partition) => NudgeAsync(grainFactory, partition, null);
+
     /// <summary>
-    /// Wakes every saga's reader of the partition. A wake-up that cannot even be sent is collected rather than thrown at
-    /// once, so one saga the call fails for does not cost the others behind it their wake-up; the dispatcher logs what
-    /// failed.
+    /// Wakes the readers of the partition of the sagas the commit concerns — every stateful process, which decides from
+    /// the event itself — and all of them where the sagas' events cannot be worked out. A wake-up that cannot even be
+    /// sent is collected rather than thrown at once, so one saga the call fails for does not cost the others behind it
+    /// their wake-up; the dispatcher logs what failed.
     /// </summary>
     /// <exception cref="AggregateException">A wake-up could not be sent for one or more sagas.</exception>
-    public Task NudgeAsync(IGrainFactory grainFactory, int partition)
-    {
-        List<Exception>? failures = null;
-        foreach (var name in _names)
-        {
-            try
-            {
-                grainFactory.GetGrain<ISagaReaderGrain>(StoreReaderGrainKey.Of(name, partition)).NudgeAsync().Ignore();
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                (failures ??= []).Add(exception);
-            }
-        }
-
-        return failures is null ? Task.CompletedTask : Task.FromException(new AggregateException(failures));
-    }
+    public Task NudgeAsync(IGrainFactory grainFactory, int partition, IReadOnlyCollection<string>? eventTypeNames) =>
+        LocalNudges.Send(
+            _names.Where(name => Concerns(name, eventTypeNames)),
+            name => grainFactory.GetGrain<ISagaReaderGrain>(StoreReaderGrainKey.Of(name, partition)).NudgeAsync());
 
     public async Task EnsureRunningAsync(IGrainFactory grainFactory, int partition)
     {
@@ -323,6 +318,9 @@ internal sealed class SagaNudgeTarget(SagaRegistrations registrations, StoreRead
 
     public ValueTask<StoreReaderHold> PauseAsync(IGrainFactory grainFactory, int partition) =>
         StoreReaderPause.PauseAllAsync([.. _names.Select(name => Reader(grainFactory, name, partition))], lease);
+
+    private bool Concerns(string consumer, IReadOnlyCollection<string>? eventTypeNames) =>
+        sagas is null || CommitRelevance.Concerns(relevance, () => sagas.RelevanceOf(consumer), eventTypeNames);
 
     private static PausedReader Reader(IGrainFactory grainFactory, string name, int partition)
     {
