@@ -1,6 +1,6 @@
 # Share one identity store
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 

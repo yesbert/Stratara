@@ -1,6 +1,6 @@
 # Let one person span tenants
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 
