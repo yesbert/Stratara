@@ -45,3 +45,9 @@
   `Aggregates` and `HeavyWork` passed 68 of 69 under heavy unrelated machine load. The one failure,
   `HeavyBurstTests` running one unit twice after hand-overs that timed out, involves no conflict: its probe appends
   nothing
+- [x] 4.4 Code review (`/code-review high`, 10 candidates), resolved on the branch: the attempt is given back once
+  (design D2a; `ConflictRerunTests.A_rerun_that_fails_otherwise_keeps_the_hand_overs_attempt_counted`, and the bound
+  test now verifies one `ReturnAttemptAsync`); reruns continue on the activation's scheduler (D1a, asserted in the
+  integration test, red with the flag off); `CountConflictAsync` uses one connection; one bound predicate; one
+  record-and-log path in the lease; the guide's timing is no longer stated as a bound. Small conflict bounds,
+  nested mediator retries and the per-command cost are recorded under *Risks*

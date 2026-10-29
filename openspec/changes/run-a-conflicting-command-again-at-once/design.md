@@ -71,6 +71,25 @@ of `ConflictCount`.
 *Alternative:* bound the reruns by the pipeline alone. That breaks the run count the existing test pins, and lets a
 command exceed the bound by up to five runs per hand-over.
 
+### D2a — The attempt is given back once (revised after the code review of 2026-10-29)
+
+The first plan recorded every conflict through `RecordConflictAsync`, which gives the hand-over's attempt back each
+time, so reruns wore the delivery bound down, and a stop during a pause gave the attempt back twice. Now
+`CountConflictAsync` counts the conflict *without* giving the attempt back, and `RunIntentAsync` gives it back once
+through `ReturnAttemptAsync` when the command leaves the hand-over on a conflict. A rerun that ends in another failure
+keeps the attempt counted and records the failure, and a stop gives it back once, as before. A store whose
+`CountConflictAsync` is the default records through `RecordConflictAsync` and answers `null`: then the attempt was
+given back already, and nothing is given back again. The bound check is one predicate,
+`IntentFailure.WithinConflictBound`, which the drain's `IsExhausted` and the rerun share.
+
+### D1a — The reruns continue on the activation's scheduler (found by the code review of 2026-10-29)
+
+Polly continues after its delay without the captured context unless the `ResilienceContext` asks for it. The
+pipeline therefore runs with a pooled context with `ContinueOnCapturedContext = true`, so a rerun of an aggregate's
+command runs on the aggregate activation's scheduler, as the first attempt did. *Evidence:* `ConflictRerunTests`
+records `TaskScheduler.Current` per run; with the flag off the rerun ran on the thread pool (`[True, False]`), and
+with it on, both ran on the activation.
+
 ### D3 — Logging and counting stay per attempt
 
 Every failed attempt is logged through `LogIntentAttemptFailed`, as today. A silo stop during the pipeline's pause
@@ -85,6 +104,16 @@ cancels it through `stopping`, which ends the run as a stop and gives back the a
   the guide names it.
 - **A provider's `ConcurrencyConflictException` is still not rerun.** → That is unchanged behaviour, and called out in
   the guide.
+- **A small conflict bound is used up within moments** (review finding). A command that collides with a writer that
+  keeps appending for seconds reaches a bound of 3 within about a second and is kept. → That is what the bus does,
+  which redelivers a conflicting message at once. The guide says so, and a host that wants more patience raises
+  `MaxConflictRequeues`.
+- **A command that also carries the concurrency-conflict pipeline through the mediator's resilience behaviour**
+  retries inside each run, so up to six times six runs per hand-over, with only the outer conflicts counted (review
+  finding). → That is a rare composition. The guide names it.
+- **Per-command cost** (review finding): every recorded command now resolves the named pipeline and takes a pooled
+  `ResilienceContext`. → A dictionary lookup and a pooled object per command, against a handler that writes to the
+  store. Not measured, judged negligible.
 
 ## Migration Plan
 

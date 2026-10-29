@@ -152,33 +152,30 @@ internal sealed class IntentLease : IAsyncDisposable
     /// gives the attempt back and counts against the conflict bound instead; a failure to record it does not hide the
     /// original one.
     /// </summary>
-    public async Task RecordFailureAsync(Exception failure, string commandType, Guid? aggregateId)
-    {
-        _logger.LogIntentAttemptFailed(failure, _intentId, commandType, aggregateId);
-        try
+    public Task RecordFailureAsync(Exception failure, string commandType, Guid? aggregateId) =>
+        RecordAsync(failure, commandType, aggregateId, async description =>
         {
-            var description = IntentFailure.Describe(failure);
             await (IntentFailure.IsConflict(failure)
                 ? _intents.RecordConflictAsync(_intentId, description, CancellationToken.None)
                 : _intents.RecordFailureAsync(_intentId, description, CancellationToken.None));
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _ = ex;
-        }
-    }
+            return null;
+        });
 
     /// <summary>
     /// Logs the attempt that met <paramref name="conflict"/> and records it as a conflict, and answers how many conflicts
     /// the command has met — or <see langword="null"/> where the store cannot tell or the conflict could not be
     /// recorded, which leaves the command to the drain.
     /// </summary>
-    public async Task<int?> CountConflictAsync(ConcurrencyException conflict, string commandType, Guid? aggregateId)
+    public Task<int?> CountConflictAsync(ConcurrencyException conflict, string commandType, Guid? aggregateId) =>
+        RecordAsync(conflict, commandType, aggregateId, description => _intents.CountConflictAsync(_intentId, description, CancellationToken.None));
+
+    /// <summary>Logs the attempt's failure and records it through <paramref name="record"/>; a failure to record it does not hide the original one.</summary>
+    private async Task<int?> RecordAsync(Exception failure, string commandType, Guid? aggregateId, Func<string, Task<int?>> record)
     {
-        _logger.LogIntentAttemptFailed(conflict, _intentId, commandType, aggregateId);
+        _logger.LogIntentAttemptFailed(failure, _intentId, commandType, aggregateId);
         try
         {
-            return await _intents.CountConflictAsync(_intentId, IntentFailure.Describe(conflict), CancellationToken.None);
+            return await record(IntentFailure.Describe(failure));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

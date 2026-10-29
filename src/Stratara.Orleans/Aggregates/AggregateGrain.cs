@@ -538,10 +538,10 @@ internal static class CommandExecution
 
         await using (lease)
         {
-            Exception? recordedConflict = null;
+            var conflicts = new ConflictLedger();
             try
             {
-                await Wrap(() => RunAttemptsAsync(services, envelope, lease, aggregateId, conflict => recordedConflict = conflict, stopping), around)();
+                await Wrap(() => RunAttemptsAsync(services, envelope, lease, aggregateId, conflicts, stopping), around)();
             }
             catch (CommittedEventsNotPublishedException committed)
             {
@@ -564,9 +564,13 @@ internal static class CommandExecution
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !stopping.IsCancellationRequested)
             {
-                if (!ReferenceEquals(ex, recordedConflict))
+                if (!ReferenceEquals(ex, conflicts.Last))
                 {
                     await lease.RecordFailureAsync(ex, envelope.CommandTypeName, aggregateId);
+                }
+                else if (conflicts.AttemptHeld)
+                {
+                    await lease.ReturnAttemptAsync();
                 }
 
                 throw;
@@ -579,18 +583,21 @@ internal static class CommandExecution
     /// <summary>
     /// Runs the command's attempts through the framework's concurrency-conflict pipeline: the first in the scope the
     /// hand-over created, every later one in a scope of its own, so it reads the stream again in a fresh unit of work.
-    /// Only a conflict the command may still be run again for reaches the pipeline as itself; anything else passes
-    /// through it untouched and leaves as it was thrown. A conflict is recorded where it happens and handed to
-    /// <paramref name="recorded"/>, so the caller does not record it a second time. Without the pipeline there is one
-    /// attempt.
+    /// The pipeline runs with the captured context, so every attempt continues on the scheduler the first ran on — the
+    /// aggregate's activation for an aggregate's command. Only a conflict the command may still be run again for reaches
+    /// the pipeline as itself; anything else passes through it untouched and leaves as it was thrown. A conflict is
+    /// recorded where it happens, in <paramref name="conflicts"/>, so the caller does not record it a second time; while
+    /// the store counts conflicts, the hand-over's attempt stays counted until the command leaves on a conflict, so it is
+    /// given back once however often the command ran. Without the pipeline there is one attempt.
     /// </summary>
-    private static async Task RunAttemptsAsync(IServiceProvider services, AggregateCommandEnvelope envelope, IntentLease lease, Guid? aggregateId, Action<Exception> recorded, CancellationToken stopping)
+    private static async Task RunAttemptsAsync(IServiceProvider services, AggregateCommandEnvelope envelope, IntentLease lease, Guid? aggregateId, ConflictLedger conflicts, CancellationToken stopping)
     {
         var pipeline = services.GetService<ResiliencePipelineProvider<string>>() is { } provider && provider.TryGetPipeline(ResilienceNames.ConcurrencyConflict, out var found)
             ? found
             : ResiliencePipeline.Empty;
         var conflictBound = services.GetService<IOptions<MessageRetryOptions>>()?.Value.MaxConflictRequeues ?? new MessageRetryOptions().MaxConflictRequeues;
         var attempt = 0;
+        var context = ResilienceContextPool.Shared.Get(continueOnCapturedContext: true, stopping);
         try
         {
             await pipeline.ExecuteAsync(async _ =>
@@ -603,11 +610,15 @@ internal static class CommandExecution
 
                 await using var scope = services.GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
                 await AttemptAsync(scope.ServiceProvider);
-            }, stopping);
+            }, context);
         }
         catch (PassedThrough passed)
         {
             ExceptionDispatchInfo.Capture(passed.InnerException ?? passed).Throw();
+        }
+        finally
+        {
+            ResilienceContextPool.Shared.Return(context);
         }
 
         async Task AttemptAsync(IServiceProvider attemptServices)
@@ -618,9 +629,9 @@ internal static class CommandExecution
             }
             catch (ConcurrencyException conflict)
             {
-                var conflicts = await lease.CountConflictAsync(conflict, envelope.CommandTypeName, aggregateId);
-                recorded(conflict);
-                if (conflicts is { } count && count <= conflictBound)
+                var count = await lease.CountConflictAsync(conflict, envelope.CommandTypeName, aggregateId);
+                conflicts.Recorded(conflict, attemptHeld: count is not null);
+                if (count is { } counted && IntentFailure.WithinConflictBound(counted, conflictBound))
                 {
                     throw;
                 }
@@ -631,6 +642,23 @@ internal static class CommandExecution
             {
                 throw new PassedThrough(ex);
             }
+        }
+    }
+
+    /// <summary>
+    /// The conflict an attempt recorded last, and whether the hand-over's attempt is still counted for it — it is where
+    /// the store counted the conflict without giving the attempt back.
+    /// </summary>
+    private sealed class ConflictLedger
+    {
+        public Exception? Last { get; private set; }
+
+        public bool AttemptHeld { get; private set; }
+
+        public void Recorded(Exception conflict, bool attemptHeld)
+        {
+            Last = conflict;
+            AttemptHeld |= attemptHeld;
         }
     }
 

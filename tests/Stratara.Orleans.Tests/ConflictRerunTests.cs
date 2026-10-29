@@ -41,6 +41,7 @@ public sealed class ConflictRerunTests
         Assert.Equal(2, run.Scopes.Distinct().Count());
         run.Intents.Verify(store => store.CountConflictAsync(run.IntentId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         run.Intents.Verify(store => store.RecordFailureAsync(run.IntentId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        run.Intents.Verify(store => store.ReturnAttemptAsync(run.IntentId, It.IsAny<CancellationToken>()), Times.Never);
         Assert.True(await run.CompletedAsync());
     }
 
@@ -69,6 +70,20 @@ public sealed class ConflictRerunTests
         Assert.Equal(2, run.Scopes.Count);
         run.Intents.Verify(store => store.CountConflictAsync(run.IntentId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         run.Intents.Verify(store => store.RecordFailureAsync(run.IntentId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        run.Intents.Verify(store => store.ReturnAttemptAsync(run.IntentId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task A_rerun_that_fails_otherwise_keeps_the_hand_overs_attempt_counted()
+    {
+        var run = new Run(conflictsFirst: 1) { FailureAfterConflicts = new InvalidOperationException("the handler fails after the conflict") };
+        run.Intents.Setup(store => store.CountConflictAsync(run.IntentId, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => run.ExecuteAsync());
+
+        Assert.Equal(2, run.Scopes.Count);
+        run.Intents.Verify(store => store.RecordFailureAsync(run.IntentId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        run.Intents.Verify(store => store.ReturnAttemptAsync(run.IntentId, It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -141,6 +156,8 @@ public sealed class ConflictRerunTests
 
         public Exception? Failure { get; init; }
 
+        public Exception? FailureAfterConflicts { get; init; }
+
         public async Task ExecuteAsync(Func<Func<Task>, Task>? around = null)
         {
             await _queue.StartAsync(CancellationToken.None);
@@ -173,9 +190,12 @@ public sealed class ConflictRerunTests
                     return Task.FromException(failure);
                 }
 
-                return Scopes.Count <= _conflictsFirst
-                    ? Task.FromException(new ConcurrencyException(Guid.NewGuid(), nameof(RerunProbe)))
-                    : Task.CompletedTask;
+                if (Scopes.Count <= _conflictsFirst)
+                {
+                    return Task.FromException(new ConcurrencyException(Guid.NewGuid(), nameof(RerunProbe)));
+                }
+
+                return FailureAfterConflicts is { } after ? Task.FromException(after) : Task.CompletedTask;
             });
             return mediator.Object;
         }

@@ -33,8 +33,10 @@ moments.
   own while it still holds the hand-over, pausing as the `ResilienceNames.ConcurrencyConflict` pipeline does (five
   retries from 50 ms). A heavy command keeps its permit. Every conflict is still recorded and counted, and the command
   runs again only while its conflicts stay within `MessageRetryOptions.MaxConflictRequeues`, so a command that
-  conflicts on every attempt runs as often as before and is kept. After the pipeline's retries the drain resumes it
-  as before.
+  conflicts on every attempt runs as often as before and is kept. The hand-over's attempt is given back once when the
+  command leaves on a conflict, however often it ran. After the pipeline's retries the drain resumes it as before.
+- **`ICommandIntentStore.CountConflictAsync` counts a conflict without giving the attempt back**; the execution model
+  gives it back once through `ReturnAttemptAsync`.
 
 **Upgrading:** nothing to do with the framework's intent store. An intent store of your own keeps the old timing
 until it implements `CountConflictAsync`.

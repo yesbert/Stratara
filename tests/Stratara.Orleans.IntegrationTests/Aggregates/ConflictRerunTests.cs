@@ -53,6 +53,7 @@ public sealed class ConflictRerunTests(PostgreSqlFixture postgres, RedisFixture 
         Assert.True(succeededAt - conflictedAt < TimeSpan.FromSeconds(1), $"the command ran again {succeededAt - conflictedAt} after its conflict");
         Assert.Equal(2, conflicts.Scopes(probe).Count);
         Assert.Equal(2, conflicts.Scopes(probe).Distinct().Count());
+        Assert.Equal([true, true], conflicts.OnTheActivation(probe));
         Assert.True(
             await RecordedIntentHost.WaitUntilAsync(
                 async () => await RecordedIntentHost.ScalarAsync<int>(store, "SELECT count(*)::int FROM outbox_entry WHERE id = @id", ("id", intent)) == 0,
@@ -70,10 +71,16 @@ public sealed class ConflictRerunTests(PostgreSqlFixture postgres, RedisFixture 
 
         public ConcurrentDictionary<Guid, DateTimeOffset> Succeeded { get; } = new();
 
+        private readonly ConcurrentDictionary<Guid, ConcurrentQueue<bool>> _onTheActivation = new();
+
         public IReadOnlyCollection<Guid> Scopes(Guid probe) => _scopes.TryGetValue(probe, out var scopes) ? [.. scopes] : [];
+
+        /// <summary>For each run, whether it ran on the aggregate activation's scheduler rather than the thread pool's.</summary>
+        public IReadOnlyCollection<bool> OnTheActivation(Guid probe) => _onTheActivation.TryGetValue(probe, out var runs) ? [.. runs] : [];
 
         public int Ran(Guid probe, Guid scope)
         {
+            _onTheActivation.GetOrAdd(probe, _ => new ConcurrentQueue<bool>()).Enqueue(TaskScheduler.Current != TaskScheduler.Default);
             var scopes = _scopes.GetOrAdd(probe, _ => new ConcurrentQueue<Guid>());
             scopes.Enqueue(scope);
             return scopes.Count;

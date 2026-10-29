@@ -211,10 +211,14 @@ A recorded command is bounded as a bus message is, by the two bounds of `Message
   A conflicting command does not wait for its hand-over to lapse. The silo that ran it runs it again at once, in a
   unit of work of its own and while it still holds the hand-over, pausing between runs as the framework's
   concurrency-conflict pipeline (`ResilienceNames.ConcurrencyConflict`: five retries from 50 ms, exponential, with
-  jitter) does. A heavy command keeps its permit meanwhile, and an aggregate's later commands wait for it, at most
-  about a second and a half with the defaults. It runs again only while its `conflict_count` stays within
-  `MaxConflictRequeues`, so a command that conflicts on every attempt runs as often in all as before. Once the
-  pipeline's retries are used up, the drain resumes it after `IntentGrace`. The reruns need an intent store that
+  jitter) does. A heavy command keeps its permit meanwhile, and an aggregate's later commands wait for it: the pauses
+  add up to about a second and a half with the defaults, plus jitter, plus the reruns themselves. It runs again only
+  while its `conflict_count` stays within `MaxConflictRequeues`, so a command that conflicts on every attempt runs as
+  often in all as before — but now within moments, as a conflicting message is redelivered at once on the bus, so a
+  small conflict bound is used up as quickly there as here. The hand-over's attempt is given back once when the
+  command leaves on a conflict, however often it ran; a rerun that fails otherwise counts its attempt. Once the
+  pipeline's retries are used up, the drain resumes it after `IntentGrace`. A command that also carries the
+  concurrency-conflict pipeline through the mediator's resilience behaviour retries inside each run as well. The reruns need an intent store that
   answers `ICommandIntentStore.CountConflictAsync`, as the framework's does; with one of your own that does not, a
   conflicting command is left to the drain at once.
 - **A handler stopped with its silo**, and a command still queued behind it that the stop gives up, gives its attempt
