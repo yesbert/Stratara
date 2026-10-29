@@ -16,13 +16,17 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.6.1`._
+
+## [4.6.1] — 2026-10-29
+
 A release about two costs of the Orleans execution model that grew with the deployment rather than with the work.
 
 A commit woke every projection and saga reader of each partition it touched, whatever it had committed. Every one of
 them read the new entries and wrote its checkpoint, also when it applied nothing, and every reader polled the store on
-its own: with 68 projections and sagas, ten single-event commands cost 680 checkpoint writes, and an idle silo kept the
-store busy with hundreds of reads a second. A commit now costs work only for the readers it concerns, and an idle silo
-asks the store a few questions per partition and poll interval.
+its own: every single-event command cost a checkpoint write per projection and saga, and an idle silo with many
+consumers kept the store busy with hundreds of reads a second. A commit now costs work only for the readers it
+concerns, and an idle silo asks the store a few questions per partition and poll interval.
 
 A recorded command whose handler met a concurrency conflict waited for its hand-over to lapse, 30 seconds by default,
 before the drain ran it again; on the bus a conflicting message is redelivered at once. It now runs again within
@@ -4967,7 +4971,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.6.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.6.1...main
+[4.6.1]: https://github.com/yesbert/Stratara/releases/tag/v4.6.1
 [4.6.0]: https://github.com/yesbert/Stratara/releases/tag/v4.6.0
 [4.5.0]: https://github.com/yesbert/Stratara/releases/tag/v4.5.0
 [4.4.10]: https://github.com/yesbert/Stratara/releases/tag/v4.4.10
