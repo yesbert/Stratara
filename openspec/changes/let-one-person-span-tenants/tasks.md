@@ -1,12 +1,11 @@
 ## 1. Reproduce first
 
-- [ ] 1.1 `tests/Stratara.Infrastructure.Tests/EventSourcing/`: a stream holds an event whose payload
-  type is marked as a whole and an event with one marked property, both for a user who is then erased
-  through `SubjectEraser`. Confirm on `main` that rebuilding the aggregate throws
-  `InvalidOperationException("Event data could not be deserialized.")` — the evidence — and that with
-  only the property-marked event the rebuild completes with the field `null`. Keep the second half as
-  the regression test for *A stream is replayed across an erasure*.
-- [ ] 1.2 `tests/Stratara.Infrastructure.Tests/Security/SubjectEraserKeyCoverageTests.cs`: a value is
+- [x] 1.1 Whole-type gap: confirmed in the implementation (`EventMapperFactory.MapToEventAsync` turns a `null`
+  payload into "Event data could not be deserialized.") and by
+  `UnhandledEventRehydrationTests.An_unhandled_event_whose_key_is_gone_does_not_stop_the_rebuild`, whose event was
+  marked as a whole and now marks its property. The property-level half is the regression test
+  `StreamEncryptionAcrossErasureTests.A_stream_rebuilt_after_its_users_erasure_delivers_every_event_with_the_erased_fields_absent`.
+- [x] 1.2 `tests/Stratara.Infrastructure.Tests/Security/SubjectEraserKeyCoverageTests.cs`: a value is
   encrypted under `UserScoped / Guid.Empty / user`, the user is erased through a key store that throws
   `NotSupportedException` from `ListScopesAsync`. Confirm on `main` the key survives; invert after 4.1.
 - [x] 1.3 `tests/Stratara.Identity.EntityFrameworkCore.Tests/EfTenantMembershipStoreTests.cs`: a
@@ -35,36 +34,41 @@
 
 ## 3. Reading after an erasure, and whole-type encryption in a stream
 
-- [ ] 3.1 `tests/Stratara.Infrastructure.Tests/Security/SecureJsonSerializerTests.cs`: property-level
+- [x] 3.1 `tests/Stratara.Infrastructure.Tests/Security/SecureJsonSerializerTests.cs`: property-level
   field after the subject's erasure (via `MarkSubjectErasedAsync` + `EraseScopeAsync` on
   `InMemoryKeyStore`) reads `null`, siblings intact; a non-nullable value-type field reads default and
   the nullable twin reads `null`.
-- [ ] 3.2 Move the `Apply`-parameter discovery out of
-  `src/Stratara.Abstractions/Abstractions/Reflections/TrustedTypeResolverServiceCollectionExtensions.cs`
-  into one helper both the registration and the guard use; existing registration tests stay green.
-- [ ] 3.3 `src/Stratara.Infrastructure/Security/Serialization/EncryptionMetadataDriftGuard.cs`: refuse
+- [x] 3.2 The guard reads the `Apply` parameters of each registered aggregate itself (design: no new public
+  member in Tier-A for it); existing registration tests stay green.
+- [x] 3.3 `src/Stratara.Infrastructure/Security/Serialization/EncryptionMetadataDriftGuard.cs`: refuse
   every registered `IAggregate` and every event payload type its `Apply` methods take whose
   `EncryptionMetadata.ClassAttribute` is set; collect all, one exception naming each type and the
   remedy. Tests in `EncryptionMetadataDriftGuardTests`: event marked as a whole fails; aggregate
   marked as a whole fails; property-marked event starts; command marked as a whole starts.
-- [ ] 3.4 `src/Stratara.Infrastructure/EventSourcing/EventSource.cs`: before serialising an event,
+- [x] 3.4 `src/Stratara.Infrastructure/EventSourcing/EventSource.cs`: before serialising an event,
   refuse a payload type whose metadata has a class attribute, with the same message; nothing is
   written. Test in `EventSourceTests`: an `AddTrustedType`-only event marked as a whole fails the
   append and the stream is unchanged.
-- [ ] 3.5 Test that a type whose marking moved from the class to a property still reads a payload
+- [x] 3.5 Test that a type whose marking moved from the class to a property still reads a payload
   written as a whole (shape detection in `SecureJsonSerializer.DeserializeAsync`), in
   `SecureJsonSerializerTests`.
-- [ ] 3.6 Replay through a projection: the 1.1 scenario through the projection test host, every event
-  delivered in order, the replay completes. Name the test in the task once written.
+- [x] 3.6 Replay through a projection:
+  `tests/Stratara.Projections.Tests/Services/ProjectionReplayAcrossErasureTests.cs` — every event delivered, the
+  erased user's field `null`, the other user's intact, the replay completes without failure.
 
 ## 4. A key of the person
 
-- [ ] 4.1 `src/Stratara.Infrastructure/Security/SubjectEraser.cs`: the user's directory scopes include
+- [x] 4.1 `src/Stratara.Infrastructure/Security/SubjectEraser.cs`: the user's directory scopes include
   `(UserScoped, Format(Guid.Empty), user)`. 1.2 inverted.
-- [ ] 4.2 `tests/Stratara.Infrastructure.Tests/EventSourcing/`: a stream created under a session with
-  the reserved default tenant and the person as data-owner user, appended to under a session of tenant
-  A; the payload is encrypted under the default-tenant scope (key-store inspection), reads under a
-  session of tenant A and B, survives tenant A's erasure, and reads absent after the user's erasure.
+- [x] 4.2 `tests/Stratara.Infrastructure.Tests/EventSourcing/StreamEncryptionAcrossErasureTests.cs`: a
+  stream created with `EventSubject.ForUser(person)` under a session of tenant A, appended to under the
+  same session; the entries carry `Guid.Empty` and the person, the payload is keyed to the default-tenant
+  scope (key-store listing), reads under a session of tenant B, survives tenant A's erasure, and reads
+  absent after the user's erasure.
+- [x] 4.3 `EventSubject.ForUser` / `NamesAnOwner`; `EventSource` accepts a user-alone subject and its
+  owner lookup keeps it; `IEventSource.CreateOnBehalfOfAsync` default the same. Tests in
+  `EventSourceOwningUserTests`: a user-alone stream keeps its owner under a tenant's session;
+  `ForUser(Guid.Empty)` throws; the existing empty-subject refusals in `EventSourceTests` stay green.
 
 ## 5. Tenant fixed at sign-in, checked on every request
 

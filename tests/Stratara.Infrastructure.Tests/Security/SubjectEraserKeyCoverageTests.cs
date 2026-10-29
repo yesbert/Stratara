@@ -223,6 +223,35 @@ public class SubjectEraserKeyCoverageTests
         Assert.Contains(LogEvents.KeyManagement.KeyScopesNotListable, logger.EventIds);
     }
 
+    /// <summary>
+    /// A person's own data is written under the reserved default tenant, so it names no tenant of theirs. The directory
+    /// has to name that scope itself: a key store that cannot list would otherwise leave it behind.
+    /// </summary>
+    [Fact]
+    public async Task A_users_erasure_reaches_their_own_data_through_a_key_store_that_cannot_list()
+    {
+        var f = new Fixture();
+        await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
+        var ownValue = await f.WriteAsync(new DefaultLevelNote { Text = "profile" }, Guid.Empty, Member);
+        Assert.Equal("profile", await f.ReadAsync<DefaultLevelNote>(ownValue, Guid.Empty, Member));
+
+        await f.Eraser(new NonListingKeyStore(f.Keys), new CapturingLogger()).EraseUserAsync(Member);
+
+        Assert.Null(await f.ReadAsync<DefaultLevelNote>(ownValue, Guid.Empty, Member));
+    }
+
+    [Fact]
+    public async Task A_tenants_erasure_leaves_a_members_own_data()
+    {
+        var f = new Fixture();
+        await f.Memberships.SetMembershipAsync(new TenantMembership(Member, Tenant, ["member"]));
+        var ownValue = await f.WriteAsync(new DefaultLevelNote { Text = "profile" }, Guid.Empty, Member);
+
+        await f.Eraser().EraseTenantAsync(Tenant);
+
+        Assert.Equal("profile", await f.ReadAsync<DefaultLevelNote>(ownValue, Guid.Empty, Member));
+    }
+
     [Fact]
     public async Task A_listing_that_fails_stops_the_erasure_at_the_key_material()
     {

@@ -131,4 +131,32 @@ public class EventSourceOwningUserTests
         Assert.Equal(2, stream.Count);
         Assert.All(stream, e => Assert.Equal((statedTenant, (Guid?)statedUser), (e.TenantId, e.UserId)));
     }
+
+    [Fact]
+    public async Task A_stream_created_for_a_user_alone_keeps_that_owner_under_a_tenants_session()
+    {
+        await using var host = CreateHost();
+        var streamId = Guid.CreateVersion7();
+        var person = Guid.NewGuid();
+
+        host.Session.Set(TestSessionContext.ForTenant(Tenant, Guid.NewGuid()));
+        await host.ExecuteAsync(async events =>
+        {
+            await events.CreateOnBehalfOfAsync<OwnedProbe>(streamId, new OwnedProbeTouched(1), EventSubject.ForUser(person));
+            await events.SaveChangesAsync();
+        });
+        await AppendInALaterSaveAsync(host, streamId);
+
+        var stream = await ReadStreamAsync(host, streamId);
+        Assert.Equal(2, stream.Count);
+        Assert.All(stream, e => Assert.Equal((Guid.Empty, (Guid?)person), (e.TenantId, e.UserId)));
+    }
+
+    [Fact]
+    public void A_user_alone_subject_needs_a_user()
+    {
+        Assert.Throws<ArgumentException>(() => EventSubject.ForUser(Guid.Empty));
+        Assert.False(new EventSubject(Guid.Empty).NamesAnOwner);
+        Assert.True(EventSubject.ForUser(Guid.NewGuid()).NamesAnOwner);
+    }
 }

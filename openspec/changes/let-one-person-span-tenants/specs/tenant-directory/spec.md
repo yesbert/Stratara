@@ -151,8 +151,9 @@ names and whether or not that other subject is still in the directory, wherever 
 list the keys it holds. The framework's file-backed key store and its test key store SHALL be able to.
 Where a key store cannot list its keys, the erasure SHALL still shred the keys the directory names and
 SHALL warn that it could not reach the rest. The keys the directory names for a user SHALL include the
-user's own key — the one that names the user under no tenant or under the reserved default tenant —
-so that a user's own data is shredded whether or not the key store can list its keys. An erasure SHALL
+user's own key — the one that names the user and no tenant of theirs, under which the data a user owns
+alone is encrypted — so that a user's own data is shredded whether or not the key store can list its
+keys. An erasure SHALL
 refuse an empty id, which names no subject.
 
 Before it sweeps any plane, the erasure SHALL mark the subject erased in the key store, so that no
@@ -195,14 +196,14 @@ a consumer can tell what remains their own responsibility.
 
 #### Scenario: A user's own data is erased through a key store that cannot list its keys
 
-- **WHEN** a user's own data was encrypted under the reserved default tenant and the user is erased
-  through a key store that cannot list the keys it holds
+- **WHEN** data the user owns alone was encrypted and the user is erased through a key store that
+  cannot list the keys it holds
 - **THEN** that data becomes unrecoverable as well
 
 #### Scenario: One of a user's tenants is erased
 
 - **WHEN** a tenant the user belongs to is erased
-- **THEN** the user's own data, written under the reserved default tenant, stays readable
+- **THEN** the data the user owns alone stays readable
 
 #### Scenario: Work for an erased subject encrypts after the erasure
 

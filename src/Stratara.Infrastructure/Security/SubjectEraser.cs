@@ -106,6 +106,7 @@ public sealed partial class SubjectEraser : ISubjectEraser
         var directoryScopes = UserLevels
             .SelectMany(level => tenantIds
                 .Select(t => new KeyScope(level, Format(t), Format(userId)))
+                .Prepend(new KeyScope(level, Format(Guid.Empty), Format(userId)))
                 .Prepend(new KeyScope(level, null, Format(userId))));
         var keyScopes = await WithListedScopesAsync(swept, directoryScopes,
             scope => UserLevels.Contains(scope.Level) && Names(scope.UserId, userId), Describe(userId: userId), cancellationToken);

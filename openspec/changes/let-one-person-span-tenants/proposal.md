@@ -31,11 +31,13 @@ The consumer-visible effect, point by point:
   erased: the event cannot be mapped and the snapshot cannot be restored, so the replay or the
   rebuild stops exactly where the erasure happened. Marking individual properties is the supported
   way. Commands and other registered types may still be marked as a whole.
-- **A person's own data has a documented key.** Data written under a session whose data-owner tenant
-  is the reserved default and whose data-owner user is the person is encrypted under a key of the
-  person alone: shredded by the person's erasure, untouched by the erasure of any tenant they belong
-  to. The subject eraser now names that scope itself rather than relying on the key store being able
-  to list its scopes — a key store that cannot list left it behind.
+- **A person's own data has an owner and a key of its own.** A stream can be created for a user
+  alone — an explicit owner that names the user and no tenant, which the store refused until now. It
+  keeps that owner for every later event, whatever tenant the appending session names, and its
+  encrypted fields are keyed to the person alone: shredded by the person's erasure, untouched by the
+  erasure of any tenant they belong to. The subject eraser now names that scope itself rather than
+  relying on the key store being able to list its scopes — a key store that cannot list left it
+  behind.
 - **A tenant can be fixed at sign-in and still checked on every request.** A new registration keeps
   the tenant claim the sign-in stamped — across a re-issue of the sign-in as well — and on every
   request verifies that the person's membership in that tenant is still active. Where it is not, the
@@ -56,6 +58,9 @@ _None._
   selection whose membership stops being active; *The tenant claim can be stamped at sign-in or
   resolved per request* gains the third mode — stamped, kept, and checked on every request; *A
   subject's erasure can be performed as one operation* names the person's own key scope.
+- `event-sourcing-store`: *The owning tenant is resolved from the stream before the session* and *A
+  new stream's owner can be stated at creation* accept an explicit owner that names a user alone, and
+  a stream so created keeps it.
 - `data-encryption`: *Unreadable encrypted fields degrade rather than fail* covers an erased subject
   and a replay; a new requirement refuses whole-type encryption of what is stored in a stream; *Keys
   are scoped, and a scope is the unit of erasure* states the key of a person alone and how data is
@@ -72,6 +77,9 @@ _None._
   `src/Stratara.Identity.AspNetCore/Services/` — the kept-and-checked tenant claim.
 - `src/Stratara.Infrastructure/Security/Serialization/EncryptionMetadataDriftGuard.cs` (or a sibling
   start-up guard) — whole-type encryption of event and aggregate types refused.
+- `src/Stratara.Abstractions/Abstractions/EventSourcing/EventSubject.cs` (`ForUser`, `NamesAnOwner`),
+  `IEventSource.cs`, `src/Stratara.Infrastructure/EventSourcing/EventSource.cs` — an owner that names a
+  user alone is accepted and kept.
 - `src/Stratara.Infrastructure/Security/SubjectEraser.cs` — the person's own scope under the reserved
   default tenant.
 - `src/Stratara.Diagnostics/LogEvents.cs` — event ids for a removed stale claim, if logged.

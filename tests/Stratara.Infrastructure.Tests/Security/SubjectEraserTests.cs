@@ -104,6 +104,7 @@ public class SubjectEraserTests
         string[] expected =
         [
             $"key scope UserScoped - / {User:D}",
+            $"key scope UserScoped {Guid.Empty:D} / {User:D}",
             $"key scope UserScoped {TenantA:D} / {User:D}",
             $"key scope UserScoped {TenantB:D} / {User:D}",
         ];

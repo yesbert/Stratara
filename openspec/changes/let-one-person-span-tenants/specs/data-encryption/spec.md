@@ -9,12 +9,12 @@ Destroying a scope's keys is what makes that scope's data unrecoverable; a key s
 would make erasure for one subject destroy another subject's data.
 
 Data that belongs to a user rather than to any of their tenants SHALL have a key of that user alone.
-Data at the user level written under a session whose data-owner tenant is the reserved default and
-whose data-owner user is set SHALL be encrypted under that key. That key SHALL be shredded by the
-user's erasure and SHALL NOT be shredded by the erasure of any tenant the user belongs to. The
-documentation SHALL describe this as the way to write data that follows a person across tenants, and
-SHALL state that the scope is fixed when the data is written: data written under one of the user's
-tenants stays bound to that tenant and is shredded with it.
+Data at the user level whose owner is the user alone — an event recorded for an owner that names the
+user and no tenant — SHALL be encrypted under that key. That key SHALL be shredded by the user's
+erasure and SHALL NOT be shredded by the erasure of any tenant the user belongs to. The documentation
+SHALL describe this as the way to write data that follows a person across tenants, and SHALL state
+that the scope is fixed when the data is written: data written for one of the user's tenants stays
+bound to that tenant and is shredded with it.
 
 #### Scenario: Two different scopes request a key
 
@@ -28,10 +28,9 @@ tenants stays bound to that tenant and is shredded with it.
 
 #### Scenario: A user's own data is written
 
-- **WHEN** a value at the user level is encrypted under a session whose data-owner tenant is the
-  reserved default and whose data-owner user is set
-- **THEN** it is encrypted under a key that names the user and no tenant of theirs, and it reads back
-  normally under a session of any of the user's tenants
+- **WHEN** an event with a field at the user level is recorded for an owner that names a user alone
+- **THEN** the field is encrypted under a key that names the user and no tenant of theirs, and the
+  event reads back normally under a session of any of the user's tenants
 
 #### Scenario: A user's own data outlives one of their tenants
 

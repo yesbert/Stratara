@@ -77,8 +77,9 @@ Evidence it is needed: a test that writes `Former` over a selected membership an
 **Refuse whole-type encryption where it lives in a stream, at start-up and at append.** A new check in
 `EncryptionMetadataDriftGuard` (it already walks `ITrustedTypeResolver.RegisteredTypes` and owns the
 encryption-metadata invariants) refuses an `IAggregate` with `EncryptionMetadata.ClassAttribute` set,
-and every event payload type such an aggregate's `Apply` methods take — the same reflection
-`AddAggregatesFromAssemblyContaining` uses to register them, moved to one shared helper. All
+and every event payload type such an aggregate's `Apply` methods take. The guard reads the `Apply`
+parameters itself: the registration's reflection lives in Tier-A `Stratara.Abstractions`, and sharing it
+would mean a new public member for eight lines. All
 violations are collected and reported in one exception, as `AggregateSnapshotShapeGuard` does.
 Because an event type can be registered without an aggregate (`AddTrustedType`, a projection-only
 event), `EventSource` refuses at append, before serialising, an event whose payload metadata has a
@@ -97,13 +98,26 @@ class attribute — one cached metadata lookup on a path that already does it.
   already written lives under the `Guid.Empty` scope, and new versions would start a second scope for
   the same data; the eraser would have to name both anyway.
 
-**Writing a person's own data is a documented recipe, not a new API.** The host appends the person's
-own stream under a session whose data-owner tenant is the reserved default and whose data-owner user
-is the person — through a command that is not tenant-scoped, since the isolation guard compares only
-tenant-scoped requests. The stream keeps that owner for every later append whatever the appending
-session's tenant, because the framework takes a stream's owner from the stream. *Alternative:* a new
-sensitivity level "person". Rejected: `UserScoped` with no real tenant already is that scope; a new
-level would be a second name for it and a new branch in every coverage rule.
+**A person's own data is a stream owned by the user alone.** Planned first as a recipe — append under
+a session whose tenant is the reserved default — that turned out impossible during implementation: the
+event store refuses to take an owner from a session whose tenant is `Guid.Empty`
+(`EventSource.ResolveSubjectAsync`), refuses an explicit `EventSubject` with an empty tenant
+(`ThrowIfNamesNoTenant`, and the default `IEventSource.CreateOnBehalfOfAsync`), and treats a first entry
+with an empty tenant as recording no owner (`LookupStreamOwnerAsync`), so a later append under a tenant's
+session would have re-homed the stream. Decided 2026-10-29 under the owner's delegation, recorded here:
+- `EventSubject.ForUser(Guid userId)` and `EventSubject.NamesAnOwner` (a tenant, or a non-empty user).
+  The explicit-subject check refuses only a subject that names neither; the owner lookup returns a
+  user-alone owner from a first entry with an empty tenant and a user; the session path is unchanged,
+  so a session that failed closed still writes nothing ownerless.
+- Such an entry carries `TenantId = Guid.Empty` and the user; the serializer keys it
+  `UserScoped / Guid.Empty / user`, which the eraser now names (below).
+- *Alternative:* a host-chosen "person tenant" id. Rejected: the key would name a real tenant id the
+  eraser does not know, so a key store that cannot list would leave it behind, and nothing would stop
+  that tenant from being erased.
+- *Alternative:* a new sensitivity level "person". Rejected: `UserScoped` with no real tenant already is
+  that scope; a new level would be a second name for it and a new branch in every coverage rule.
+Evidence: `EventSourceOwningUserTests.A_stream_created_for_a_user_alone_keeps_that_owner_under_a_tenants_session`,
+`StreamEncryptionAcrossErasureTests.A_persons_own_data_follows_them_across_tenants_and_dies_only_with_them`.
 
 **The kept-and-checked mode is one registration that wires three pieces.**
 `AddCheckedMembershipTenantClaim<TUser>()` (name to be settled in review against the two existing
