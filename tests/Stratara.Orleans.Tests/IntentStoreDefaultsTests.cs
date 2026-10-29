@@ -57,6 +57,18 @@ public sealed class IntentStoreDefaultsTests
     }
 
     [Fact]
+    public async Task A_counted_conflict_is_recorded_as_a_conflict_and_answers_no_count()
+    {
+        ICommandIntentStore store = new OldStore();
+        var id = Guid.NewGuid();
+
+        Assert.Null(await store.CountConflictAsync(id, "conflict", CancellationToken.None));
+
+        Assert.Equal([$"failure {id} conflict"], ((OldStore)store).Calls);
+        await Assert.ThrowsAsync<ArgumentNullException>(() => store.CountConflictAsync(id, null!, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task A_stop_gives_nothing_back()
     {
         ICommandIntentStore store = new OldStore();

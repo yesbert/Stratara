@@ -16,7 +16,28 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.6.0`._
+On the Orleans execution model, a recorded command whose handler met a concurrency conflict waited for its hand-over
+to lapse, 30 seconds by default, before the drain ran it again; on the bus a conflicting message is redelivered at
+once. A change that collided with background work on the same stream took half a minute. It now runs again within
+moments.
+
+### Added
+
+- **`ICommandIntentStore.CountConflictAsync`** records a conflict as `RecordConflictAsync` does and answers how many
+  conflicts the command has met. The default answers `null`, so an intent store of your own compiles and behaves as
+  before; the framework's store implements it.
+
+### Changed
+
+- **A conflicting recorded command runs again at once.** The silo that ran it runs it again in a unit of work of its
+  own while it still holds the hand-over, pausing as the `ResilienceNames.ConcurrencyConflict` pipeline does (five
+  retries from 50 ms). A heavy command keeps its permit. Every conflict is still recorded and counted, and the command
+  runs again only while its conflicts stay within `MessageRetryOptions.MaxConflictRequeues`, so a command that
+  conflicts on every attempt runs as often as before and is kept. After the pipeline's retries the drain resumes it
+  as before.
+
+**Upgrading:** nothing to do with the framework's intent store. An intent store of your own keeps the old timing
+until it implements `CountConflictAsync`.
 
 ## [4.6.0] — 2026-10-28
 

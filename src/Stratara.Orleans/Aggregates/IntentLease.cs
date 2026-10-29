@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Outbox;
 using Stratara.Orleans.Diagnostics;
 
@@ -164,6 +165,25 @@ internal sealed class IntentLease : IAsyncDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _ = ex;
+        }
+    }
+
+    /// <summary>
+    /// Logs the attempt that met <paramref name="conflict"/> and records it as a conflict, and answers how many conflicts
+    /// the command has met — or <see langword="null"/> where the store cannot tell or the conflict could not be
+    /// recorded, which leaves the command to the drain.
+    /// </summary>
+    public async Task<int?> CountConflictAsync(ConcurrencyException conflict, string commandType, Guid? aggregateId)
+    {
+        _logger.LogIntentAttemptFailed(conflict, _intentId, commandType, aggregateId);
+        try
+        {
+            return await _intents.CountConflictAsync(_intentId, IntentFailure.Describe(conflict), CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return null;
         }
     }
 

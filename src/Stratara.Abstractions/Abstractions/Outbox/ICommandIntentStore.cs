@@ -199,6 +199,27 @@ public interface ICommandIntentStore
     }
 
     /// <summary>
+    /// Records the conflict as <see cref="RecordConflictAsync"/> does, and answers how many conflicts the command has
+    /// met since it was recorded or last returned by an operator, this one included. The execution model runs a command
+    /// whose attempt met a conflict again at once while that count leaves room under the conflict bound.
+    /// </summary>
+    /// <param name="intentId">The recorded command.</param>
+    /// <param name="failure">A description of the conflict.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The command's conflicts, or <see langword="null"/> where the store cannot tell.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="failure"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The default records the conflict through <see cref="RecordConflictAsync"/> and answers <see langword="null"/>, so
+    /// a command recorded with a store that does not override it is left to the drain after a conflict, as before.
+    /// </remarks>
+    async Task<int?> CountConflictAsync(Guid intentId, string failure, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        await RecordConflictAsync(intentId, failure, cancellationToken);
+        return null;
+    }
+
+    /// <summary>
     /// Gives back the attempt the command's latest hand-over counted, never below zero, because its handler was stopped
     /// with its silo rather than failing.
     /// </summary>

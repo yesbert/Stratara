@@ -192,6 +192,18 @@ internal sealed class CommandIntentStore<TContext>(IDbContextFactory<TContext> c
             .ExecuteUpdateAsync(set => set.SetProperty(e => e.LastFailure, recorded), CancellationToken.None);
     }
 
+    /// <summary>Two statements: the update <see cref="RecordConflictAsync"/> makes, then a read of the count it left.</summary>
+    public async Task<int?> CountConflictAsync(Guid intentId, string failure, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        await RecordConflictAsync(intentId, failure, cancellationToken);
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.Set<OutboxEntry>().AsNoTracking()
+            .Where(e => e.Id == intentId)
+            .Select(e => (int?)e.ConflictCount)
+            .SingleOrDefaultAsync(CancellationToken.None);
+    }
+
     public async Task RecordConflictAsync(Guid intentId, string failure, CancellationToken cancellationToken)
     {
         var recorded = Truncate(failure);
