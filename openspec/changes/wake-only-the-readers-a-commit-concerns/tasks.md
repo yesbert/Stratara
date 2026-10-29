@@ -86,7 +86,7 @@
 - [x] 4.6 *A saga reader reads a batch that applies nothing*: a saga reader caught up over facts its saga does not
   handle has its checkpoint past them at once, and a saga added afterwards reacts to none of them
   (`tests/Stratara.Orleans.IntegrationTests/Sagas/`, next to the test of *A saga is added to a running deployment*)
-- [ ] 4.7 The existing checkpoint tests stay green: `CheckpointFirstWriteTests`, *A stale activation writes a
+- [x] 4.7 The existing checkpoint tests stay green: `CheckpointFirstWriteTests`, *A stale activation writes a
   checkpoint*, `SeededStartTests`, `ProjectionProgressTests`, `ReplayWithStoreReadersTests`
 
 ## 5. Idle poll (design D4)
@@ -96,7 +96,7 @@
   It is disabled when the registered `ICommittedPositionReader` does not override `HeadAsync` (interface map). Unit
   tests: refresh once under concurrent callers, staleness bound, disabled for a default-head reader
   (`src/Stratara.Orleans/Projections/PartitionHeads.cs`, `tests/Stratara.Orleans.Tests/PartitionHeadsTests.cs`)
-- [ ] 5.2 `StoreReaderGrain.RequestPoll` asks `PartitionHeads` before it starts a catch-up. Nudges, `CatchUpAsync`,
+- [x] 5.2 `StoreReaderGrain.RequestPoll` asks `PartitionHeads` before it starts a catch-up. Nudges, `CatchUpAsync`,
   restarts and waits bypass it. A stalled reader still retries once per poll (`StoreReaderGrain.cs`;
   `BusyReaderKeepAliveTests` and the stall tests stay green)
 - [x] 5.3 Test 1.4 passes on both readers. *A wake-up is lost*: with nudges suppressed, a committed fact is applied
@@ -116,6 +116,10 @@
   `OrleansExecutionModelSampleSmokeTests` in the gauntlet. *A projection's reader holds its checkpoint back*:
   `ExecutionModelTestHostTests.The_wait_for_the_readers_returns_while_a_reader_holds_its_checkpoint_back` times out
   against the old wait and passes against the new one
-- [ ] 6.4 `openspec validate wake-only-the-readers-a-commit-concerns --strict`, `./scripts/local-gauntlet.sh`, and the
+- [x] 6.4 `openspec validate wake-only-the-readers-a-commit-concerns --strict`, `./scripts/local-gauntlet.sh`, and the
   integration classes touched here (`CommitWakesItsReadersTests`, `IdlePollTests`, `DeferredCheckpointKillTests`,
   `RebuildEndToEndTests`, the store wake-ups and saga tests of 2.5 and 3.3)
+  Result: gauntlet green. The integration namespaces `Projections`, `Sagas` and `Hosting` ran twice in full on a
+  machine under heavy unrelated load (load average 20–39). Each run had a handful of timeouts in tests whose
+  latency bounds the load broke (`ClientWakeUpTests`, `CommitPublishKillTests`, `StoppingSiloTests`, one
+  `SagaIsolationTests` case), and every one passed when rerun alone or by class. The new classes pass
