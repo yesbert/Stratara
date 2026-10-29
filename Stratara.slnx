@@ -65,6 +65,7 @@
     <Project Path="tests/Stratara.Identity.AspNetCore.Tests/Stratara.Identity.AspNetCore.Tests.csproj" />
     <Project Path="tests/Stratara.Identity.EntityFrameworkCore.Tests/Stratara.Identity.EntityFrameworkCore.Tests.csproj" />
     <Project Path="tests/Stratara.Identity.Core.Tests/Stratara.Identity.Core.Tests.csproj" />
+    <Project Path="tests/Stratara.Identity.IntegrationTests/Stratara.Identity.IntegrationTests.csproj" />
     <Project Path="tests/Stratara.Infrastructure.Tests/Stratara.Infrastructure.Tests.csproj" />
     <Project Path="tests/Stratara.Outbox.RabbitMQ.IntegrationTests/Stratara.Outbox.RabbitMQ.IntegrationTests.csproj" />
     <Project Path="tests/Stratara.Orleans.Benchmarks/Stratara.Orleans.Benchmarks.csproj" />

@@ -35,6 +35,17 @@ A release for one person who belongs to several tenants — and, sharing one ide
   tenant, keeps that owner for every later event whatever tenant the session names, and its user-level fields are
   keyed to the person: shredded by the person's erasure, untouched by any tenant's.
 
+- **`StrataraIdentityStore`, an identity store several hosts can share on PostgreSQL**, with its migrations shipped
+  in `Stratara.EventSourcing.EntityFrameworkCore`. It holds ASP.NET Identity's tables, passkeys included, and the
+  tenant directory in the fixed schema `stratara_identity`, with the history in
+  `stratara_identity.__stratara_identity_migrations`. `AddStrataraIdentityStore()` registers it on the connection
+  string `identitydb` (falling back to `defaultdb`) with the directory's stores over it;
+  `MigrateStrataraIdentityStoreAsync()` creates the database where needed and applies the migrations — hosts that
+  migrate at once take turns. The account type is `IdentityUser` and cannot be extended, and the store fixes the
+  ASP.NET Identity schema version and key lengths, so every host's model matches the shipped migrations. Within a
+  major version the schema changes only additively. Moving an existing identity store onto it means replacing it and
+  seeding with the same user and tenant ids; the new guide *Shared Identity Store* describes it.
+
 ### Changed
 
 - **Setting a membership to a status other than `Active` clears a selection that pointed at it**, as removing it

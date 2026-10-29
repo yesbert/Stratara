@@ -13,7 +13,7 @@ EF Core persistence for the Stratara event-sourced stack — PostgreSQL flavoure
 | `WriteStore/` | `WriteDbContext`, `WriteUnitOfWork`, event-stream/snapshot/event-chain/command-audit/outbox repositories + entity configurations | `Stratara.EventSourcing.EntityFrameworkCore.WriteStore` |
 | `ReadStore/` | `ReadDbContext`, `ReadUnitOfWork`, `ProjectionsUnitOfWork`, Tenant repository, projection entity configurations | `Stratara.EventSourcing.EntityFrameworkCore.ReadStore` |
 | `ReadStore/Replay/` | `AddReadModelRestore<TReadContext>()`: keeps the read models a replay empties and writes them back when it fails; `ReadModelRestoreOptions` (section `ProjectionReplay:Restore`) | `Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Replay` |
-| `IdentityStore/` | Generic ASP.NET Identity `IdentityDbContext` + marker | `Stratara.EventSourcing.EntityFrameworkCore.IdentityStore` |
+| `IdentityStore/` | Generic ASP.NET Identity `IdentityDbContext` + marker, and `StrataraIdentityStore` — the identity store several hosts share, with its migrations shipped in `IdentityStore/Migrations/` (`AddStrataraIdentityStore()`, `MigrateStrataraIdentityStoreAsync()`) | `Stratara.EventSourcing.EntityFrameworkCore.IdentityStore` |
 
 Everything lives under `Stratara.EventSourcing.EntityFrameworkCore` and its sub-namespaces (`.WriteStore`, `.ReadStore`, `.IdentityStore`, `.Abstractions`, `.Conventions`, `.Extensions`, `.HealthChecks`, `.Migration`). The DI extensions sit in `Microsoft.Extensions.DependencyInjection`, per the Microsoft convention, so they resolve without an extra `using`.
 

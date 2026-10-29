@@ -20,6 +20,8 @@
   href: auth-decorators.md
 - name: Tenant Membership
   href: tenant-membership.md
+- name: Shared Identity Store
+  href: shared-identity-store.md
 - name: Permission-Based Authorization
   href: require-permission.md
 - name: Scoped Settings

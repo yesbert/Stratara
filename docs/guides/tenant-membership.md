@@ -49,6 +49,10 @@ public sealed class DirectoryDbContext(DbContextOptions<DirectoryDbContext> opti
 builder.Services.AddTenantMembershipStore<DirectoryDbContext>();   // ITenantMembershipStore, scoped
 ```
 
+**Several hosts sharing one identity?** Hosting the tables in your own context gives each host a migration lineage
+of its own, and two lineages cannot share tables. Use the [shared identity store](shared-identity-store.md)
+instead: it holds the accounts and the directory and ships their migrations.
+
 ### One context for the request, or one per operation
 
 That registration — and its siblings `AddApiKeyStore<TContext>()` and `AddSettingStore<TContext>()` —

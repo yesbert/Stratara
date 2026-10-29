@@ -56,6 +56,25 @@ and run time cannot diverge. The history table is `__stratara_identity_migration
 - *Alternative:* idempotent hand-written SQL scripts. Rejected: a second, unchecked description of a
   model EF already describes, and no history a later release can build on.
 
+**The model does not follow the host's `IdentityOptions.Stores`.** Found during implementation: ASP.NET
+Identity builds its model from the host's store options — the schema version (which adds or omits the passkey
+table) and `MaxLengthForKeys`, which also sets the phone-number length. The design-time factory sees none, the
+framework's identity registration sets `SchemaVersion = Version3`, so the first shipped migration did not match any
+host (`PendingModelChangesWarning` at the migrate call, in every integration test). The store therefore overrides
+`SchemaVersion` with `IdentitySchemaVersions.Version3` and sets the login/token key lengths to 128 and the phone
+number to 256 — the values the framework's registration produces — so the model is the same in every host and at
+design time. A host that changes an option the model depends on beyond those (personal-data protection) still gets
+a model the migrations do not describe, and the migrate call fails loudly. Evidence:
+`SharedIdentityStoreTests` (all five fail without the overrides),
+`StrataraIdentityStoreTests.The_model_has_no_change_the_latest_shipped_migration_lacks`.
+
+**Generating a migration is one script.** `scripts/add-identity-store-migration.sh <Name>` runs
+`dotnet ef migrations add` with the context, output folder and namespace, moves the model snapshot that EF places by
+namespace back next to the migrations, and qualifies the generated base class: inside
+`Stratara.EventSourcing.EntityFrameworkCore`, `Migration` resolves to the namespace of `DbContextMigrationUtility`.
+The package references `Microsoft.EntityFrameworkCore.Design` with `PrivateAssets="all"`, so it is not a consumer
+dependency.
+
 **Its own connection, falling back to the default.** The registration resolves the connection string
 `identitydb` and falls back to the one `IDbResolver` resolves (`defaultdb`). Options are not tenant-
 routed: the identity store is one database for all tenants.
@@ -72,7 +91,8 @@ does for its own contexts.
 database-wide lock before applying migrations, and Npgsql implements it. That is the mechanism the
 requirement relies on; the integration test that runs two hosts' migrations at once is the evidence.
 Should it fail on the pinned Npgsql, the migrate call takes a PostgreSQL advisory lock around
-`MigrateAsync` instead — the requirement does not change. Creating the database is not covered by
+`MigrateAsync` instead — the requirement does not change. Verified: the concurrent test passes on Npgsql 10 with
+EF Core's lock alone, so no advisory lock was added. Creating the database is not covered by
 that lock; a concurrent "already exists" from `CreateAsync` is treated as success.
 
 **Additivity is checked by a test, not by review.** A unit test walks every shipped migration after the
