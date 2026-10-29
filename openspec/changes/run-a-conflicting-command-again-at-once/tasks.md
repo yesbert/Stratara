@@ -39,5 +39,9 @@
 - [x] 4.1 `docs/guides/operate-the-orleans-execution-model.md`, *Kept commands*: how a conflict is handled, the
   pipeline as the knob, the bound, and that a provider's own conflict exception is an ordinary failure here
 - [x] 4.2 `CHANGELOG.md` `[Unreleased]`: Changed (a conflict reruns at once) and Added (`CountConflictAsync`)
-- [ ] 4.3 `openspec validate run-a-conflicting-command-again-at-once --strict`, `./scripts/local-gauntlet.sh`, and the
+- [x] 4.3 `openspec validate run-a-conflicting-command-again-at-once --strict`, `./scripts/local-gauntlet.sh`, and the
   integration classes `ConflictRerunTests` and `ResumedOnceInOrderTests`
+  Result: gauntlet green; `ConflictRerunTests` and `ResumedOnceInOrderTests` green (23 of 23). The namespaces
+  `Aggregates` and `HeavyWork` passed 68 of 69 under heavy unrelated machine load. The one failure,
+  `HeavyBurstTests` running one unit twice after hand-overs that timed out, involves no conflict: its probe appends
+  nothing
