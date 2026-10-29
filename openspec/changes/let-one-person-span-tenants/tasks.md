@@ -72,20 +72,22 @@
 
 ## 5. Tenant fixed at sign-in, checked on every request
 
-- [ ] 5.1 `src/Stratara.Identity.AspNetCore/Services/`: the checking `IClaimsTransformation` — claim
+- [x] 5.1 `src/Stratara.Identity.AspNetCore/Services/`: the checking `IClaimsTransformation` — claim
   present and membership `Active` → unchanged; not `Active` or missing → clone without the claim;
   no claim → unchanged, never resolved live.
-- [ ] 5.2 The `SecurityStampValidatorOptions.OnRefreshingPrincipal` hook: copies the current tenant
+- [x] 5.2 The `SecurityStampValidatorOptions.OnRefreshingPrincipal` hook: copies the current tenant
   claim onto the new principal when still `Active`, removes it otherwise, chains to a handler already
   set.
-- [ ] 5.3 `src/Stratara.Identity.AspNetCore/DependencyInjection/MembershipClaimsServiceCollectionExtensions.cs`:
+- [x] 5.3 `src/Stratara.Identity.AspNetCore/DependencyInjection/MembershipClaimsServiceCollectionExtensions.cs`:
   the new registration (factory decorator + hook + transformation); throws `InvalidOperationException`
   naming both when combined with `AddMembershipTenantClaimsTransformation()` in either order. XML docs
   state when membership and selection changes take effect in all three modes.
-- [ ] 5.4 Tests in `MembershipClaimsBridgeTests` (or a sibling): another session moves the selection →
-  claim kept, including through a cookie refresh driven by `SecurityStampValidator`; host sets the
-  selection and re-issues → new tenant; membership set to `Former` → next request has no claim and no
-  substitute; refresh after the membership ended → no claim; both registrations → throws.
+- [x] 5.4 `tests/Stratara.Identity.AspNetCore.Tests/CheckedMembershipTenantClaimTests.cs`: a selection moved
+  elsewhere moves neither the request nor the cookie refresh (driven through the installed
+  `SecurityStampValidatorOptions.OnRefreshingPrincipal`, which the validator calls); a re-issue after the host
+  selects switches it; `Former`/`Pending`/removed membership → next request has no claim and no substitute, the
+  original principal untouched; refresh after the membership ended → no claim; no claim → never resolved live;
+  unreadable user → dropped; both registrations → throws in either order; registering twice decorates once.
 
 ## 6. Documentation and release notes
 

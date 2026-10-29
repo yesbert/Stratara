@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stratara.Abstractions.Multitenancy;
@@ -10,10 +11,25 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// DI extensions that wire the sign-in claims bridge: the <c>stratara:tenant_id</c> claim is
 /// resolved from the user's tenant membership and surfaced on the principal, where Stratara's
-/// session-context middleware picks it up. Two modes — stamp at issuance
-/// (<see cref="AddMembershipTenantClaim{TUser}"/>) or resolve per request
-/// (<see cref="AddMembershipTenantClaimsTransformation"/>).
+/// session-context middleware picks it up. Three modes — stamp at issuance
+/// (<see cref="AddMembershipTenantClaim{TUser}"/>), resolve per request
+/// (<see cref="AddMembershipTenantClaimsTransformation"/>), or stamp at issuance, keep it across a
+/// refresh and check it on every request (<see cref="AddCheckedMembershipTenantClaim{TUser}"/>).
 /// </summary>
+/// <remarks>
+/// <para>
+/// When changes take effect. <b>Stamped</b>: a membership or selection change reaches a signed-in
+/// user when the sign-in is re-issued — at the latest when the security-stamp validator refreshes it.
+/// <b>Live</b>: a selection change applies on the next request; an ended membership is dropped on the
+/// next request. <b>Kept and checked</b>: an ended membership is dropped on the next request; a
+/// selection changes this sign-in's tenant only when the host re-issues the sign-in.
+/// </para>
+/// <para>
+/// A user has one selection across everything that shares the identity store, so live resolution
+/// moves every open session of the user when any of them switches. Where several applications share
+/// one identity store, choose the kept-and-checked mode.
+/// </para>
+/// </remarks>
 public static class MembershipClaimsServiceCollectionExtensions
 {
     /// <summary>
@@ -68,7 +84,7 @@ public static class MembershipClaimsServiceCollectionExtensions
     /// <see cref="IClaimsTransformation"/>, resolving the tenant claim from the membership store
     /// on every request. Choose this mode when tenant switches must apply without re-issuing the
     /// sign-in; it composes with the issuance mode (principals already carrying the claim pass
-    /// through unchanged).
+    /// through unchanged). It cannot be combined with <see cref="AddCheckedMembershipTenantClaim{TUser}"/>.
     /// </summary>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
@@ -78,10 +94,90 @@ public static class MembershipClaimsServiceCollectionExtensions
     /// services.AddMembershipTenantClaimsTransformation();
     /// </code>
     /// </example>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="AddCheckedMembershipTenantClaim{TUser}"/> is already registered.
+    /// </exception>
     public static IServiceCollection AddMembershipTenantClaimsTransformation(this IServiceCollection services)
     {
+        ThrowIfRegistered<CheckedMembershipClaimsTransformation>(services);
         services.TryAddScoped<IClaimsTransformation, MembershipClaimsTransformation>();
         return services;
+    }
+
+    /// <summary>
+    /// Stamp the tenant claim when the principal is issued, keep it when the security-stamp validator
+    /// refreshes a cookie sign-in, and check it on every request: where the user's membership in the
+    /// carried tenant is no longer <see cref="MembershipStatus.Active"/>, the request's principal loses
+    /// the claim and resolves as one without it. Use it where several applications share one identity
+    /// store, so a switch in one does not move another's open sign-in.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The tenant changes only when the principal is issued: at sign-in, and when the host re-issues the
+    /// sign-in — which is how it switches the user to a tenant it has just selected
+    /// (<see cref="ITenantMembershipStore.SetActiveTenantAsync"/>, then a sign-in refresh). A host that
+    /// re-issues the sign-in for another reason switches the tenant to the selection as well.
+    /// </para>
+    /// <para>
+    /// Every request looks the carried membership up once. A bearer-token refresh re-creates the
+    /// principal through the claims factory and resolves the tenant from the selection; only the cookie
+    /// refresh keeps it.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
+    /// <param name="services">The service collection to mutate.</param>
+    /// <returns>The same service collection, to enable chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// No <see cref="IUserClaimsPrincipalFactory{TUser}"/> is registered yet, or
+    /// <see cref="AddMembershipTenantClaimsTransformation"/> is already registered.
+    /// </exception>
+    /// <example>
+    /// <code>
+    /// services.AddCheckedMembershipTenantClaim&lt;IdentityUser&gt;();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddCheckedMembershipTenantClaim<TUser>(this IServiceCollection services)
+        where TUser : class
+    {
+        ThrowIfRegistered<MembershipClaimsTransformation>(services);
+        if (services.Any(d => d.ImplementationType == typeof(CheckedMembershipClaimsTransformation)))
+        {
+            return services;
+        }
+
+        services.AddMembershipTenantClaim<TUser>();
+        services.AddHttpContextAccessor();
+        services.AddScoped<IClaimsTransformation, CheckedMembershipClaimsTransformation>();
+        services.AddOptions<SecurityStampValidatorOptions>()
+            .PostConfigure<IHttpContextAccessor>((options, accessor) =>
+            {
+                var hostHandler = options.OnRefreshingPrincipal;
+                options.OnRefreshingPrincipal = async context =>
+                {
+                    if (hostHandler is not null)
+                    {
+                        await hostHandler(context);
+                    }
+
+                    var httpContext = accessor.HttpContext;
+                    await MembershipTenantClaimRefresh.KeepTenantAsync(
+                        context,
+                        httpContext?.RequestServices.GetService<ITenantMembershipStore>(),
+                        httpContext?.RequestAborted ?? CancellationToken.None);
+                };
+            });
+
+        return services;
+    }
+
+    private static void ThrowIfRegistered<TConflicting>(IServiceCollection services)
+    {
+        if (services.Any(d => d.ServiceType == typeof(IClaimsTransformation) && d.ImplementationType == typeof(TConflicting)))
+        {
+            throw new InvalidOperationException(
+                "AddCheckedMembershipTenantClaim and AddMembershipTenantClaimsTransformation decide the tenant claim " +
+                "differently and only one claims transformation runs; register one of them.");
+        }
     }
 
     private static object CreateInner(IServiceProvider provider, ServiceDescriptor descriptor)

@@ -60,6 +60,22 @@ internal static class MembershipTenantClaimResolver
     /// Stamps the <c>stratara:tenant_id</c> claim onto the principal's primary identity — the
     /// single place that owns the claim's encoding (round-trippable <c>"D"</c> Guid format).
     /// </summary>
+    internal static async Task<bool> IsActiveMemberAsync(
+        ITenantMembershipStore membershipStore, ClaimsPrincipal principal, Guid tenantId, CancellationToken cancellationToken) =>
+        GetUserId(principal) is { } userId
+        && await membershipStore.GetMembershipAsync(userId, tenantId, cancellationToken) is { Status: MembershipStatus.Active };
+
+    internal static void RemoveTenantClaims(ClaimsPrincipal principal)
+    {
+        foreach (var identity in principal.Identities)
+        {
+            foreach (var claim in identity.FindAll(StrataraClaimTypes.TenantId).ToList())
+            {
+                identity.TryRemoveClaim(claim);
+            }
+        }
+    }
+
     internal static void StampTenantClaim(ClaimsPrincipal principal, Guid tenantId)
     {
         if (principal.Identity is ClaimsIdentity identity)
