@@ -302,7 +302,7 @@ public sealed class StoreSchemaAdditionsTests
         protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
         {
             base.ConfigureConventions(configurationBuilder);
-            configurationBuilder.Conventions.Remove(typeof(SequenceNumberIndexConvention));
+            configurationBuilder.Conventions.Remove<SequenceNumberIndexConvention>();
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -326,7 +326,7 @@ public sealed class StoreSchemaAdditionsTests
         protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
         {
             base.ConfigureConventions(configurationBuilder);
-            configurationBuilder.Conventions.Remove(typeof(SequenceNumberIndexConvention));
+            configurationBuilder.Conventions.Remove<SequenceNumberIndexConvention>();
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
