@@ -19,6 +19,9 @@ public sealed record CounterCreated(Guid CounterId);
 
 public sealed record CounterIncremented(Guid CounterId, int By);
 
+/// <summary>An event of the counter that no projection of the tests handles.</summary>
+public sealed record CounterNoted(Guid CounterId);
+
 /// <summary>
 /// Switches the test flips to make the projection misbehave on purpose: a poisoned stream makes it
 /// throw as a genuine failure would, and a stream awaiting a prerequisite makes it report the

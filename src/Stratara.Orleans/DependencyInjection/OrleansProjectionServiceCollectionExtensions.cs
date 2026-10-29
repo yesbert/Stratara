@@ -112,6 +112,7 @@ public static class OrleansProjectionServiceCollectionExtensions
         AddStoreReaderCore(services, hybrid);
         RolePlacement.Publish(services, ExecutionRole.Sagas);
         SagaRegistrations.Register(services);
+        services.TryAddSingleton<SagaRelevances>();
         AddNudgeTarget<SagaNudgeTarget>(services);
         AddSagaProcessTimers(services);
         return services;
@@ -227,6 +228,8 @@ public static class OrleansProjectionServiceCollectionExtensions
         services.AddOptions<CommitOrderOptions>();
         OrleansOptionsValidator.Register<CommitOrderOptions>(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<global::Orleans.Runtime.ISiloLifecycle>, StoreReaderGrainStarter>());
+        services.TryAddSingleton<CommitRelevance>();
+        services.TryAddSingleton<PartitionHeads>();
         services.TryAddScoped<IStoreReaderSeeding, StoreReaderSeeding>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(sp => new StoreReaderLease(StoreReaderLease.DefaultDuration, sp.GetRequiredService<TimeProvider>()));

@@ -68,6 +68,41 @@ public sealed class StoreWakeUpTests
     }
 
     [Fact]
+    public void The_event_types_travel_beside_the_call_and_leave_the_callers_context_as_it_was()
+    {
+        var grains = new Grains();
+        var wakeUps = WakeUps(grains, new FakeTimeProvider());
+        global::Orleans.Runtime.RequestContext.Set(WakeUpEventTypes.Key, "the caller's own");
+        try
+        {
+            wakeUps.Wake(grains.Factory, [5], ["Created", "Incremented"]);
+
+            Assert.Equal(new[] { "Created", "Incremented" }, grains.ProjectionCarriedTypes);
+            Assert.Equal("the caller's own", global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
+        }
+        finally
+        {
+            global::Orleans.Runtime.RequestContext.Remove(WakeUpEventTypes.Key);
+        }
+
+        wakeUps.Wake(grains.Factory, [5], ["Created"]);
+        Assert.Null(global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
+
+        wakeUps.Wake(grains.Factory, [5]);
+        Assert.Null(grains.ProjectionCarriedTypes);
+    }
+
+    [Fact]
+    public void A_silo_takes_the_event_types_out_of_the_context_and_reads_none_where_the_host_sent_none()
+    {
+        global::Orleans.Runtime.RequestContext.Set(WakeUpEventTypes.Key, new[] { "Created" });
+
+        Assert.Equal(new[] { "Created" }, WakeUpEventTypes.Take());
+        Assert.Null(global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key));
+        Assert.Null(WakeUpEventTypes.Take());
+    }
+
+    [Fact]
     public void A_role_the_host_hosts_itself_is_not_woken_through_the_cluster()
     {
         var grains = new Grains();
@@ -300,6 +335,8 @@ public sealed class StoreWakeUpTests
 
         public int ProjectionCalls => _projection.Calls;
 
+        public object? ProjectionCarriedTypes => _projection.CarriedTypes;
+
         public int SagaCalls => _saga.Calls;
 
         private Task Answer(Exception? failure) =>
@@ -311,9 +348,12 @@ public sealed class StoreWakeUpTests
 
             public int Calls => Volatile.Read(ref _calls);
 
+            public object? CarriedTypes { get; private set; }
+
             public Task WakeAsync(int[] buckets)
             {
                 Interlocked.Increment(ref _calls);
+                CarriedTypes = global::Orleans.Runtime.RequestContext.Get(WakeUpEventTypes.Key);
                 return grains.Answer(failure: null);
             }
         }

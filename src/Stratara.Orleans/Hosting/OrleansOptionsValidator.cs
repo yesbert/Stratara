@@ -66,7 +66,8 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
     public ValidateOptionsResult Validate(string? name, ProjectionGrainOptions options) => Result<ProjectionGrainOptions>(
         Positive(options.BatchSize, nameof(options.BatchSize)),
         Positive(options.PollInterval, nameof(options.PollInterval)),
-        AtLeastReminderMinimum(options.KeepAlivePeriod, nameof(options.KeepAlivePeriod)));
+        AtLeastReminderMinimum(options.KeepAlivePeriod, nameof(options.KeepAlivePeriod)),
+        NotNegative(options.IdleCheckpointInterval, nameof(options.IdleCheckpointInterval)));
 
     public ValidateOptionsResult Validate(string? name, SagaGrainOptions options) => Result<SagaGrainOptions>(
         Positive(options.BatchSize, nameof(options.BatchSize)),
@@ -110,6 +111,9 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
 
     private static string? Positive(TimeSpan value, string setting) =>
         value > TimeSpan.Zero ? null : $"{setting} ({value}) must be longer than zero.";
+
+    private static string? NotNegative(TimeSpan value, string setting) =>
+        value >= TimeSpan.Zero ? null : $"{setting} ({value}) must be zero or longer.";
 
     private string? AtLeastReminderMinimum(TimeSpan value, string setting) =>
         value >= MinimumReminderPeriod

@@ -30,11 +30,23 @@ public sealed class ProjectionGrainOptions
     /// <summary>How many entries one read from the store returns.</summary>
     public int BatchSize { get; set; } = 500;
 
-    /// <summary>The safety net: how often a grain reads the store without having been nudged.</summary>
+    /// <summary>
+    /// The safety net: how often a grain looks for entries it was not woken for. A poll reads the store only where the
+    /// grain's partition holds something past the grain's position, which the silo asks the store once for all its
+    /// grains, at most every half of this interval.
+    /// </summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>How often the cluster brings a lost grain back; not shorter than the minimum reminder period.</summary>
     public TimeSpan KeepAlivePeriod { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How long a reader may hold a position past entries it applied nothing for before it writes that position as its
+    /// checkpoint. A batch that applies anything writes the checkpoint at once, and so does a reader that deactivates.
+    /// A reader started again after its silo died reads at most these entries again and applies nothing for them.
+    /// <see cref="TimeSpan.Zero"/> writes the checkpoint after every batch.
+    /// </summary>
+    public TimeSpan IdleCheckpointInterval { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>One grain per projection and partition, keyed <c>projection/partition</c>.</summary>
@@ -127,7 +139,7 @@ internal sealed class ProjectionGrain(
     IOptions<ProjectionGrainOptions> options,
     IOptions<CommitOrderOptions> commitOrder,
     Microsoft.Extensions.Logging.ILogger<ProjectionGrain> logger)
-    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod, commitOrder.Value.PartitionCount), logger),
+    : StoreReaderGrain(scopeFactory, replayState, pipelineProvider, new StoreReaderSettings(options.Value.BatchSize, options.Value.PollInterval, options.Value.KeepAlivePeriod, commitOrder.Value.PartitionCount, options.Value.IdleCheckpointInterval), logger),
         IProjectionGrain
 {
     private HashSet<string>? _relevant;
@@ -153,7 +165,7 @@ internal sealed class ProjectionGrain(
     /// its tenant when it is constructed takes the entry's; per entry, the recorded session and the retry policy, as
     /// the <c>projections</c> guarantees require. One relevant-event set for the grain.
     /// </summary>
-    protected override async Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
+    protected override async Task<BatchOutcome> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken)
     {
         await using var runs = new SessionRuns<(IProjectionHandler Handler, IProjection Projection)>(ScopeFactory, services =>
         {
@@ -171,10 +183,11 @@ internal sealed class ProjectionGrain(
             var relevantEvents = events.Where(e => _relevant.Contains(e.EventTypeName)).ToList();
             if (relevantEvents.Count == 0)
             {
-                return;
+                return false;
             }
 
             await handler.ProjectAsync(projection, relevantEvents, entryToken);
+            return true;
         }, cancellationToken);
     }
 
@@ -307,6 +320,13 @@ internal interface INudgeTarget
 
     Task NudgeAsync(IGrainFactory grainFactory, int partition);
 
+    /// <summary>
+    /// Wakes the target's readers of the partition that a commit of <paramref name="eventTypeNames"/> concerns: those
+    /// whose consumer applies one of the events, as <see cref="CommitRelevance"/> decides it. Without names — a wake-up
+    /// of an earlier version, a restart — every reader is woken. A target that cannot tell wakes them all.
+    /// </summary>
+    Task NudgeAsync(IGrainFactory grainFactory, int partition, IReadOnlyCollection<string>? eventTypeNames) => NudgeAsync(grainFactory, partition);
+
     Task EnsureRunningAsync(IGrainFactory grainFactory, int partition);
 
     /// <summary>
@@ -323,37 +343,29 @@ internal interface INudgeTarget
 /// Every registered projection's grain for the partition. The names come from the silo's
 /// <see cref="ProjectionRegistrations"/> and are fixed when the target is built, so resolving the target — which every
 /// commit does — constructs no projection once the silo knows its names, and a silo that cannot work them out fails
-/// where the target is resolved rather than where it nudges.
+/// where the target is resolved rather than where it nudges. A commit wakes only the projections it concerns; without
+/// a <see cref="CommitRelevance"/> every one.
 /// </summary>
-internal sealed class ProjectionNudgeTarget(ProjectionRegistrations registrations, StoreReaderLease lease) : INudgeTarget
+internal sealed class ProjectionNudgeTarget(ProjectionRegistrations registrations, StoreReaderLease lease, CommitRelevance? relevance = null) : INudgeTarget
 {
     private readonly IReadOnlyList<string> _names = registrations.Names;
 
     public IReadOnlyList<string> ConsumerNames => _names;
 
+    /// <summary>Wakes every projection of the partition; see <see cref="NudgeAsync(IGrainFactory, int, IReadOnlyCollection{string})"/>.</summary>
+    /// <exception cref="AggregateException">A wake-up could not be sent for one or more projections.</exception>
+    public Task NudgeAsync(IGrainFactory grainFactory, int partition) => NudgeAsync(grainFactory, partition, null);
+
     /// <summary>
-    /// Wakes every projection of the partition. A wake-up that cannot even be sent is collected rather than thrown
-    /// at once, so one projection the call fails for does not cost the others behind it their wake-up; the
-    /// dispatcher logs what failed.
+    /// Wakes the projections of the partition the commit concerns. A wake-up that cannot even be sent is collected
+    /// rather than thrown at once, so one projection the call fails for does not cost the others behind it their
+    /// wake-up; the dispatcher logs what failed.
     /// </summary>
     /// <exception cref="AggregateException">A wake-up could not be sent for one or more projections.</exception>
-    public Task NudgeAsync(IGrainFactory grainFactory, int partition)
-    {
-        List<Exception>? failures = null;
-        foreach (var name in _names)
-        {
-            try
-            {
-                grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)).NudgeAsync().Ignore();
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                (failures ??= []).Add(exception);
-            }
-        }
-
-        return failures is null ? Task.CompletedTask : Task.FromException(new AggregateException(failures));
-    }
+    public Task NudgeAsync(IGrainFactory grainFactory, int partition, IReadOnlyCollection<string>? eventTypeNames) =>
+        LocalNudges.Send(
+            _names.Where(name => eventTypeNames is null || relevance is null || relevance.Concerns(registrations.RelevanceOf(name), eventTypeNames)),
+            name => grainFactory.GetGrain<IProjectionGrain>(StoreReaderGrainKey.Of(name, partition)).NudgeAsync());
 
     public async Task EnsureRunningAsync(IGrainFactory grainFactory, int partition)
     {

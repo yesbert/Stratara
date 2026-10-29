@@ -34,11 +34,12 @@ internal interface ISagaWakeUpGrain : IGrainWithIntegerKey
 internal static class LocalNudges
 {
     /// <summary>
-    /// Nudges every target for every partition. A nudge that cannot be sent — before the silo has started, while it
+    /// Nudges every target for every partition, waking the readers a commit of <paramref name="eventTypeNames"/>
+    /// concerns, or every reader without names. A nudge that cannot be sent — before the silo has started, while it
     /// stops — is a lost nudge like any other: the facts are committed and the poll reads them, so it is logged at debug
     /// with the consumers it was meant for and does not keep the others from being sent.
     /// </summary>
-    public static async Task NudgeAsync(IEnumerable<INudgeTarget> targets, IGrainFactory grainFactory, IReadOnlyCollection<int> partitions, ILogger? logger)
+    public static async Task NudgeAsync(IEnumerable<INudgeTarget> targets, IGrainFactory grainFactory, IReadOnlyCollection<int> partitions, ILogger? logger, IReadOnlyCollection<string>? eventTypeNames = null)
     {
         var log = logger ?? NullLogger.Instance;
         foreach (var target in targets)
@@ -47,7 +48,7 @@ internal static class LocalNudges
             {
                 try
                 {
-                    await target.NudgeAsync(grainFactory, partition);
+                    await target.NudgeAsync(grainFactory, partition, eventTypeNames);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -58,6 +59,29 @@ internal static class LocalNudges
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Sends one nudge per consumer of <paramref name="consumers"/>. A nudge that cannot even be sent is collected rather
+    /// than thrown at once, so one consumer the call fails for does not cost the others behind it their wake-up.
+    /// </summary>
+    /// <exception cref="AggregateException">A nudge could not be sent for one or more consumers.</exception>
+    public static Task Send(IEnumerable<string> consumers, Func<string, Task> nudge)
+    {
+        List<Exception>? failures = null;
+        foreach (var consumer in consumers)
+        {
+            try
+            {
+                nudge(consumer).Ignore();
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                (failures ??= []).Add(exception);
+            }
+        }
+
+        return failures is null ? Task.CompletedTask : Task.FromException(new AggregateException(failures));
     }
 }
 
@@ -84,15 +108,23 @@ internal abstract class StoreWakeUpGrain<TTarget>(IServiceScopeFactory scopeFact
         await base.OnActivateAsync(cancellationToken);
     }
 
-    public Task WakeAsync(int[] buckets) => WakeLocalAsync(_targets, GrainFactory, buckets, _partitionCount, logger);
+    /// <summary>
+    /// Wakes the readers the commit concerns, named by the event types its host put in the call's request context; a
+    /// wake-up without them — from a host of an earlier version — wakes every reader. The names are taken out of the
+    /// context, so the calls the woken readers make do not carry them on.
+    /// </summary>
+    public Task WakeAsync(int[] buckets) => WakeLocalAsync(_targets, GrainFactory, buckets, _partitionCount, logger, WakeUpEventTypes.Take());
 
     /// <summary>The readers of the role <paramref name="services"/> registers; their names are fixed when they are built.</summary>
     public static IReadOnlyList<INudgeTarget> TargetsOf(IServiceProvider services) =>
         [.. services.GetServices<INudgeTarget>().OfType<TTarget>()];
 
-    /// <summary>Nudges, for every partition <paramref name="buckets"/> fall into under <paramref name="partitionCount"/>, every target.</summary>
+    /// <summary>
+    /// Nudges, for every partition <paramref name="buckets"/> fall into under <paramref name="partitionCount"/>, every
+    /// target's readers a commit of <paramref name="eventTypeNames"/> concerns, or all of them without names.
+    /// </summary>
     /// <exception cref="InvalidOperationException">No reader of the role is registered on this silo.</exception>
-    public static Task WakeLocalAsync(IReadOnlyList<INudgeTarget> targets, IGrainFactory grainFactory, int[] buckets, int partitionCount, ILogger logger)
+    public static Task WakeLocalAsync(IReadOnlyList<INudgeTarget> targets, IGrainFactory grainFactory, int[] buckets, int partitionCount, ILogger logger, IReadOnlyCollection<string>? eventTypeNames = null)
     {
         ArgumentNullException.ThrowIfNull(targets);
         ArgumentNullException.ThrowIfNull(buckets);
@@ -103,7 +135,60 @@ internal abstract class StoreWakeUpGrain<TTarget>(IServiceScopeFactory scopeFact
         }
 
         var partitions = buckets.Select(bucket => PartitionMap.PartitionOf(bucket, partitionCount)).Distinct().ToList();
-        return LocalNudges.NudgeAsync(targets, grainFactory, partitions, logger);
+        return LocalNudges.NudgeAsync(targets, grainFactory, partitions, logger, eventTypeNames);
+    }
+}
+
+/// <summary>
+/// How a wake-up through the cluster names the event types of its commit: beside the call, in its request context, so
+/// that the call itself is the one every version of the wake-up grain understands. A silo of an earlier version does
+/// not read them and wakes every reader; a host of an earlier version does not set them, and every reader is woken.
+/// </summary>
+internal static class WakeUpEventTypes
+{
+    /// <summary>The request-context key the names travel under.</summary>
+    public const string Key = "stratara.wake.event-types";
+
+    /// <summary>
+    /// Puts <paramref name="eventTypeNames"/> in the request context until the returned scope is disposed, which
+    /// restores what the context held before.
+    /// </summary>
+    public static Scope Carry(IReadOnlyCollection<string> eventTypeNames)
+    {
+        var previous = RequestContext.Get(Key);
+        RequestContext.Set(Key, eventTypeNames.ToArray());
+        return new Scope(previous);
+    }
+
+    /// <summary>The names the call arrived with, taken out of the request context; <see langword="null"/> where it carried none.</summary>
+    public static string[]? Take()
+    {
+        var names = RequestContext.Get(Key) as string[];
+        RequestContext.Remove(Key);
+        return names;
+    }
+
+    /// <summary>Restores the request context's earlier value for <see cref="Key"/>; the default scope restores nothing.</summary>
+    public readonly struct Scope(object? previous) : IDisposable
+    {
+        private readonly bool _carried = true;
+
+        public void Dispose()
+        {
+            if (!_carried)
+            {
+                return;
+            }
+
+            if (previous is null)
+            {
+                RequestContext.Remove(Key);
+            }
+            else
+            {
+                RequestContext.Set(Key, previous);
+            }
+        }
     }
 }
 
@@ -149,8 +234,11 @@ internal sealed class ClusterWakeUps
     /// <summary>The roles this host wakes through the cluster: those it does not host itself.</summary>
     public IReadOnlyList<ExecutionRole> Roles => [.. _roles.Select(role => role.Role)];
 
-    /// <summary>Wakes the readers of the buckets a commit touched; returns at once.</summary>
-    public void Wake(IGrainFactory grainFactory, IReadOnlyCollection<int> buckets)
+    /// <summary>
+    /// Wakes the readers of the buckets a commit touched that a commit of <paramref name="eventTypeNames"/> concerns,
+    /// naming the types beside each call, or every reader without names; returns at once.
+    /// </summary>
+    public void Wake(IGrainFactory grainFactory, IReadOnlyCollection<int> buckets, IReadOnlyCollection<string>? eventTypeNames = null)
     {
         if (_roles.Count == 0 || buckets.Count == 0)
         {
@@ -161,9 +249,12 @@ internal sealed class ClusterWakeUps
             .GroupBy(bucket => PartitionMap.PartitionOf(bucket, _keys))
             .Select(group => (Key: group.Key, Buckets: group.ToArray()))
             .ToList();
-        foreach (var role in _roles)
+        using (eventTypeNames is null ? default : WakeUpEventTypes.Carry(eventTypeNames))
         {
-            role.Wake(grainFactory, byKey);
+            foreach (var role in _roles)
+            {
+                role.Wake(grainFactory, byKey);
+            }
         }
     }
 

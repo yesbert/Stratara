@@ -56,19 +56,21 @@ how `EventMapperFactory` keys its upcasters, so the undecidable test asks exactl
 *Alternatives:* decide by name only, without the upcaster check. That is cheaper, but a fact written under an
 upcast name would wait for the poll. Decide on the host: a client host does not know the silo's projections, so no.
 
-### D2 — The cluster wake-up names the event types under a new method, and falls back to the old one
+### D2 — The cluster wake-up carries the event types in the request context (revised during implementation, 2026-10-29)
 
-`IProjectionWakeUpGrain` and `ISagaWakeUpGrain` get `WakeForAsync(int[] buckets, string[] eventTypeNames)`
-(`[AlwaysInterleave]`, alias `WakeForAsync`), which filters through D1 on the silo. The existing `WakeAsync(int[])`
-stays and wakes every reader, so a host of 4.6.0 or earlier still wakes everything. `ClusterWakeUps` calls
-`WakeForAsync`. A call that fails because the silo does not know the method is sent again as `WakeAsync`, and the
-role remembers to use `WakeAsync` for `StoreWakeUpOptions.AbsentRoleRetry` before it tries the new form again. The
-remembering works like the absent-role set-aside, with its own generation.
-*Evidence to obtain:* task 3.2 records which exception Orleans 10.4 raises for a method the target silo's interface
-lacks, and the fallback matches that one only.
+`IProjectionWakeUpGrain.WakeAsync(int[])` and `ISagaWakeUpGrain.WakeAsync(int[])` keep their signature and alias.
+`ClusterWakeUps` sets the commit's type names under the request-context key `stratara.wake.event-types` (a
+`string[]`) around the calls it issues and restores the previous value afterwards. The wake-up grain reads the key and
+filters through D1. Without the key, every reader is woken. That is what a wake-up from a host of 4.6.0 or earlier
+looks like, and a silo of 4.6.0 or earlier never reads the key, so it wakes every reader.
 
-*Alternative:* bump the grain interface version. That forces Orleans' versioning policy on every host, which costs
-more than one fallback.
+*Rejected first plan:* a second method `WakeForAsync(int[], string[])` under a new alias, with a fallback to
+`WakeAsync` when the silo does not know it. A silo of the previous version has no invoker for the new method. How
+Orleans answers that — an error the caller can match, or a request that times out after the response timeout and
+fills the bounded outstanding calls — could not be verified without a cluster of mixed versions, and a timeout would
+have turned every wake-up of the rolling window into a lost one plus a held callback. The request context needs no
+new method and no fallback. *Evidence:* Orleans propagates `RequestContext` values with the call, and the
+receiving grain reads them in its turn. Test 3.3 covers the typed path, and 3.4 the path without the key.
 
 ### D3 — The loop separates the position it holds from the one it wrote
 
@@ -82,19 +84,34 @@ that handed anything to a handler.
 - A cut batch writes its resume position at once, as today. The cut is about a stall, which must be visible in the
   store.
 - At the end of every catch-up and on every poll tick, a deferral older than the interval is written.
-  `OnDeactivateAsync` writes it as well, best effort.
+  `OnDeactivateAsync` writes it as well, best effort, after the running loop has ended.
 - `Invalidate` (pause, replay, refused write, failed catch-up) drops the deferral without writing. Whoever
   invalidates may change the checkpoint behind the loop, so `_written` must never be written over a reset.
 
 `AdvanceAsync` always goes from `_written`, so the fencing (*A stale activation writes a checkpoint*) is unchanged.
 
-The option is `IdleCheckpointInterval`, default 30 s, on `ProjectionGrainOptions` and `SagaGrainOptions`.
-`TimeSpan.Zero` writes at once, which is today's behaviour, and a negative value is refused by the options validator.
+The option is `IdleCheckpointInterval`, default 30 s, on `ProjectionGrainOptions` only. `TimeSpan.Zero` writes at
+once, which is today's behaviour, and a negative value is refused by the options validator. The loop takes the
+interval as a constructor argument. `SagaReaderGrain` passes `TimeSpan.Zero` and keeps writing at once (D7).
 *Evidence:* `StoreReaderGrain.HasReached` reads the in-memory position, and the rebuild's reset runs only under a pause,
 which calls `Invalidate` (`StoreReaderGrain.RequestPoll` / pause path).
 
 *Alternative:* never write past irrelevant entries until the next relevant one. Then a reader of a rare event re-reads
 an unbounded tail after every restart, so no.
+
+### D7 — Saga readers do not defer (found during implementation, 2026-10-29)
+
+The proposal first deferred the checkpoint for saga readers too. Reading `SagaStart.EnsureAsync` showed that a saga
+added to a running deployment starts at the furthest checkpoint the host's sagas *hold*. The main spec (*A host can
+start its store readers at the head of a populated store*, scenario *A saga is added to a running deployment*)
+requires the new saga to react only to facts after the position the host's sagas had reached. A deferred saga
+checkpoint would let a new saga run its side effects, which are commands, for up to one interval of history. Saga
+readers therefore write at once as before. They still profit from D1, which wakes a saga only when a commit holds
+something it declares, and from D4.
+
+*Alternative:* defer, and have `SagaStart` ask the sibling saga grains for their in-memory positions before it creates
+a checkpoint. That means cross-grain calls in the start path and a rolling-deployment concern for older silos, which
+is more than the saving warrants.
 
 ### D4 — An idle poll asks a silo-wide head cache
 
@@ -132,11 +149,9 @@ published abstraction. With D1 to D4 the gain is small. If the load under D5 mat
 
 ## Risks / Trade-offs
 
-- **A saga added later may start a little earlier.** `SagaStart.EnsureAsync` starts a new saga at the furthest
-  *written* checkpoint of the host's sagas. Deferral can leave that up to one `IdleCheckpointInterval` behind, so a
-  saga added to a running deployment may apply facts committed in that window before its start. That is the same as
-  when its siblings lag behind today. → The guide says so. A host that needs an exact start sets the saga grain's
-  interval to zero for the deployment that adds the saga, or seeds it at the head.
+- **Saga readers keep a checkpoint write per batch read.** While a partition moves with facts a saga does not
+  handle, its reader writes once per poll tick (D5, D7). → That is bounded by sagas × partitions per poll interval,
+  and far below today's write per commit.
 - **An undecidable name wakes everyone.** A host that keeps upcasters for many names gets less of D1. → That is still
   correct. The guide names it.
 - **A wrong relevance set would hide a fact until the poll.** → D1 reuses the set the grain applies with, and test 1.1

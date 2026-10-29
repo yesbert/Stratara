@@ -15,7 +15,8 @@ namespace Stratara.Orleans.Projections;
 /// <param name="PollInterval">How often the grain reads the store without having been nudged.</param>
 /// <param name="KeepAlivePeriod">How often the cluster brings a lost grain back.</param>
 /// <param name="PartitionCount">How many partitions the host reads; a grain of a partition at or beyond it retires.</param>
-internal sealed record StoreReaderSettings(int BatchSize, TimeSpan PollInterval, TimeSpan KeepAlivePeriod, int PartitionCount);
+/// <param name="IdleCheckpointInterval">How long the position past batches that applied nothing may go unwritten; zero writes it after every batch.</param>
+internal sealed record StoreReaderSettings(int BatchSize, TimeSpan PollInterval, TimeSpan KeepAlivePeriod, int PartitionCount, TimeSpan IdleCheckpointInterval = default);
 
 /// <summary>Why a store-reading grain retires when it is activated, if it does.</summary>
 internal enum StoreReaderRetirement
@@ -66,6 +67,7 @@ internal abstract class StoreReaderGrain(
     private readonly List<StoreReaderWaiter> _waiters = [];
     private TimeProvider _time = TimeProvider.System;
     private StoreReaderLoop? _loop;
+    private PartitionHeads? _heads;
     private IGrainTimer? _poll;
     private StoreReaderPausers? _pausers;
     private StoreReaderRetirement _retirement;
@@ -225,7 +227,9 @@ internal abstract class StoreReaderGrain(
         _loop = new StoreReaderLoop(scopeFactory, pipelineProvider.GetPipeline(ResilienceNames.PrecedingFact), consumer, partition, settings.BatchSize, logger, StartAsync)
         {
             PositionChanged = AnswerWaiters,
+            IdleCheckpointInterval = settings.IdleCheckpointInterval,
         };
+        _heads = ServiceProvider.GetService<PartitionHeads>();
         _poll ??= this.RegisterGrainTimer(
             _ => RequestPoll(),
             new GrainTimerCreationOptions
@@ -308,7 +312,9 @@ internal abstract class StoreReaderGrain(
     /// <summary>
     /// A loop a nudge started holds no request; the activation waits for it so a successor never applies beside it.
     /// A loop that outlasts the deactivation's budget is cancelled — it stops at its next store call or batch
-    /// boundary — and waited for once more; what the grain reported is withdrawn however the wait ended.
+    /// boundary — and waited for once more; what the grain reported is withdrawn however the wait ended. A position
+    /// the loop held back past entries that applied nothing is written then, unless reading is suspended, when whoever
+    /// suspended it may be changing the checkpoint.
     /// </summary>
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
@@ -334,6 +340,11 @@ internal abstract class StoreReaderGrain(
             {
                 await _stopping.CancelAsync();
                 await Loop.WaitForRunningAsync(CancellationToken.None);
+            }
+
+            if (!Suspended)
+            {
+                await Loop.FlushDeferredAsync();
             }
 
             Loop.Withdraw();
@@ -412,8 +423,8 @@ internal abstract class StoreReaderGrain(
     /// <returns>A task that completes once the consumer has its starting position.</returns>
     protected virtual Task StartAsync(IProjectionCheckpointStore checkpoints, string reader, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>Applies a batch in order and returns the index of the first entry that did not apply.</summary>
-    protected abstract Task<int> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken);
+    /// <summary>Applies a batch in order and returns the index of the first entry that did not apply, and how many applied entries handed anything to a handler.</summary>
+    protected abstract Task<BatchOutcome> ApplyBatchAsync(CommittedBatch batch, CancellationToken cancellationToken);
 
     /// <summary>
     /// Lets every pause whose lease has passed lapse before reading, so a pauser that died leaves the reader paused for
@@ -421,7 +432,7 @@ internal abstract class StoreReaderGrain(
     /// starts a catch-up without waiting for it where none is running; a loop that fails is logged and counted by the
     /// loop itself. A running loop is left alone: it reads until the store has nothing newer, a commit's nudge makes it
     /// read once more, and a poll that did too would keep a loop stalled on an entry retrying it back to back, never
-    /// ending, instead of once per poll as before.
+    /// ending, instead of once per poll as before. See <see cref="PollAsync"/> for when a poll reads.
     /// </summary>
     private Task RequestPoll()
     {
@@ -432,10 +443,33 @@ internal abstract class StoreReaderGrain(
 
         if (Loop.Running is null)
         {
-            RequestCatchUp().Ignore();
+            PollAsync().Ignore();
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Reads only where there may be something to read: a reader that knows its position, is not suspended and holds
+    /// back no checkpoint whose interval has passed asks the silo's <see cref="PartitionHeads"/> first, and reads nothing
+    /// where its partition holds nothing past it. Every other poll reads as before — a suspended reader so that it
+    /// forgets its position, one that does not know its position so that it learns it.
+    /// </summary>
+    private async Task PollAsync()
+    {
+        if (_heads is { } heads
+            && !Suspended
+            && !Loop.DeferralDue
+            && Loop.TryGetPosition(out var position)
+            && !await heads.HasAnythingPastAsync(Partition, position, settings.PollInterval / 2))
+        {
+            return;
+        }
+
+        if (Loop.Running is null)
+        {
+            RequestCatchUp().Ignore();
+        }
     }
 
     /// <summary>How the reader stands: suspended before stalled on an entry before stalled on a read.</summary>

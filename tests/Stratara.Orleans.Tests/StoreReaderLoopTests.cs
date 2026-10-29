@@ -167,10 +167,10 @@ public sealed class StoreReaderLoopTests
             attempts.Add(entry.Id);
             return entry.Id == entries[1].Entry.Id
                 ? throw new CommittedEventsNotPublishedException([entry.StreamId], 1, new InvalidOperationException("the bus is down"))
-                : Task.CompletedTask;
+                : Task.FromResult(true);
         });
 
-        Assert.Equal(3, applied);
+        Assert.Equal(new BatchOutcome(3, 3), applied);
         Assert.Equal(entries.Select(e => e.Entry.Id), attempts);
     }
 
@@ -195,6 +195,93 @@ public sealed class StoreReaderLoopTests
         Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
     }
 
+    /// <summary>
+    /// A batch that applied nothing moves the position the loop answers from, but not the checkpoint, until the loop is
+    /// asked to write what it holds back.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_that_applied_nothing_holds_its_checkpoint_back_until_it_is_flushed()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), checkpoints, batchSize: 10, TimeSpan.FromHours(1));
+
+        await loop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, 0)), static () => false, CancellationToken.None);
+
+        Assert.Equal(0, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+        Assert.True(loop.TryGetPosition(out var position));
+        Assert.Equal(3, position);
+        Assert.False(loop.DeferralDue);
+
+        await loop.FlushDeferredAsync();
+
+        Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
+    /// <summary>A batch that applied something writes the checkpoint at once, past whatever the loop held back before it.</summary>
+    [Fact]
+    public async Task A_batch_that_applied_something_writes_the_checkpoint_at_once()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        var reader = new ScriptedReader("scripted/16", Entries(1, 3));
+        var loop = LoopOver(reader, checkpoints, batchSize: 2, TimeSpan.FromHours(1));
+        var batches = 0;
+
+        await loop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, batches++ == 0 ? 0 : 1)), static () => false, CancellationToken.None);
+
+        Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
+    /// <summary>Forgetting the position forgets what the loop held back: whoever made it forget may have changed the checkpoint.</summary>
+    [Fact]
+    public async Task An_invalidated_loop_writes_nothing_it_held_back()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), checkpoints, batchSize: 10, TimeSpan.FromHours(1));
+        await loop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, 0)), static () => false, CancellationToken.None);
+
+        loop.Invalidate();
+        await loop.FlushDeferredAsync();
+
+        Assert.Equal(0, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
+    /// <summary>A catch-up that ends once the interval has passed writes what the loop held back; one that is suspended does not.</summary>
+    [Fact]
+    public async Task A_catch_up_that_ends_after_the_interval_writes_what_was_held_back_unless_suspended()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        var loop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), checkpoints, batchSize: 10, TimeSpan.FromMilliseconds(1));
+        await loop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, 0)), static () => false, CancellationToken.None);
+        await Task.Delay(20, TestContext.Current.CancellationToken);
+        Assert.True(loop.DeferralDue);
+
+        await loop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, 0)), static () => false, CancellationToken.None);
+
+        Assert.Equal(3, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+
+        var held = new MemoryCheckpoints();
+        var suspendedLoop = LoopOver(new ScriptedReader("scripted/16", Entries(1, 3)), held, batchSize: 10, TimeSpan.FromMilliseconds(1));
+        await suspendedLoop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, 0)), static () => false, CancellationToken.None);
+        await Task.Delay(20, TestContext.Current.CancellationToken);
+        await suspendedLoop.CatchUpAsync((batch, _) => Task.FromResult(new BatchOutcome(batch.Entries.Count, 0)), static () => true, CancellationToken.None);
+
+        Assert.Equal(0, await held.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
+    /// <summary>A batch cut at an entry that cannot apply writes the position before it, also where the loop held a position back.</summary>
+    [Fact]
+    public async Task A_cut_batch_writes_the_position_before_the_entry_it_stopped_at()
+    {
+        var checkpoints = new MemoryCheckpoints();
+        var reader = new ScriptedReader("scripted/16", Entries(1, 4));
+        var loop = LoopOver(reader, checkpoints, batchSize: 2, TimeSpan.FromHours(1));
+        var batches = 0;
+
+        await loop.CatchUpAsync((batch, _) => Task.FromResult(batches++ == 0 ? new BatchOutcome(batch.Entries.Count, 0) : new BatchOutcome(0, 0)), static () => false, CancellationToken.None);
+
+        Assert.Equal(2, await checkpoints.GetAsync(Consumer, Partition, "scripted/16"));
+    }
+
     /// <summary>Refuses a write with a cancelled token before sending it, as a database driver does.</summary>
     private sealed class TokenHonouringCheckpoints : IProjectionCheckpointStore
     {
@@ -210,13 +297,16 @@ public sealed class StoreReaderLoopTests
         }
     }
 
-    private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize)
+    private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, int batchSize, TimeSpan idleCheckpointInterval = default)
     {
         var services = new ServiceCollection()
             .AddSingleton(reader)
             .AddSingleton(checkpoints)
             .BuildServiceProvider();
-        return new StoreReaderLoop(services.GetRequiredService<IServiceScopeFactory>(), ResiliencePipeline.Empty, Consumer, Partition, batchSize, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        return new StoreReaderLoop(services.GetRequiredService<IServiceScopeFactory>(), ResiliencePipeline.Empty, Consumer, Partition, batchSize, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)
+        {
+            IdleCheckpointInterval = idleCheckpointInterval,
+        };
     }
 
     private static List<CommittedEntry> Entries(long from, long to) =>

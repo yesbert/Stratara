@@ -165,13 +165,15 @@ it handles it, SHALL be woken by every commit in its partitions. Where the wakin
 is relevant to a reader, it SHALL wake the reader. Waking fewer readers SHALL NOT change what any projection or saga
 applies.
 
-A reader that reads entries and applies nothing for them SHALL keep its position past them, and SHALL answer a wait
-for its projection from that position. It SHALL write that position as its checkpoint with the next batch that
+A projection's reader that reads entries and applies nothing for them SHALL keep its position past them, and SHALL
+answer a wait for its projection from that position. It SHALL write that position as its checkpoint with the next batch that
 applies something, once a bounded interval the host can configure has passed, or when it deactivates, whichever
 comes first. A reader started again from its checkpoint after its silo died SHALL therefore re-read at most the
 entries it had applied nothing for, and SHALL apply nothing for them. A pause for a rebuild or a replay SHALL discard
 a position not yet written, so that a checkpoint returned to the beginning is not moved past entries the rebuild
-must re-read. A batch that applies anything SHALL write the checkpoint before the reader reads again, as before.
+must re-read. A batch that applies anything SHALL write the checkpoint before the reader reads again, as before. A saga's reader
+SHALL write its checkpoint once it has read a batch, as before, whether or not the batch applied anything, so that a
+saga added to a running deployment still reacts only to facts after the position the host's sagas had reached.
 
 A reader's poll SHALL read the store only when its partition holds anything past the reader's position. A silo SHALL
 answer that from at most one question to the store per partition and part of the poll interval, whichever of its
@@ -180,8 +182,8 @@ fact whose wake-up was lost SHALL be applied within a little over one poll inter
 position reader cannot tell a partition's head without walking the partition, a poll SHALL read the store as before.
 
 In a rolling deployment, a wake-up from a host of an earlier version, which names no event types, SHALL wake every
-reader of the partitions it names, and a host of this version whose wake-up reaches a silo of an earlier version
-SHALL have it delivered in the form that silo understands. A checkpoint written by either version SHALL be read by
+reader of the partitions it names, and a wake-up from a host of this version SHALL reach a silo of an earlier version
+in the form that silo understands, and wake every reader there. A checkpoint written by either version SHALL be read by
 the other. The documentation SHALL say which readers a commit wakes, when a reader writes its checkpoint past entries
 it applied nothing for, what a restart re-reads, and what a lost wake-up costs.
 
@@ -201,26 +203,28 @@ it applied nothing for, what a restart re-reads, and what a lost wake-up costs.
 #### Scenario: A stateful saga process and a fact it did not declare
 
 - **WHEN** a host registers a stateful saga process and commits a fact of a type the process declares no handler for
-- **THEN** the process's reader is woken and the process decides about the fact as it did before
+- **THEN** the process's reader is woken and the process decides about the fact as it did before, while a stateless
+  saga that declares no handler for the fact is not woken
 
 #### Scenario: A client host wakes the readers through the cluster
 
 - **WHEN** a host that hosts no store reader and has registered the store wake-ups commits facts of an event type
   one projection handles
 - **THEN** that projection applies the facts well before its poll interval has passed, and the readers of the other
-  projections and sagas in the partition do not read the store for that commit
+  projections and sagas in the partition do not read the store for that commit. The wake-up through the cluster is
+  verified on the PostgreSQL store; which readers it wakes is verified at the silo's side of the wake-up
 
 #### Scenario: The readers that applied nothing write their checkpoint later
 
-- **WHEN** a reader is woken, reads entries of which it applies nothing, and no further fact reaches it
+- **WHEN** a projection's reader is woken, reads entries of which it applies nothing, and no further fact reaches it
 - **THEN** its checkpoint is unchanged until the configured interval has passed or the reader deactivates, and is
   then at the position past those entries, and a wait for its projection that covers those entries answers that it
   reached the mark without waiting for the write
 
 #### Scenario: A silo dies before a deferred checkpoint is written
 
-- **WHEN** a reader's silo is killed after the reader read entries it applied nothing for and before it wrote their
-  position
+- **WHEN** a silo is killed after a projection's reader on it read entries it applied nothing for and before it
+  wrote their position
 - **THEN** the reader started again on another silo reads those entries again, applies nothing for them, and applies
   every fact committed after them once. Verified on the PostgreSQL store with the native reader
 
@@ -230,6 +234,13 @@ it applied nothing for, what a restart re-reads, and what a lost wake-up costs.
 - **THEN** the reader's checkpoint is at the beginning when the read model is emptied, is not moved past the
   beginning by the reader before the rebuild resumes it, and the read model holds every fact of the store once the
   readers have caught up
+
+#### Scenario: A saga reader reads a batch that applies nothing
+
+- **WHEN** a saga's reader reads entries of which its saga applies nothing, and a new saga is then added to the
+  running deployment
+- **THEN** the reader's checkpoint is past those entries before it reads again, and the new saga reacts to none of
+  them
 
 #### Scenario: An idle silo
 
@@ -251,9 +262,10 @@ it applied nothing for, what a restart re-reads, and what a lost wake-up costs.
 #### Scenario: A host of this version wakes a silo of the earlier version
 
 - **WHEN** a host of this version that registered the store wake-ups commits facts and the readers run on a silo
-  that does not know the wake-up naming event types
-- **THEN** the silo is woken in the earlier form and its readers apply the facts before their poll interval has
-  passed. Verified on the wake-up's handling of the refused call, not in a cluster of mixed versions
+  of the earlier version
+- **THEN** the silo is woken as before and its readers apply the facts before their poll interval has passed.
+  Verified by the wake-up's form, whose call is the earlier version's with the event types beside it, and by a
+  silo of this version that is woken without them, not in a cluster of mixed versions
 
 #### Scenario: The documentation says what a commit costs
 

@@ -26,6 +26,7 @@ public sealed class OrleansOptionsValidatorTests
     [InlineData("ProjectionGrainOptions.BatchSize")]
     [InlineData("ProjectionGrainOptions.PollInterval")]
     [InlineData("ProjectionGrainOptions.KeepAlivePeriod")]
+    [InlineData("ProjectionGrainOptions.IdleCheckpointInterval")]
     [InlineData("SagaGrainOptions.BatchSize")]
     [InlineData("SagaGrainOptions.PollInterval")]
     [InlineData("SagaGrainOptions.KeepAlivePeriod")]
@@ -122,6 +123,9 @@ public sealed class OrleansOptionsValidatorTests
                 break;
             case "ProjectionGrainOptions.KeepAlivePeriod":
                 services.AddStrataraProjectionGrains(o => o.KeepAlivePeriod = tooShortForAReminder);
+                break;
+            case "ProjectionGrainOptions.IdleCheckpointInterval":
+                services.AddStrataraProjectionGrains(o => o.IdleCheckpointInterval = TimeSpan.FromSeconds(-1));
                 break;
             case "SagaGrainOptions.BatchSize":
                 services.AddStrataraSagaGrains(o => o.BatchSize = 0);

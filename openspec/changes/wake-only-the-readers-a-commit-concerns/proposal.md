@@ -30,18 +30,21 @@ differently, and no fact is missed.
   which decides from the event itself, is always woken. So is every reader when the silo cannot decide an event's
   relevance, such as an event type it does not know. This holds for the wake-up from a host that runs a
   store-reading role and for the store wake-ups a client host registers.
-- **A read that applied nothing does not write a checkpoint at once.** A reader keeps the position past the
-  entries it read and applied nothing for, and answers waits from it. It writes that position as its checkpoint
-  with the next batch that applies something, after a new bounded interval, or when it deactivates. A reader
-  started again after a crash re-reads at most those entries and applies nothing for them. The interval is a new
-  option on the projection and the saga grain settings.
+- **A projection's read that applied nothing does not write a checkpoint at once.** A projection's reader keeps the
+  position past the entries it read and applied nothing for, and answers waits from it. It writes that position as
+  its checkpoint with the next batch that applies something, after a new bounded interval, or when it deactivates.
+  A reader started again after a crash re-reads at most those entries and applies nothing for them. The interval
+  is a new option on the projection grain settings. A saga's reader keeps writing at once, because a saga added to
+  a running deployment starts where the host's sagas have written they read, and must not react to anything before
+  that.
 - **An idle poll asks the store once per partition.** A reader's poll first asks whether its partition has
   anything past the reader's position. Each silo answers that from one head query per partition, shared by all its
   readers and at most as old as a part of the poll interval. A reader that is at the head does not read. A lost
   wake-up therefore still costs only latency, now up to a little over one poll interval rather than one.
-- **Rolling deployment.** A wake-up from a host of the previous version names no event types, and wakes every
-  reader of the partition as before. A host of this version that wakes a silo of the previous version falls back to
-  the previous wake-up for that call. Checkpoints keep their form, so either version reads the other's.
+- **Rolling deployment.** The wake-up through the cluster keeps its form, and the event types travel beside it. A
+  wake-up from a host of the previous version names no event types and wakes every reader of the partition as before.
+  A silo of the previous version ignores the types and wakes every reader too. Checkpoints keep their form, so either
+  version reads the other's.
 - **Unchanged:** commit order and the guarantee that a committed fact reaches every projection and saga, the
   checkpoint's fencing, pauses, rebuilds and replays, seeding at the head, waiting for a projection, retirement,
   stalls and their metrics, the poll interval's option and default, and the bus path.
@@ -69,10 +72,10 @@ _None._
 ## Impact
 
 - **Code:** `Stratara.Orleans`, which holds the commit's wake-up, the store wake-up grains, the store reader loop,
-  the projection and saga reader grains and their options. One public member is added to each of
-  `ProjectionGrainOptions` and `SagaGrainOptions`, the interval after which a deferred checkpoint is written. The
-  wake-up grains get a second method under a new alias, and the existing one stays, so a rolling deployment mixes
-  silos of both versions. No other public type changes, and no stored form changes.
+  the projection and saga reader grains and their options. One public member is added to
+  `ProjectionGrainOptions`, the interval after which a deferred checkpoint is written. The
+  wake-up grains keep their interface, and the event types travel in the call's request context, so a rolling
+  deployment mixes silos and hosts of both versions. No other public type changes, and no stored form changes.
 - **Tests:** `tests/Stratara.Orleans.IntegrationTests` on the PostgreSQL store with the native reader, and the
   portable reader where the poll's head check is concerned. A unit test in `tests/Stratara.Orleans.Tests` covers the
   relevance decision for a wake-up.
