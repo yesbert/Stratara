@@ -260,7 +260,7 @@ internal sealed class StoreReaderLoop(
         var total = await ReadAndApplyBatchesAsync(reader, checkpoints, applyBatch, suspended, cancellationToken);
         if (DeferralDue && !suspended())
         {
-            await WriteAsync(checkpoints, readerName, _position);
+            await WriteAsync(checkpoints, readerName, _position, CancellationToken.None);
         }
 
         return total;
@@ -292,7 +292,7 @@ internal sealed class StoreReaderLoop(
     }
 
     /// <summary>Advances the checkpoint from the position last written to <paramref name="to"/>, and holds nothing back afterwards.</summary>
-    private async Task WriteAsync(IProjectionCheckpointStore checkpoints, string readerName, long to, CancellationToken cancellationToken = default)
+    private async Task WriteAsync(IProjectionCheckpointStore checkpoints, string readerName, long to, CancellationToken cancellationToken)
     {
         await checkpoints.AdvanceAsync(consumer, partition, readerName, _written, to, cancellationToken);
         _written = to;
@@ -332,28 +332,12 @@ internal sealed class StoreReaderLoop(
 
             if (applied < batch.Entries.Count)
             {
-                StoreReaderLag.Report(consumer, partition, batch.Entries[applied].Entry.Timestamp);
-                var resumeAt = batch.ResumePositionBefore(applied, _position);
-                if (resumeAt != _written)
-                {
-                    await WriteAsync(checkpoints, readerName, resumeAt);
-                }
-
+                await StopAtAsync(checkpoints, readerName, batch, applied);
                 return total;
             }
 
             MarkAdvancing(onRead: false);
-            if (outcome.Effective > 0 || IdleCheckpointInterval <= TimeSpan.Zero)
-            {
-                await WriteAsync(checkpoints, readerName, batch.Position);
-            }
-            else
-            {
-                _position = batch.Position;
-                _deferredSince ??= Stopwatch.GetTimestamp();
-                PositionChanged?.Invoke();
-            }
-
+            await PassAsync(checkpoints, readerName, batch, outcome);
             if (!batch.HasMore)
             {
                 StoreReaderLag.Clear(consumer, partition);
@@ -362,6 +346,37 @@ internal sealed class StoreReaderLoop(
         }
 
         return total;
+    }
+
+    /// <summary>
+    /// Writes the position before the entry a cut batch stopped at, so the stall is visible in the store — also where the
+    /// loop held a position back before it.
+    /// </summary>
+    private async Task StopAtAsync(IProjectionCheckpointStore checkpoints, string readerName, CommittedBatch batch, int applied)
+    {
+        StoreReaderLag.Report(consumer, partition, batch.Entries[applied].Entry.Timestamp);
+        var resumeAt = batch.ResumePositionBefore(applied, _position);
+        if (resumeAt != _written)
+        {
+            await WriteAsync(checkpoints, readerName, resumeAt, CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// Moves past a whole batch: writes the checkpoint where the batch applied something or nothing may be held back, and
+    /// otherwise holds the position back, starting the interval it may be held for.
+    /// </summary>
+    private async Task PassAsync(IProjectionCheckpointStore checkpoints, string readerName, CommittedBatch batch, BatchOutcome outcome)
+    {
+        if (outcome.Effective > 0 || IdleCheckpointInterval <= TimeSpan.Zero)
+        {
+            await WriteAsync(checkpoints, readerName, batch.Position, CancellationToken.None);
+            return;
+        }
+
+        _position = batch.Position;
+        _deferredSince ??= Stopwatch.GetTimestamp();
+        PositionChanged?.Invoke();
     }
 
     /// <summary>
