@@ -288,8 +288,16 @@ The tenant an event belongs to SHALL be resolved in this order: an explicit subj
 caller for that event; the subject already established for that stream in the current batch; the
 owner recorded on the stream's first existing event; a tenant carried by the event itself where the
 event declares itself a creation event; and only then the session's data-owner tenant. Every
-candidate SHALL name a tenant to be used, including the explicitly supplied one. Where none of these
-yields a tenant, the append SHALL fail rather than guess.
+candidate SHALL name a tenant to be used, except that an explicitly supplied subject, and the owner a
+stream recorded from one, MAY name a user alone. Where none of these yields an owner, the append SHALL
+fail rather than guess.
+
+An owner that names a user alone records data that belongs to a person rather than to any of their
+tenants. The event SHALL be recorded under the reserved default tenant with that user, and the
+stream SHALL keep that owner for every later event for which no subject is stated, whatever tenant
+the appending session names. Only a caller that states the owner SHALL be able to create such a
+stream; a session whose tenant resolved to the reserved default SHALL still give no owner, so a
+request that failed closed never writes data owned by nobody in particular.
 
 The owner a stream contributes SHALL be the whole owner recorded on its first event: its tenant, and
 its user where one was recorded. A stream whose first event names a user SHALL give that user to
@@ -297,9 +305,9 @@ every later event for which no subject is stated, whatever user the session name
 first event names no user SHALL give such events none. This SHALL hold alike for events appended in
 the save that created the stream and for events appended in any later save.
 
-An explicit subject that names no tenant SHALL fail the append rather than fall through to the
-remaining candidates, because a caller who stated the subject has already said which other candidate
-is not to be used.
+An explicit subject that names neither a tenant nor a user SHALL fail the append rather than fall
+through to the remaining candidates, because a caller who stated the subject has already said which
+other candidate is not to be used.
 
 Reading the tenant from the stream before the session is what stops a privileged operator's session
 silently re-homing an existing aggregate into another tenant. That reasoning does not depend on the
@@ -344,9 +352,16 @@ it by omission.
 
 #### Scenario: The caller supplies a subject that names no tenant
 
-- **WHEN** the caller appends on behalf of a subject whose tenant is absent
+- **WHEN** the caller appends on behalf of a subject whose tenant and user are both absent
 - **THEN** the append fails with a message naming the event and the stream, no event is recorded,
   and the remaining candidates are not consulted
+
+#### Scenario: A stream owned by a user alone is appended to under a tenant's session
+
+- **WHEN** a stream was created for an owner that names a user alone, and an event is appended to it
+  in a later save under a session naming a tenant and another user
+- **THEN** the event is recorded for that user alone, under the reserved default tenant, as the
+  stream's first event was
 
 #### Scenario: Nothing identifies a tenant
 
@@ -360,7 +375,8 @@ it by omission.
 A caller SHALL be able to create a stream with an owner it states, and that owner SHALL be the one the
 stream records, so every later event on the stream for which no subject is stated keeps it. Creating with
 a stated owner SHALL fail as creating does when the stream already exists, and SHALL fail as an explicit
-subject does when the stated owner names no tenant.
+subject does when the stated owner names neither a tenant nor a user. A stated owner MAY name a user
+alone, for data that belongs to a person rather than to any of their tenants.
 
 A host SHALL be able to decide what happens when the first event of a stream that does not exist yet
 would take its owner from the session — that is, when no subject is stated for it and it carries no tenant
@@ -387,8 +403,14 @@ someone else's tenant keys the record's whole history to their own.
 
 #### Scenario: The stated owner names no tenant
 
-- **WHEN** a stream is created with a stated owner whose tenant is absent
+- **WHEN** a stream is created with a stated owner whose tenant and user are both absent
 - **THEN** the creation fails with a message naming the event and the stream, and nothing is staged
+
+#### Scenario: The stated owner names a user alone
+
+- **WHEN** a stream is created with a stated owner that names a user and no tenant
+- **THEN** the stream is created, its events are recorded for that user under the reserved default
+  tenant, and the user's encrypted fields are keyed to the user alone
 
 #### Scenario: The host allows the session to decide
 

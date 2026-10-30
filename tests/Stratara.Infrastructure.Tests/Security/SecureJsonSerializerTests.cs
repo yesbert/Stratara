@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Infrastructure.Security.Serialization;
 using Stratara.Abstractions.Security;
+using Stratara.Testing;
 
 namespace Stratara.Infrastructure.Tests.Security;
 
@@ -474,5 +475,79 @@ public class SecureJsonSerializerTests
         Assert.NotNull(deserialized);
         Assert.Null(deserialized.Plain);
         Assert.Equal("sensitive", deserialized.Secret);
+    }
+
+    private sealed class ErasableProfileDto
+    {
+        public string Language { get; set; } = "";
+
+        [EncryptData(DataSensitivityLevel.UserScoped)]
+        public string? Name { get; set; }
+
+        [EncryptData(DataSensitivityLevel.UserScoped)]
+        public int Age { get; set; }
+
+        [EncryptData(DataSensitivityLevel.UserScoped)]
+        public int? Height { get; set; }
+    }
+
+    [EncryptData(DataSensitivityLevel.UserScoped)]
+    private sealed class NoteKeptWholeDto
+    {
+        public string Title { get; set; } = "";
+
+        public string Body { get; set; } = "";
+    }
+
+    private sealed class NoteKeptFieldByFieldDto
+    {
+        public string Title { get; set; } = "";
+
+        [EncryptData(DataSensitivityLevel.UserScoped)]
+        public string Body { get; set; } = "";
+    }
+
+    private static SecureJsonSerializer SerializerOver(IKeyStore keys)
+    {
+        var environment = new Mock<IHostEnvironment>();
+        environment.SetupGet(e => e.EnvironmentName).Returns(Environments.Production);
+        return new SecureJsonSerializer(
+            keys, CreateEncryptionFactory(), NullLogger<SecureJsonSerializer>.Instance, environment.Object);
+    }
+
+    [Fact]
+    public async Task Deserialize_PropertyLevel_AfterTheUsersErasure_ReadsTheFieldsAbsentAndTheRestNormally()
+    {
+        var keys = new InMemoryKeyStore();
+        var serializer = SerializerOver(keys);
+        var userId = Guid.NewGuid();
+        var serialized = await serializer.SerializeAsync(
+            new ErasableProfileDto { Language = "en", Name = "Ada", Age = 36, Height = 165 }, TestTenantId, userId);
+
+        await keys.MarkSubjectErasedAsync(KeySubject.User(userId.ToString("D")));
+        await keys.EraseScopeAsync(new KeyScope(DataSensitivityLevel.UserScoped, TestTenantId.ToString(), userId.ToString()));
+
+        var deserialized = await serializer.DeserializeAsync<ErasableProfileDto>(serialized, TestTenantId, userId);
+
+        Assert.NotNull(deserialized);
+        Assert.Equal("en", deserialized.Language);
+        Assert.Null(deserialized.Name);
+        Assert.Equal(0, deserialized.Age);
+        Assert.Null(deserialized.Height);
+    }
+
+    [Fact]
+    public async Task Deserialize_AWholeTypePayload_IntoATypeThatNowMarksItsProperties_ReadsIt()
+    {
+        var keys = new InMemoryKeyStore();
+        var serializer = SerializerOver(keys);
+        var written = await serializer.SerializeAsync(
+            new NoteKeptWholeDto { Title = "Plan", Body = "secret" }, TestTenantId, TestUserId);
+
+        var read = await serializer.DeserializeAsync<NoteKeptFieldByFieldDto>(written, TestTenantId, TestUserId);
+
+        Assert.NotNull(read);
+        Assert.Equal("Plan", read.Title);
+        Assert.Equal("secret", read.Body);
     }
 }

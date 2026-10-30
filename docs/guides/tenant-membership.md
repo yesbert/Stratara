@@ -49,6 +49,10 @@ public sealed class DirectoryDbContext(DbContextOptions<DirectoryDbContext> opti
 builder.Services.AddTenantMembershipStore<DirectoryDbContext>();   // ITenantMembershipStore, scoped
 ```
 
+**Several hosts sharing one identity?** Hosting the tables in your own context gives each host a migration lineage
+of its own, and two lineages cannot share tables. Use the [shared identity store](shared-identity-store.md)
+instead: it holds the accounts and the directory and ships their migrations.
+
 ### One context for the request, or one per operation
 
 That registration — and its siblings `AddApiKeyStore<TContext>()` and `AddSettingStore<TContext>()` —
@@ -106,19 +110,62 @@ await memberships.RemoveAllMembersAsync(globex);               // tenant-teardow
 
 `SetActiveTenantAsync` is **membership-guarded**: selecting a tenant the user holds no `Active`
 membership in throws `InvalidOperationException` rather than persisting an unusable selection.
+
+### Ending a membership without forgetting it
+
+A membership has three states. `Active` confers its roles. `Pending` is an invitation not yet
+accepted. `Former` is a member who has left: the row stays, so the tenant still knows the person
+belonged to it, and it confers nothing — no role, no permission, no cross-tenant access, never the
+tenant at sign-in, never a selection. Writing a status other than `Active` over a selected
+membership clears the selection, exactly as removing it does.
+
+<!-- stratara-snippet-ignore: narrative fragment - the store and the example users come from the surrounding text -->
+```csharp
+// alice leaves acme: she keeps her history there, and loses every right in it
+await memberships.SetMembershipAsync(new TenantMembership(alice, acme, [], MembershipStatus.Former));
+```
+
+`GetMembersAsync` and `GetMembershipsAsync` return every status, so a member list filters for the
+ones it means. A former membership is kept until the user's or the tenant's erasure removes it with
+every other membership. The person's name belongs to their own data, not to the tenant: after the
+person's erasure the tenant still sees a former member, without a name.
 If your membership changes are event-sourced, keep emitting your events and update the store from a
 projection or saga instead of calling `SetMembershipAsync` inline.
 
 ## The sign-in tenant claim
 
-Both bridge modes resolve the same way — **persisted active-tenant selection → the user's only
-active membership, where they have exactly one → no claim at all**. They differ only in *when* the
-lookup runs:
+All three bridge modes resolve the same way — **persisted active-tenant selection → the user's only
+active membership, where they have exactly one → no claim at all**. They differ in *when* the
+lookup runs, and in whether the claim is checked afterwards:
 
 | Mode | Behavior |
 |---|---|
-| `AddMembershipTenantClaim<TUser>()` — decorates `IUserClaimsPrincipalFactory<TUser>` | Stamps the claim at issuance, into cookies and Identity bearer tokens alike. No per-request lookup; a tenant switch applies on the next sign-in refresh. |
+| `AddMembershipTenantClaim<TUser>()` — decorates `IUserClaimsPrincipalFactory<TUser>` | Stamps the claim at issuance, into cookies and Identity bearer tokens alike. No per-request lookup; a tenant switch — and an ended membership — reaches a signed-in user on the next sign-in refresh. |
 | `AddMembershipTenantClaimsTransformation()` — registers an `IClaimsTransformation` | Resolves live on every request, so a **tenant switch applies immediately** without re-issuing the sign-in. Costs one store lookup per request — cache behind the store when it gets hot. |
+| `AddCheckedMembershipTenantClaim<TUser>()` — the factory decorator, a checking `IClaimsTransformation` and a cookie-refresh hook | Stamps the claim at issuance and **keeps it** across a cookie refresh; on **every request** it checks that the membership in the carried tenant is still `Active` and drops the claim where it is not. The tenant changes only when the host re-issues the sign-in. One store lookup per request. |
+
+**One selection per account.** `active_tenant` holds one row per user, across everything that shares
+the identity store. With live resolution, a user who switches tenant in one application moves every
+open session they have — in every application on the same store. **Where several applications share
+one identity store, use `AddCheckedMembershipTenantClaim<TUser>()`.** To switch a user there, select
+the tenant and re-issue the sign-in:
+
+<!-- stratara-snippet-ignore: narrative fragment - the store, the sign-in manager and the user come from the surrounding text -->
+```csharp
+await memberships.SetActiveTenantAsync(userId, globex);   // refuses a tenant without an active membership
+await signInManager.RefreshSignInAsync(user);             // the re-issued principal carries globex
+```
+
+A re-issue for any other reason resolves from the selection as well, so in this mode a re-issue *is*
+the switch. A person removed from the tenant — `Former`, `Pending` or deleted — loses the claim on
+their next request, without waiting for a refresh, and is not moved to another of their tenants: the
+request resolves to the reserved default tenant like any request without a claim, and every role-
+or permission-guarded request is refused. The cookie refresh is what keeps the tenant; a
+bearer-token refresh re-creates the principal through the claims factory, which resolves from the
+selection. Only principals ASP.NET Identity issued are checked: an API key, or a token your application
+mints, keeps the tenant it carries. The checked mode cannot be combined with live resolution — registering
+both throws — and a host that registers a claims transformation of its own beside it is refused at start,
+because ASP.NET Core runs only one and the check would stop silently.
 
 ```csharp
 builder.Services
@@ -126,7 +173,7 @@ builder.Services
     .AddMembershipTenantClaim<ApplicationUser>();   // after your identity + store registration
 ```
 
-The two compose: a principal that already carries `stratara:tenant_id` — stamped at issuance, by an
+Stamping and live resolution compose: a principal that already carries `stratara:tenant_id` — stamped at issuance, by an
 earlier transformation run, or by your own machine-JWT minting — **passes through untouched**.
 
 ## The framework will not choose a tenant for a user
@@ -239,6 +286,11 @@ naming the user, alone or together with each tenant it belongs to. A tenant-leve
 value written for that user stays readable until its tenant is erased. Both erasures also ask the
 key store for every key naming the subject, which reaches a key shared with someone who is no
 longer in the directory.
+
+**A person's own data.** Data recorded for an owner that names a user alone (`EventSubject.ForUser`,
+see [encryption setup](encrypt-data-setup.md#data-that-belongs-to-a-person)) is keyed to that user
+and no tenant of theirs. The user's erasure always shreds it — the directory names that key itself,
+so it does not depend on the key store being able to list — and no tenant's erasure reaches it.
 
 **An erased subject is given no new key.** Before it sweeps any plane, the erasure marks the
 subject erased in the key store (`IKeyStore.MarkSubjectErasedAsync`). From then on the store refuses

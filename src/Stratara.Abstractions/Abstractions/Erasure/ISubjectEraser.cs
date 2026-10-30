@@ -35,7 +35,9 @@ namespace Stratara.Abstractions.Erasure;
 /// data-owner user in the audit record, with the acting user in the outbox — whichever tenant the
 /// data in fact belongs to. A command field that is not marked is not reached at all.
 /// Tenant-level and confidential values written for a user belong to the tenant and survive that
-/// user's erasure. Confidential values written with an empty tenant share one system-wide key that
+/// user's erasure. A value of any level written for a user alone — under no tenant, or the reserved
+/// default tenant (<see cref="Guid.Empty"/>) — is the user's own: the user's erasure shreds it whether or
+/// not the key store can list its scopes, and no tenant's erasure reaches it. Confidential values written with an empty tenant share one system-wide key that
 /// no erasure shreds. A key store that cannot list its scopes leaves an erasure with the keys the
 /// directory names; a key shared with a former member, or with an operator acting in a tenant from
 /// outside it, is then not found. A key store that cannot mark a subject erased shreds its keys but can

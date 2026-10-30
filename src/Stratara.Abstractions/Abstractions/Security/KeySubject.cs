@@ -42,7 +42,9 @@ public readonly record struct KeySubject
 
     /// <summary>
     /// Whether the subject's erasure covers a scope: for a tenant, a scope of any level that names the
-    /// tenant; for a user, a <see cref="DataSensitivityLevel.UserScoped"/> scope that names the user.
+    /// tenant; for a user, a <see cref="DataSensitivityLevel.UserScoped"/> scope that names the user, and
+    /// a scope of any level that names the user and no tenant of theirs — no tenant, or the reserved
+    /// default tenant (<see cref="Guid.Empty"/>) under which data owned by the user alone is written.
     /// Ids compare without regard to case, so a GUID written in either case is matched. The default
     /// value names no subject and covers nothing.
     /// </summary>
@@ -51,9 +53,15 @@ public readonly record struct KeySubject
     public bool Covers(KeyScope scope) => Kind switch
     {
         KeySubjectKind.Tenant => Matches(scope.TenantId),
-        KeySubjectKind.User => scope.Level == DataSensitivityLevel.UserScoped && Matches(scope.UserId),
+        KeySubjectKind.User => (scope.Level == DataSensitivityLevel.UserScoped || NamesNoTenant(scope.TenantId))
+                                && Matches(scope.UserId),
         _ => false
     };
+
+    private static readonly string ReservedDefaultTenant = Guid.Empty.ToString("D");
+
+    private static bool NamesNoTenant(string? tenantId) =>
+        string.IsNullOrEmpty(tenantId) || string.Equals(tenantId, ReservedDefaultTenant, StringComparison.OrdinalIgnoreCase);
 
     private bool Matches(string? scopeId) =>
         _id is not null && string.Equals(scopeId, _id, StringComparison.OrdinalIgnoreCase);

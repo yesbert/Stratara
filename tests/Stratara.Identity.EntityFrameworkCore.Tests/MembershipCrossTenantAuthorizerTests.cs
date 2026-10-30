@@ -33,12 +33,14 @@ public class MembershipCrossTenantAuthorizerTests
         Assert.True(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
     }
 
-    [Fact]
-    public async Task Pending_membership_does_not_allow()
+    [Theory]
+    [InlineData(MembershipStatus.Pending)]
+    [InlineData(MembershipStatus.Former)]
+    public async Task A_membership_that_is_not_active_does_not_allow(MembershipStatus status)
     {
         var store = new InMemoryTenantMembershipStore();
         await store.SetMembershipAsync(
-            new TenantMembership(ActorUser, SubjectTenant, [], MembershipStatus.Pending));
+            new TenantMembership(ActorUser, SubjectTenant, [], status));
 
         var authorizer = new MembershipCrossTenantAuthorizer(
             store, new FixedRoleProvider(), new MembershipCrossTenantAuthorizerOptions());
@@ -97,12 +99,14 @@ public class MembershipCrossTenantAuthorizerTests
         Assert.False(await authorizer.IsCrossTenantAllowedAsync(CrossTenantSession()));
     }
 
-    [Fact]
-    public async Task A_pending_membership_at_home_does_not_carry_the_configured_role()
+    [Theory]
+    [InlineData(MembershipStatus.Pending)]
+    [InlineData(MembershipStatus.Former)]
+    public async Task A_membership_at_home_that_is_not_active_does_not_carry_the_configured_role(MembershipStatus status)
     {
         var store = new InMemoryTenantMembershipStore();
         await store.SetMembershipAsync(
-            new TenantMembership(ActorUser, ActorTenant, ["PlatformAdmin"], MembershipStatus.Pending));
+            new TenantMembership(ActorUser, ActorTenant, ["PlatformAdmin"], status));
         var options = new MembershipCrossTenantAuthorizerOptions();
         options.CrossTenantRoles.Add("PlatformAdmin");
 

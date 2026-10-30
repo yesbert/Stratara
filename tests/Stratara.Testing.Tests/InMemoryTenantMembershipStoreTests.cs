@@ -76,4 +76,40 @@ public class InMemoryTenantMembershipStoreTests
         await store.RemoveMembershipAsync(userId, tenantId);
         Assert.Null(await store.GetActiveTenantAsync(userId));
     }
+
+    [Theory]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task A_selected_membership_that_stops_being_active_clears_the_selection(MembershipStatus status)
+    {
+        var store = new InMemoryTenantMembershipStore();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+        var otherTenant = Guid.CreateVersion7();
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        await store.SetMembershipAsync(new TenantMembership(userId, otherTenant, []));
+        await store.SetActiveTenantAsync(userId, tenantId);
+
+        await store.SetMembershipAsync(new TenantMembership(userId, otherTenant, [], status));
+        Assert.Equal(tenantId, await store.GetActiveTenantAsync(userId));
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, [], status));
+        Assert.Null(await store.GetActiveTenantAsync(userId));
+    }
+
+    [Fact]
+    public async Task A_former_membership_cannot_be_selected_and_stays_listed()
+    {
+        var store = new InMemoryTenantMembershipStore();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"], MembershipStatus.Former));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.SetActiveTenantAsync(userId, tenantId));
+        Assert.Equal(MembershipStatus.Former, Assert.Single(await store.GetMembersAsync(tenantId)).Status);
+        Assert.Equal(MembershipStatus.Former, Assert.Single(await store.GetMembershipsAsync(userId)).Status);
+    }
 }

@@ -18,6 +18,8 @@ using Stratara.Shared.EventSourcing.Mapping;
 using Stratara.Shared.Partitioning;
 using Stratara.Shared.Reflections;
 
+using Stratara.Infrastructure.Security.Serialization;
+
 namespace Stratara.Infrastructure.EventSourcing;
 
 /// <summary>
@@ -102,12 +104,12 @@ internal sealed partial class EventSource(
     }
 
     /// <inheritdoc/>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="subject"/> names no tenant.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="subject"/> names neither a tenant nor a user.</exception>
     /// <exception cref="InvalidOperationException">Thrown when a stream with the given <paramref name="streamId"/> already exists.</exception>
     public async Task CreateOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
-        ThrowIfNamesNoTenant(subject, @event, streamId, nameof(CreateAsync));
+        ThrowIfNamesNoOwner(subject, @event, streamId, nameof(CreateAsync));
         await EnsureStreamIsNewAsync(streamId, cancellationToken);
         _streamVersions[streamId] = 0;
         await AddEventsToStreamAsync<TAggregate>(streamId, [@event], subject, cancellationToken);
@@ -162,13 +164,13 @@ internal sealed partial class EventSource(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="subject"/> names no tenant. A caller that states the Subject has
+    /// Thrown when <paramref name="subject"/> names neither a tenant nor a user. A caller that states the Subject has
     /// also stated that no other candidate applies, so the append fails instead of falling back.
     /// </exception>
     public Task AppendOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
-        ThrowIfNamesNoTenant(subject, @event, streamId, nameof(AppendAsync));
+        ThrowIfNamesNoOwner(subject, @event, streamId, nameof(AppendAsync));
         return AppendRangeCoreAsync<TAggregate>(streamId, [@event], subject, cancellationToken);
     }
 
@@ -441,6 +443,11 @@ internal sealed partial class EventSource(
     {
         var session = sessionContextProvider.Current
                       ?? throw new SessionRequiredException("Session context is not set");
+        if (WholeTypeStreamEncryption.IsMarkedAsAWhole(@event.GetType()))
+        {
+            throw WholeTypeStreamEncryption.Refusal([@event.GetType()]);
+        }
+
         var correlationId = session.CorrelationId;
         var causationId = session.CausationId;
 
@@ -568,8 +575,8 @@ internal sealed partial class EventSource(
         }
 
         var firstEntry = await eventStreamRepository.GetFirstOrDefaultAsync(streamId, cancellationToken);
-        return firstEntry is { TenantId: var tenantId } && tenantId != Guid.Empty
-            ? (true, new EventSubject(tenantId, firstEntry.UserId))
+        return firstEntry is not null && new EventSubject(firstEntry.TenantId, firstEntry.UserId) is { NamesAnOwner: true } owner
+            ? (true, owner)
             : (true, null);
     }
 
@@ -595,13 +602,14 @@ internal sealed partial class EventSource(
     private static InvalidOperationException StreamAlreadyExists(Guid streamId) =>
         new($"Stream with ID {streamId} already exists. Use AppendAsync to add events.");
 
-    private static void ThrowIfNamesNoTenant(EventSubject subject, object @event, Guid streamId, string resolvingAlternative)
+    private static void ThrowIfNamesNoOwner(EventSubject subject, object @event, Guid streamId, string resolvingAlternative)
     {
-        if (subject.TenantId == Guid.Empty)
+        if (!subject.NamesAnOwner)
         {
             throw new ArgumentException(
-                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant. " +
-                $"Supply a Subject with a tenant id, or use {resolvingAlternative} to let the Subject be resolved.",
+                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant and no user. " +
+                $"Supply a Subject with a tenant id, or EventSubject.ForUser for data owned by a user alone, or use " +
+                $"{resolvingAlternative} to let the Subject be resolved.",
                 nameof(subject));
         }
     }

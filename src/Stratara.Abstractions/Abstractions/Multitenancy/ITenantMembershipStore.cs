@@ -41,7 +41,8 @@ public interface ITenantMembershipStore
     Task<TenantMembership?> GetMembershipAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets every membership of the tenant — the reverse lookup ("who belongs to this tenant").
+    /// Gets every membership of the tenant, regardless of status — the reverse lookup ("who belongs
+    /// to this tenant"), including pending and former members.
     /// </summary>
     /// <param name="tenantId">The tenant whose members to load.</param>
     /// <param name="cancellationToken">Token to observe while loading.</param>
@@ -52,7 +53,11 @@ public interface ITenantMembershipStore
     /// Creates or replaces the membership identified by the record's
     /// <see cref="TenantMembership.UserId"/> and <see cref="TenantMembership.TenantId"/> (upsert).
     /// </summary>
-    /// <param name="membership">The membership to persist; its role set and status replace any existing values.</param>
+    /// <param name="membership">
+    /// The membership to persist; its role set and status replace any existing values. A status other
+    /// than <see cref="MembershipStatus.Active"/> clears the user's active-tenant selection where it
+    /// points at this tenant.
+    /// </param>
     /// <param name="cancellationToken">Token to observe while persisting.</param>
     Task SetMembershipAsync(TenantMembership membership, CancellationToken cancellationToken = default);
 

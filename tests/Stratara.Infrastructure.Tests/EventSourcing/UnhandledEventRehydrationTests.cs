@@ -59,8 +59,7 @@ public class UnhandledEventRehydrationTests
 
     private sealed record CustomerNoteRetired(string Note);
 
-    [EncryptData(DataSensitivityLevel.TenantScoped)]
-    private sealed record CustomerSecretNoted(string Secret);
+    private sealed record CustomerSecretNoted([property: EncryptData(DataSensitivityLevel.TenantScoped)] string Secret);
 
     private sealed class AlwaysSnapshotStrategy : ISnapshotStrategy
     {
@@ -261,6 +260,10 @@ public class UnhandledEventRehydrationTests
     private static string? KeyIdOf(string dataJson)
     {
         using var document = JsonDocument.Parse(dataJson);
-        return document.RootElement.TryGetProperty("kid", out var keyId) ? keyId.GetString() : null;
+        return document.RootElement.TryGetProperty(nameof(CustomerSecretNoted.Secret), out var secret)
+               && secret.ValueKind == JsonValueKind.Object
+               && secret.TryGetProperty("kid", out var keyId)
+            ? keyId.GetString()
+            : null;
     }
 }

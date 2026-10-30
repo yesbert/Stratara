@@ -21,6 +21,41 @@ public class MembershipClaimsBridgeTests
         public Task<ClaimsPrincipal> CreateAsync(IdentityUser user) => Task.FromResult(create(user));
     }
 
+    /// <summary>
+    /// A store whose selection still names a tenant the user has left — the framework's own stores
+    /// clear such a selection, but a consumer's store, or a selection read before the membership
+    /// ended, may not.
+    /// </summary>
+    private sealed class StaleSelectionStore(ITenantMembershipStore inner, Guid staleTenant) : ITenantMembershipStore
+    {
+        public Task<IReadOnlyList<TenantMembership>> GetMembershipsAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            inner.GetMembershipsAsync(userId, cancellationToken);
+
+        public Task<TenantMembership?> GetMembershipAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.GetMembershipAsync(userId, tenantId, cancellationToken);
+
+        public Task<IReadOnlyList<TenantMembership>> GetMembersAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.GetMembersAsync(tenantId, cancellationToken);
+
+        public Task SetMembershipAsync(TenantMembership membership, CancellationToken cancellationToken = default) =>
+            inner.SetMembershipAsync(membership, cancellationToken);
+
+        public Task RemoveMembershipAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.RemoveMembershipAsync(userId, tenantId, cancellationToken);
+
+        public Task RemoveAllMembershipsAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            inner.RemoveAllMembershipsAsync(userId, cancellationToken);
+
+        public Task RemoveAllMembersAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.RemoveAllMembersAsync(tenantId, cancellationToken);
+
+        public Task<Guid?> GetActiveTenantAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Guid?>(staleTenant);
+
+        public Task SetActiveTenantAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.SetActiveTenantAsync(userId, tenantId, cancellationToken);
+    }
+
     private static ClaimsPrincipal AuthenticatedPrincipal(Guid userId, params Claim[] extraClaims)
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId.ToString()) };
@@ -109,13 +144,11 @@ public class MembershipClaimsBridgeTests
         var left = Guid.CreateVersion7();
         var remainingA = Guid.CreateVersion7();
         var remainingB = Guid.CreateVersion7();
-        var store = new InMemoryTenantMembershipStore();
-        await store.SetMembershipAsync(new TenantMembership(userId, left, []));
-        await store.SetMembershipAsync(new TenantMembership(userId, remainingA, []));
-        await store.SetMembershipAsync(new TenantMembership(userId, remainingB, []));
-        await store.SetActiveTenantAsync(userId, left);
-        await store.SetMembershipAsync(
-            new TenantMembership(userId, left, [], MembershipStatus.Pending));
+        var inner = new InMemoryTenantMembershipStore();
+        await inner.SetMembershipAsync(new TenantMembership(userId, left, [], MembershipStatus.Former));
+        await inner.SetMembershipAsync(new TenantMembership(userId, remainingA, []));
+        await inner.SetMembershipAsync(new TenantMembership(userId, remainingB, []));
+        var store = new StaleSelectionStore(inner, left);
 
         var factory = new MembershipClaimsPrincipalFactory<IdentityUser>(
             new PassThroughFactory(_ => AuthenticatedPrincipal(userId)), store);
@@ -140,7 +173,7 @@ public class MembershipClaimsBridgeTests
         await store.SetMembershipAsync(
             new TenantMembership(userId, Guid.CreateVersion7(), [], MembershipStatus.Pending));
         await store.SetMembershipAsync(
-            new TenantMembership(userId, Guid.CreateVersion7(), [], MembershipStatus.Pending));
+            new TenantMembership(userId, Guid.CreateVersion7(), [], MembershipStatus.Former));
 
         var factory = new MembershipClaimsPrincipalFactory<IdentityUser>(
             new PassThroughFactory(_ => AuthenticatedPrincipal(userId)), store);
@@ -237,13 +270,15 @@ public class MembershipClaimsBridgeTests
         Assert.Single(principal.FindAll(StrataraClaimTypes.TenantId));
     }
 
-    [Fact]
-    public async Task Factory_stamps_nothing_without_an_active_membership()
+    [Theory]
+    [InlineData(MembershipStatus.Pending)]
+    [InlineData(MembershipStatus.Former)]
+    public async Task Factory_stamps_nothing_without_an_active_membership(MembershipStatus status)
     {
         var userId = Guid.CreateVersion7();
         var store = new InMemoryTenantMembershipStore();
         await store.SetMembershipAsync(
-            new TenantMembership(userId, Guid.CreateVersion7(), [], MembershipStatus.Pending));
+            new TenantMembership(userId, Guid.CreateVersion7(), [], status));
 
         var factory = new MembershipClaimsPrincipalFactory<IdentityUser>(
             new PassThroughFactory(_ => AuthenticatedPrincipal(userId)), store);

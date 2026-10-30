@@ -104,6 +104,11 @@ public class SubjectEraserTests
         string[] expected =
         [
             $"key scope UserScoped - / {User:D}",
+            $"key scope UserScoped {Guid.Empty:D} / {User:D}",
+            $"key scope TenantScoped - / {User:D}",
+            $"key scope TenantScoped {Guid.Empty:D} / {User:D}",
+            $"key scope Confidential - / {User:D}",
+            $"key scope Confidential {Guid.Empty:D} / {User:D}",
             $"key scope UserScoped {TenantA:D} / {User:D}",
             $"key scope UserScoped {TenantB:D} / {User:D}",
         ];
@@ -129,6 +134,32 @@ public class SubjectEraserTests
 
         Assert.Single(await f.Memberships.GetMembershipsAsync(User));
         Assert.NotEmpty(await f.Settings.GetAllAsync(SettingScope.ForUserInTenant(TenantB, User)));
+    }
+
+    [Fact]
+    public async Task EraseUser_RemovesFormerMemberships_AndTheSettingsHeldInThoseTenants()
+    {
+        var f = new Fixture();
+        await SeedAsync(f);
+        await f.Memberships.SetMembershipAsync(new TenantMembership(User, TenantB, ["reader"], MembershipStatus.Former));
+
+        await f.Build().EraseUserAsync(User);
+
+        Assert.Empty(await f.Memberships.GetMembershipsAsync(User));
+        Assert.Empty(await f.Settings.GetAllAsync(SettingScope.ForUserInTenant(TenantB, User)));
+    }
+
+    [Fact]
+    public async Task EraseTenant_RemovesFormerMemberships_AndTheirSettingsInTheTenant()
+    {
+        var f = new Fixture();
+        await SeedAsync(f);
+        await f.Memberships.SetMembershipAsync(new TenantMembership(OtherUser, TenantA, ["reader"], MembershipStatus.Former));
+
+        await f.Build().EraseTenantAsync(TenantA);
+
+        Assert.Empty(await f.Memberships.GetMembersAsync(TenantA));
+        Assert.Empty(await f.Settings.GetAllAsync(SettingScope.ForUserInTenant(TenantA, OtherUser)));
     }
 
     [Fact]

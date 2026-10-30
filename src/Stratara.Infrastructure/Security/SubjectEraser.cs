@@ -27,6 +27,9 @@ public sealed partial class SubjectEraser : ISubjectEraser
 
     private static readonly DataSensitivityLevel[] UserLevels = [DataSensitivityLevel.UserScoped];
 
+    private static readonly DataSensitivityLevel[] OwnLevels =
+        [DataSensitivityLevel.UserScoped, DataSensitivityLevel.TenantScoped, DataSensitivityLevel.Confidential];
+
     private readonly ITenantMembershipStore memberships;
     private readonly IApiKeyStore apiKeys;
     private readonly ISettingStore settings;
@@ -103,12 +106,15 @@ public sealed partial class SubjectEraser : ISubjectEraser
                 }
             });
 
+        var subject = KeySubject.User(Format(userId));
         var directoryScopes = UserLevels
-            .SelectMany(level => tenantIds
-                .Select(t => new KeyScope(level, Format(t), Format(userId)))
-                .Prepend(new KeyScope(level, null, Format(userId))));
-        var keyScopes = await WithListedScopesAsync(swept, directoryScopes,
-            scope => UserLevels.Contains(scope.Level) && Names(scope.UserId, userId), Describe(userId: userId), cancellationToken);
+            .SelectMany(level => tenantIds.Select(t => new KeyScope(level, Format(t), Format(userId))))
+            .Concat(OwnLevels.SelectMany(level => new[]
+            {
+                new KeyScope(level, null, Format(userId)),
+                new KeyScope(level, Format(Guid.Empty), Format(userId)),
+            }));
+        var keyScopes = await WithListedScopesAsync(swept, directoryScopes, subject.Covers, Describe(userId: userId), cancellationToken);
 
         await SweepAsync(swept, ErasurePlane.KeyMaterial, keyScopes.Select(Describe).ToList(),
             async () =>

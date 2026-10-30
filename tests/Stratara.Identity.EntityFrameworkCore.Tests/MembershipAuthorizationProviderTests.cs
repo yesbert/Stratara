@@ -23,14 +23,16 @@ public class MembershipAuthorizationProviderTests
         Assert.False(await provider.IsInRoleAsync("OtherRole"));
     }
 
-    [Fact]
-    public async Task Pending_membership_confers_no_roles()
+    [Theory]
+    [InlineData(MembershipStatus.Pending)]
+    [InlineData(MembershipStatus.Former)]
+    public async Task A_membership_that_is_not_active_confers_no_roles(MembershipStatus status)
     {
         var tenantId = Guid.CreateVersion7();
         var userId = Guid.CreateVersion7();
         var store = new InMemoryTenantMembershipStore();
         await store.SetMembershipAsync(
-            new TenantMembership(userId, tenantId, ["TenantAdmin"], MembershipStatus.Pending));
+            new TenantMembership(userId, tenantId, ["TenantAdmin"], status));
 
         var provider = new MembershipAuthorizationProvider(
             TestSessionContextProvider.ForTenant(tenantId, userId), store);

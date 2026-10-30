@@ -79,6 +79,13 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
         }
 
         await context.SaveChangesAsync(cancellationToken);
+
+        if (membership.Status != MembershipStatus.Active)
+        {
+            await context.Set<ActiveTenantEntry>()
+                .Where(e => e.UserId == membership.UserId && e.TenantId == membership.TenantId)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
     }
 
     public async Task RemoveMembershipAsync(

@@ -32,6 +32,7 @@ Task-oriented how-tos for the most common Stratara operations. Each guide assume
 Who the caller is, which tenant they act in, and what they may do there.
 
 - **[Tenant Membership](tenant-membership.md)** — many-to-many user↔tenant with per-membership roles, and the `stratara:tenant_id` sign-in bridge.
+- **[Shared Identity Store](shared-identity-store.md)** — one identity store several hosts share on PostgreSQL, with the migrations shipped in the package.
 - **[Permission-Based Authorization](require-permission.md)** — `[RequirePermission]` + the code-first permission catalog.
 - **[Scoped Settings](scoped-settings.md)** — global / tenant / user / user-in-tenant values with a fixed fallback chain.
 - **[API Keys and Personal Access Tokens](api-keys-and-pats.md)** — machine callers on the same authorization plane as humans.

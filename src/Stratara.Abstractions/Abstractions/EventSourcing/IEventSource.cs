@@ -108,20 +108,24 @@ public interface IEventSource
     /// <typeparam name="TAggregate">The aggregate type the stream represents.</typeparam>
     /// <param name="streamId">The stream id.</param>
     /// <param name="event">The creation event.</param>
-    /// <param name="subject">The owner to record. Its tenant id must be non-empty.</param>
+    /// <param name="subject">
+    /// The owner to record. It names a tenant, or — through <see cref="EventSubject.ForUser"/> — a user alone, for
+    /// data that belongs to a person rather than to any of their tenants.
+    /// </param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
     /// <returns>A task that completes once the event is staged.</returns>
-    /// <exception cref="ArgumentException"><paramref name="subject"/> names no tenant.</exception>
+    /// <exception cref="ArgumentException"><paramref name="subject"/> names neither a tenant nor a user.</exception>
     /// <exception cref="InvalidOperationException">The stream already exists.</exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     async Task CreateOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new()
     {
-        if (subject.TenantId == Guid.Empty)
+        if (!subject.NamesAnOwner)
         {
             throw new ArgumentException(
-                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant. " +
-                "Supply a Subject with a tenant id, or use CreateAsync to let the Subject be resolved.",
+                $"Explicit Subject for event {@event.GetType().Name} on stream {streamId} names no tenant and no user. " +
+                "Supply a Subject with a tenant id, or EventSubject.ForUser for data owned by a user alone, or use " +
+                "CreateAsync to let the Subject be resolved.",
                 nameof(subject));
         }
 
@@ -265,12 +269,12 @@ public interface IEventSource
     /// <param name="streamId">The stream id.</param>
     /// <param name="event">The event payload.</param>
     /// <param name="subject">
-    /// The data owner to record. Its tenant id must be non-empty: stating the Subject also states
-    /// that the stream, the event and the session are not to be consulted, so an empty one fails the
-    /// append rather than falling back to them.
+    /// The data owner to record. It names a tenant, or a user alone (<see cref="EventSubject.ForUser"/>):
+    /// stating the Subject also states that the stream, the event and the session are not to be
+    /// consulted, so one that names neither fails the append rather than falling back to them.
     /// </param>
     /// <param name="cancellationToken">Propagated to the write-store transaction.</param>
-    /// <exception cref="ArgumentException"><paramref name="subject"/> names no tenant.</exception>
+    /// <exception cref="ArgumentException"><paramref name="subject"/> names neither a tenant nor a user.</exception>
     /// <exception cref="Stratara.Abstractions.Session.SessionRequiredException">No session context is set on the current scope.</exception>
     Task AppendOnBehalfOfAsync<TAggregate>(Guid streamId, object @event, EventSubject subject,
         CancellationToken cancellationToken = default) where TAggregate : notnull, new();

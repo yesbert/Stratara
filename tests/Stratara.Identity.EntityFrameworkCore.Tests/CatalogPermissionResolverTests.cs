@@ -36,8 +36,10 @@ public class CatalogPermissionResolverTests
         Assert.DoesNotContain("billing.read", permissions);
     }
 
-    [Fact]
-    public async Task No_membership_or_pending_membership_yields_nothing()
+    [Theory]
+    [InlineData(MembershipStatus.Pending)]
+    [InlineData(MembershipStatus.Former)]
+    public async Task No_membership_or_one_that_is_not_active_yields_nothing(MembershipStatus status)
     {
         var userId = Guid.CreateVersion7();
         var tenantId = Guid.CreateVersion7();
@@ -47,8 +49,8 @@ public class CatalogPermissionResolverTests
         Assert.Empty(await resolver.ResolvePermissionsAsync(userId, tenantId));
 
         await store.SetMembershipAsync(
-            new TenantMembership(userId, tenantId, ["TenantAdmin"], MembershipStatus.Pending));
-        Assert.Empty(await resolver.ResolvePermissionsAsync(userId, Guid.CreateVersion7()));
+            new TenantMembership(userId, tenantId, ["TenantAdmin"], status));
+        Assert.Empty(await new CatalogPermissionResolver(store, Catalog()).ResolvePermissionsAsync(userId, tenantId));
     }
 
     [Fact]
