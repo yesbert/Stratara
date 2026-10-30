@@ -16,6 +16,10 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.7.0`._
+
+## [4.7.0] — 2026-10-30
+
 A release for one person who belongs to several tenants — and, sharing one identity store, to several applications.
 
 ### Added
@@ -5023,7 +5027,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.6.1...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.7.0...main
+[4.7.0]: https://github.com/yesbert/Stratara/releases/tag/v4.7.0
 [4.6.1]: https://github.com/yesbert/Stratara/releases/tag/v4.6.1
 [4.6.0]: https://github.com/yesbert/Stratara/releases/tag/v4.6.0
 [4.5.0]: https://github.com/yesbert/Stratara/releases/tag/v4.5.0
