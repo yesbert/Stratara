@@ -96,15 +96,27 @@ never mean different things by one role. The framework enforces no form; a form 
 - one scope per application, plus two shared ones: `platform.` for the operator of the installation and `tenant.`
   for roles that mean the same in every application within one tenant (`tenant.owner`).
 
-An application then grants nothing for a role outside its own scope and those two, so a role another application
-introduces later cannot widen what a member may do in it.
+A role is a noun and a permission a verb (`billing.invoice-approver` holds `billing.invoices.approve`), so the two
+stay apart although both carry the application's prefix.
 
-**API keys are shared the same way.** The `api_key` table holds the keys of every application, and
-`IApiKeyStore.GetForTenantAsync` lists all of a tenant's keys, whichever application issued them; `RevokeAsync`
-revokes any of them. A key administration that should show only its own application's keys filters the
-descriptors itself — by the scopes of their `Roles`, for a machine key. A personal access token carries no roles
-of its own (it acts with the roles of the user's membership, in every application), so a filter by role hides
-every token: decide separately whether your key administration shows them.
+An application then grants permissions only to roles in its own scope and the two shared ones, so a role another
+application introduces cannot widen what a member may do in it. The shared scopes are the exception by design:
+every application that grants something to `tenant.owner` trusts every application that assigns it, so agree on
+what each shared role means before any application grants permissions to it.
+
+**A membership holds the roles of every application.** `ITenantMembershipStore.SetMembershipAsync` replaces the
+membership's whole role set. An application that edits a member's roles reads the membership first, changes the
+roles in its own scope, and writes back the rest unchanged; writing only its own roles removes the member's roles
+in every other application.
+
+**API keys are shared the same way.** The `api_key` table holds the keys of every application, and a key validates
+in every host that shares the store: it is one credential, whichever application issued it.
+`IApiKeyStore.GetForTenantAsync` lists all of a tenant's keys, and `RevokeAsync` revokes a key by its id alone,
+without asking which tenant it belongs to — check that the id is among the current tenant's keys before you revoke
+it. A key administration that should show only its own application's keys filters the descriptors itself, by the
+scopes of a machine key's `Roles`. Two kinds of key need a decision of their own, because that filter cannot place
+them: a machine key whose roles are all in the shared scopes, and a personal access token, which carries no roles of
+its own and acts with the roles of the user's membership in every application.
 
 ## Across releases
 
