@@ -299,6 +299,10 @@ public class CheckedMembershipTenantClaimTests
             .AddCheckedMembershipTenantClaim<IdentityUser>();
         await using var provider = services.BuildServiceProvider();
 
-        await provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().Single().StartAsync(CancellationToken.None);
+        var guard = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().Single();
+
+        var exception = await Record.ExceptionAsync(() => guard.StartAsync(CancellationToken.None));
+
+        Assert.Null(exception);
     }
 }
