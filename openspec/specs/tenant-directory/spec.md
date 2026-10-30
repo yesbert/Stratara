@@ -33,8 +33,14 @@ be merged in the directory.
 
 ### Requirement: An invited membership confers nothing
 
-A membership SHALL carry a status distinguishing an active member from an invited one. A pending
-membership SHALL confer no roles and SHALL NOT count as membership anywhere access is decided.
+A membership SHALL carry a status distinguishing an active member from an invited one and from a
+former one. Only an active membership SHALL confer roles or count as membership anywhere access is
+decided; a pending or a former membership SHALL confer no roles and SHALL NOT count as membership
+anywhere access is decided.
+
+A former membership records that the user was a member of the tenant. It SHALL remain stored and
+listed by the directory until the tenant's or the user's erasure removes it, so that a tenant can
+still tell who once belonged to it after that person has left.
 
 #### Scenario: A membership is pending
 
@@ -46,6 +52,18 @@ membership SHALL confer no roles and SHALL NOT count as membership anywhere acce
 
 - **WHEN** a pending membership is set to active
 - **THEN** its roles take effect
+
+#### Scenario: A membership is ended
+
+- **WHEN** an active membership is set to former
+- **THEN** it confers no roles, satisfies no role, permission or cross-tenant check, is not chosen as
+  the user's tenant at sign-in, and is still returned when the tenant's members or the user's
+  memberships are listed
+
+#### Scenario: A former membership is erased
+
+- **WHEN** the user's or the tenant's erasure is performed while a former membership exists
+- **THEN** the former membership is removed with every other membership the erasure covers
 
 ### Requirement: Writing a membership replaces it wholly
 
@@ -61,7 +79,9 @@ does, rather than merging with what was there.
 ### Requirement: A user has at most one selected tenant, and it must be a live membership
 
 A user SHALL have at most one persisted active-tenant selection. Selecting a tenant SHALL require an
-active membership in it, and SHALL replace any previous selection rather than adding to it.
+active membership in it, and SHALL replace any previous selection rather than adding to it. A
+selection SHALL be cleared when the membership it points at is removed or set to any status other
+than active.
 
 #### Scenario: A tenant is selected
 
@@ -70,8 +90,8 @@ active membership in it, and SHALL replace any previous selection rather than ad
 
 #### Scenario: A tenant is selected without an active membership
 
-- **WHEN** a user attempts to select a tenant in which they have no membership, or only a pending
-  one
+- **WHEN** a user attempts to select a tenant in which they have no membership, or only a pending or
+  a former one
 - **THEN** the selection is refused
 
 #### Scenario: A different tenant is selected
@@ -83,6 +103,11 @@ active membership in it, and SHALL replace any previous selection rather than ad
 
 - **WHEN** the membership a user's selection points at is removed
 - **THEN** the selection is cleared, so it can never point at a membership that no longer exists
+
+#### Scenario: The selected membership stops being active
+
+- **WHEN** the membership a user's selection points at is set to pending or to former
+- **THEN** the selection is cleared, so it never points at a membership that confers nothing
 
 ### Requirement: Erasure sweeps remove a subject's whole footprint
 
@@ -152,9 +177,28 @@ fails closed and visibly.
 
 ### Requirement: The tenant claim can be stamped at sign-in or resolved per request
 
-The framework SHALL offer both: stamping the claim when the principal is issued, and resolving it
-live on each request. With live resolution, a change of selected tenant SHALL take effect without
-the user signing in again.
+The framework SHALL offer three modes: stamping the claim when the principal is issued; resolving it
+live on each request; and keeping the claim stamped when the principal is issued while checking it on
+each request. With live resolution, a change of selected tenant SHALL take effect without the user
+signing in again.
+
+In the kept-and-checked mode, the tenant a principal carries SHALL be decided when the principal is
+issued — at sign-in, or when the host re-issues the sign-in, which is how the host switches the user
+to the tenant it has just selected — and SHALL be kept when the framework refreshes an existing
+sign-in on its own, for as long as the membership in that tenant is active. On
+every request the framework SHALL verify that the user's membership in the tenant the principal
+carries is active. Where it is not, the framework SHALL remove the tenant claim from that request's
+principal, so that the request resolves exactly as one without a tenant claim does, and SHALL NOT put
+another of the user's tenants in its place.
+
+The kept-and-checked mode SHALL NOT be combined with live resolution; registering both SHALL fail,
+naming the two, because each decides the claim differently and only one can run.
+
+The documentation SHALL state, for each mode, when a change of membership and a change of selection
+take effect. It SHALL state that a user has one selection across everything that shares the identity
+store, so that live resolution moves every open session of the user when any of them switches tenant,
+and that the kept-and-checked mode is the one to choose where several applications share one identity
+store.
 
 #### Scenario: The claim is resolved per request
 
@@ -170,6 +214,38 @@ the user signing in again.
 
 - **WHEN** live resolution encounters an unauthenticated principal
 - **THEN** it does nothing
+
+#### Scenario: Another session moves the selection
+
+- **WHEN** the kept-and-checked mode is configured, a user is signed in with tenant A, and the user's
+  selection is then changed to tenant B elsewhere
+- **THEN** this sign-in's requests keep carrying tenant A, including after the framework refreshes
+  the sign-in on its own — verified for a cookie sign-in
+
+#### Scenario: The host switches the tenant
+
+- **WHEN** the kept-and-checked mode is configured, the host selects another tenant the signed-in
+  user is an active member of, and re-issues the sign-in
+- **THEN** the following requests carry the new tenant
+
+#### Scenario: Both modes are registered
+
+- **WHEN** a host registers the kept-and-checked mode and live resolution
+- **THEN** registration fails, naming both
+
+#### Scenario: The membership ends while the user is signed in
+
+- **WHEN** the kept-and-checked mode is configured and the membership in the tenant a signed-in user
+  carries is removed, set to pending or set to former
+- **THEN** the user's next request carries no tenant claim and resolves as a request without one,
+  without waiting for the sign-in to be refreshed, and no other of the user's tenants is substituted
+
+#### Scenario: A refresh meets an ended membership
+
+- **WHEN** the kept-and-checked mode is configured and the framework refreshes a sign-in whose tenant
+  the user is no longer an active member of
+- **THEN** the refreshed principal does not carry that tenant, and no other of the user's tenants is
+  substituted — verified for a cookie sign-in
 
 ### Requirement: Membership is an authorization source in its own right
 
@@ -298,7 +374,9 @@ performed the creation.
 ### Requirement: The directory tables can be hosted in an existing context
 
 A consumer SHALL be able to add the directory's tables to a database context it already has, so the
-directory does not force a second migration lineage.
+directory does not force a second migration lineage. A consumer that shares its identity with other
+hosts SHALL instead be able to use the framework's shared identity store, which holds the directory's
+tables with the accounts and ships their migrations.
 
 The consumer SHALL be able to choose how the directory's stores obtain that context: shared for the
 whole request, or a fresh one for each operation. The framework SHALL state, where each choice is
@@ -314,6 +392,12 @@ behaviour they have.
 
 - **WHEN** a consumer applies the directory's model to an existing context
 - **THEN** the directory tables are part of that context's model and migrations
+
+#### Scenario: A consumer uses the shared identity store
+
+- **WHEN** a consumer registers the framework's shared identity store
+- **THEN** the directory's stores work on that store's tables, and the consumer's own contexts and
+  migrations hold none of them
 
 #### Scenario: Directory work is issued concurrently within one request
 
@@ -338,8 +422,11 @@ level that names the tenant; for a user, a user-level key that names the user �
 names and whether or not that other subject is still in the directory, wherever the key store can
 list the keys it holds. The framework's file-backed key store and its test key store SHALL be able to.
 Where a key store cannot list its keys, the erasure SHALL still shred the keys the directory names and
-SHALL warn that it could not reach the rest. An erasure SHALL refuse an empty id, which names no
-subject.
+SHALL warn that it could not reach the rest. The keys the directory names for a user SHALL include the
+user's own key — the one that names the user and no tenant of theirs, under which the data a user owns
+alone is encrypted — so that a user's own data is shredded whether or not the key store can list its
+keys. An erasure SHALL
+refuse an empty id, which names no subject.
 
 Before it sweeps any plane, the erasure SHALL mark the subject erased in the key store, so that no
 key covered by the erasure is created for it afterwards. An encryption racing the
@@ -378,6 +465,17 @@ a consumer can tell what remains their own responsibility.
 - **WHEN** a subject is erased through a key store that cannot list the keys it holds
 - **THEN** the keys the directory names are shredded, and a warning says that keys shared with
   someone no longer in the directory were not reached
+
+#### Scenario: A user's own data is erased through a key store that cannot list its keys
+
+- **WHEN** data the user owns alone was encrypted and the user is erased through a key store that
+  cannot list the keys it holds
+- **THEN** that data becomes unrecoverable as well
+
+#### Scenario: One of a user's tenants is erased
+
+- **WHEN** a tenant the user belongs to is erased
+- **THEN** the data the user owns alone stays readable
 
 #### Scenario: Work for an erased subject encrypts after the erasure
 

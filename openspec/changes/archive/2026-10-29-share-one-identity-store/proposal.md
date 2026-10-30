@@ -62,17 +62,23 @@ identity store instead of its own identity context, and runs the migrations the 
 
 ## Impact
 
-- `src/Stratara.EventSourcing.EntityFrameworkCore/IdentityStore/` — the shared store's context, beside
-  `IdentityStore<TContext,TUser>`, with the directory model applied; its `Migrations/` folder.
-- `src/Stratara.EventSourcing.EntityFrameworkCore/EntityFrameworkCore/DependencyInjection/NpgsqlDbContextServiceCollectionExtensions.cs`
-  (or a sibling) — registering the store with its own connection string and history table, and the
-  migrate call.
+- `src/Stratara.EventSourcing.EntityFrameworkCore/IdentityStore/` — `StrataraIdentityStore.cs` (the shared store's
+  context, beside `IdentityStore<TContext,TUser>`, with the directory model applied, the ASP.NET Identity schema
+  version and key lengths fixed), `StrataraIdentityStoreOptionsBuilder.cs` (options and the design-time factory),
+  and its `Migrations/` folder.
+- `scripts/add-identity-store-migration.sh` — the one command that adds a migration to the store.
+- `src/Stratara.EventSourcing.EntityFrameworkCore/EntityFrameworkCore/DependencyInjection/StrataraIdentityStoreServiceCollectionExtensions.cs`
+  — registering the store with its own connection string and history table, and the migrate call.
 - `src/Stratara.EventSourcing.EntityFrameworkCore/Stratara.EventSourcing.EntityFrameworkCore.csproj` — a
-  reference to `Stratara.Identity.EntityFrameworkCore` for the directory model (both Tier-C, no cycle).
+  reference to `Stratara.Identity.EntityFrameworkCore` for the directory model (both Tier-C, no cycle), and
+  `Microsoft.EntityFrameworkCore.Design` with `PrivateAssets="all"` for generating the migrations.
 - `tests/Stratara.Identity.IntegrationTests/` — new, Testcontainers on PostgreSQL; picked up by
-  `integration.yml` without an edit.
-- `docs/guides/` — a guide for the shared identity store and moving onto it; `tenant-membership.md`
-  points at it. The `Stratara.EventSourcing.EntityFrameworkCore` README.
+  `integration.yml` without an edit; listed in `Stratara.slnx`.
+  `tests/Stratara.EntityFrameworkCore.Tests/IdentityStore/StrataraIdentityStoreTests.cs` — model, migrations and
+  registration without a database.
+- `docs/guides/shared-identity-store.md` (new, in `toc.yml` and `index.md`) — the shared identity store and moving
+  onto it; `tenant-membership.md` points at it; `docs/reference/di-extensions-cheatsheet.md` lists the
+  registration. The `Stratara.EventSourcing.EntityFrameworkCore` README.
 - `llms-full.txt` — the reference catalogue lists the store and its registration.
 - `CHANGELOG.md`. New public types and registrations, nothing changed for a host that does not use
   them: a patch release.

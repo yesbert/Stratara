@@ -74,16 +74,21 @@ _None._
   `src/Stratara.Testing/InMemoryTenantMembershipStore.cs` — a selection is cleared when its
   membership stops being active.
 - `src/Stratara.Identity.AspNetCore/DependencyInjection/MembershipClaimsServiceCollectionExtensions.cs`,
-  `src/Stratara.Identity.AspNetCore/Services/` — the kept-and-checked tenant claim.
-- `src/Stratara.Infrastructure/Security/Serialization/EncryptionMetadataDriftGuard.cs` (or a sibling
-  start-up guard) — whole-type encryption of event and aggregate types refused.
+  `src/Stratara.Identity.AspNetCore/Services/CheckedMembershipClaimsTransformation.cs`,
+  `MembershipTenantClaimRefresh.cs`, `MembershipTenantClaimResolver.cs` — the kept-and-checked tenant claim.
+- `src/Stratara.Infrastructure/Security/Serialization/EncryptionMetadataDriftGuard.cs`,
+  `WholeTypeStreamEncryption.cs` (new) and `src/Stratara.Infrastructure/EventSourcing/EventSource.cs` — whole-type
+  encryption of event and aggregate types refused at start-up and at append.
+- `tests/Stratara.Infrastructure.Tests/EventSourcing/UnhandledEventRehydrationTests.cs` — its event, marked as a
+  whole, now marks its property.
 - `src/Stratara.Abstractions/Abstractions/EventSourcing/EventSubject.cs` (`ForUser`, `NamesAnOwner`),
   `IEventSource.cs`, `src/Stratara.Infrastructure/EventSourcing/EventSource.cs` — an owner that names a
   user alone is accepted and kept.
 - `src/Stratara.Infrastructure/Security/SubjectEraser.cs` — the person's own scope under the reserved
   default tenant.
 - `src/Stratara.Diagnostics/LogEvents.cs` — event ids for a removed stale claim, if logged.
-- `docs/guides/tenant-membership.md`, `docs/guides/encrypt-data-setup.md`, the
+- `docs/guides/tenant-membership.md`, `docs/guides/encrypt-data-setup.md`,
+  `docs/reference/di-extensions-cheatsheet.md`, the
   `Stratara.Identity.AspNetCore` README — former members, the three claim modes and which to choose
   when applications share one identity store, how to write a person's own data, nullable types for
   erasable fields.
