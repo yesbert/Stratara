@@ -105,6 +105,10 @@ public class SubjectEraserTests
         [
             $"key scope UserScoped - / {User:D}",
             $"key scope UserScoped {Guid.Empty:D} / {User:D}",
+            $"key scope TenantScoped - / {User:D}",
+            $"key scope TenantScoped {Guid.Empty:D} / {User:D}",
+            $"key scope Confidential - / {User:D}",
+            $"key scope Confidential {Guid.Empty:D} / {User:D}",
             $"key scope UserScoped {TenantA:D} / {User:D}",
             $"key scope UserScoped {TenantB:D} / {User:D}",
         ];

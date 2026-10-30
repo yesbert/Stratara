@@ -70,7 +70,7 @@ public class CheckedMembershipTenantClaimTests
     }
 
     private static ClaimsPrincipal AuthenticatedPrincipal(Guid userId) =>
-        new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId.ToString())], authenticationType: "Test"));
+        new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId.ToString())], IdentityConstants.ApplicationScheme));
 
     private static string? TenantClaim(ClaimsPrincipal principal) =>
         principal.FindFirst(StrataraClaimTypes.TenantId)?.Value;
@@ -177,7 +177,7 @@ public class CheckedMembershipTenantClaimTests
         var transformation = new CheckedMembershipClaimsTransformation(store);
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "not-a-guid"), new Claim(StrataraClaimTypes.TenantId, tenantA.ToString("D"))],
-            authenticationType: "Test"));
+            IdentityConstants.ApplicationScheme));
 
         Assert.Null(TenantClaim(await transformation.TransformAsync(principal)));
     }
@@ -205,5 +205,100 @@ public class CheckedMembershipTenantClaimTests
 
         Assert.Single(services, d => d.ServiceType == typeof(IClaimsTransformation));
         Assert.Single(services, d => d.ServiceType == typeof(IUserClaimsPrincipalFactory<IdentityUser>));
+    }
+
+    private sealed class CountingStore(ITenantMembershipStore inner) : ITenantMembershipStore
+    {
+        public int Lookups { get; private set; }
+
+        public Task<IReadOnlyList<TenantMembership>> GetMembershipsAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            inner.GetMembershipsAsync(userId, cancellationToken);
+
+        public Task<TenantMembership?> GetMembershipAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
+        {
+            Lookups++;
+            return inner.GetMembershipAsync(userId, tenantId, cancellationToken);
+        }
+
+        public Task<IReadOnlyList<TenantMembership>> GetMembersAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.GetMembersAsync(tenantId, cancellationToken);
+
+        public Task SetMembershipAsync(TenantMembership membership, CancellationToken cancellationToken = default) =>
+            inner.SetMembershipAsync(membership, cancellationToken);
+
+        public Task RemoveMembershipAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.RemoveMembershipAsync(userId, tenantId, cancellationToken);
+
+        public Task RemoveAllMembershipsAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            inner.RemoveAllMembershipsAsync(userId, cancellationToken);
+
+        public Task RemoveAllMembersAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.RemoveAllMembersAsync(tenantId, cancellationToken);
+
+        public Task<Guid?> GetActiveTenantAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            inner.GetActiveTenantAsync(userId, cancellationToken);
+
+        public Task SetActiveTenantAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default) =>
+            inner.SetActiveTenantAsync(userId, tenantId, cancellationToken);
+    }
+
+    private sealed class HostTransformation : IClaimsTransformation
+    {
+        public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal) => Task.FromResult(principal);
+    }
+
+    [Fact]
+    public async Task A_principal_another_scheme_issued_keeps_its_tenant()
+    {
+        var store = new InMemoryTenantMembershipStore();
+        var transformation = new CheckedMembershipClaimsTransformation(store);
+        var machine = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "billing-service"), new Claim(StrataraClaimTypes.TenantId, Guid.CreateVersion7().ToString("D"))],
+            "Bearer"));
+
+        Assert.Same(machine, await transformation.TransformAsync(machine));
+    }
+
+    [Fact]
+    public async Task A_request_authenticated_twice_looks_the_membership_up_once()
+    {
+        var (store, user, tenantA, _) = await TwoTenantsAsync();
+        var counting = new CountingStore(store);
+        var transformation = new CheckedMembershipClaimsTransformation(counting);
+        var principal = AuthenticatedPrincipal(user);
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(StrataraClaimTypes.TenantId, tenantA.ToString("D")));
+
+        await transformation.TransformAsync(principal);
+        await transformation.TransformAsync(principal);
+
+        Assert.Equal(1, counting.Lookups);
+    }
+
+    [Fact]
+    public async Task A_host_transformation_registered_afterwards_is_refused_at_start()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<ITenantMembershipStore>(new InMemoryTenantMembershipStore())
+            .AddScoped<IUserClaimsPrincipalFactory<IdentityUser>>(_ => new PassThroughFactory(_ => new ClaimsPrincipal()))
+            .AddCheckedMembershipTenantClaim<IdentityUser>()
+            .AddScoped<IClaimsTransformation, HostTransformation>();
+        await using var provider = services.BuildServiceProvider();
+
+        var guard = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().Single();
+
+        var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => guard.StartAsync(CancellationToken.None));
+        Assert.Contains(nameof(HostTransformation), refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_checked_mode_alone_starts()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<ITenantMembershipStore>(new InMemoryTenantMembershipStore())
+            .AddScoped<IUserClaimsPrincipalFactory<IdentityUser>>(_ => new PassThroughFactory(_ => new ClaimsPrincipal()))
+            .AddCheckedMembershipTenantClaim<IdentityUser>();
+        await using var provider = services.BuildServiceProvider();
+
+        await provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().Single().StartAsync(CancellationToken.None);
     }
 }

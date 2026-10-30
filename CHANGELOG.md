@@ -26,20 +26,24 @@ A release for one person who belongs to several tenants — and, sharing one ide
 - **`AddCheckedMembershipTenantClaim<TUser>()`**, a third tenant-claim mode: the claim is stamped at sign-in, kept when
   the security-stamp validator refreshes a cookie sign-in, and checked on every request. A request whose user is no
   longer an active member of the carried tenant loses the claim and resolves to the reserved default tenant, without
-  another tenant substituted. The tenant changes only when the host re-issues the sign-in. Combining it with
-  `AddMembershipTenantClaimsTransformation()` throws. Use it where several applications share one identity store:
+  another tenant substituted. Only principals ASP.NET Identity issued are checked; an API key or a token the host
+  mints keeps its tenant. The tenant changes only when the host re-issues the sign-in. Combining it with
+  `AddMembershipTenantClaimsTransformation()` throws, and a claims transformation of the host's own registered
+  beside it is refused at start. Use it where several applications share one identity store:
   `active_tenant` holds one selection per account, so live resolution moves every open session when any of them
   switches.
 - **`EventSubject.ForUser(userId)`** and **`EventSubject.NamesAnOwner`**: a stream can be created for a user alone,
   for data that belongs to a person rather than to any of their tenants. It is recorded under the reserved default
-  tenant, keeps that owner for every later event whatever tenant the session names, and its user-level fields are
-  keyed to the person: shredded by the person's erasure, untouched by any tenant's.
+  tenant, keeps that owner for every later event whatever tenant the session names, and its encrypted fields — at
+  every level — are keyed to the person: shredded by the person's erasure, untouched by any tenant's.
+  `KeySubject.User` covers those keys too, so nothing is encrypted for the person again after the erasure.
 
 - **`StrataraIdentityStore`, an identity store several hosts can share on PostgreSQL**, with its migrations shipped
   in `Stratara.EventSourcing.EntityFrameworkCore`. It holds ASP.NET Identity's tables, passkeys included, and the
   tenant directory in the fixed schema `stratara_identity`, with the history in
   `stratara_identity.__stratara_identity_migrations`. `AddStrataraIdentityStore()` registers it on the connection
-  string `identitydb` (falling back to `defaultdb`) with the directory's stores over it;
+  string `identitydb` (falling back to `defaultdb`, never through a tenant-routing `IDbResolver`) with the
+  directory's stores over it, and refuses a host that turns on `Stores.ProtectPersonalData`;
   `MigrateStrataraIdentityStoreAsync()` creates the database where needed and applies the migrations — hosts that
   migrate at once take turns. The account type is `IdentityUser` and cannot be extended, and the store fixes the
   ASP.NET Identity schema version and key lengths, so every host's model matches the shipped migrations. Within a
@@ -63,7 +67,8 @@ A release for one person who belongs to several tenants — and, sharing one ide
 ### Fixed
 
 - **A user's erasure shreds their own data through a key store that cannot list its scopes.** The eraser names the
-  user's key under the reserved default tenant itself; until now only a listing reached it.
+  user's keys under the reserved default tenant itself, at every level; until now only a listing reached the
+  user-level one.
 
 ## [4.6.1] — 2026-10-29
 

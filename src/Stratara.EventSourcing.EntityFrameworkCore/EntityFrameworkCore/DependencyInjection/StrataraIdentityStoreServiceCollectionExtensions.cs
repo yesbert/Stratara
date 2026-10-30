@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -5,8 +6,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using Stratara.Abstractions.Persistence;
-using Stratara.EventSourcing.EntityFrameworkCore;
 using Stratara.EventSourcing.EntityFrameworkCore.IdentityStore;
 
 // ReSharper disable once CheckNamespace
@@ -18,7 +17,9 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class StrataraIdentityStoreServiceCollectionExtensions
 {
+    private const string DefaultConnectionStringName = "defaultdb";
     private const string DuplicateDatabase = "42P04";
+    private const string UniqueViolation = "23505";
 
     /// <summary>
     /// Registers <see cref="StrataraIdentityStore"/> on PostgreSQL together with the tenant directory's stores over it —
@@ -27,8 +28,13 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
     /// <remarks>
     /// <para>
     /// The connection is the connection string <see cref="StrataraIdentityStore.ConnectionStringName"/>, and where it
-    /// is absent the host's default connection. Hosts that keep their own databases meet in the identity store by
-    /// giving it the same connection.
+    /// is absent the connection string <c>defaultdb</c>. It is read from configuration, never through a tenant-routing
+    /// <c>IDbResolver</c>: the identity store is one database for every tenant. Hosts that keep their own databases meet
+    /// in the identity store by giving it the same connection.
+    /// </para>
+    /// <para>
+    /// A host that turns on <see cref="StoreOptions.ProtectPersonalData"/> is refused at start: it would write account
+    /// columns other hosts sharing the store cannot read or match.
     /// </para>
     /// <para>
     /// Register the accounts on it with <c>AddAspNetIdentity&lt;IdentityUser, StrataraIdentityStore&gt;()</c> (or the
@@ -39,6 +45,9 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">The service collection to add registrations to.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// When the store is first used: neither connection string is configured.
+    /// </exception>
     /// <example>
     /// <code>
     /// builder.Services.AddStrataraIdentityStore();
@@ -55,7 +64,12 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
             ServiceLifetime.Scoped);
         services.TryAddScoped(provider =>
             provider.GetRequiredService<IDbContextFactory<StrataraIdentityStore>>().CreateDbContext());
-        services.TryAddScoped<IDbResolver, DefaultDbResolver>();
+        services.AddOptions<IdentityOptions>()
+            .Validate(
+                options => !options.Stores.ProtectPersonalData,
+                "IdentityOptions.Stores.ProtectPersonalData is on, but the shared identity store is read by other hosts that " +
+                "cannot unprotect or match those columns. Turn it off for a host that uses StrataraIdentityStore.")
+            .ValidateOnStart();
         services.AddTenantMembershipStoreFromContextFactory<StrataraIdentityStore>();
         services.AddApiKeyStoreFromContextFactory<StrataraIdentityStore>();
         services.AddSettingStoreFromContextFactory<StrataraIdentityStore>();
@@ -96,7 +110,7 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
         {
             await creator.CreateAsync(cancellationToken);
         }
-        catch (PostgresException exception) when (exception.SqlState == DuplicateDatabase)
+        catch (PostgresException exception) when (exception.SqlState is DuplicateDatabase or UniqueViolation)
         {
             return;
         }
@@ -104,8 +118,12 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
 
     private static string ResolveConnectionString(IServiceProvider provider)
     {
-        var connectionString = provider.GetService<IConfiguration>()?.GetConnectionString(StrataraIdentityStore.ConnectionStringName)
-                               ?? provider.GetRequiredService<IDbResolver>().ResolveConnectionString();
+        var configuration = provider.GetRequiredService<IConfiguration>();
+        var connectionString = configuration.GetConnectionString(StrataraIdentityStore.ConnectionStringName)
+                               ?? configuration.GetConnectionString(DefaultConnectionStringName)
+                               ?? throw new InvalidOperationException(
+                                   $"The shared identity store needs the connection string '{StrataraIdentityStore.ConnectionStringName}' " +
+                                   $"or '{DefaultConnectionStringName}'; neither is configured.");
         return NpgsqlDbContextServiceCollectionExtensions.EnsureMaxPoolSize(
             connectionString,
             provider.GetService<PoolSizeReport>(),

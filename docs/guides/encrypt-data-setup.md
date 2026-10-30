@@ -242,8 +242,8 @@ await events.SaveChangesAsync();
 
 The stream records the person and no tenant — the reserved default tenant, `Guid.Empty` — and keeps
 that owner for every later event, whatever tenant the session that appends to it names. Its
-user-level fields are encrypted under a key of the person alone: the person's erasure shreds it, and
-no tenant's erasure reaches it. It reads normally from a session of any of the person's tenants.
+encrypted fields, at whatever level they are marked, are keyed to the person alone: the person's
+erasure shreds them, and no tenant's erasure reaches them. It reads normally from a session of any of the person's tenants.
 
 - **Only a stated owner creates such a stream.** A session whose tenant failed closed to the reserved
   default still gives an event no owner, so a request without a tenant never writes data that

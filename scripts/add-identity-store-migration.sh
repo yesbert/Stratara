@@ -4,8 +4,8 @@
 # host sharing the store applies. Run it after a change to the store's model — a directory table, or an
 # ASP.NET Identity upgrade that changes its schema.
 #
-# Within a major version a migration may only add: IdentityStoreMigrationTests fails on a drop, a rename
-# or an alteration.
+# Within a major version a migration may only add: StrataraIdentityStoreTests.Every_migration_after_the_first_only_adds
+# fails on a drop, a rename, an alteration, raw SQL or a data change, and on a column added without null or a default.
 #
 # Usage:
 #   ./scripts/add-identity-store-migration.sh <MigrationName>

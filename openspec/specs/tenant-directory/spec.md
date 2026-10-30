@@ -191,8 +191,14 @@ carries is active. Where it is not, the framework SHALL remove the tenant claim 
 principal, so that the request resolves exactly as one without a tenant claim does, and SHALL NOT put
 another of the user's tenants in its place.
 
+The check SHALL apply to principals the identity system issued at sign-in; a principal another
+authentication scheme issued — an API key, a token the host mints — SHALL keep the tenant it carries.
+A request authenticated more than once SHALL look the membership up once.
+
 The kept-and-checked mode SHALL NOT be combined with live resolution; registering both SHALL fail,
-naming the two, because each decides the claim differently and only one can run.
+naming the two, because each decides the claim differently and only one can run. A host that registers
+a claims transformation of its own beside the mode SHALL be refused at start, naming the transformation
+that would run, because the check would otherwise stop silently while the refresh keeps the tenant.
 
 The documentation SHALL state, for each mode, when a change of membership and a change of selection
 take effect. It SHALL state that a user has one selection across everything that shares the identity
@@ -232,6 +238,17 @@ store.
 
 - **WHEN** a host registers the kept-and-checked mode and live resolution
 - **THEN** registration fails, naming both
+
+#### Scenario: A host adds a claims transformation of its own
+
+- **WHEN** a host registers the kept-and-checked mode and then a claims transformation of its own
+- **THEN** the host fails to start, naming the transformation that would run instead of the check
+
+#### Scenario: A principal of another scheme carries a tenant
+
+- **WHEN** the kept-and-checked mode is configured and a request is authenticated by a scheme other than
+  the identity system's sign-in, with a tenant claim for which the principal's id has no membership
+- **THEN** the request keeps that tenant claim
 
 #### Scenario: The membership ends while the user is signed in
 
@@ -418,14 +435,15 @@ in — membership, key material, settings and API keys — in an order that leav
 before it has been removed.
 
 A subject's key material SHALL include every key its erasure covers — for a tenant, a key of any
-level that names the tenant; for a user, a user-level key that names the user — whoever else the key
+level that names the tenant; for a user, a user-level key that names the user, and a key of any level
+that names the user and no tenant of theirs — whoever else the key
 names and whether or not that other subject is still in the directory, wherever the key store can
 list the keys it holds. The framework's file-backed key store and its test key store SHALL be able to.
 Where a key store cannot list its keys, the erasure SHALL still shred the keys the directory names and
 SHALL warn that it could not reach the rest. The keys the directory names for a user SHALL include the
-user's own key — the one that names the user and no tenant of theirs, under which the data a user owns
-alone is encrypted — so that a user's own data is shredded whether or not the key store can list its
-keys. An erasure SHALL
+user's own keys — those that name the user and no tenant of theirs, under which the data a user owns
+alone is encrypted, at every level — so that a user's own data is shredded whether or not the key
+store can list its keys. An erasure SHALL
 refuse an empty id, which names no subject.
 
 Before it sweeps any plane, the erasure SHALL mark the subject erased in the key store, so that no

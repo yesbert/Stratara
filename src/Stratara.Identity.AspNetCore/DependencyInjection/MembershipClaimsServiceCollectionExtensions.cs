@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Stratara.Abstractions.Multitenancy;
 using Stratara.Identity.AspNetCore.Services;
 
@@ -119,9 +120,14 @@ public static class MembershipClaimsServiceCollectionExtensions
     /// re-issues the sign-in for another reason switches the tenant to the selection as well.
     /// </para>
     /// <para>
-    /// Every request looks the carried membership up once. A bearer-token refresh re-creates the
-    /// principal through the claims factory and resolves the tenant from the selection; only the cookie
-    /// refresh keeps it.
+    /// Every request looks the carried membership up once. Only principals ASP.NET Identity issued are
+    /// checked; an API key or a token your application mints keeps the tenant it carries. A bearer-token
+    /// refresh re-creates the principal through the claims factory and resolves the tenant from the
+    /// selection; only the cookie refresh keeps it.
+    /// </para>
+    /// <para>
+    /// ASP.NET Core runs one <see cref="IClaimsTransformation"/>. A host that registers one of its own after
+    /// this call is refused at start, because the membership check would silently stop.
     /// </para>
     /// </remarks>
     /// <typeparam name="TUser">The host's ASP.NET Identity user entity.</typeparam>
@@ -148,6 +154,7 @@ public static class MembershipClaimsServiceCollectionExtensions
         services.AddMembershipTenantClaim<TUser>();
         services.AddHttpContextAccessor();
         services.AddScoped<IClaimsTransformation, CheckedMembershipClaimsTransformation>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, CheckedMembershipTenantClaimGuard>());
         services.AddOptions<SecurityStampValidatorOptions>()
             .PostConfigure<IHttpContextAccessor>((options, accessor) =>
             {

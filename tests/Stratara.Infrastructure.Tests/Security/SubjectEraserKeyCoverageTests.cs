@@ -241,6 +241,23 @@ public class SubjectEraserKeyCoverageTests
     }
 
     [Fact]
+    public async Task A_users_erasure_reaches_their_own_data_at_every_level()
+    {
+        var f = new Fixture();
+        var tenantLevel = await f.WriteAsync(new TenantLevelNote { Text = "address" }, Guid.Empty, Member);
+        var confidential = await f.WriteAsync(new ConfidentialNote { Text = "id number" }, Guid.Empty, Member);
+
+        await f.Eraser(new NonListingKeyStore(f.Keys), new CapturingLogger()).EraseUserAsync(Member);
+
+        Assert.Null(await f.ReadAsync<TenantLevelNote>(tenantLevel, Guid.Empty, Member));
+        Assert.Null(await f.ReadAsync<ConfidentialNote>(confidential, Guid.Empty, Member));
+
+        await f.Eraser().EraseUserAsync(Member);
+        await Assert.ThrowsAsync<KeyScopeErasedException>(() =>
+            f.WriteAsync(new TenantLevelNote { Text = "again" }, Guid.Empty, Member));
+    }
+
+    [Fact]
     public async Task A_tenants_erasure_leaves_a_members_own_data()
     {
         var f = new Fixture();

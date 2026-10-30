@@ -9,9 +9,10 @@ Destroying a scope's keys is what makes that scope's data unrecoverable; a key s
 would make erasure for one subject destroy another subject's data.
 
 Data that belongs to a user rather than to any of their tenants SHALL have a key of that user alone.
-Data at the user level whose owner is the user alone — an event recorded for an owner that names the
-user and no tenant — SHALL be encrypted under that key. That key SHALL be shredded by the user's
-erasure and SHALL NOT be shredded by the erasure of any tenant the user belongs to. The documentation
+Data whose owner is the user alone — an event recorded for an owner that names the user and no
+tenant — SHALL be encrypted under keys of that user alone, at whatever level a field is marked. Those
+keys SHALL be shredded by the user's erasure and SHALL NOT be shredded by the erasure of any tenant
+the user belongs to. The documentation
 SHALL describe this as the way to write data that follows a person across tenants, and SHALL state
 that the scope is fixed when the data is written: data written for one of the user's tenants stays
 bound to that tenant and is shredded with it.
@@ -39,8 +40,10 @@ bound to that tenant and is shredded with it.
 
 #### Scenario: A user's own data is erased with the user
 
-- **WHEN** a user's own data has been written and the user is then erased
-- **THEN** the data's encrypted fields read as absent
+- **WHEN** a user's own data has been written, with fields marked at the user, the tenant and the
+  confidential level, and the user is then erased
+- **THEN** the data's encrypted fields read as absent at every level, and no key for them is created
+  again
 
 ### Requirement: Unreadable encrypted fields degrade rather than fail
 
@@ -86,6 +89,70 @@ be erased.
 
 - **WHEN** ordinary serialized data is deserialized as a type that is now marked for encryption
 - **THEN** it is read as ordinary data rather than rejected
+
+### Requirement: An erased subject is given no new key
+
+Once a subject has been marked erased, the key store SHALL refuse to create key material for it.
+For a tenant, that is a key of any level that names the tenant; for a user, a user-level key that
+names the user, and a key of any level that names the user and no tenant of theirs — the same keys a
+subject's erasure shreds. Both the request for a scope's current key
+and the rotation of a scope SHALL be refused for such a scope, SHALL create nothing, and SHALL fail
+with a dedicated, documented exception that carries the refused scope, so a consumer can tell this
+refusal from any other failure and answer it as data that is gone.
+
+The mark SHALL hold for a scope that held a key before the erasure and for one that never did. A key
+created after the erasure would make the data written under it readable for good, and no later
+erasure would know it is there.
+
+The mark SHALL be permanent; the framework SHALL offer no way to lift it. Revoking a single version
+SHALL NOT mark anything, and marking a subject that is already marked SHALL succeed and change
+nothing.
+
+A key store that cannot mark a subject SHALL say so with `NotSupportedException`, the default for a
+key store written before the mark existed. The framework's file-backed key store and its test key
+store SHALL be able to; the development key store SHALL refuse it, as it refuses every erasure
+operation.
+
+#### Scenario: An encryption reaches an erased tenant
+
+- **WHEN** a tenant has been marked erased and a value is then encrypted at any level under a scope
+  that names the tenant
+- **THEN** the encryption fails with the dedicated exception naming the scope, and no key for that
+  scope exists afterwards
+
+#### Scenario: A combination that never had a key names an erased tenant
+
+- **WHEN** a tenant has been marked erased and a key is requested for a scope that names the tenant
+  together with a user who never wrote in it
+- **THEN** the request is refused rather than creating a first version
+
+#### Scenario: An erased scope is rotated
+
+- **WHEN** a scope that names an erased subject is rotated
+- **THEN** the rotation is refused and no version is created
+
+#### Scenario: An erased user's tenant is untouched
+
+- **WHEN** a user has been marked erased
+- **THEN** user-level keys naming the user are refused, and keys of the tenants the user belonged to
+  that do not name the user are still created and returned
+
+#### Scenario: Another subject is unaffected
+
+- **WHEN** one subject has been marked erased
+- **THEN** keys for scopes that name neither that subject nor another erased one are created,
+  returned and rotated as before
+
+#### Scenario: The last version is revoked
+
+- **WHEN** every version of a scope has been revoked and the scope's current key is requested
+- **THEN** a new version is created — revocation is not an erasure
+
+#### Scenario: The store is reopened
+
+- **WHEN** a subject has been marked erased in the file-backed key store and the store is opened again
+  from its file
+- **THEN** the subject is still refused
 
 ## ADDED Requirements
 

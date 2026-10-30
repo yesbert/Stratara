@@ -48,7 +48,7 @@ lock makes the second wait for the first, and nothing is applied twice.
 |---|---|
 | Schema | `stratara_identity`, fixed — the same for every host and every release |
 | Migration history | `stratara_identity.__stratara_identity_migrations`, apart from any history your own contexts keep |
-| Connection | the connection string `identitydb`; where it is absent, the host's default (`defaultdb`) |
+| Connection | the connection string `identitydb`; where it is absent, `defaultdb` — read from configuration, never through a tenant-routing `IDbResolver` |
 | Table names | ASP.NET Identity's `AspNet…` names, with snake-case columns; the directory's `tenant_membership`, `active_tenant`, `setting_entry`, `api_key` |
 
 The separate connection is what lets hosts keep their own databases and still meet in one identity database: give
@@ -71,10 +71,10 @@ display name, an avatar, preferences — outside the identity store, for instanc
 (see [Data that belongs to a person](encrypt-data-setup.md#data-that-belongs-to-a-person)).
 
 The store also fixes the parts of the ASP.NET Identity schema that would otherwise follow each host's
-`IdentityOptions.Stores`: the schema version (version 3, with passkeys) and the key and phone-number lengths. A
-host that changes store options its model depends on — personal-data protection, for one — gets a model the
-shipped migrations do not describe, and the migrate call fails, naming the store, rather than leaving a schema the
-model does not match.
+`IdentityOptions.Stores`: the schema version (version 3, with passkeys) and the key and phone-number lengths, so
+every host's model matches the shipped migrations whatever it configures there. A host that turns on
+`Stores.ProtectPersonalData` is refused at start: it would write account columns the other hosts cannot read or
+match.
 
 ## One selection, several applications
 

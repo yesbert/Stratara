@@ -28,13 +28,27 @@ public class KeySubjectTests
     [InlineData(DataSensitivityLevel.UserScoped, true)]
     [InlineData(DataSensitivityLevel.TenantScoped, false)]
     [InlineData(DataSensitivityLevel.Confidential, false)]
-    public void A_user_covers_only_the_user_level_that_names_it(DataSensitivityLevel level, bool covered)
+    public void A_user_covers_only_the_user_level_that_names_it_within_a_tenant(DataSensitivityLevel level, bool covered)
     {
         var user = KeySubject.User(User);
 
         Assert.Equal(covered, user.Covers(new KeyScope(level, Tenant, User)));
-        Assert.Equal(covered, user.Covers(new KeyScope(level, null, User.ToUpperInvariant())));
+        Assert.Equal(covered, user.Covers(new KeyScope(level, Tenant, User.ToUpperInvariant())));
         Assert.False(user.Covers(new KeyScope(level, User, "another")));
+    }
+
+    [Theory]
+    [InlineData(DataSensitivityLevel.UserScoped)]
+    [InlineData(DataSensitivityLevel.TenantScoped)]
+    [InlineData(DataSensitivityLevel.Confidential)]
+    public void A_user_covers_every_level_that_names_them_and_no_tenant_of_theirs(DataSensitivityLevel level)
+    {
+        var user = KeySubject.User(User);
+
+        Assert.True(user.Covers(new KeyScope(level, null, User)));
+        Assert.True(user.Covers(new KeyScope(level, Guid.Empty.ToString("D"), User.ToUpperInvariant())));
+        Assert.False(user.Covers(new KeyScope(level, Guid.Empty.ToString("D"), "another")));
+        Assert.False(user.Covers(new KeyScope(level, Guid.Empty.ToString("D"))));
     }
 
     [Fact]

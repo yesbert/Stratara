@@ -30,7 +30,12 @@ public class StrataraIdentityStoreTests
         typeof(DropSchemaOperation), typeof(DropSequenceOperation), typeof(DropCheckConstraintOperation),
         typeof(RenameTableOperation), typeof(RenameColumnOperation), typeof(RenameIndexOperation),
         typeof(RenameSequenceOperation), typeof(AlterColumnOperation), typeof(AlterTableOperation),
+        typeof(SqlOperation), typeof(DeleteDataOperation), typeof(UpdateDataOperation),
     ];
+
+    private static bool BreaksAnEarlierHost(MigrationOperation operation) =>
+        DestructiveOperations.Contains(operation.GetType())
+        || operation is AddColumnOperation { IsNullable: false, DefaultValue: null, DefaultValueSql: null, ComputedColumnSql: null };
 
     private static StrataraIdentityStore DesignTimeStore() => new StrataraIdentityStoreDesignTimeFactory().CreateDbContext([]);
 
@@ -64,7 +69,7 @@ public class StrataraIdentityStoreTests
         var destructive = later
             .Select(m => (Id: m.Key, Migration: migrations.CreateMigration(m.Value, store.Database.ProviderName!)))
             .SelectMany(m => m.Migration.UpOperations
-                .Where(operation => DestructiveOperations.Contains(operation.GetType()))
+                .Where(BreaksAnEarlierHost)
                 .Select(operation => $"{m.Id}: {operation.GetType().Name}"))
             .ToList();
 
@@ -130,5 +135,37 @@ public class StrataraIdentityStoreTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IApiKeyStore>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISettingStore>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IDbContextFactory<StrataraIdentityStore>>());
+    }
+
+    [Fact]
+    public void A_column_added_without_null_or_default_breaks_an_earlier_host()
+    {
+        Assert.True(BreaksAnEarlierHost(new AddColumnOperation { Name = "c", Table = "t", ClrType = typeof(int), IsNullable = false }));
+        Assert.False(BreaksAnEarlierHost(new AddColumnOperation { Name = "c", Table = "t", ClrType = typeof(int), IsNullable = true }));
+        Assert.False(BreaksAnEarlierHost(new AddColumnOperation { Name = "c", Table = "t", ClrType = typeof(int), IsNullable = false, DefaultValue = 0 }));
+        Assert.True(BreaksAnEarlierHost(new SqlOperation { Sql = "DELETE FROM t" }));
+    }
+
+    [Fact]
+    public void A_host_that_protects_personal_data_is_refused()
+    {
+        using var provider = new ServiceCollection()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .AddStrataraIdentityStore()
+            .Configure<IdentityOptions>(options => options.Stores.ProtectPersonalData = true)
+            .BuildServiceProvider();
+
+        Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() =>
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityOptions>>().Value);
+    }
+
+    [Fact]
+    public void Without_either_connection_string_the_store_says_which_it_needs()
+    {
+        using var provider = Provider();
+        using var scope = provider.CreateScope();
+
+        var refusal = Assert.Throws<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredService<StrataraIdentityStore>());
+        Assert.Contains(StrataraIdentityStore.ConnectionStringName, refusal.Message, StringComparison.Ordinal);
     }
 }

@@ -16,9 +16,10 @@ Destroying a scope's keys is what makes that scope's data unrecoverable; a key s
 would make erasure for one subject destroy another subject's data.
 
 Data that belongs to a user rather than to any of their tenants SHALL have a key of that user alone.
-Data at the user level whose owner is the user alone — an event recorded for an owner that names the
-user and no tenant — SHALL be encrypted under that key. That key SHALL be shredded by the user's
-erasure and SHALL NOT be shredded by the erasure of any tenant the user belongs to. The documentation
+Data whose owner is the user alone — an event recorded for an owner that names the user and no
+tenant — SHALL be encrypted under keys of that user alone, at whatever level a field is marked. Those
+keys SHALL be shredded by the user's erasure and SHALL NOT be shredded by the erasure of any tenant
+the user belongs to. The documentation
 SHALL describe this as the way to write data that follows a person across tenants, and SHALL state
 that the scope is fixed when the data is written: data written for one of the user's tenants stays
 bound to that tenant and is shredded with it.
@@ -46,8 +47,10 @@ bound to that tenant and is shredded with it.
 
 #### Scenario: A user's own data is erased with the user
 
-- **WHEN** a user's own data has been written and the user is then erased
-- **THEN** the data's encrypted fields read as absent
+- **WHEN** a user's own data has been written, with fields marked at the user, the tenant and the
+  confidential level, and the user is then erased
+- **THEN** the data's encrypted fields read as absent at every level, and no key for them is created
+  again
 
 ### Requirement: A key has versions, and rotation does not break existing ciphertext
 
@@ -391,7 +394,8 @@ stopping the operation, so that the mistake is visible while it is being made.
 
 Once a subject has been marked erased, the key store SHALL refuse to create key material for it.
 For a tenant, that is a key of any level that names the tenant; for a user, a user-level key that
-names the user — the same keys a subject's erasure shreds. Both the request for a scope's current key
+names the user, and a key of any level that names the user and no tenant of theirs — the same keys a
+subject's erasure shreds. Both the request for a scope's current key
 and the rotation of a scope SHALL be refused for such a scope, SHALL create nothing, and SHALL fail
 with a dedicated, documented exception that carries the refused scope, so a consumer can tell this
 refusal from any other failure and answer it as data that is gone.

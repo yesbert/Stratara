@@ -63,8 +63,9 @@ framework's identity registration sets `SchemaVersion = Version3`, so the first 
 host (`PendingModelChangesWarning` at the migrate call, in every integration test). The store therefore overrides
 `SchemaVersion` with `IdentitySchemaVersions.Version3` and sets the login/token key lengths to 128 and the phone
 number to 256 — the values the framework's registration produces — so the model is the same in every host and at
-design time. A host that changes an option the model depends on beyond those (personal-data protection) still gets
-a model the migrations do not describe, and the migrate call fails loudly. Evidence:
+design time. Personal-data protection changes only value converters, not the schema, so no model check catches it;
+`AddStrataraIdentityStore()` validates `IdentityOptions` on start and refuses `Stores.ProtectPersonalData` (found by
+the replacement review of PR #235). Evidence:
 `SharedIdentityStoreTests` (all five fail without the overrides),
 `StrataraIdentityStoreTests.The_model_has_no_change_the_latest_shipped_migration_lacks`.
 
@@ -76,7 +77,8 @@ The package references `Microsoft.EntityFrameworkCore.Design` with `PrivateAsset
 dependency.
 
 **Its own connection, falling back to the default.** The registration resolves the connection string
-`identitydb` and falls back to the one `IDbResolver` resolves (`defaultdb`). Options are not tenant-
+`identitydb` and falls back to the connection string `defaultdb`, both read from configuration — not through
+`IDbResolver`, which a host may override to route by tenant (found by the replacement review of PR #235). Options are not tenant-
 routed: the identity store is one database for all tenants.
 
 **One registration, one migrate call.** `AddStrataraIdentityStore()` registers the context factory

@@ -35,7 +35,8 @@ that schema, apart from any history a host keeps for its own contexts.
 
 The database the store lives in SHALL be configurable on its own, through a connection of its own
 that falls back to the host's default connection where none is given, so that hosts which keep their
-own databases can share one identity database.
+own databases can share one identity database. Neither SHALL be routed by tenant: the identity store
+is one database for every tenant.
 
 #### Scenario: The store is migrated
 
@@ -79,6 +80,9 @@ The shared store's account type SHALL be the standard account type of ASP.NET Id
 SHALL offer no way to extend it with columns of a host's own. Data a host keeps about a person beyond
 the account belongs outside the identity store.
 
+A host whose identity configuration would write account columns the other hosts cannot read or match
+— protection of personal data in the store — SHALL be refused at start.
+
 Hosting the identity tables in a host's own context, with a user type of its own, SHALL remain
 possible for a host that does not share its store.
 
@@ -86,6 +90,11 @@ possible for a host that does not share its store.
 
 - **WHEN** a host registers the shared identity store
 - **THEN** it registers it without naming a user type, and its accounts are of the standard type
+
+#### Scenario: A host protects personal data in the store
+
+- **WHEN** a host that registers the shared identity store turns on the protection of personal data
+- **THEN** the host fails to start, naming the option
 
 ### Requirement: The schema changes only additively within a major version
 

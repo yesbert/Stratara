@@ -57,14 +57,15 @@ internal static class MembershipTenantClaimResolver
             : null;
 
     /// <summary>
-    /// Stamps the <c>stratara:tenant_id</c> claim onto the principal's primary identity — the
-    /// single place that owns the claim's encoding (round-trippable <c>"D"</c> Guid format).
+    /// Whether the user the principal names holds an <see cref="MembershipStatus.Active"/> membership in
+    /// <paramref name="tenantId"/>; <c>false</c> when the user id cannot be read.
     /// </summary>
     internal static async Task<bool> IsActiveMemberAsync(
         ITenantMembershipStore membershipStore, ClaimsPrincipal principal, Guid tenantId, CancellationToken cancellationToken) =>
         GetUserId(principal) is { } userId
         && await membershipStore.GetMembershipAsync(userId, tenantId, cancellationToken) is { Status: MembershipStatus.Active };
 
+    /// <summary>Removes every <c>stratara:tenant_id</c> claim from every identity of the principal.</summary>
     internal static void RemoveTenantClaims(ClaimsPrincipal principal)
     {
         foreach (var identity in principal.Identities)
@@ -76,6 +77,10 @@ internal static class MembershipTenantClaimResolver
         }
     }
 
+    /// <summary>
+    /// Stamps the <c>stratara:tenant_id</c> claim onto the principal's primary identity — the
+    /// single place that owns the claim's encoding (round-trippable <c>"D"</c> Guid format).
+    /// </summary>
     internal static void StampTenantClaim(ClaimsPrincipal principal, Guid tenantId)
     {
         if (principal.Identity is ClaimsIdentity identity)
