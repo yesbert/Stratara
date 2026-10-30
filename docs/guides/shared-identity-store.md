@@ -84,8 +84,27 @@ switch in one application would move every open session the user has in all of t
 sign-in, kept across a cookie refresh, and checked against the membership on every request — see
 [The sign-in tenant claim](tenant-membership.md#the-sign-in-tenant-claim).
 
+## Role names and keys
+
 Role names are global in the store. Give each application's roles a prefix of its own so that two applications
-never mean different things by one role.
+never mean different things by one role. The framework enforces no form; a form that works is
+`<scope>.<role>`:
+
+- all lowercase, exactly one dot, after the scope; words within the role joined by a hyphen
+  (`billing.invoice-approver`);
+- the role a noun for who holds it, not a verb for what it allows;
+- one scope per application, plus two shared ones: `platform.` for the operator of the installation and `tenant.`
+  for roles that mean the same in every application within one tenant (`tenant.owner`).
+
+An application then grants nothing for a role outside its own scope and those two, so a role another application
+introduces later cannot widen what a member may do in it.
+
+**API keys are shared the same way.** The `api_key` table holds the keys of every application, and
+`IApiKeyStore.GetForTenantAsync` lists all of a tenant's keys, whichever application issued them; `RevokeAsync`
+revokes any of them. A key administration that should show only its own application's keys filters the
+descriptors itself — by the scopes of their `Roles`, for a machine key. A personal access token carries no roles
+of its own (it acts with the roles of the user's membership, in every application), so a filter by role hides
+every token: decide separately whether your key administration shows them.
 
 ## Across releases
 
