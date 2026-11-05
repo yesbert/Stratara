@@ -119,6 +119,36 @@ applies to the entire NuGet family.
   before the memberships they identify.
 - **The `MembershipClaimsPrincipalFactory` remarks describe what it does**: no tenant claim where a user has several
   memberships and none selected.
+- **A replay applies each entry in a scope of its own session.** The full replay built every projection and its
+  scoped dependencies once per batch, before any entry's session was set, and applied the entries of every tenant
+  through those instances — a dependency that takes its tenant when it is constructed wrote all of them without
+  one. Entries are now applied in a fresh scope per run of entries recorded under the same session, with the
+  session set before anything is resolved, as the execution model's readers already do.
+- **A replay fails before it empties anything where the forgotten-tenant store is missing.** With a projection that
+  forgets deleted tenants registered but no store for it, the replay skipped the clearing step, emptied every read
+  model and then failed on the first fact. It now fails at once with the registration message.
+- **The tenant read model ignores a fact older than what it holds.** `TenantProjection` recorded the version of the
+  last fact it applied but never compared it, so a redelivered or late rename, activation, deactivation, locale
+  change or reassignment overwrote newer state. A fact that is not newer than the row is now skipped. A late
+  `TenantCreated` arriving after the tenant's deletion still re-creates the row.
+- **A handler that times out stalls its partition visibly on the Orleans execution model.** A cancellation thrown
+  from inside a projection or saga handler — an HTTP or database timeout — that the reader itself had not requested
+  matched none of the reader's failure paths: nothing was logged, the partition was not marked stalled, a wait
+  reported `TimedOut` instead of `Stalled`, and the entries of the batch that had already applied were applied again
+  on every retry. It is now treated as the failure it is: logged, counted, and checkpointed below the failing
+  entry.
+- **An entry retried after a missing preceding fact starts from a fresh scope on the Orleans execution model**, as
+  it does on the bus. The retry reused the failed attempt's scoped dependencies, so state that attempt had left
+  behind — a tracked change, a staged write — was applied a second time.
+- **`InMemoryMessageBus` gives the handlers of one subscription competing delivery.** It handed every message to
+  every handler on the topic, so several workers on one subscription — which is what `ProjectionWorker` and
+  `SagaWorker` open — each applied every bundle, and a saga issued its command once per worker. Each message now
+  reaches one handler per subscription, in turn, as on RabbitMQ and Azure Service Bus; different subscriptions
+  still each receive every message. **A test that relied on every handler of one subscription seeing every message
+  needs separate subscription names.**
+- **`ProjectionTester` runs the overload production runs.** For a projection declaring both `HandleAsync(TData, …)`
+  and `HandleAsync(IEvent<TData>, …)` it tried the enveloped overload first; the framework tries the payload one
+  first.
 
 ## [4.7.1] — 2026-11-05
 
