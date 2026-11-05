@@ -24,6 +24,178 @@ public class ChangeSetBuilderTests
         public string Extra { get; set; } = "";
     }
 
+    private enum Status
+    {
+        Draft,
+        Active
+    }
+
+    private sealed class Order
+    {
+        public Status Status { get; set; }
+        public int Quantity { get; set; }
+        public int? Discount { get; set; }
+        public bool IsDeleted { get; }
+        public List<string> Tags { get; set; } = [];
+        public HashSet<string> Labels { get; set; } = [];
+        public Dictionary<string, int> Stock { get; set; } = [];
+        public string Name { get; private set; } = "";
+
+        public static Order Named(string name) => new() { Name = name };
+    }
+
+    private sealed class OrderPatch
+    {
+        public string[] Tags { get; set; } = [];
+        public IReadOnlyList<string> Labels { get; set; } = [];
+    }
+
+    private sealed class OrderUpdate
+    {
+        public string Status { get; set; } = "";
+        public int? Quantity { get; set; }
+        public int Discount { get; set; }
+        public bool IsDeleted { get; set; }
+        public List<string> Tags { get; set; } = [];
+        public HashSet<string> Labels { get; set; } = [];
+        public Dictionary<string, int> Stock { get; set; } = [];
+        public string Name { get; set; } = "";
+    }
+
+    [Fact]
+    public void A_property_of_an_incompatible_type_is_skipped()
+    {
+        var order = new Order { Status = Status.Active };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Status = "Active" });
+
+        Assert.DoesNotContain(result, change => change.PropertyName == nameof(Order.Status));
+    }
+
+    [Fact]
+    public void A_property_the_aggregate_cannot_set_is_skipped()
+    {
+        var order = new Order();
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { IsDeleted = true });
+
+        Assert.DoesNotContain(result, change => change.PropertyName == nameof(Order.IsDeleted));
+    }
+
+    [Fact]
+    public void A_property_with_a_private_setter_takes_part()
+    {
+        var order = Order.Named("old");
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Name = "new" });
+
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Name));
+    }
+
+    [Fact]
+    public void A_property_that_differs_only_in_nullability_takes_part()
+    {
+        var order = new Order { Quantity = 1, Discount = 5 };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Quantity = 2, Discount = 7 });
+
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Quantity) && Equals(change.ChangeValue, 2));
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Discount) && Equals(change.ChangeValue, 7));
+    }
+
+    [Fact]
+    public void An_absent_value_for_a_property_that_cannot_be_absent_is_skipped()
+    {
+        var order = new Order { Quantity = 1 };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Quantity = null });
+
+        Assert.DoesNotContain(result, change => change.PropertyName == nameof(Order.Quantity));
+    }
+
+    [Fact]
+    public void A_sequence_of_another_shape_takes_part_and_is_compared_by_content()
+    {
+        var order = new Order { Tags = ["a", "b"], Labels = ["x"] };
+
+        var unchanged = ChangeSetBuilder<Order, OrderPatch>.CreateChangeSet(
+            order, order, new OrderPatch { Tags = ["a", "b"], Labels = ["x"] });
+        var changed = ChangeSetBuilder<Order, OrderPatch>.CreateChangeSet(
+            order, order, new OrderPatch { Tags = ["a"], Labels = ["x", "y"] });
+
+        Assert.Empty(unchanged);
+        Assert.Equal([nameof(Order.Tags), nameof(Order.Labels)], changed.Select(change => change.PropertyName));
+    }
+
+    [Fact]
+    public void A_set_is_compared_regardless_of_order()
+    {
+        var order = new Order { Labels = ["a", "b", "c"] };
+        var reordered = new HashSet<string> { "c", "b", "a" };
+        Assert.False(order.Labels.SequenceEqual(reordered));
+
+        var same = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(order, order, new OrderUpdate { Labels = reordered });
+        var different = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Labels = ["a", "b", "d"] });
+
+        Assert.DoesNotContain(same, change => change.PropertyName == nameof(Order.Labels));
+        Assert.Contains(different, change => change.PropertyName == nameof(Order.Labels));
+    }
+
+    [Fact]
+    public void A_dictionary_key_only_one_side_recognises_is_a_change()
+    {
+        var order = new Order { Stock = new() { ["a"] = 1 } };
+        var submitted = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["A"] = 1 };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(order, order, new OrderUpdate { Stock = submitted });
+
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Stock));
+    }
+
+    [Fact]
+    public void A_collection_with_the_same_content_is_not_a_change()
+    {
+        var source = new Order { Tags = ["a"], Stock = new() { ["x"] = 1 } };
+        var current = new Order { Tags = ["a", "b"], Stock = new() { ["x"] = 2 } };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            source, current, new OrderUpdate { Tags = ["a"], Stock = new() { ["x"] = 1 } });
+
+        Assert.DoesNotContain(result, change => change.PropertyName is nameof(Order.Tags) or nameof(Order.Stock));
+    }
+
+    [Theory]
+    [InlineData("b,a")]
+    [InlineData("a,b,c")]
+    [InlineData("a")]
+    [InlineData("")]
+    public void A_collection_with_different_content_is_a_change(string submitted)
+    {
+        var order = new Order { Tags = ["a", "b"] };
+        var update = new OrderUpdate { Tags = [.. submitted.Split(',', StringSplitOptions.RemoveEmptyEntries)] };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(order, order, update);
+
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Tags));
+    }
+
+    [Fact]
+    public void A_dictionary_with_a_different_value_is_a_change()
+    {
+        var order = new Order { Stock = new() { ["x"] = 1 } };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Stock = new() { ["x"] = 2 } });
+
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Stock));
+    }
+
     [Fact]
     public void CreateChangeSet_NoChanges_ReturnsEmpty()
     {

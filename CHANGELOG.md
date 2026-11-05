@@ -16,7 +16,30 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.7.1`._
+### Fixed
+
+- **A recorded field-changed event can be replayed.** After a round trip through the store, the value of a
+  `FieldChangedEvent<TAggregate>` comes back as untyped JSON, and applying it with `ApplyPropertyChanged` threw an
+  `ArgumentException` — an aggregate that had ever taken a change set could not be rebuilt from its stream.
+  `PropertyAccessorCache.SetValueByName` now converts such a value to the property's type before assigning it.
+  No migration: events already in the store replay as they are.
+- **A change set leaves out properties the aggregate cannot take.** `ChangeSetBuilder` compared every property the
+  aggregate could read under the same name. It now takes a property only where the aggregate's property is settable
+  and of a compatible type — assignable, nullability of a value type aside, or a sequence whose elements are — and
+  skips an absent value for a property that cannot be absent, so an update no longer records a change that replay
+  cannot apply. `ChangeMerger` copies a property through whose type cannot hold the aggregate's value instead of
+  throwing an `InvalidCastException`, and keeps the submitted value where the current one is absent and the payload's
+  property cannot be.
+- **An unedited collection is no longer reported as changed.** `ChangeSetBuilder` and `ChangeMerger` compared
+  collection properties by reference, so a list that arrived with an update always counted as edited and could
+  overwrite a concurrent change to it. Lists and arrays are now compared element by element in order, sets
+  regardless of order, dictionaries key by key; any other type keeps its own equality.
+- **A collection of another shape can be applied to an aggregate.** `PropertyAccessorCache.SetValueByName` converts
+  a collection that is not of the property's type — an array for a list — the way a recorded value is read back, so
+  applying a field change in memory and replaying it from the store give the same result.
+- **The `IEventUpcaster.TargetEventTypeName` documentation no longer describes an in-place shape change.** An
+  upcaster whose target equals its source has always been refused as a cycle when the event is read; the
+  documentation said otherwise. A reshaped payload moves to a new type name.
 
 ## [4.7.1] — 2026-11-05
 

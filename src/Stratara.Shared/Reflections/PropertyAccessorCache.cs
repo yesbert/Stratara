@@ -1,6 +1,8 @@
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 
 namespace Stratara.Shared.Reflections;
 
@@ -95,14 +97,32 @@ public static class PropertyAccessorCache
     /// via reflection. Used when the caller only knows the property name (e.g. apply-handler for
     /// generic <c>FieldChangedEvent</c>).
     /// </summary>
+    /// <remarks>
+    /// A value that was read back from JSON as an untyped <see cref="JsonElement"/> — which is what a
+    /// recorded <c>FieldChangedEvent</c> carries after it has been stored — is converted to the
+    /// property's type before it is assigned. A collection of another shape than the property's, such
+    /// as an array for a list, is converted the same way, so that applying a change in memory and
+    /// replaying it from the store give the same result.
+    /// </remarks>
     /// <typeparam name="TTarget">Type that declares the property.</typeparam>
     /// <param name="target">Instance to mutate.</param>
     /// <param name="propertyName">Name of the public instance property.</param>
     /// <param name="value">New property value, boxed as <see cref="object"/>.</param>
     /// <exception cref="ArgumentException">Thrown when the property is not found on <typeparamref name="TTarget"/>.</exception>
+    /// <exception cref="JsonException">Thrown when a JSON value cannot be converted to the property's type.</exception>
     public static void SetValueByName<TTarget>(TTarget target, string propertyName, object? value)
     {
         var prop = GetOrCachePropertyInfo(typeof(TTarget), propertyName);
+        if (value is JsonElement element && !prop.PropertyType.IsAssignableFrom(typeof(JsonElement)))
+        {
+            value = element.Deserialize(prop.PropertyType);
+        }
+        else if (value is IEnumerable and not string && !prop.PropertyType.IsInstanceOfType(value))
+        {
+            // A collection of another shape is assigned the way a recorded one would be read back.
+            value = JsonSerializer.SerializeToElement(value, value.GetType()).Deserialize(prop.PropertyType);
+        }
+
         var method = typeof(PropertyAccessorCache)
             .GetMethod(nameof(GetOrCreateSetter))!
             .MakeGenericMethod(typeof(TTarget), prop.PropertyType);

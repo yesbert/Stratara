@@ -15,7 +15,8 @@ namespace Stratara.Shared.Merging.ChangeTracking;
 /// <remarks>
 /// Property accessors are compiled to delegates and cached per-type-combination for the lifetime of
 /// the process. Properties that exist on <typeparamref name="TChanges"/> but not on
-/// <typeparamref name="TBase"/> are copied through unchanged.
+/// <typeparamref name="TBase"/>, or whose type cannot hold the aggregate's value, are copied through
+/// unchanged. Lists, arrays, sets and dictionaries are compared by content rather than by reference.
 /// </remarks>
 public static class ChangeMerger<TBase, TChanges>
     where TBase : notnull
@@ -59,9 +60,11 @@ public static class ChangeMerger<TBase, TChanges>
             var sourceVal = accessor.BaseGetter!(source);
             var currentVal = accessor.BaseGetter!(current);
 
-            if (Equals(sourceVal, changeVal))
+            // The current value wins where the editor did not touch the field — unless it is absent
+            // and the payload's property has no absent state, where the submitted value stays.
+            if (ChangeComparison.AreEqual(sourceVal, changeVal))
             {
-                accessor.ChangeSetter(result, currentVal);
+                accessor.ChangeSetter(result, currentVal is null && !accessor.ChangeAcceptsNull ? changeVal : currentVal);
                 continue;
             }
 
@@ -80,10 +83,15 @@ public static class ChangeMerger<TBase, TChanges>
             ChangeGetter = CompileGetter<TChanges>(changeProp);
             ChangeSetter = CompileSetter<TChanges>(changeProp);
 
+            // Where the editor did not touch a field, the current value is written into the merged
+            // payload, so the payload's property has to be able to take it.
             var baseProp = typeof(TBase).GetProperty(changeProp.Name);
-            if (baseProp is { CanRead: true })
+            if (baseProp is { CanRead: true }
+                && baseProp.GetIndexParameters().Length == 0
+                && ChangeComparison.IsAssignable(baseProp.PropertyType, changeProp.PropertyType))
             {
                 BaseGetter = CompileGetter<TBase>(baseProp);
+                ChangeAcceptsNull = ChangeComparison.AcceptsNull(changeProp.PropertyType);
                 CanCompare = true;
                 return;
             }
@@ -97,6 +105,7 @@ public static class ChangeMerger<TBase, TChanges>
         public Action<TChanges, object?> ChangeSetter { get; }
         public Func<TBase, object?>? BaseGetter { get; }
         public bool CanCompare { get; }
+        public bool ChangeAcceptsNull { get; }
 
         private static Func<TObj, object?> CompileGetter<TObj>(PropertyInfo prop)
         {
