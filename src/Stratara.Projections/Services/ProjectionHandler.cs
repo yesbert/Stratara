@@ -63,17 +63,20 @@ internal sealed class ProjectionHandler(
             return;
         }
 
-        var store = forgottenTenants ?? throw new InvalidOperationException(
-            $"Projection '{GetProjectionName(projection)}' declares {nameof(IForgetsDeletedTenants)}, but no " +
-            $"{nameof(IForgottenTenantStore)} is registered to keep the tenants it has seen deleted. Register the read store " +
-            "with AddNpgsqlReadDbContextFactory<TContext>(), or call AddStrataraForgottenTenants<TReadContext>() for a read " +
-            "context registered another way.");
         var projectionName = GetProjectionName(projection);
+        var store = forgottenTenants ?? throw NoForgottenTenantStore(projectionName);
         foreach (var @event in events)
         {
             await HandleForgettingAsync(projection, projectionName, store, @event, cancellationToken);
         }
     }
+
+    /// <summary>The failure of a projection that declares <see cref="IForgetsDeletedTenants"/> where no store keeps its record.</summary>
+    internal static InvalidOperationException NoForgottenTenantStore(string projectionName) => new(
+        $"Projection '{projectionName}' declares {nameof(IForgetsDeletedTenants)}, but no " +
+        $"{nameof(IForgottenTenantStore)} is registered to keep the tenants it has seen deleted. Register the read store " +
+        "with AddNpgsqlReadDbContextFactory<TContext>(), or call AddStrataraForgottenTenants<TReadContext>() for a read " +
+        "context registered another way.");
 
     private async Task HandleForgettingAsync(IProjection projection, string projectionName, IForgottenTenantStore store, IEvent @event,
         CancellationToken cancellationToken)

@@ -486,4 +486,84 @@ public class TenantProjectionTests : ProjectionTestBase
     }
 
     #endregion
+
+    #region Late and repeated facts
+
+    [Fact]
+    public async Task A_rename_older_than_the_row_does_not_overwrite_the_newer_name()
+    {
+        var existing = ExistingTenant(sourceVersion: 5, name: "Newer");
+
+        await ProjectionTestHelper.HandleAsync(_projection,
+            EventFactory.Create(new TenantRenamed("Older", DateTimeOffset.UtcNow), streamId: existing.Id, version: 3));
+
+        Assert.Equal("Newer", existing.Name);
+        Assert.Equal(5, existing.SourceVersion);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task A_repeated_deactivation_after_a_later_activation_leaves_the_tenant_active()
+    {
+        var existing = ExistingTenant(sourceVersion: 4, isActive: true);
+
+        await ProjectionTestHelper.HandleAsync(_projection,
+            EventFactory.Create(new TenantDeactivated(DateTimeOffset.UtcNow), streamId: existing.Id, version: 3));
+
+        Assert.True(existing.IsActive);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task A_fact_of_the_version_the_row_already_holds_is_not_written_again()
+    {
+        var existing = ExistingTenant(sourceVersion: 3, isActive: false);
+
+        await ProjectionTestHelper.HandleAsync(_projection,
+            EventFactory.Create(new TenantActivated(DateTimeOffset.UtcNow), streamId: existing.Id, version: 3));
+
+        Assert.False(existing.IsActive);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task A_locale_change_older_than_the_row_does_not_overwrite_the_newer_locale()
+    {
+        var existing = ExistingTenant(sourceVersion: 6, locale: "fr-FR");
+
+        await ProjectionTestHelper.HandleAsync(_projection,
+            EventFactory.Create(new TenantDefaultLocaleChanged("de-DE", DateTimeOffset.UtcNow), streamId: existing.Id, version: 2));
+
+        Assert.Equal("fr-FR", existing.DefaultLocale);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task A_reassignment_older_than_the_row_does_not_overwrite_the_newer_customer()
+    {
+        var customer = Guid.NewGuid();
+        var existing = ExistingTenant(sourceVersion: 6);
+        existing.CustomerId = customer;
+
+        await ProjectionTestHelper.HandleAsync(_projection,
+            EventFactory.Create(new TenantAssignedToCustomer(Guid.NewGuid(), DateTimeOffset.UtcNow), streamId: existing.Id, version: 6));
+
+        Assert.Equal(customer, existing.CustomerId);
+        AssertNothingWritten();
+    }
+
+    private TenantView ExistingTenant(long sourceVersion, string name = "Tenant", bool isActive = true, string locale = "en-US")
+    {
+        var tenant = new TenantView { Id = Guid.NewGuid(), Name = name, IsActive = isActive, DefaultLocale = locale, SourceVersion = sourceVersion };
+        TenantRepositoryMock.Setup(r => r.GetAsync(tenant.Id, It.IsAny<CancellationToken>())).ReturnsAsync(tenant);
+        return tenant;
+    }
+
+    private void AssertNothingWritten()
+    {
+        TenantRepositoryMock.Verify(r => r.Update(It.IsAny<TenantView>()), Times.Never);
+        TransactionMock.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    #endregion
 }

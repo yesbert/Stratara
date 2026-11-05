@@ -732,6 +732,86 @@ public class ProjectionReplayWorkerTests
         harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
     }
 
+    [Fact]
+    public async Task ReplayCallback_ADeclaringProjectionWithoutAStore_FailsBeforeAnythingIsEmptied()
+    {
+        var harness = new Harness();
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        SetupBatchSequence(harness, [[NewEntry(sequenceNumber: 1)], []]);
+        harness.Configure = services =>
+        {
+            services.AddScoped<IProjection, EntryProjection>();
+            services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker()));
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ViewTruncator.Verify(t => t.TruncateAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+        harness.ReplayState.Verify(
+            s => s.Complete(It.Is<ReplayCompletion>(c => c.Result == ReplayResult.Failed
+                                                         && c.ErrorMessage!.Contains(nameof(EntryProjection))
+                                                         && c.ErrorMessage.Contains(nameof(IForgottenTenantStore)))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayCallback_ADependencyThatTakesItsTenantWhenConstructed_TakesTheTenantOfEachEntry()
+    {
+        var harness = new Harness();
+        var first = NewEntry(sequenceNumber: 1);
+        var second = NewEntry(sequenceNumber: 2);
+        var third = NewEntry(sequenceNumber: 3, tenantId: first.TenantId, actorTenantId: first.ActorTenantId);
+        third.ActorUserId = first.ActorUserId;
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(3);
+        SetupBatchSequence(harness, [[first, second, third], []]);
+        harness.EventMapperFactory
+            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, EventRelevance _, CancellationToken _) => entries
+                .Select(e => (IEvent)new Event<EntryCreated>(e.Id, e.Version, new EntryCreated(), e.StreamId, e.TenantId, Guid.Empty))
+                .ToList());
+        var applied = new ConcurrentQueue<(Guid EntryTenant, Guid ConnectionTenant)>();
+        harness.Configure = services =>
+        {
+            services.AddScoped<ISessionContextProvider, ScopedSessionContextProvider>();
+            services.AddSingleton(applied);
+            services.AddScoped<TenantConnection>();
+            services.AddScoped<IProjection, TenantBoundProjection>();
+            services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker()));
+            services.AddScoped<IProjectionManager>(sp => new ProjectionManager(
+                Mock.Of<ILogger<ProjectionManager>>(), sp.GetRequiredService<IProjectionHandler>(), sp.GetServices<IProjection>()));
+        };
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+        Assert.Equal(
+            [(first.TenantId, first.TenantId), (second.TenantId, second.TenantId), (third.TenantId, third.TenantId)],
+            applied.ToArray());
+    }
+
+    private sealed class ScopedSessionContextProvider : ISessionContextProvider
+    {
+        public Contracts.Session.SessionContext? Current { get; private set; }
+
+        public void Clear() => Current = null;
+
+        public void Set(Contracts.Session.SessionContext context) => Current = context;
+    }
+
+    private sealed class TenantConnection(ISessionContextProvider sessions)
+    {
+        public Guid TenantId { get; } = sessions.Current?.TenantId ?? Guid.Empty;
+    }
+
+    private sealed class TenantBoundProjection(TenantConnection connection, ConcurrentQueue<(Guid, Guid)> applied) : IProjection
+    {
+        private Task HandleAsync(IEvent<EntryCreated> @event, CancellationToken cancellationToken)
+        {
+            applied.Enqueue((@event.TenantId, connection.TenantId));
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class UndeclaredProjection : IProjection
     {
         private Task HandleAsync(EntryCreated @event, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -788,11 +868,13 @@ public class ProjectionReplayWorkerTests
         harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(2);
         SetupBatchSequence(harness, [[created, retired], []]);
         var projection = new EntryProjection();
+        var store = new InMemoryForgottenTenantStore();
         harness.Configure = services =>
         {
             services.AddSingleton<IEventMapperFactory>(mapper);
+            services.AddSingleton<IForgottenTenantStore>(store);
             services.AddScoped<IProjection>(_ => projection);
-            services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker(), null, new InMemoryForgottenTenantStore()));
+            services.AddScoped<IProjectionHandler>(_ => new ProjectionHandler(new ProjectionMethodInvoker(), null, store));
             services.AddScoped<IProjectionManager>(sp => new ProjectionManager(
                 Mock.Of<ILogger<ProjectionManager>>(), sp.GetRequiredService<IProjectionHandler>(), [projection]));
         };

@@ -196,7 +196,7 @@ internal sealed class ProjectionGrain(
                 return false;
             }
 
-            await handler.ProjectAsync(projection, relevantEvents, entryToken);
+            await runs.ApplyAsync(() => handler.ProjectAsync(projection, relevantEvents, entryToken));
             return true;
         }, cancellationToken);
     }
@@ -265,7 +265,8 @@ internal sealed record RecordedSessionCarrier(
 /// <summary>
 /// The scope a batch's entries are applied from, one per session run: an entry recorded under another session than the
 /// one before it opens a fresh scope, sets its session there first and only then resolves what applies it; an entry
-/// of the same run reuses them, with its own session set again. The last scope is disposed with the runs.
+/// of the same run reuses them, with its own session set again, unless an attempt in the run failed. The last scope is
+/// disposed with the runs.
 /// </summary>
 internal sealed class SessionRuns<TRun>(IServiceScopeFactory scopeFactory, Func<IServiceProvider, TRun> resolve) : IAsyncDisposable
 {
@@ -291,6 +292,23 @@ internal sealed class SessionRuns<TRun>(IServiceScopeFactory scopeFactory, Func<
         _run = resolve(opened.ServiceProvider);
         _key = key;
         return _run;
+    }
+
+    /// <summary>
+    /// Applies an entry with the current run. An attempt that fails ends the run, so a retry of the entry opens a fresh
+    /// scope, as a bus delivery's retry does, and nothing the failed attempt left in a scoped dependency reaches it.
+    /// </summary>
+    public async Task ApplyAsync(Func<Task> apply)
+    {
+        try
+        {
+            await apply();
+        }
+        catch (Exception)
+        {
+            await DisposeAsync();
+            throw;
+        }
     }
 
     public async ValueTask DisposeAsync()

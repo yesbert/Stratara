@@ -16,8 +16,8 @@ public static class ProjectionTester
 
     /// <summary>
     /// Dispatch <paramref name="event"/> to <paramref name="projection"/>'s handler — trying
-    /// <c>HandleAsync(IEvent&lt;TData&gt;, CancellationToken)</c> first, then
-    /// <c>HandleAsync(TData, CancellationToken)</c>.
+    /// <c>HandleAsync(TData, CancellationToken)</c> first, then
+    /// <c>HandleAsync(IEvent&lt;TData&gt;, CancellationToken)</c>, in the order the projection runtime does.
     /// </summary>
     /// <typeparam name="TData">The event payload type.</typeparam>
     /// <param name="projection">The projection instance (its handler may be public or private).</param>
@@ -33,16 +33,16 @@ public static class ProjectionTester
 
         var projectionType = projection.GetType();
 
-        var wrapped = FindHandler(projectionType, typeof(IEvent<TData>));
-        if (wrapped is not null)
-        {
-            return (Task)wrapped.Invoke(projection, [@event, cancellationToken])!;
-        }
-
         var bare = FindHandler(projectionType, typeof(TData));
         if (bare is not null)
         {
             return (Task)bare.Invoke(projection, [@event.Data, cancellationToken])!;
+        }
+
+        var wrapped = FindHandler(projectionType, typeof(IEvent<TData>));
+        if (wrapped is not null)
+        {
+            return (Task)wrapped.Invoke(projection, [@event, cancellationToken])!;
         }
 
         throw new InvalidOperationException(

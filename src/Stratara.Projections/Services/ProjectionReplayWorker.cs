@@ -28,8 +28,10 @@ namespace Stratara.Projections.Services;
 /// A save does not number its entries in version order, so a batch is read through
 /// <see cref="IEventStreamRepository.GetManyAfterSequenceInStreamOrderAsync"/>, which may return more entries than
 /// the batch size and whose last entry need not carry its highest sequence number; the next batch starts after
-/// the highest. Each batch is processed in a fresh DI scope so the unit-of-work and session context lifecycle matches
-/// what real-time projection dispatch sees. Each batch — reading it and applying it — runs under the
+/// the highest. Each batch is read in a fresh DI scope and applied from a fresh scope per run of consecutive entries
+/// recorded under one session — what one bundle was on the bus — with the session set before the projections are
+/// resolved, so the scope and session lifecycle matches what real-time projection dispatch sees. Each batch — reading
+/// it and applying it — runs under the
 /// <see cref="ResilienceNames.ProjectionReplayBatch"/> policy: a failed attempt disposes its scope and the
 /// batch is applied again from its first entry in a new one, so a passing failure such as a read-store
 /// timeout does not end the replay. Once the attempts are exhausted the failure ends the replay as an
@@ -409,17 +411,24 @@ internal sealed class ProjectionReplayWorker(
     /// Empties the record of deleted tenants of every projection this host registers that declares
     /// <see cref="IForgetsDeletedTenants"/> — before the views are truncated, so a deletion a stray consumer applies
     /// in between is recorded again rather than lost, and without touching another deployment's projections in a
-    /// shared read store. A host without such a projection does not touch the store at all.
+    /// shared read store. A host without such a projection does not touch the store at all; a host with one and without
+    /// a store fails here, before anything is emptied, as the projection would on the first fact it is handed.
     /// </summary>
+    /// <exception cref="InvalidOperationException">A declaring projection is registered and no <see cref="IForgottenTenantStore"/> is.</exception>
     private static async Task ClearForgottenTenantsAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
         var forgetting = services.GetServices<IProjection>().OfType<IForgetsDeletedTenants>().ToList();
-        if (forgetting.Count == 0 || services.GetService<IForgottenTenantStore>() is not { } store)
+        if (forgetting.Count == 0)
         {
             return;
         }
 
         var handler = services.GetRequiredService<IProjectionHandler>();
+        if (services.GetService<IForgottenTenantStore>() is not { } store)
+        {
+            throw ProjectionHandler.NoForgottenTenantStore(handler.GetProjectionName(forgetting[0]));
+        }
+
         foreach (var projection in forgetting)
         {
             await store.ClearAsync(handler.GetProjectionName(projection), cancellationToken);
@@ -476,15 +485,16 @@ internal sealed class ProjectionReplayWorker(
         }, cancellationToken);
     }
 
+    /// <summary>
+    /// Reads a batch in one scope and applies it from one scope per session run — the consecutive entries recorded
+    /// under one session, what one bundle was on the bus. A run's scope has its session set before the projection
+    /// manager is resolved from it, so a dependency that takes its tenant when it is constructed takes the run's.
+    /// </summary>
     private async Task<ReplayedBatch> ReplayBatchAsync(long afterSequence, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
 
         var writeUnitOfWork = scope.ServiceProvider.GetRequiredService<IWriteUnitOfWork>();
-        var eventMapperFactory = scope.ServiceProvider.GetRequiredService<IEventMapperFactory>();
-        var sessionContextProvider = scope.ServiceProvider.GetRequiredService<ISessionContextProvider>();
-        var projectionManager = scope.ServiceProvider.GetRequiredService<IProjectionManager>();
-
         await using var transaction = await writeUnitOfWork.StartAsync(cancellationToken);
         var eventStreamRepository = writeUnitOfWork.CreateEventStreamRepository(transaction);
 
@@ -496,26 +506,96 @@ internal sealed class ProjectionReplayWorker(
             return ReplayedBatch.Empty;
         }
 
-        var relevance = projectionManager is ProjectionManager ? ProjectionEventRelevance.Of(scope.ServiceProvider) : null;
-        foreach (var entry in entries)
+        ReplayRun? run = null;
+        EventRelevance? relevance = null;
+        try
         {
-            var sessionContext = new SessionContext(
-                entry.CorrelationId ?? Guid.CreateVersion7().ToString("N"),
-                entry.CausationId,
-                null,
-                entry.ActorTenantId,
-                entry.ActorUserId,
-                entry.TenantId,
-                entry.UserId);
-            sessionContextProvider.Set(sessionContext);
+            foreach (var entry in entries)
+            {
+                var session = RecordedSessionOf(entry);
+                if (run is null || !run.Continues(entry))
+                {
+                    run?.Dispose();
+                    run = ReplayRun.Open(scopeFactory, entry, session);
+                }
+                else
+                {
+                    run.Sessions.Set(session);
+                }
 
-            var events = relevance is null
-                ? await eventMapperFactory.MapToEventsAsync([entry], cancellationToken)
-                : await eventMapperFactory.MapToEventsAsync([entry], relevance, cancellationToken);
-            await projectionManager.HandleAsync(events, cancellationToken);
+                var events = run.Manager is ProjectionManager
+                    ? await run.Mapper.MapToEventsAsync([entry], relevance ??= ProjectionEventRelevance.Of(run.Services), cancellationToken)
+                    : await run.Mapper.MapToEventsAsync([entry], cancellationToken);
+                await run.Manager.HandleAsync(events, cancellationToken);
+            }
+        }
+        finally
+        {
+            run?.Dispose();
         }
 
         return new ReplayedBatch(entries.Count, entries.Max(entry => entry.SequenceNumber));
+    }
+
+    private static SessionContext RecordedSessionOf(EventStreamEntry entry) => new(
+        entry.CorrelationId ?? Guid.CreateVersion7().ToString("N"),
+        entry.CausationId,
+        null,
+        entry.ActorTenantId,
+        entry.ActorUserId,
+        entry.TenantId,
+        entry.UserId);
+
+    /// <summary>
+    /// The scope a session run is applied from. An entry without a correlation keys as such, so consecutive entries
+    /// without one share a run as they would have shared the batch's scope.
+    /// </summary>
+    private sealed class ReplayRun : IDisposable
+    {
+        private readonly IServiceScope _scope;
+        private readonly (string? CorrelationId, string? CausationId, Guid ActorTenantId, Guid ActorUserId, Guid TenantId, Guid? UserId) _key;
+
+        private ReplayRun(IServiceScope scope, EventStreamEntry entry)
+        {
+            _scope = scope;
+            _key = KeyOf(entry);
+        }
+
+        public IServiceProvider Services => _scope.ServiceProvider;
+
+        public required ISessionContextProvider Sessions { get; init; }
+
+        public required IEventMapperFactory Mapper { get; init; }
+
+        public required IProjectionManager Manager { get; init; }
+
+        public static ReplayRun Open(IServiceScopeFactory scopeFactory, EventStreamEntry entry, SessionContext session)
+        {
+            var scope = scopeFactory.CreateScope();
+            try
+            {
+                var sessions = scope.ServiceProvider.GetRequiredService<ISessionContextProvider>();
+                sessions.Set(session);
+                return new ReplayRun(scope, entry)
+                {
+                    Sessions = sessions,
+                    Mapper = scope.ServiceProvider.GetRequiredService<IEventMapperFactory>(),
+                    Manager = scope.ServiceProvider.GetRequiredService<IProjectionManager>(),
+                };
+            }
+            catch (Exception)
+            {
+                scope.Dispose();
+                throw;
+            }
+        }
+
+        public bool Continues(EventStreamEntry entry) => KeyOf(entry) == _key;
+
+        public void Dispose() => _scope.Dispose();
+
+        private static (string?, string?, Guid, Guid, Guid, Guid?) KeyOf(EventStreamEntry entry) =>
+            (entry.CorrelationId, entry.CausationId, entry.ActorTenantId, entry.ActorUserId, entry.TenantId, entry.UserId);
     }
 
     /// <summary>

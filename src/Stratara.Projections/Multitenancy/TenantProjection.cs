@@ -16,7 +16,9 @@ namespace Stratara.Projections.Multitenancy;
 /// <remarks>
 /// All <c>HandleAsync</c> methods are private and discovered via reflection by
 /// <see cref="IProjectionMethodInvoker"/>. Each handler is idempotent against re-delivery — it checks for
-/// existing rows before insert and silently skips updates against deleted views.
+/// existing rows before insert, silently skips updates against deleted views, and skips an update whose event
+/// version is not newer than the view's <see cref="TenantView.SourceVersion"/>, so a late or repeated fact does not
+/// overwrite newer state.
 /// </remarks>
 [UsedImplicitly]
 public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProjection
@@ -94,7 +96,7 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
         var repository = unitOfWork.CreateTenantRepository(transaction);
 
         var tenant = await repository.GetAsync(@event.StreamId, cancellationToken);
-        if (tenant is null)
+        if (tenant is null || tenant.SourceVersion >= @event.Version)
         {
             return;
         }
@@ -115,7 +117,7 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
         var repository = unitOfWork.CreateTenantRepository(transaction);
 
         var tenant = await repository.GetAsync(@event.StreamId, cancellationToken);
-        if (tenant is null)
+        if (tenant is null || tenant.SourceVersion >= @event.Version)
         {
             return;
         }
@@ -135,7 +137,7 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
         var repository = unitOfWork.CreateTenantRepository(transaction);
 
         var tenant = await repository.GetAsync(@event.StreamId, cancellationToken);
-        if (tenant is null)
+        if (tenant is null || tenant.SourceVersion >= @event.Version)
         {
             return;
         }
@@ -155,7 +157,7 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
         var repository = unitOfWork.CreateTenantRepository(transaction);
 
         var tenant = await repository.GetAsync(@event.StreamId, cancellationToken);
-        if (tenant is null)
+        if (tenant is null || tenant.SourceVersion >= @event.Version)
         {
             return;
         }
@@ -175,7 +177,7 @@ public sealed class TenantProjection(IProjectionsUnitOfWork unitOfWork) : IProje
         var repository = unitOfWork.CreateTenantRepository(transaction);
 
         var tenant = await repository.GetAsync(@event.StreamId, cancellationToken);
-        if (tenant is null)
+        if (tenant is null || tenant.SourceVersion >= @event.Version)
         {
             return;
         }

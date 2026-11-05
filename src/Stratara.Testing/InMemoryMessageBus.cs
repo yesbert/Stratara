@@ -5,13 +5,15 @@ namespace Stratara.Testing;
 
 /// <summary>
 /// In-memory <see cref="IMessageBus"/> test double with synchronous, in-process dispatch: a
-/// <see cref="PublishAsync{T}"/> call immediately awaits every handler subscribed to the topic
-/// whose message type is compatible, so tests observe handler effects without a broker.
+/// <see cref="PublishAsync{T}"/> call immediately awaits, for every subscription on the topic, one
+/// handler whose message type is compatible, so tests observe handler effects without a broker.
 /// </summary>
 /// <remarks>
 /// Like a real broker, a message published to a topic with no current subscriber is dropped (but
-/// still recorded in <see cref="Published"/> for assertions). Dispatch order follows subscription
-/// order. All members are thread-safe.
+/// still recorded in <see cref="Published"/> for assertions). Several handlers attached under one
+/// subscription name are competing consumers, as on the real brokers: each message reaches one of
+/// them, in turn by attach order, while every distinct subscription receives every message.
+/// Dispatch order follows subscription order. All members are thread-safe.
 /// </remarks>
 /// <remarks>
 /// A subscription established through <see cref="EnsureSubscriptionAsync"/> behaves differently, and
@@ -26,6 +28,7 @@ public sealed class InMemoryMessageBus : IMessageBus
     private readonly ConcurrentQueue<PublishedMessage> _published = new();
     private readonly Dictionary<(string Topic, string Subscription), List<object>> _retained = [];
     private readonly HashSet<(string Topic, string Subscription)> _attached = [];
+    private readonly Dictionary<(string Topic, string Subscription), int> _turns = [];
     private readonly Lock _gate = new();
 
     /// <summary>Every message handed to <see cref="PublishAsync{T}"/>, in publish order, for assertions.</summary>
@@ -42,7 +45,7 @@ public sealed class InMemoryMessageBus : IMessageBus
         Subscription[] handlers;
         lock (_gate)
         {
-            handlers = _subscriptionsByTopic.TryGetValue(topic, out var list) ? [.. list] : [];
+            handlers = _subscriptionsByTopic.TryGetValue(topic, out var list) ? OneConsumerPerSubscription(topic, list, message!) : [];
 
             foreach (var key in _retained.Keys.Where(k => k.Topic == topic && !_attached.Contains(k)).ToArray())
             {
@@ -103,6 +106,26 @@ public sealed class InMemoryMessageBus : IMessageBus
             cancellationToken.ThrowIfCancellationRequested();
             await entry.InvokeAsync(message).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// The handlers a message is dispatched to: every subscription on the topic receives it, and of several handlers
+    /// attached to one subscription only one does — they are competing consumers, taking turns in attach order, as on
+    /// the real brokers. Only handlers whose message type fits compete for it.
+    /// </summary>
+    private Subscription[] OneConsumerPerSubscription(string topic, List<Subscription> attached, object message)
+    {
+        var chosen = new List<Subscription>();
+        foreach (var consumers in attached.Where(s => s.MessageType.IsInstanceOfType(message)).GroupBy(s => s.Name, StringComparer.Ordinal))
+        {
+            var candidates = consumers.ToArray();
+            var key = (topic, consumers.Key);
+            var turn = _turns.GetValueOrDefault(key);
+            _turns[key] = (turn + 1) % candidates.Length;
+            chosen.Add(candidates[turn % candidates.Length]);
+        }
+
+        return [.. chosen];
     }
 
     private sealed record Subscription(string Name, Type MessageType, Func<object, Task> Handler)

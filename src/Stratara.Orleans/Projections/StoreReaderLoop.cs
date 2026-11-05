@@ -230,7 +230,7 @@ internal sealed class StoreReaderLoop(
         {
             return await ReadAndApplyAsync(applyBatch, suspended, cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!IsOwnCancellation(ex, cancellationToken))
         {
             Invalidate();
             MarkStalled(onRead: true);
@@ -383,7 +383,8 @@ internal sealed class StoreReaderLoop(
     /// Applies a batch entry by entry under the preceding-fact retry policy and stops at the first
     /// entry that fails, so the caller's checkpoint never passes an entry that did not apply. Every
     /// failed attempt is logged; the entry the batch stops at is logged and counts the partition as
-    /// stalled. A cancellation is not a failure: it ends the batch without counting a stall.
+    /// stalled. A cancellation of <paramref name="cancellationToken"/> is not a failure: it ends the batch without
+    /// counting a stall. A cancellation the handler met on its own — a client or command timeout — is.
     /// </summary>
     /// <param name="batch">The batch.</param>
     /// <param name="applyEntry">Applies one entry; answers whether it handed anything to a handler.</param>
@@ -406,7 +407,7 @@ internal sealed class StoreReaderLoop(
                     {
                         handled = await applyEntry(entry, ct);
                     }
-                    catch (Exception ex) when (ex is not (OperationCanceledException or CommittedEventsNotPublishedException))
+                    catch (Exception ex) when (ex is not CommittedEventsNotPublishedException && !IsOwnCancellation(ex, cancellationToken))
                     {
                         logger.LogEntryAttemptFailed(ex, consumer, partition, entry.Id, attempt);
                         throw;
@@ -424,7 +425,7 @@ internal sealed class StoreReaderLoop(
             {
                 return new BatchOutcome(i, effective);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!IsOwnCancellation(ex, cancellationToken))
             {
                 MarkStalled(onRead: false);
                 logger.LogPartitionStalled(ex, consumer, partition, entry.Id, entry.SequenceNumber);
@@ -435,6 +436,13 @@ internal sealed class StoreReaderLoop(
         MarkAdvancing(onRead: false);
         return new BatchOutcome(batch.Entries.Count, effective);
     }
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> is the loop's own cancellation rather than a failure: a timeout surfaces as
+    /// an <see cref="OperationCanceledException"/> too, while the token the loop was given is not cancelled.
+    /// </summary>
+    private static bool IsOwnCancellation(Exception exception, CancellationToken cancellationToken) =>
+        exception is OperationCanceledException && cancellationToken.IsCancellationRequested;
 
     /// <summary>Whether the partition counts as stalled: on an entry it cannot apply, or on a read it cannot make.</summary>
     private bool Stalled => _stalledOnEntry || _stalledOnRead;
