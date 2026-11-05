@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Stratara.EventSourcing.EntityFrameworkCore.Migration;
 
@@ -17,18 +16,19 @@ public static class DbContextMigrationUtility
     /// creates a context, ensures its database exists, and applies any pending migrations.
     /// </summary>
     /// <typeparam name="TDbContext">The DbContext type being migrated.</typeparam>
-    /// <param name="serviceProvider">The host service provider used to create a scope.</param>
+    /// <param name="serviceProvider">The host service provider the call extends; the contexts are created from <paramref name="optionsBuilders"/> alone.</param>
     /// <param name="optionsBuilders">Pre-configured option builders, one per target database.</param>
     /// <returns>A task that completes when every database has been migrated.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="serviceProvider"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">Thrown if <typeparamref name="TDbContext"/> cannot be instantiated via its <see cref="DbContextOptions{TContext}"/> constructor.</exception>
     public static async Task MigrateAllDatabasesAsync<TDbContext>(this IServiceProvider serviceProvider,
         IEnumerable<DbContextOptionsBuilder<TDbContext>> optionsBuilders) where TDbContext : DbContext
     {
-        using var scope = serviceProvider.CreateScope();
+        ArgumentNullException.ThrowIfNull(serviceProvider);
 
         foreach (var options in optionsBuilders.Select(builder => builder.Options))
         {
-            var dbContext = Create(options);
+            await using var dbContext = Create(options);
             var pending = await dbContext.Database.GetPendingMigrationsAsync();
             if (!pending.Any())
             {

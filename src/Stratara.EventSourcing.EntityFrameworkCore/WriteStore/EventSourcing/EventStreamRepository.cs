@@ -57,12 +57,20 @@ internal sealed class EventStreamRepository(IWriteDbContext context) : IEventStr
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<EventStreamEntry>> GetUnhashedEventsAsync(int batchSize, DateTimeOffset cutoff,
-        CancellationToken cancellationToken = default) =>
-        await Entries
-            .Where(e => e.Hash == null && e.Timestamp <= cutoff)
+        CancellationToken cancellationToken = default)
+    {
+        // The timestamp is the appender's clock, not the commit's: an entry numbered earlier can carry a later
+        // timestamp, so the batch stops at the first unsettled entry rather than skipping it and chaining across it.
+        // The cut is made on the rows read, which keeps the query on the index of unchained entries.
+        var batch = await Entries
+            .Where(e => e.Hash == null)
             .OrderBy(e => e.SequenceNumber)
             .Take(batchSize)
             .ToListAsync(cancellationToken);
+
+        var firstUnsettled = batch.FindIndex(e => e.Timestamp > cutoff);
+        return firstUnsettled < 0 ? batch : batch.GetRange(0, firstUnsettled);
+    }
 
     /// <inheritdoc/>
     public async Task<EventStreamEntry?> GetPreviousEventAsync(long sequenceNumber, CancellationToken cancellationToken = default) =>

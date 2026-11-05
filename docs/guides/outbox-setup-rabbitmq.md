@@ -55,7 +55,9 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.AddOutboxWorkerServices();   // drains outbox_entry → publishes to bus
 builder.AddCommandWorkerServices();  // subscribes to bus → dispatches commands
 
-builder.Services.AddCommandHandlersFromAssemblyContaining<MyCommandMarker>();
+builder.Services
+    .AddCommandHandlersFromAssemblyContaining<MyCommandMarker>()
+    .AddCommandAuditing();
 
 await builder.Build().RunAsync();
 ```

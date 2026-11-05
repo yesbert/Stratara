@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Abstractions.Mediator;
+using Stratara.Abstractions.Persistence;
 using Stratara.EventSourcing.Pipeline.CommandAudit;
 
 namespace Stratara.EventSourcing.Pipeline.CommandAudit.Tests.DependencyInjection;
@@ -33,6 +34,24 @@ public class CommandAuditServiceCollectionExtensionsTests
         Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<,>));
         Assert.Single(services, d => d.ServiceType == typeof(IPipelineBehavior<>));
     }
+
+    [Fact]
+    public void The_behaviours_resolve_where_no_session_provider_is_registered()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => Mock.Of<IWriteUnitOfWork>());
+        services.AddCommandAuditing();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        Assert.IsType<CommandAuditBehavior<StubCommand>>(scope.ServiceProvider.GetRequiredService<IPipelineBehavior<StubCommand>>());
+        Assert.IsType<CommandAuditBehavior<StubCommandWithResult, int>>(
+            scope.ServiceProvider.GetRequiredService<IPipelineBehavior<StubCommandWithResult, int>>());
+    }
+
+    public sealed record StubCommand : ICommand;
+
+    public sealed record StubCommandWithResult : ICommand<int>;
 
     [Fact]
     public void AddCommandAuditing_ReturnsSameServiceCollectionForChaining()
