@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Stratara.Abstractions.ApiKeys;
 using Stratara.Abstractions.Authorization;
 using Stratara.Abstractions.Multitenancy;
@@ -567,7 +568,8 @@ public static class IdentityDirectoryServiceCollectionExtensions
                                 "The SettingCatalog declares encrypted settings but no ISecureBlobEncryptor is " +
                                 "registered. Call AddStrataraBlobEncryption() (Stratara.Security) or remove the " +
                                 "IsEncrypted flags.");
-            return new EncryptingSettingStore(efStore, catalog, encryptor);
+            return new EncryptingSettingStore(
+                efStore, catalog, encryptor, provider.GetService<ILogger<EncryptingSettingStore>>());
         });
 
         services.TryAddScoped<ISettingProvider>(provider =>

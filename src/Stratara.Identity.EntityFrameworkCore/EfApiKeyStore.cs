@@ -189,13 +189,18 @@ internal sealed class EfApiKeyStore<TContext>(
         var entry = await context.Set<ApiKeyEntry>()
             .SingleOrDefaultAsync(e => e.Id == apiKeyId, cancellationToken);
 
-        if (entry is null || entry.RevokedAt is not null)
+        if (entry is null)
         {
             return;
         }
 
-        entry.RevokedAt = _clock.GetUtcNow();
-        await context.SaveChangesAsync(cancellationToken);
+        // A revoke that failed after recording the revocation left the membership behind; repeating
+        // it removes the membership even though the key is already revoked.
+        if (entry.RevokedAt is null)
+        {
+            entry.RevokedAt = _clock.GetUtcNow();
+            await context.SaveChangesAsync(cancellationToken);
+        }
 
         if (entry.UserId is null)
         {
@@ -226,11 +231,13 @@ internal sealed class EfApiKeyStore<TContext>(
             .Select(e => e.Id)
             .ToListAsync(cancellationToken);
 
+        // Memberships first: the keys are what identify them, so a sweep that fails in between can
+        // only be completed by repeating it while the keys still exist.
+        await RemoveMachineMembershipsAsync(context, machineKeyIds, cancellationToken);
+
         await context.Set<ApiKeyEntry>()
             .Where(e => e.TenantId == tenantId)
             .ExecuteDeleteAsync(cancellationToken);
-
-        await RemoveMachineMembershipsAsync(context, machineKeyIds, cancellationToken);
     }
 
     public async Task RemoveAllForUserAsync(Guid userId, CancellationToken cancellationToken = default)

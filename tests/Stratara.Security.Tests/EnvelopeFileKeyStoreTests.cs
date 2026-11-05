@@ -148,6 +148,40 @@ public class EnvelopeFileKeyStoreTests
     }
 
     [Fact]
+    public async Task A_key_another_instance_revoked_is_no_longer_resolved_from_memory()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var reader = TestSupport.NewKeyStore(options);
+        var revoker = TestSupport.NewKeyStore(options);
+        var created = await reader.GetOrCreateCurrentKeyAsync(Scope, ct);
+        Assert.NotNull(await reader.GetDataEncryptionKeyAsync(created.KeyId, ct));
+
+        await revoker.RevokeAsync(created.KeyId, ct);
+
+        Assert.Null(await reader.GetDataEncryptionKeyAsync(created.KeyId, ct));
+    }
+
+    [Fact]
+    public async Task A_scope_another_instance_erased_is_no_longer_resolved_from_memory()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var options = TestSupport.NewOptions(TestSupport.NewKekBase64());
+        var reader = TestSupport.NewKeyStore(options);
+        var eraser = TestSupport.NewKeyStore(options);
+        var created = await reader.GetOrCreateCurrentKeyAsync(Scope, ct);
+        var superseded = created.KeyId;
+        var current = await reader.RotateAsync(Scope, ct);
+        Assert.NotNull(await reader.GetDataEncryptionKeyAsync(superseded, ct));
+        Assert.NotNull(await reader.GetDataEncryptionKeyAsync(current, ct));
+
+        await eraser.EraseScopeAsync(Scope, ct);
+
+        Assert.Null(await reader.GetDataEncryptionKeyAsync(superseded, ct));
+        Assert.Null(await reader.GetDataEncryptionKeyAsync(current, ct));
+    }
+
+    [Fact]
     public async Task ConcurrentWriters_DifferentScopes_BothKeysSurvive()
     {
         // A and B start from the same (empty) snapshot and each create a key for a different scope.

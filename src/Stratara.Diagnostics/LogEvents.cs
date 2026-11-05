@@ -319,6 +319,8 @@ public static class LogEvents
         public const int SubjectNotMarkable = 112_009;
         /// <summary>A subject was marked erased in the key store; no key covered by its erasure is created again.</summary>
         public const int SubjectMarkedErased = 112_010;
+        /// <summary>The key of a stored encrypted setting was revoked or erased, so the setting reads as absent while its row remains (warning).</summary>
+        public const int EncryptedSettingUnreadable = 112_011;
     }
 
     /// <summary>External-login provisioning event-IDs (115_000s) — emitted by the JIT external-login provisioning service.</summary>

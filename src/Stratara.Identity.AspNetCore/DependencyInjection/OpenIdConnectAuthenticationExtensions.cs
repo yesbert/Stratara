@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -51,8 +52,17 @@ public static class OpenIdConnectAuthenticationExtensions
     /// Register the API JWT-bearer validation scheme from configuration (default section
     /// <c>Identity:JwtBearer</c>). List several authorities in <c>ValidIssuers</c> for a multi-issuer
     /// API; the token's <c>iss</c> selects the trusted authority. The principal is keyed on the
-    /// issuer <c>sub</c>.
+    /// issuer <c>sub</c>: a validated principal carries it under its protocol name and, unless the
+    /// token already has one, as <see cref="ClaimTypes.NameIdentifier"/>, which
+    /// is the claim the session, permission and tenant-claim plumbing read the user id from.
     /// </summary>
+    /// <remarks>
+    /// The name identifier is added before an <c>OnTokenValidated</c> handler the host sets on
+    /// <see cref="JwtBearerOptions.Events"/> runs, whether the host configures it before or after this
+    /// call. Events resolved through <see cref="AuthenticationSchemeOptions.EventsType"/>, or a
+    /// <see cref="JwtBearerEvents"/> subclass that overrides <see cref="JwtBearerEvents.TokenValidated"/>
+    /// without calling the base, bypass it.
+    /// </remarks>
     /// <param name="builder">The authentication builder.</param>
     /// <param name="configuration">The configuration root or section parent to bind from.</param>
     /// <param name="sectionName">The configuration section to bind. Defaults to <c>Identity:JwtBearer</c>.</param>
@@ -74,7 +84,9 @@ public static class OpenIdConnectAuthenticationExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         var options = BindJwtBearer(configuration, sectionName);
-        return builder.AddJwtBearer(scheme, jwt => ApplyTo(options, jwt));
+        builder.AddJwtBearer(scheme, jwt => ApplyTo(options, jwt));
+        builder.Services.PostConfigure<JwtBearerOptions>(scheme, jwt => KeepSubjectAsNameIdentifier(options.NameClaimType, jwt));
+        return builder;
     }
 
     internal static StrataraOpenIdConnectOptions BindOpenIdConnect(IConfiguration configuration, string sectionName)
@@ -145,6 +157,40 @@ public static class OpenIdConnectAuthenticationExtensions
         {
             target.TokenValidationParameters.ValidAudience = source.Audience;
             target.TokenValidationParameters.ValidateAudience = true;
+        }
+    }
+
+    /// <summary>
+    /// Wraps the scheme's <c>OnTokenValidated</c> so the validated principal carries its subject as
+    /// the name identifier before the handler configured until now runs. Applied as a post-configure
+    /// step so a handler the host sets after registering the scheme is wrapped as well.
+    /// </summary>
+    internal static void KeepSubjectAsNameIdentifier(string subjectClaimType, JwtBearerOptions target)
+    {
+        var events = target.Events ?? new JwtBearerEvents();
+        var configured = events.OnTokenValidated;
+        events.OnTokenValidated = context =>
+        {
+            AddSubjectAsNameIdentifier(context.Principal, subjectClaimType);
+            return configured(context);
+        };
+        target.Events = events;
+    }
+
+    private static void AddSubjectAsNameIdentifier(ClaimsPrincipal? principal, string subjectClaimType)
+    {
+        if (principal is null || principal.HasClaim(claim => claim.Type == ClaimTypes.NameIdentifier))
+        {
+            return;
+        }
+
+        foreach (var identity in principal.Identities)
+        {
+            if (identity.FindFirst(subjectClaimType) is { } subject)
+            {
+                identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, subject.Value, subject.ValueType, subject.Issuer, subject.OriginalIssuer));
+                return;
+            }
         }
     }
 }
