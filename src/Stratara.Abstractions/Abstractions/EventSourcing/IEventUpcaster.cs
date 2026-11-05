@@ -37,9 +37,10 @@ public interface IEventUpcaster
 
     /// <summary>
     /// The event type name the payload carries after this upcaster runs, in version-independent
-    /// assembly-qualified form. Equal to <see cref="SourceEventTypeName"/> for an in-place shape change,
-    /// or a different registered type name when the event was renamed. Must resolve through the
-    /// trusted-type resolver once the chain completes.
+    /// assembly-qualified form. Must differ from <see cref="SourceEventTypeName"/>: a hop that leads back
+    /// to a name the chain has already passed through — its own source included — is refused as a cycle
+    /// when the event is read, so a reshaped payload always moves to a new type name. Must resolve
+    /// through the trusted-type resolver once the chain completes.
     /// </summary>
     string TargetEventTypeName { get; }
 

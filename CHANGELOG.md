@@ -16,7 +16,25 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.7.1`._
+### Fixed
+
+- **A recorded field-changed event can be replayed.** After a round trip through the store, the value of a
+  `FieldChangedEvent<TAggregate>` comes back as untyped JSON, and applying it with `ApplyPropertyChanged` threw an
+  `ArgumentException` — an aggregate that had ever taken a change set could not be rebuilt from its stream.
+  `PropertyAccessorCache.SetValueByName` now converts such a value to the property's type before assigning it.
+  No migration: events already in the store replay as they are.
+- **A change set leaves out properties the aggregate cannot take.** `ChangeSetBuilder` compared every property the
+  aggregate could read under the same name. It now takes a property only where the aggregate's property is settable
+  and of a compatible type (nullability of a value type aside), so an update no longer records a change that replay
+  cannot apply. `ChangeMerger` skips a property whose type cannot hold the aggregate's value instead of throwing an
+  `InvalidCastException`.
+- **An unedited collection is no longer reported as changed.** `ChangeSetBuilder` and `ChangeMerger` compared
+  collection properties by reference, so a list that arrived with an update always counted as edited and could
+  overwrite a concurrent change to it. Collections are now compared by content — dictionaries key by key, other
+  sequences element by element in order.
+- **The `IEventUpcaster.TargetEventTypeName` documentation no longer describes an in-place shape change.** An
+  upcaster whose target equals its source has always been refused as a cycle when the event is read; the
+  documentation said otherwise. A reshaped payload moves to a new type name.
 
 ## [4.7.1] — 2026-11-05
 

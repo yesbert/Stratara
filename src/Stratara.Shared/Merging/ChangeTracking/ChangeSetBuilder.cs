@@ -12,9 +12,11 @@ namespace Stratara.Shared.Merging.ChangeTracking;
 /// <typeparam name="TBase">CLR type of the aggregate / read model the changes apply to.</typeparam>
 /// <typeparam name="TChanges">CLR type of the change-set payload (e.g. an update command).</typeparam>
 /// <remarks>
-/// Property accessors are compiled and cached per-type-combination. Properties that exist on
-/// <typeparamref name="TChanges"/> but not on <typeparamref name="TBase"/> are skipped — only
-/// comparable property pairs surface in the result.
+/// Property accessors are compiled and cached per-type-combination. A property of
+/// <typeparamref name="TChanges"/> takes part only where <typeparamref name="TBase"/> declares a
+/// settable property of the same name and a compatible type; every other property is skipped.
+/// Collections are compared by content — dictionaries key by key, other sequences element by
+/// element in order — so a collection that was not edited is not reported as changed.
 /// </remarks>
 public static class ChangeSetBuilder<TBase, TChanges>
     where TBase : notnull
@@ -55,7 +57,7 @@ public static class ChangeSetBuilder<TBase, TChanges>
             var sourceVal = accessor.BaseGetter!(source);
             var currentVal = accessor.BaseGetter!(current);
 
-            if (!Equals(sourceVal, changeVal))
+            if (!ChangeComparison.AreEqual(sourceVal, changeVal))
             {
                 differences.Add(new ChangeDetail(accessor.PropertyName, sourceVal, currentVal, changeVal));
             }
@@ -71,8 +73,12 @@ public static class ChangeSetBuilder<TBase, TChanges>
             PropertyName = changeProp.Name;
             ChangeGetter = CompileGetter<TChanges>(changeProp);
 
+            // The change becomes an event that replay applies by setting the aggregate's property, so
+            // a property that cannot take the submitted value does not take part at all.
             var baseProp = typeof(TBase).GetProperty(changeProp.Name);
-            if (baseProp is { CanRead: true })
+            if (baseProp is { CanRead: true, CanWrite: true }
+                && baseProp.GetIndexParameters().Length == 0
+                && ChangeComparison.AreCompatible(changeProp.PropertyType, baseProp.PropertyType))
             {
                 BaseGetter = CompileGetter<TBase>(baseProp);
                 CanCompare = true;
