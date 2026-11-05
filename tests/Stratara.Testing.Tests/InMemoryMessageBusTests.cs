@@ -128,6 +128,80 @@ public class InMemoryMessageBusTests
     }
 
     [Fact]
+    public async Task Handlers_on_one_subscription_compete_so_each_message_reaches_one_of_them()
+    {
+        var bus = new InMemoryMessageBus();
+        var first = new List<OrderPlaced>();
+        var second = new List<OrderPlaced>();
+        await bus.SubscribeAsync<OrderPlaced>("orders", "projections", msg =>
+        {
+            first.Add(msg);
+            return Task.CompletedTask;
+        }, TestContext.Current.CancellationToken);
+        await bus.SubscribeAsync<OrderPlaced>("orders", "projections", msg =>
+        {
+            second.Add(msg);
+            return Task.CompletedTask;
+        }, TestContext.Current.CancellationToken);
+
+        var published = Enumerable.Range(0, 4).Select(_ => new OrderPlaced(Guid.CreateVersion7())).ToList();
+        foreach (var message in published)
+        {
+            await bus.PublishAsync("orders", message, TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(published.OrderBy(m => m.Id), first.Concat(second).OrderBy(m => m.Id));
+        Assert.NotEmpty(first);
+        Assert.NotEmpty(second);
+    }
+
+    [Fact]
+    public async Task Each_subscription_on_a_topic_receives_every_message()
+    {
+        var bus = new InMemoryMessageBus();
+        var projections = new List<OrderPlaced>();
+        var sagas = new List<OrderPlaced>();
+        await bus.SubscribeAsync<OrderPlaced>("orders", "projections", msg =>
+        {
+            projections.Add(msg);
+            return Task.CompletedTask;
+        }, TestContext.Current.CancellationToken);
+        await bus.SubscribeAsync<OrderPlaced>("orders", "sagas", msg =>
+        {
+            sagas.Add(msg);
+            return Task.CompletedTask;
+        }, TestContext.Current.CancellationToken);
+
+        var first = new OrderPlaced(Guid.CreateVersion7());
+        var second = new OrderPlaced(Guid.CreateVersion7());
+        await bus.PublishAsync("orders", first, TestContext.Current.CancellationToken);
+        await bus.PublishAsync("orders", second, TestContext.Current.CancellationToken);
+
+        Assert.Equal([first, second], projections);
+        Assert.Equal([first, second], sagas);
+    }
+
+    [Fact]
+    public async Task A_competing_handler_for_another_message_type_does_not_take_a_message_it_cannot_handle()
+    {
+        var bus = new InMemoryMessageBus();
+        var received = new List<OrderPlaced>();
+        await bus.SubscribeAsync<Unrelated>("mixed", "worker", _ => Task.CompletedTask, TestContext.Current.CancellationToken);
+        await bus.SubscribeAsync<OrderPlaced>("mixed", "worker", msg =>
+        {
+            received.Add(msg);
+            return Task.CompletedTask;
+        }, TestContext.Current.CancellationToken);
+
+        var first = new OrderPlaced(Guid.CreateVersion7());
+        var second = new OrderPlaced(Guid.CreateVersion7());
+        await bus.PublishAsync("mixed", first, TestContext.Current.CancellationToken);
+        await bus.PublishAsync("mixed", second, TestContext.Current.CancellationToken);
+
+        Assert.Equal([first, second], received);
+    }
+
+    [Fact]
     public async Task Subscriber_does_not_receive_a_different_message_type_on_the_topic()
     {
         var bus = new InMemoryMessageBus();

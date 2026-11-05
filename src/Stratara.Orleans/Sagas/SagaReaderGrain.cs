@@ -156,7 +156,7 @@ internal sealed class SagaReaderGrain(
                 return false;
             }
 
-            await run.ApplyAsync(entry, events, entryToken);
+            await runs.ApplyAsync(() => run.ApplyAsync(entry, events, entryToken));
             return true;
         }, cancellationToken);
     }
