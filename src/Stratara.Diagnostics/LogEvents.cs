@@ -181,6 +181,8 @@ public static class LogEvents
         public const int OutboxLockReleaseFailed = 106_107;
         /// <summary>A bundle stored with its commit was accepted by the bus but its stored copy could not be removed; the drain will publish it again (warning).</summary>
         public const int DurableBundleRemovalFailed = 106_108;
+        /// <summary>A stored outbox entry could not be read back as the message it holds; it stays stored and the drain continues with the next entry (error).</summary>
+        public const int OutboxEntryUnreadable = 106_109;
     }
 
     /// <summary>Event-stream-hash worker event-IDs (107_000s).</summary>

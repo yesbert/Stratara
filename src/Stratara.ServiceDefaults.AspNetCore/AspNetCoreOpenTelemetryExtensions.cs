@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
@@ -54,6 +55,10 @@ public static class AspNetCoreOpenTelemetryExtensions
     /// by <c>ConfigureOpenTelemetry</c>. Filters out the health (<c>/health</c>) and aliveness (<c>/alive</c>)
     /// endpoints from tracing so they don't pollute the request stream.
     /// </summary>
+    /// <remarks>
+    /// Configures the base pipeline as well, so calling <c>ConfigureOpenTelemetry</c> too is not required; either or both
+    /// may be called, in any order and any number of times, and telemetry is configured once.
+    /// </remarks>
     /// <typeparam name="TBuilder">The host-builder type.</typeparam>
     /// <param name="builder">The host application builder.</param>
     /// <returns>The same builder for chaining.</returns>
@@ -68,6 +73,12 @@ public static class AspNetCoreOpenTelemetryExtensions
     public static TBuilder ConfigureAspNetOpenTelemetry<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
+        if (builder.Services.Any(d => d.ServiceType == typeof(RequestInstrumentationConfigured)))
+        {
+            return builder;
+        }
+
+        builder.Services.AddSingleton<RequestInstrumentationConfigured>();
         builder.ConfigureOpenTelemetry(metrics => { metrics.AddAspNetCoreInstrumentation(); },
             tracing =>
             {
@@ -84,4 +95,7 @@ public static class AspNetCoreOpenTelemetryExtensions
 
         return builder;
     }
+
+    /// <summary>Marks a service collection whose request instrumentation is configured, so it is added once.</summary>
+    private sealed class RequestInstrumentationConfigured;
 }

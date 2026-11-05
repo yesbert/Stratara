@@ -27,6 +27,7 @@ namespace Stratara.Outbox.RabbitMQ.Outbox;
 /// single-instance assumption; consumers that run multiple worker replicas opt in to a
 /// distributed lock such as <c>RedisOutboxLock</c> via <c>AddRedisOutboxLock</c>. When the
 /// lock is not granted the cycle is skipped and re-attempted at the next poll interval.
+/// A failure while draining commands is logged and does not keep the cycle from draining event bundles.
 /// </remarks>
 internal sealed class OutboxWorker(
     ILogger<OutboxWorker> logger,
@@ -83,7 +84,16 @@ internal sealed class OutboxWorker(
             return;
         }
 
-        await HandleUnpublishedCommandsAsync(stoppingToken);
+        try
+        {
+            await HandleUnpublishedCommandsAsync(stoppingToken);
+        }
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            // Commands are drained first; a failure there must not keep event bundles from being drained in this pass.
+            logger.LogOutboxFailed(ex);
+        }
+
         await HandleUnpublishedEventsAsync(stoppingToken);
     }
 

@@ -27,12 +27,13 @@ public static class AuthorizingCommandOutboxDispatcherServiceCollectionExtension
     /// The decorated dispatcher moves to a keyed registration under the key
     /// <c>typeof(ICommandOutboxDispatcher)</c>. A dispatcher registration made after this call that replaces
     /// that keyed slot, as the Orleans execution model's does, stays authorized, so the two compose in
-    /// either order. Calling this twice decorates once.
+    /// either order; so does <c>AddOutboxDispatcher()</c>, and with it every worker composite that calls it, which
+    /// leaves the decorator in place when it runs after this call. Calling this twice decorates once.
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection for chaining.</returns>
     /// <example>
-    /// Register it after the dispatcher it decorates, so the outbox path enforces the same guards the
+    /// Register it with the dispatcher it decorates, in either order, so the outbox path enforces the same guards the
     /// mediator does:
     /// <code>
     /// services.AddOutboxDispatcher();

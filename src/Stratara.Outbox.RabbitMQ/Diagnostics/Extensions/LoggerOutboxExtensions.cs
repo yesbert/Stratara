@@ -82,6 +82,20 @@ public static partial class LoggerOutboxExtensions
     public static partial void LogDurableBundleRemovalFailed(this ILogger logger, Guid outboxEntryId, Exception exception);
 
     /// <summary>
+    /// Logs that a stored outbox entry could not be read back as the message it holds. The entry stays
+    /// stored, and the drain continues with the entries behind it.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="outboxEntryId">The stored entry that could not be read.</param>
+    /// <param name="dataTypeName">The message type the entry was stored as.</param>
+    /// <param name="exception">The exception raised while reading it.</param>
+    [LoggerMessage(
+        EventId = LogEvents.OutboxProcessing.OutboxEntryUnreadable,
+        Level = LogLevel.Error,
+        Message = "Outbox entry {OutboxEntryId} could not be read as {DataTypeName}; it stays stored and the drain continues with the next entry.")]
+    public static partial void LogOutboxEntryUnreadable(this ILogger logger, Guid outboxEntryId, string dataTypeName, Exception exception);
+
+    /// <summary>
     /// Logs, once at start-up, that no shared coordination store is registered and replay
     /// coordination is therefore confined to this process.
     /// </summary>

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using Stratara.Contracts.Messages;
 using Stratara.Outbox.RabbitMQ.Outbox;
@@ -133,6 +134,33 @@ public class OutboxWorkerTests
             Times.Once);
     }
 
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → stored messages of one kind that cannot be published do not keep the
+    /// other kind from being attempted in the same pass, also when draining the first kind fails outright.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_CommandDrainThatFails_IsLogged_AndEventBundlesAreStillDrainedInThatPass()
+    {
+        var harness = new Harness(grantLock: true);
+        harness.OutboxRepository
+            .Setup(r => r.GetManyAsync<CommandEnvelope>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([NewOutboxEntry()]);
+        harness.OutboxRepository
+            .Setup(r => r.GetManyAsync<EventBundle>(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([NewOutboxEntry()]);
+        harness.CommandDispatcher
+            .Setup(d => d.EnqueueOutboxEntriesAsync(It.IsAny<IEnumerable<OutboxEntry>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("command drain failed"));
+
+        await harness.RunOneCycleAsync();
+
+        harness.EventDispatcher.Verify(
+            d => d.EnqueueOutboxEntriesAsync(It.IsAny<IEnumerable<OutboxEntry>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        var failure = Assert.Single(harness.Logger.Collector.GetSnapshot(), r => r.Level == LogLevel.Error);
+        Assert.IsType<InvalidOperationException>(failure.Exception);
+    }
+
     [Fact]
     public async Task ExecuteAsync_LockHandleIsDisposedAfterDrain()
     {
@@ -172,6 +200,7 @@ public class OutboxWorkerTests
         public Mock<IOutboxRepository> OutboxRepository { get; } = new();
         public Mock<ICommandOutboxDispatcher> CommandDispatcher { get; } = new();
         public Mock<IEventBundleOutboxDispatcher> EventDispatcher { get; } = new();
+        public FakeLogger<OutboxWorker> Logger { get; } = new();
 
         private readonly OutboxWorker _sut;
         private readonly TaskCompletionSource _lockProbed = new();
@@ -212,7 +241,7 @@ public class OutboxWorkerTests
             });
 
             _sut = new OutboxWorker(
-                NullLogger<OutboxWorker>.Instance,
+                Logger,
                 scopeFactory,
                 OutboxLock.Object,
                 options);

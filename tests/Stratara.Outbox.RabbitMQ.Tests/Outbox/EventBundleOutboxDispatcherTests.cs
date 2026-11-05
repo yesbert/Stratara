@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Registry;
 using Stratara.Contracts.Messages;
+using Stratara.Diagnostics;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.Tests.Diagnostics;
 using Stratara.Abstractions.Messaging;
@@ -185,6 +186,36 @@ public class EventBundleOutboxDispatcherTests
         }
 
         Assert.Equal(0, PublishedCount(measurements.Snapshot()));
+    }
+
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → a stored bundle that cannot be read is logged and left stored, and
+    /// the drain continues with the bundles behind it rather than ending the pass on it.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_AnEntryThatCannotBeRead_IsLoggedAndKept_AndTheEntriesBehindItArePublished()
+    {
+        var logger = new FakeLogger<EventBundleOutboxDispatcher>();
+        var harness = new Harness(logger: logger);
+        var unreadable = new OutboxEntry
+        {
+            Id = Guid.NewGuid(),
+            DataJson = "{ not json",
+            DataTypeName = typeof(EventBundle).AssemblyQualifiedName!,
+            BucketId = 0,
+            Timestamp = DateTimeOffset.UtcNow,
+        };
+        var readable = BuildOutboxEntry(NewEventBundle());
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([unreadable, readable], TestContext.Current.CancellationToken);
+
+        harness.MessageBus.Verify(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(readable.Id, It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(unreadable.Id, It.IsAny<CancellationToken>()), Times.Never);
+        harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        var error = Assert.Single(logger.Collector.GetSnapshot(), r => r.Level == LogLevel.Error);
+        Assert.Equal(LogEvents.OutboxProcessing.OutboxEntryUnreadable, error.Id.Id);
+        Assert.Contains(unreadable.Id.ToString(), error.Message, StringComparison.Ordinal);
     }
 
     private static double PublishedCount(IEnumerable<CapturedMeasurement> measurements) =>
