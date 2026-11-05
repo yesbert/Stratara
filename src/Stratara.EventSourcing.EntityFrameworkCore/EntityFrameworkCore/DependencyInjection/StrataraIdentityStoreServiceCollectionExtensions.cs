@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -20,6 +21,8 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
     private const string DefaultConnectionStringName = "defaultdb";
     private const string DuplicateDatabase = "42P04";
     private const string UniqueViolation = "23505";
+    private const string DuplicateSchema = "42P06";
+    private const string DuplicateTable = "42P07";
 
     /// <summary>
     /// Registers <see cref="StrataraIdentityStore"/> on PostgreSQL together with the tenant directory's stores over it —
@@ -83,7 +86,9 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
     /// <remarks>
     /// Every host that shares the store applies the same migrations, so one a host applied is recognised as applied by
     /// every other. Hosts that migrate at the same time take turns: the migration lock of EF Core makes a second host
-    /// wait for the first, and a database another host created a moment earlier counts as created.
+    /// wait for the first, and a database another host created a moment earlier counts as created. The store's schema and
+    /// its migration history table are created before the migrations run, so a first start logs nothing at
+    /// <see cref="LogLevel.Error"/>.
     /// </remarks>
     /// <param name="services">The host's root service provider.</param>
     /// <param name="cancellationToken">Cancels the migration.</param>
@@ -96,7 +101,22 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
             .CreateDbContextAsync(cancellationToken);
 
         await EnsureDatabaseAsync(store.GetService<IRelationalDatabaseCreator>(), cancellationToken);
+        await EnsureHistoryTableAsync(store.GetService<IHistoryRepository>(), cancellationToken);
         await store.Database.MigrateAsync(cancellationToken);
+    }
+
+    // EF Core finds out whether the history table exists by reading it, and logs that read at Error when the schema
+    // is not there yet — on every first start. Creating schema and table first leaves it nothing to fail on.
+    private static async Task EnsureHistoryTableAsync(IHistoryRepository history, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await history.CreateIfNotExistsAsync(cancellationToken);
+        }
+        catch (PostgresException exception) when (exception.SqlState is DuplicateSchema or DuplicateTable or UniqueViolation)
+        {
+            // Another host created it a moment earlier.
+        }
     }
 
     private static async Task EnsureDatabaseAsync(IRelationalDatabaseCreator creator, CancellationToken cancellationToken)

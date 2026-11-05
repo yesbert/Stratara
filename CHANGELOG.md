@@ -16,7 +16,12 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
-_No changes yet since `4.7.0`._
+### Fixed
+
+- **`MigrateStrataraIdentityStoreAsync()` no longer logs an `Error` on a fresh database.** The first migration of an
+  empty identity store logged a failed read of its migration history table from
+  `Microsoft.EntityFrameworkCore.Database.Command`, although the migration then succeeded. The schema and the history
+  table are now created before the migrations run, so a first start logs nothing at `Error` or above.
 
 ## [4.7.0] — 2026-10-30
 
