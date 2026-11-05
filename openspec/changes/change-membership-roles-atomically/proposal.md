@@ -1,6 +1,6 @@
 # Change a membership's roles without rewriting the whole membership
 
-> **Status:** proposed
+> **Status:** approved — 2026-11-05, by the owner's explicit delegation to release 4.7.1 autonomously, given after the proposal was drafted and before any of it was implemented.
 
 ## Why
 
