@@ -149,6 +149,26 @@ applies to the entire NuGet family.
 - **`ProjectionTester` runs the overload production runs.** For a projection declaring both `HandleAsync(TData, …)`
   and `HandleAsync(IEvent<TData>, …)` it tried the enveloped overload first; the framework tries the payload one
   first.
+- **JSON attributes are honoured on a type with field-level encryption.** A type with at least one property marked
+  `[EncryptData]` is stored property by property, and that path ignored the type's `System.Text.Json` attributes
+  when writing while the read applied them: a property renamed with `[JsonPropertyName]` came back empty, a
+  `[JsonIgnore]` property was stored — in plaintext — although it was excluded, and a property's `[JsonConverter]`
+  was skipped. A renamed property now round-trips, an ignored property is no longer stored, and a property's
+  converter is applied when writing too. Stored names do not change and payloads already stored still read; a
+  property with its own converter is stored in the converter's form from now on, which is what an upcaster sees in
+  new events.
+- **A heavy command waiting for a permit keeps waiting while the permit keeper cannot be reached.** When the silo
+  keeping the permits died or the call timed out, the failure was recorded as a failed attempt of a handler that had
+  never run; repeated failovers could park a command that was only waiting. The wait now continues until the keeper
+  answers or the silo stops.
+- **A host whose sagas need a session to be constructed starts.** The timer start-up check constructed every
+  registered saga without a session and failed the start where a saga's dependency refuses that. It now decides from
+  the registrations.
+- **`IntentGrace` must be longer than three times `CompletionWindow`.** The start-up validation only required the
+  grace to be longer than the window. A completed command's record is no longer renewed while its completion is
+  being collected, and its last renewal can be two thirds of the grace old — with a window longer than the rest, the
+  drain handed the command over again and its handler ran a second time. **A host configured with a window of a
+  third of the grace or more now fails at start-up**; the defaults (30 s and 20 ms) are far inside the bound.
 
 ## [4.7.1] — 2026-11-05
 
