@@ -106,13 +106,13 @@ public class PermissionPolicyTests
         services.AddSingleton(Catalog());
         if (authorizationFirst)
         {
-            services.AddAuthorization(o => o.AddPolicy("Conventional", p => p.RequireRole("admin")));
+            services.AddAuthorizationBuilder().AddPolicy("Conventional", p => p.RequireRole("admin"));
         }
 
         services.AddStrataraPermissionPolicies();
         if (!authorizationFirst)
         {
-            services.AddAuthorization(o => o.AddPolicy("Conventional", p => p.RequireRole("admin")));
+            services.AddAuthorizationBuilder().AddPolicy("Conventional", p => p.RequireRole("admin"));
         }
 
         await using var provider = services.BuildServiceProvider();
@@ -132,7 +132,7 @@ public class PermissionPolicyTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(Catalog());
-        services.AddAuthorization(o => o.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        services.AddAuthorizationBuilder().SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
         services.AddStrataraPermissionPolicies();
 
         await using var provider = services.BuildServiceProvider();

@@ -90,7 +90,7 @@ public static class OpenTelemetryExtensions
     {
         if (!builder.Services.Any(d => d.ServiceType == typeof(DefaultPipelineConfigured)))
         {
-            builder.Services.AddSingleton<DefaultPipelineConfigured>();
+            builder.Services.AddSingleton(DefaultPipelineConfigured.Instance);
             builder.ConfigureDefaultPipeline();
         }
 
@@ -152,7 +152,10 @@ public static class OpenTelemetryExtensions
     /// Marks a service collection whose default pipeline is configured. OpenTelemetry refuses a second
     /// <c>UseOtlpExporter</c> on one service collection when the providers are built, so the host would not start.
     /// </summary>
-    private sealed class DefaultPipelineConfigured;
+    private sealed class DefaultPipelineConfigured
+    {
+        public static DefaultPipelineConfigured Instance { get; } = new();
+    }
 
     private const string OtlpEndpointKey = "OTEL_EXPORTER_OTLP_ENDPOINT";
     private const string OtlpTimeoutKey = "OTEL_EXPORTER_OTLP_TIMEOUT";
