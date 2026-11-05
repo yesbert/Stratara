@@ -111,6 +111,32 @@ await memberships.RemoveAllMembersAsync(globex);               // tenant-teardow
 `SetActiveTenantAsync` is **membership-guarded**: selecting a tenant the user holds no `Active`
 membership in throws `InvalidOperationException` rather than persisting an unusable selection.
 
+### Changing single roles
+
+To give or take one role, do not read the membership and write it back: two such changes that
+overlap read the same role set, and the later write silently undoes the earlier one.
+`AddRolesAsync` and `RemoveRolesAsync` change only the roles they name, leave the other roles and the
+status as they are, and return the membership as it stands afterwards — `null` when the user has no
+membership in the tenant, because neither creates one.
+
+<!-- stratara-snippet-ignore: narrative fragment - the store and the example users come from the surrounding text -->
+```csharp
+await memberships.AddRolesAsync(alice, acme, ["Billing"]);     // alice keeps TenantAdmin
+await memberships.RemoveRolesAsync(alice, acme, ["Billing"]);  // Billing goes, TenantAdmin stays
+```
+
+On the framework's stores two role changes to the same membership that overlap both take effect,
+whichever finishes first — also when two hosts sharing one identity store make them. A store that
+keeps losing to concurrent writers fails with `InvalidOperationException` rather than drop the change.
+Neither operation changes the database schema, so a context that hosts the directory tables needs no
+migration for them.
+
+`SetMembershipAsync` stays a whole replace: a whole write and a role change that run at the same time
+do not protect each other. A membership store you implemented yourself gets both operations without a
+code change, as a read followed by a whole write, and with that no protection against a concurrent
+writer — override them where that matters. `TenantMembership.WithRolesAdded` and `WithRolesRemoved`
+compute the changed role set for such an override.
+
 ### Ending a membership without forgetting it
 
 A membership has three states. `Active` confers its roles. `Pending` is an invitation not yet

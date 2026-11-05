@@ -165,4 +165,32 @@ public sealed class SharedIdentityStoreTests(IdentityStoreDatabase database) : I
         var membership = await secondScope.ServiceProvider.GetRequiredService<ITenantMembershipStore>().GetMembershipAsync(userId, tenantId);
         Assert.Equal(["tenant.member"], membership!.Roles);
     }
+
+    [Fact]
+    public async Task Two_hosts_adding_different_roles_to_one_membership_at_once_keep_both()
+    {
+        var identityDatabase = NewDatabase();
+        using var first = database.Host(identityDatabase);
+        using var second = database.Host(identityDatabase);
+        await first.Services.MigrateStrataraIdentityStoreAsync(TestContext.Current.CancellationToken);
+        var userId = Guid.CreateVersion7();
+        var tenants = Enumerable.Range(0, 25).Select(_ => Guid.CreateVersion7()).ToList();
+        await using var firstScope = first.Services.CreateAsyncScope();
+        await using var secondScope = second.Services.CreateAsyncScope();
+        var firstStore = firstScope.ServiceProvider.GetRequiredService<ITenantMembershipStore>();
+        var secondStore = secondScope.ServiceProvider.GetRequiredService<ITenantMembershipStore>();
+        foreach (var tenantId in tenants)
+        {
+            await firstStore.SetMembershipAsync(new TenantMembership(userId, tenantId, ["tenant.member"]));
+        }
+
+        await Task.WhenAll(tenants.Select(tenantId => Task.WhenAll(
+            firstStore.AddRolesAsync(userId, tenantId, ["tenant.admin"]),
+            secondStore.AddRolesAsync(userId, tenantId, ["tenant.billing"]))));
+
+        foreach (var membership in await firstStore.GetMembershipsAsync(userId))
+        {
+            Assert.Equal(["tenant.admin", "tenant.billing", "tenant.member"], membership.Roles.Order());
+        }
+    }
 }

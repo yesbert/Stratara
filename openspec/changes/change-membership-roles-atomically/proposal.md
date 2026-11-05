@@ -44,7 +44,8 @@ _None._
 
 ## Impact
 
-- `ITenantMembershipStore` (Stratara.Abstractions): two new members with default implementations.
+- `ITenantMembershipStore` (Stratara.Abstractions): two new members with default implementations;
+  `TenantMembership` gains `WithRolesAdded` / `WithRolesRemoved`, which compute the changed role set.
 - `EfTenantMembershipStore` (Stratara.Identity.EntityFrameworkCore): its own atomic implementation.
 - `InMemoryTenantMembershipStore` (Stratara.Testing): its own implementation under its lock.
 - Docs: the tenant-directory page under `docs/` gets a paragraph on changing single roles.

@@ -57,9 +57,9 @@ the serialized list that was read. The serializer is deterministic, so equal lis
 - **Provider-native array or JSON operators** (PostgreSQL `jsonb` functions). Not portable, and the
   column is text.
 
-*Evidence:* none yet. Task 1.1 first checks that EF translates the equality on the converted column
-into a comparison with the converted parameter, on SQLite and on PostgreSQL, before anything is built
-on that.
+*Evidence:* `RolesCompareAndSwapTranslationTests` (SQLite) shows that EF translates the equality on the
+converted column into a comparison with the converted parameter. On PostgreSQL,
+`Two_hosts_adding_different_roles_to_one_membership_at_once_keep_both` can only pass if it does.
 
 ### D2 — `ExecuteUpdateAsync`, not the change tracker
 
@@ -100,6 +100,17 @@ Both are default interface methods on `ITenantMembershipStore`, implemented as `
 concurrent writer and that an implementation should override it. `EfTenantMembershipStore` and
 `InMemoryTenantMembershipStore` implement both as public members, so callers that hold the concrete
 type see them too.
+
+The role arithmetic of D3 lives once, on the record, as `TenantMembership.WithRolesAdded` and
+`WithRolesRemoved`. They return the same instance when nothing changes, which is how all three
+implementations decide not to write. They are public, so a consumer who overrides the fallback uses
+the same semantics. This was added during implementation: without it the arithmetic would be copied
+into three assemblies, because Abstractions grants no `InternalsVisibleTo`.
+
+The EF store also updates the roles of a `TenantMembershipEntry` the shared context already tracks,
+both current and original value. Otherwise a later `SetMembershipAsync` on that context would compare
+against the stale tracked roles, find "no change" and skip its `UPDATE`. The test
+`A_whole_write_after_a_role_change_on_the_same_context_is_stored` fails without this.
 
 The in-memory double does read, change and write under its existing `_gate`. It never yields inside
 the lock, so it is atomic by construction.

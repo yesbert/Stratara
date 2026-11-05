@@ -13,6 +13,8 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
     : ITenantMembershipStore
     where TContext : DbContext
 {
+    private const int MaxRoleChangeAttempts = 5;
+
     public async Task<IReadOnlyList<TenantMembership>> GetMembershipsAsync(
         Guid userId, CancellationToken cancellationToken = default)
     {
@@ -86,6 +88,74 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
                 .Where(e => e.UserId == membership.UserId && e.TenantId == membership.TenantId)
                 .ExecuteDeleteAsync(cancellationToken);
         }
+    }
+
+    public Task<TenantMembership?> AddRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        return ChangeRolesAsync(userId, tenantId, membership => membership.WithRolesAdded(roles), cancellationToken);
+    }
+
+    public Task<TenantMembership?> RemoveRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        return ChangeRolesAsync(userId, tenantId, membership => membership.WithRolesRemoved(roles), cancellationToken);
+    }
+
+    private async Task<TenantMembership?> ChangeRolesAsync(
+        Guid userId, Guid tenantId, Func<TenantMembership, TenantMembership> change, CancellationToken cancellationToken)
+    {
+        await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+
+        for (var attempt = 0; attempt < MaxRoleChangeAttempts; attempt++)
+        {
+            var entry = await context.Set<TenantMembershipEntry>()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(e => e.UserId == userId && e.TenantId == tenantId, cancellationToken);
+            if (entry is null)
+            {
+                return null;
+            }
+
+            var membership = ToContract(entry);
+            var changed = change(membership);
+            if (ReferenceEquals(changed, membership))
+            {
+                return membership;
+            }
+
+            var read = entry.Roles;
+            var next = changed.Roles.ToList();
+            var updated = await context.Set<TenantMembershipEntry>()
+                .Where(e => e.UserId == userId && e.TenantId == tenantId && e.Roles == read)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(e => e.Roles, next), cancellationToken);
+            if (updated == 1)
+            {
+                SyncTrackedRoles(context, userId, tenantId, next);
+                return changed;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"The roles of user '{userId}' in tenant '{tenantId}' were changed concurrently on each of " +
+            $"{MaxRoleChangeAttempts} attempts; the role change was not applied.");
+    }
+
+    private static void SyncTrackedRoles(TContext context, Guid userId, Guid tenantId, List<string> roles)
+    {
+        var tracked = context.ChangeTracker.Entries<TenantMembershipEntry>()
+            .FirstOrDefault(e => e.Entity.UserId == userId && e.Entity.TenantId == tenantId);
+        if (tracked is null)
+        {
+            return;
+        }
+
+        var property = tracked.Property(e => e.Roles);
+        property.CurrentValue = roles.ToList();
+        property.OriginalValue = roles.ToList();
     }
 
     public async Task RemoveMembershipAsync(

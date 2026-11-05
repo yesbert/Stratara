@@ -70,6 +70,89 @@ public interface ITenantMembershipStore
     Task RemoveMembershipAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Adds roles to the user's membership in one tenant, leaving its other roles and its status as they are. Never
+    /// creates a membership.
+    /// </summary>
+    /// <remarks>
+    /// The framework's stores apply the change atomically: two role changes to the same membership that overlap both
+    /// take effect. This default implementation reads the membership and writes it back whole with
+    /// <see cref="SetMembershipAsync"/>, so on a store that does not override it a concurrent writer can undo the
+    /// change; an implementation should override it. A whole write through <see cref="SetMembershipAsync"/> still
+    /// replaces the roles, so it and a role change running at the same time do not protect each other.
+    /// </remarks>
+    /// <param name="userId">The user whose membership to change.</param>
+    /// <param name="tenantId">The tenant of the membership.</param>
+    /// <param name="roles">The role names to add; see <see cref="TenantMembership.WithRolesAdded"/>.</param>
+    /// <param name="cancellationToken">Token to observe while changing.</param>
+    /// <returns>The membership as it stands afterwards, or <c>null</c> when the user does not belong to the tenant.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="roles"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">A role name is <c>null</c>, empty or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The store could not apply the change because concurrent writers changed the membership's roles on every
+    /// attempt.
+    /// </exception>
+    async Task<TenantMembership?> AddRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        var membership = await GetMembershipAsync(userId, tenantId, cancellationToken);
+        if (membership is null)
+        {
+            return null;
+        }
+
+        var changed = membership.WithRolesAdded(roles);
+        if (!ReferenceEquals(changed, membership))
+        {
+            await SetMembershipAsync(changed, cancellationToken);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Removes roles from the user's membership in one tenant, leaving its other roles and its status as they are.
+    /// Removing every role leaves a membership without roles; <see cref="RemoveMembershipAsync"/> removes the
+    /// membership.
+    /// </summary>
+    /// <remarks>
+    /// The framework's stores apply the change atomically: two role changes to the same membership that overlap both
+    /// take effect. This default implementation reads the membership and writes it back whole with
+    /// <see cref="SetMembershipAsync"/>, so on a store that does not override it a concurrent writer can undo the
+    /// change; an implementation should override it. A whole write through <see cref="SetMembershipAsync"/> still
+    /// replaces the roles, so it and a role change running at the same time do not protect each other.
+    /// </remarks>
+    /// <param name="userId">The user whose membership to change.</param>
+    /// <param name="tenantId">The tenant of the membership.</param>
+    /// <param name="roles">The role names to remove; see <see cref="TenantMembership.WithRolesRemoved"/>.</param>
+    /// <param name="cancellationToken">Token to observe while changing.</param>
+    /// <returns>The membership as it stands afterwards, or <c>null</c> when the user does not belong to the tenant.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="roles"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">A role name is <c>null</c>, empty or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The store could not apply the change because concurrent writers changed the membership's roles on every
+    /// attempt.
+    /// </exception>
+    async Task<TenantMembership?> RemoveRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        var membership = await GetMembershipAsync(userId, tenantId, cancellationToken);
+        if (membership is null)
+        {
+            return null;
+        }
+
+        var changed = membership.WithRolesRemoved(roles);
+        if (!ReferenceEquals(changed, membership))
+        {
+            await SetMembershipAsync(changed, cancellationToken);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
     /// Removes every membership the user holds — the membership-plane step of a user-erasure
     /// (GDPR) sweep. No-op when the user holds none.
     /// </summary>

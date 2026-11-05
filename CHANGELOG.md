@@ -16,6 +16,16 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **`ITenantMembershipStore.AddRolesAsync` and `RemoveRolesAsync`** give or take single roles of one membership,
+  leaving its other roles and its status as they are, and return the membership afterwards (`null` where there is
+  none — neither creates one). On the framework's stores two overlapping role changes to the same membership both
+  take effect; a store that keeps losing to concurrent writers throws `InvalidOperationException` instead of dropping
+  the change. No schema change. Both are default interface methods, so a store you implemented yourself keeps
+  compiling and gets them as a read followed by a whole write — without protection against a concurrent writer.
+  `TenantMembership.WithRolesAdded` and `WithRolesRemoved` compute the changed role set.
+
 ### Fixed
 
 - **`MigrateStrataraIdentityStoreAsync()` no longer logs an `Error` on a fresh database.** The first migration of an
