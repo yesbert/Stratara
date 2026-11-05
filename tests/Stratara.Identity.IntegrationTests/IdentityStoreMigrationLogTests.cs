@@ -6,12 +6,23 @@ using Stratara.EventSourcing.EntityFrameworkCore.IdentityStore;
 namespace Stratara.Identity.IntegrationTests;
 
 /// <summary>
-/// <c>identity-store</c> on PostgreSQL: migrating the store logs nothing at <c>Error</c> or above, on a first start
-/// as on every later one, so a fresh environment does not stop a log check (NextPA finding F-032).
+/// <c>identity-store</c> on PostgreSQL: migrating the store logs nothing at <c>Error</c> or above — on a first start,
+/// with or without the database in place, on every later start, and when several hosts start at once — so a fresh
+/// environment does not trip a log check on a migration that in fact succeeded.
 /// </summary>
 public sealed class IdentityStoreMigrationLogTests(IdentityStoreDatabase database) : IClassFixture<IdentityStoreDatabase>
 {
     private static string NewDatabase() => $"identity_{Guid.NewGuid():N}";
+
+    private static readonly string History =
+        $"SELECT migration_id FROM {StrataraIdentityStore.Schema}.\"{StrataraIdentityStore.MigrationsHistoryTable}\" ORDER BY migration_id";
+
+    // The recorder must have seen the migration at all, or an empty Error list proves nothing.
+    private static void AssertNoErrorWhileMigrating(RecordingLoggerProvider logs)
+    {
+        Assert.NotEmpty(logs.InCategory("Microsoft.EntityFrameworkCore.Migrations"));
+        Assert.Empty(logs.AtLeast(LogLevel.Error));
+    }
 
     [Fact]
     public async Task Migrating_a_database_that_exists_without_the_schema_logs_no_error()
@@ -23,20 +34,43 @@ public sealed class IdentityStoreMigrationLogTests(IdentityStoreDatabase databas
 
         await host.Services.MigrateStrataraIdentityStoreAsync(TestContext.Current.CancellationToken);
 
-        Assert.Empty(logs.AtLeast(LogLevel.Error));
-        Assert.Contains(StrataraIdentityStore.MigrationsHistoryTable, await database.ReadAsync(identityDatabase,
-            $"SELECT table_name FROM information_schema.tables WHERE table_schema = '{StrataraIdentityStore.Schema}'"));
+        AssertNoErrorWhileMigrating(logs);
+        Assert.NotEmpty(await database.ReadAsync(identityDatabase, History));
     }
 
     [Fact]
     public async Task Migrating_a_database_that_does_not_exist_logs_no_error()
     {
+        var identityDatabase = NewDatabase();
         var logs = new RecordingLoggerProvider();
-        using var host = database.Host(NewDatabase(), logs: logs);
+        using var host = database.Host(identityDatabase, logs: logs);
 
         await host.Services.MigrateStrataraIdentityStoreAsync(TestContext.Current.CancellationToken);
 
-        Assert.Empty(logs.AtLeast(LogLevel.Error));
+        AssertNoErrorWhileMigrating(logs);
+        Assert.NotEmpty(await database.ReadAsync(identityDatabase, History));
+    }
+
+    [Fact]
+    public async Task Several_hosts_migrating_a_database_that_does_not_exist_at_once_log_no_error()
+    {
+        var identityDatabase = NewDatabase();
+        var logs = Enumerable.Range(0, 4).Select(_ => new RecordingLoggerProvider()).ToList();
+        var hosts = logs.Select(log => database.Host(identityDatabase, logs: log)).ToList();
+        try
+        {
+            await Task.WhenAll(hosts.Select(host =>
+                host.Services.MigrateStrataraIdentityStoreAsync(TestContext.Current.CancellationToken)));
+        }
+        finally
+        {
+            hosts.ForEach(host => host.Dispose());
+        }
+
+        Assert.All(logs, log => Assert.Empty(log.AtLeast(LogLevel.Error)));
+        var applied = await database.ReadAsync(identityDatabase, History);
+        Assert.NotEmpty(applied);
+        Assert.Equal(applied.Distinct(), applied);
     }
 
     [Fact]
@@ -49,15 +83,14 @@ public sealed class IdentityStoreMigrationLogTests(IdentityStoreDatabase databas
             await first.Services.MigrateStrataraIdentityStoreAsync(TestContext.Current.CancellationToken);
         }
 
-        var history = $"SELECT migration_id FROM {StrataraIdentityStore.Schema}.\"{StrataraIdentityStore.MigrationsHistoryTable}\"";
-        var applied = await database.ReadAsync(identityDatabase, history);
+        var applied = await database.ReadAsync(identityDatabase, History);
         var logs = new RecordingLoggerProvider();
         using var second = database.Host(identityDatabase, logs: logs);
 
         await second.Services.MigrateStrataraIdentityStoreAsync(TestContext.Current.CancellationToken);
 
-        Assert.Empty(logs.AtLeast(LogLevel.Error));
-        Assert.Equal(applied, await database.ReadAsync(identityDatabase, history));
+        AssertNoErrorWhileMigrating(logs);
+        Assert.Equal(applied, await database.ReadAsync(identityDatabase, History));
     }
 
     private sealed class RecordingLoggerProvider : ILoggerProvider
@@ -66,6 +99,9 @@ public sealed class IdentityStoreMigrationLogTests(IdentityStoreDatabase databas
 
         public IReadOnlyList<string> AtLeast(LogLevel level) =>
             _entries.Where(e => e.Level >= level).Select(e => $"{e.Level} {e.Category}: {e.Message}").ToList();
+
+        public IReadOnlyList<string> InCategory(string category) =>
+            _entries.Where(e => e.Category == category).Select(e => e.Message).ToList();
 
         public ILogger CreateLogger(string categoryName) => new RecordingLogger(categoryName, _entries);
 
