@@ -1,7 +1,11 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Stratara.Identity.AspNetCore.Tests;
 
@@ -104,5 +108,76 @@ public class OpenIdConnectAuthenticationExtensionsTests
         Assert.Contains("https://issuer-a", target.TokenValidationParameters.ValidIssuers!);
         Assert.True(target.TokenValidationParameters.ValidateAudience);
         Assert.Equal("api://stratara", target.TokenValidationParameters.ValidAudience);
+    }
+
+    [Fact]
+    public async Task A_validated_bearer_principal_carries_its_subject_as_the_name_identifier()
+    {
+        var services = new ServiceCollection();
+        services.AddAuthentication().AddStrataraJwtBearer(Config());
+
+        var principal = await ValidateAsync(services, new Claim("sub", "6f1c0a52-3c39-4c47-9e0f-2f6d8e3c4b11"));
+
+        Assert.Equal("6f1c0a52-3c39-4c47-9e0f-2f6d8e3c4b11", principal.FindFirstValue(ClaimTypes.NameIdentifier));
+        Assert.Equal("6f1c0a52-3c39-4c47-9e0f-2f6d8e3c4b11", principal.FindFirstValue("sub"));
+    }
+
+    [Fact]
+    public async Task A_name_identifier_the_token_already_carries_is_kept()
+    {
+        var services = new ServiceCollection();
+        services.AddAuthentication().AddStrataraJwtBearer(Config());
+
+        var principal = await ValidateAsync(services, new Claim("sub", "subject"), new Claim(ClaimTypes.NameIdentifier, "explicit"));
+
+        Assert.Equal("explicit", Assert.Single(principal.FindAll(ClaimTypes.NameIdentifier)).Value);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_token_validated_handler_the_host_configures_still_runs(bool hostConfiguresFirst)
+    {
+        var services = new ServiceCollection();
+        string? seenByHost = null;
+        void HostHandler(JwtBearerOptions options) => options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                seenByHost = context.Principal!.FindFirstValue(ClaimTypes.NameIdentifier);
+                return Task.CompletedTask;
+            },
+        };
+
+        if (hostConfiguresFirst)
+        {
+            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, HostHandler);
+        }
+
+        services.AddAuthentication().AddStrataraJwtBearer(Config());
+        if (!hostConfiguresFirst)
+        {
+            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, HostHandler);
+        }
+
+        var principal = await ValidateAsync(services, new Claim("sub", "subject"));
+
+        Assert.Equal("subject", principal.FindFirstValue(ClaimTypes.NameIdentifier));
+        Assert.Equal("subject", seenByHost);
+    }
+
+    private static async Task<ClaimsPrincipal> ValidateAsync(IServiceCollection services, params Claim[] claims)
+    {
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get(JwtBearerDefaults.AuthenticationScheme);
+        var scheme = new AuthenticationScheme(JwtBearerDefaults.AuthenticationScheme, null, typeof(JwtBearerHandler));
+        var context = new Microsoft.AspNetCore.Authentication.JwtBearer.TokenValidatedContext(new DefaultHttpContext { RequestServices = provider }, scheme, options)
+        {
+            Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "AuthenticationTypes.Federation", "sub", "roles")),
+        };
+
+        await options.Events.TokenValidated(context);
+
+        return context.Principal!;
     }
 }

@@ -122,6 +122,12 @@ tenant → tenant-scoped, global → confidential) and the associated data binds
 `stratara:setting:<name>`. A leaked row therefore can neither be decrypted under another scope's key
 nor replayed as a different setting. Plaintext definitions pass through untouched.
 
+A stored value whose key was revoked or erased reads as absent and is logged as
+`LogEvents.KeyManagement.EncryptedSettingUnreadable` (warning). The rest of the scope still reads,
+and an inherited setting falls back to the next scope as it would for an unset one. Any other value
+that does not decrypt — ciphertext moved from another setting or scope, a tampered value, or a
+plaintext row written before the definition was declared encrypted — still fails the read.
+
 ```csharp
 builder.Services.AddStrataraBlobEncryption();   // Stratara.Security — required for IsEncrypted
 ```

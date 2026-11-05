@@ -111,21 +111,18 @@ internal sealed partial class EnvelopeFileKeyStore : IKeyStore, IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (TryFindWrapped(keyId, out var wrapped))
-            {
-                return wrapped.Revoked ? null : Unwrap(wrapped, keyId, kek.Span);
-            }
-
-            // Cache miss: another process may have created this key since our last load. Reload once —
-            // but only if the file actually changed, so repeated genuine misses (e.g. an erased scope)
-            // don't trigger a reload storm. Writes commit via atomic rename, so an unlocked read is safe.
+            // Another process sharing the file may have created, revoked or erased this key since our
+            // last load, so a key held in memory is only answered from while the file is unchanged. The
+            // check is a metadata read; the state is reloaded only when the file did change. Writes
+            // commit via atomic rename, so an unlocked read is safe.
             if (DiskChangedSinceLastLoad())
             {
                 ReloadStateUnlocked();
-                if (TryFindWrapped(keyId, out wrapped))
-                {
-                    return wrapped.Revoked ? null : Unwrap(wrapped, keyId, kek.Span);
-                }
+            }
+
+            if (TryFindWrapped(keyId, out var wrapped))
+            {
+                return wrapped.Revoked ? null : Unwrap(wrapped, keyId, kek.Span);
             }
 
             return null;

@@ -22,9 +22,11 @@ public static class PermissionPolicyServiceCollectionExtensions
     /// <c>AddPermissionCatalog(...)</c> + <c>AddCatalogPermissionResolver&lt;TUser&gt;()</c>).
     /// </summary>
     /// <remarks>
-    /// The policy provider is registered via <c>TryAdd</c> — a host that ships its own
-    /// <see cref="IAuthorizationPolicyProvider"/> keeps it and composes the permission lookup
-    /// itself.
+    /// The policy provider replaces ASP.NET Core's <see cref="DefaultAuthorizationPolicyProvider"/>
+    /// whether <c>AddAuthorization()</c>, <c>AddAuthorizationCore()</c> or <c>AddControllers()</c>
+    /// registered it before or after this call, and still serves the host's named, default and
+    /// fallback policies. A host that ships its own <see cref="IAuthorizationPolicyProvider"/> keeps
+    /// it and composes the permission lookup itself.
     /// </remarks>
     /// <param name="services">The service collection to mutate.</param>
     /// <returns>The same service collection, to enable chaining.</returns>
@@ -38,8 +40,21 @@ public static class PermissionPolicyServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddStrataraPermissionPolicies(this IServiceCollection services)
     {
+        for (var index = services.Count - 1; index >= 0; index--)
+        {
+            if (IsFrameworkDefaultPolicyProvider(services[index]))
+            {
+                services.RemoveAt(index);
+            }
+        }
+
         services.TryAddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
         return services;
     }
+
+    private static bool IsFrameworkDefaultPolicyProvider(ServiceDescriptor descriptor) =>
+        descriptor.ServiceType == typeof(IAuthorizationPolicyProvider)
+        && !descriptor.IsKeyedService
+        && descriptor.ImplementationType == typeof(DefaultAuthorizationPolicyProvider);
 }

@@ -1,4 +1,9 @@
+using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
+using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Settings;
+using Stratara.Diagnostics;
 using Stratara.Testing;
 using Xunit;
 
@@ -14,6 +19,7 @@ public class EncryptingSettingStoreTests
         var catalog = new SettingCatalog();
         catalog.Add(
             new SettingDefinition("Smtp.Password", IsEncrypted: true),
+            new SettingDefinition("Api.Token", IsEncrypted: true),
             new SettingDefinition("Ui.Theme"));
         return catalog;
     }
@@ -78,6 +84,102 @@ public class EncryptingSettingStoreTests
 
         await Assert.ThrowsAnyAsync<Exception>(
             () => store.GetOrNullAsync("Smtp.Password", SettingScope.ForTenant(otherTenant)));
+    }
+
+    [Fact]
+    public async Task A_settings_ciphertext_copied_to_another_settings_row_does_not_decrypt()
+    {
+        var (store, inner) = CreateStore();
+        var scope = SettingScope.ForTenant(TenantId);
+        var ct = TestContext.Current.CancellationToken;
+
+        await store.SetAsync("Smtp.Password", "s3cret!", scope, ct);
+        await store.SetAsync("Api.Token", "token-value", scope, ct);
+        var passwordCiphertext = await inner.GetOrNullAsync("Smtp.Password", scope, ct);
+        await inner.SetAsync("Api.Token", passwordCiphertext, scope, ct);
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(() => store.GetOrNullAsync("Api.Token", scope, ct));
+        await Assert.ThrowsAnyAsync<CryptographicException>(() => store.GetAllAsync(scope, ct));
+    }
+
+    public static TheoryData<string> DestroyedKeys() => new()
+    {
+        "the scope's key was erased",
+        "the value's key version was revoked",
+    };
+
+    [Theory]
+    [MemberData(nameof(DestroyedKeys))]
+    public async Task A_value_whose_key_was_destroyed_reads_as_absent_and_the_rest_of_the_scope_still_reads(string condition)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var keyStore = new InMemoryKeyStore();
+        var inner = new InMemorySettingStore();
+        var logger = new FakeLogger<EncryptingSettingStore>();
+        var store = new EncryptingSettingStore(inner, Catalog(), TestBlobEncryptor.CreateAesGcm(keyStore), logger);
+        var scope = SettingScope.ForTenant(TenantId);
+        var keyScope = new KeyScope(DataSensitivityLevel.TenantScoped, scope.TenantId);
+
+        await store.SetAsync("Ui.Theme", "dark", scope, ct);
+        await store.SetAsync("Smtp.Password", "s3cret!", scope, ct);
+        if (condition == "the scope's key was erased")
+        {
+            await keyStore.EraseScopeAsync(keyScope, ct);
+        }
+        else
+        {
+            var keyId = (await keyStore.GetOrCreateCurrentKeyAsync(keyScope, ct)).KeyId;
+            await keyStore.RevokeAsync(keyId, ct);
+        }
+
+        var all = await store.GetAllAsync(scope, ct);
+        Assert.Equal("dark", Assert.Single(all).Value);
+        Assert.Null(await store.GetOrNullAsync("Smtp.Password", scope, ct));
+        Assert.Contains(logger.Collector.GetSnapshot(), record =>
+            record.Id.Id == LogEvents.KeyManagement.EncryptedSettingUnreadable && record.Level == LogLevel.Warning);
+    }
+
+    [Theory]
+    [InlineData("written before it was encrypted!")]
+    [InlineData("abcd")]
+    public async Task A_plaintext_row_of_an_encrypted_setting_fails_the_read(string plaintextRow)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (store, inner) = CreateStore();
+        var scope = SettingScope.ForTenant(TenantId);
+        await store.SetAsync("Ui.Theme", "dark", scope, ct);
+        await inner.SetAsync("Smtp.Password", plaintextRow, scope, ct);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => store.GetOrNullAsync("Smtp.Password", scope, ct));
+        await Assert.ThrowsAnyAsync<Exception>(() => store.GetAllAsync(scope, ct));
+    }
+
+    [Fact]
+    public async Task A_tampered_value_fails_the_read()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (store, inner) = CreateStore();
+        var scope = SettingScope.ForTenant(TenantId);
+        await store.SetAsync("Smtp.Password", "s3cret!", scope, ct);
+        var bytes = Convert.FromBase64String((await inner.GetOrNullAsync("Smtp.Password", scope, ct))!);
+        bytes[^1] ^= 0xFF;
+        await inner.SetAsync("Smtp.Password", Convert.ToBase64String(bytes), scope, ct);
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(() => store.GetOrNullAsync("Smtp.Password", scope, ct));
+        await Assert.ThrowsAnyAsync<CryptographicException>(() => store.GetAllAsync(scope, ct));
+    }
+
+    [Fact]
+    public async Task Cancellation_while_reading_an_encrypted_value_is_not_treated_as_an_unreadable_value()
+    {
+        var (store, _) = CreateStore();
+        var scope = SettingScope.ForTenant(TenantId);
+        await store.SetAsync("Smtp.Password", "s3cret!", scope, TestContext.Current.CancellationToken);
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.GetAllAsync(scope, cancelled.Token));
     }
 
     [Fact]
