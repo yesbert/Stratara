@@ -14,9 +14,11 @@ namespace Stratara.Shared.Merging.ChangeTracking;
 /// <remarks>
 /// Property accessors are compiled and cached per-type-combination. A property of
 /// <typeparamref name="TChanges"/> takes part only where <typeparamref name="TBase"/> declares a
-/// settable property of the same name and a compatible type; every other property is skipped.
-/// Collections are compared by content — dictionaries key by key, other sequences element by
-/// element in order — so a collection that was not edited is not reported as changed.
+/// settable property of the same name and a compatible type; every other property is skipped, and
+/// so is an absent value for a property that cannot be absent. Types are compatible where the
+/// submitted value can be assigned (nullability of a value type aside), or where both are sequences
+/// whose elements can. Lists, arrays, sets and dictionaries are compared by content, so a collection
+/// that was not edited is not reported as changed.
 /// </remarks>
 public static class ChangeSetBuilder<TBase, TChanges>
     where TBase : notnull
@@ -49,7 +51,8 @@ public static class ChangeSetBuilder<TBase, TChanges>
         {
             var changeVal = accessor.ChangeGetter(changes);
 
-            if (!accessor.CanCompare)
+            // An absent value cannot be recorded for a property that has no absent state.
+            if (!accessor.CanCompare || (changeVal is null && !accessor.BaseAcceptsNull))
             {
                 continue;
             }
@@ -78,9 +81,10 @@ public static class ChangeSetBuilder<TBase, TChanges>
             var baseProp = typeof(TBase).GetProperty(changeProp.Name);
             if (baseProp is { CanRead: true, CanWrite: true }
                 && baseProp.GetIndexParameters().Length == 0
-                && ChangeComparison.AreCompatible(changeProp.PropertyType, baseProp.PropertyType))
+                && ChangeComparison.CanBeRecorded(changeProp.PropertyType, baseProp.PropertyType))
             {
                 BaseGetter = CompileGetter<TBase>(baseProp);
+                BaseAcceptsNull = ChangeComparison.AcceptsNull(baseProp.PropertyType);
                 CanCompare = true;
                 return;
             }
@@ -93,6 +97,7 @@ public static class ChangeSetBuilder<TBase, TChanges>
         public Func<TChanges, object?> ChangeGetter { get; }
         public Func<TBase, object?>? BaseGetter { get; }
         public bool CanCompare { get; }
+        public bool BaseAcceptsNull { get; }
 
         private static Func<TObj, object?> CompileGetter<TObj>(PropertyInfo prop)
         {

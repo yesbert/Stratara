@@ -37,10 +37,17 @@ public class ChangeSetBuilderTests
         public int? Discount { get; set; }
         public bool IsDeleted { get; }
         public List<string> Tags { get; set; } = [];
+        public HashSet<string> Labels { get; set; } = [];
         public Dictionary<string, int> Stock { get; set; } = [];
         public string Name { get; private set; } = "";
 
         public static Order Named(string name) => new() { Name = name };
+    }
+
+    private sealed class OrderPatch
+    {
+        public string[] Tags { get; set; } = [];
+        public IReadOnlyList<string> Labels { get; set; } = [];
     }
 
     private sealed class OrderUpdate
@@ -50,6 +57,7 @@ public class ChangeSetBuilderTests
         public int Discount { get; set; }
         public bool IsDeleted { get; set; }
         public List<string> Tags { get; set; } = [];
+        public HashSet<string> Labels { get; set; } = [];
         public Dictionary<string, int> Stock { get; set; } = [];
         public string Name { get; set; } = "";
     }
@@ -93,10 +101,61 @@ public class ChangeSetBuilderTests
         var order = new Order { Quantity = 1, Discount = 5 };
 
         var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
-            order, order, new OrderUpdate { Quantity = 2, Discount = 5 });
+            order, order, new OrderUpdate { Quantity = 2, Discount = 7 });
 
-        var change = Assert.Single(result, change => change.PropertyName is nameof(Order.Quantity) or nameof(Order.Discount));
-        Assert.Equal(nameof(Order.Quantity), change.PropertyName);
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Quantity) && Equals(change.ChangeValue, 2));
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Discount) && Equals(change.ChangeValue, 7));
+    }
+
+    [Fact]
+    public void An_absent_value_for_a_property_that_cannot_be_absent_is_skipped()
+    {
+        var order = new Order { Quantity = 1 };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Quantity = null });
+
+        Assert.DoesNotContain(result, change => change.PropertyName == nameof(Order.Quantity));
+    }
+
+    [Fact]
+    public void A_sequence_of_another_shape_takes_part_and_is_compared_by_content()
+    {
+        var order = new Order { Tags = ["a", "b"], Labels = ["x"] };
+
+        var unchanged = ChangeSetBuilder<Order, OrderPatch>.CreateChangeSet(
+            order, order, new OrderPatch { Tags = ["a", "b"], Labels = ["x"] });
+        var changed = ChangeSetBuilder<Order, OrderPatch>.CreateChangeSet(
+            order, order, new OrderPatch { Tags = ["a"], Labels = ["x", "y"] });
+
+        Assert.Empty(unchanged);
+        Assert.Equal([nameof(Order.Tags), nameof(Order.Labels)], changed.Select(change => change.PropertyName));
+    }
+
+    [Fact]
+    public void A_set_is_compared_regardless_of_order()
+    {
+        var order = new Order { Labels = ["a", "b", "c"] };
+        var reordered = new HashSet<string> { "c", "b", "a" };
+        Assert.False(order.Labels.SequenceEqual(reordered));
+
+        var same = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(order, order, new OrderUpdate { Labels = reordered });
+        var different = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(
+            order, order, new OrderUpdate { Labels = ["a", "b", "d"] });
+
+        Assert.DoesNotContain(same, change => change.PropertyName == nameof(Order.Labels));
+        Assert.Contains(different, change => change.PropertyName == nameof(Order.Labels));
+    }
+
+    [Fact]
+    public void A_dictionary_key_only_one_side_recognises_is_a_change()
+    {
+        var order = new Order { Stock = new() { ["a"] = 1 } };
+        var submitted = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["A"] = 1 };
+
+        var result = ChangeSetBuilder<Order, OrderUpdate>.CreateChangeSet(order, order, new OrderUpdate { Stock = submitted });
+
+        Assert.Contains(result, change => change.PropertyName == nameof(Order.Stock));
     }
 
     [Fact]

@@ -78,6 +78,16 @@ public class FieldChangedEventExtensionsTests
     }
 
     [Fact]
+    public void A_collection_of_another_shape_is_applied_like_a_stored_one()
+    {
+        var person = new Person();
+
+        person.ApplyPropertyChanged(new FieldChangedEvent<Person>(nameof(Person.Tags), new[] { "a", "b" }));
+
+        Assert.Equal(["a", "b"], person.Tags);
+    }
+
+    [Fact]
     public void A_stored_change_that_clears_a_field_is_replayed()
     {
         var person = new Person { FirstName = "Old" };

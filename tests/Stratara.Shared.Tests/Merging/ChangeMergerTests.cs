@@ -24,6 +24,60 @@ public class ChangeMergerTests
         public string Extra { get; set; } = "";
     }
 
+    private enum Status
+    {
+        Draft,
+        Active
+    }
+
+    private sealed class Order
+    {
+        public Status Status { get; set; }
+        public int? Discount { get; set; }
+        public List<string> Tags { get; set; } = [];
+    }
+
+    private sealed class OrderUpdate
+    {
+        public string Status { get; set; } = "";
+        public int Discount { get; set; }
+        public List<string> Tags { get; set; } = [];
+    }
+
+    [Fact]
+    public void An_unedited_collection_keeps_the_current_value()
+    {
+        var source = new Order { Tags = ["a"] };
+        var current = new Order { Tags = ["a", "b"] };
+
+        var result = ChangeMerger<Order, OrderUpdate>.ApplyChanges(source, current, new OrderUpdate { Tags = ["a"] });
+
+        Assert.Equal(["a", "b"], result.MergedChanges.Tags);
+        Assert.DoesNotContain(result.Differences, change => change.PropertyName == nameof(Order.Tags));
+    }
+
+    [Fact]
+    public void A_property_that_cannot_hold_the_aggregates_value_is_copied_through()
+    {
+        var order = new Order { Status = Status.Active };
+
+        var result = ChangeMerger<Order, OrderUpdate>.ApplyChanges(order, order, new OrderUpdate { Status = "Draft" });
+
+        Assert.Equal("Draft", result.MergedChanges.Status);
+        Assert.DoesNotContain(result.Differences, change => change.PropertyName == nameof(Order.Status));
+    }
+
+    [Fact]
+    public void An_absent_current_value_does_not_replace_a_value_that_cannot_be_absent()
+    {
+        var source = new Order { Discount = 5 };
+        var current = new Order { Discount = null };
+
+        var result = ChangeMerger<Order, OrderUpdate>.ApplyChanges(source, current, new OrderUpdate { Discount = 5 });
+
+        Assert.Equal(5, result.MergedChanges.Discount);
+    }
+
     [Fact]
     public void ApplyChanges_NoConflicts_UsesCurrentValues()
     {

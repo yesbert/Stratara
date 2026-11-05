@@ -25,13 +25,18 @@ applies to the entire NuGet family.
   No migration: events already in the store replay as they are.
 - **A change set leaves out properties the aggregate cannot take.** `ChangeSetBuilder` compared every property the
   aggregate could read under the same name. It now takes a property only where the aggregate's property is settable
-  and of a compatible type (nullability of a value type aside), so an update no longer records a change that replay
-  cannot apply. `ChangeMerger` skips a property whose type cannot hold the aggregate's value instead of throwing an
-  `InvalidCastException`.
+  and of a compatible type — assignable, nullability of a value type aside, or a sequence whose elements are — and
+  skips an absent value for a property that cannot be absent, so an update no longer records a change that replay
+  cannot apply. `ChangeMerger` copies a property through whose type cannot hold the aggregate's value instead of
+  throwing an `InvalidCastException`, and keeps the submitted value where the current one is absent and the payload's
+  property cannot be.
 - **An unedited collection is no longer reported as changed.** `ChangeSetBuilder` and `ChangeMerger` compared
   collection properties by reference, so a list that arrived with an update always counted as edited and could
-  overwrite a concurrent change to it. Collections are now compared by content — dictionaries key by key, other
-  sequences element by element in order.
+  overwrite a concurrent change to it. Lists and arrays are now compared element by element in order, sets
+  regardless of order, dictionaries key by key; any other type keeps its own equality.
+- **A collection of another shape can be applied to an aggregate.** `PropertyAccessorCache.SetValueByName` converts
+  a collection that is not of the property's type — an array for a list — the way a recorded value is read back, so
+  applying a field change in memory and replaying it from the store give the same result.
 - **The `IEventUpcaster.TargetEventTypeName` documentation no longer describes an in-place shape change.** An
   upcaster whose target equals its source has always been refused as a cycle when the event is read; the
   documentation said otherwise. A reshaped payload moves to a new type name.

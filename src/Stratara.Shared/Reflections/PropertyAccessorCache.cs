@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -99,7 +100,9 @@ public static class PropertyAccessorCache
     /// <remarks>
     /// A value that was read back from JSON as an untyped <see cref="JsonElement"/> — which is what a
     /// recorded <c>FieldChangedEvent</c> carries after it has been stored — is converted to the
-    /// property's type before it is assigned.
+    /// property's type before it is assigned. A collection of another shape than the property's, such
+    /// as an array for a list, is converted the same way, so that applying a change in memory and
+    /// replaying it from the store give the same result.
     /// </remarks>
     /// <typeparam name="TTarget">Type that declares the property.</typeparam>
     /// <param name="target">Instance to mutate.</param>
@@ -113,6 +116,11 @@ public static class PropertyAccessorCache
         if (value is JsonElement element && !prop.PropertyType.IsAssignableFrom(typeof(JsonElement)))
         {
             value = element.Deserialize(prop.PropertyType);
+        }
+        else if (value is IEnumerable and not string && !prop.PropertyType.IsInstanceOfType(value))
+        {
+            // A collection of another shape is assigned the way a recorded one would be read back.
+            value = JsonSerializer.SerializeToElement(value, value.GetType()).Deserialize(prop.PropertyType);
         }
 
         var method = typeof(PropertyAccessorCache)
