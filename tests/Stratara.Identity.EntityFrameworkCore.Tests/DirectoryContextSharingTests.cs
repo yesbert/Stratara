@@ -99,6 +99,26 @@ public class DirectoryContextSharingTests
     }
 
     [Fact]
+    public async Task SharedContext_RoleChange_LeavesTheConsumersUnsavedChangesUnsaved()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ITenantMembershipStore>();
+        var context = host.Resolve<TestDirectoryDbContext>();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        var unsavedUser = Guid.CreateVersion7();
+        context.Add(new TenantMembershipEntry { UserId = unsavedUser, TenantId = tenantId, Status = MembershipStatus.Active });
+
+        await store.AddRolesAsync(userId, tenantId, ["Viewer"]);
+
+        Assert.True(context.ChangeTracker.HasChanges());
+        Assert.Null(await store.GetMembershipAsync(unsavedUser, tenantId));
+        Assert.Equal(["Editor", "Viewer"], (await store.GetMembershipAsync(userId, tenantId))!.Roles);
+    }
+
+    [Fact]
     public void RegisteringBothVariants_LeavesTheFirstOneRegistered()
     {
         var services = new ServiceCollection();

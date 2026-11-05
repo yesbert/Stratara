@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace Stratara.Abstractions.Multitenancy;
 
 /// <summary>
@@ -28,9 +26,50 @@ namespace Stratara.Abstractions.Multitenancy;
 /// <c>null</c>; empty when the user is a plain member without elevated tenant roles.
 /// </param>
 /// <param name="Status">Lifecycle state of the membership; defaults to <see cref="MembershipStatus.Active"/>.</param>
-[ExcludeFromCodeCoverage]
 public sealed record TenantMembership(
     Guid UserId,
     Guid TenantId,
     IReadOnlyCollection<string> Roles,
-    MembershipStatus Status = MembershipStatus.Active);
+    MembershipStatus Status = MembershipStatus.Active)
+{
+    /// <summary>
+    /// Returns this membership with <paramref name="roles"/> added to <see cref="Roles"/>. The roles already held keep
+    /// their order, the added ones follow in the order given, and a role already held or named twice is held once.
+    /// Roles are compared ordinally. The status is unchanged.
+    /// </summary>
+    /// <param name="roles">The role names to add.</param>
+    /// <returns>The changed membership, or this instance when every role is already held.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="roles"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">A role name is <c>null</c>, empty or whitespace.</exception>
+    public TenantMembership WithRolesAdded(IReadOnlyCollection<string> roles)
+    {
+        ValidateRoleNames(roles);
+        var added = roles.Distinct(StringComparer.Ordinal).Where(role => !Roles.Contains(role, StringComparer.Ordinal)).ToList();
+        return added.Count == 0 ? this : this with { Roles = [.. Roles, .. added] };
+    }
+
+    /// <summary>
+    /// Returns this membership with <paramref name="roles"/> removed from <see cref="Roles"/>. The remaining roles keep
+    /// their order; a role not held is ignored. Roles are compared ordinally. The status is unchanged, and removing
+    /// every role leaves a membership without roles rather than no membership.
+    /// </summary>
+    /// <param name="roles">The role names to remove.</param>
+    /// <returns>The changed membership, or this instance when none of the roles is held.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="roles"/> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">A role name is <c>null</c>, empty or whitespace.</exception>
+    public TenantMembership WithRolesRemoved(IReadOnlyCollection<string> roles)
+    {
+        ValidateRoleNames(roles);
+        var remaining = Roles.Where(role => !roles.Contains(role, StringComparer.Ordinal)).ToList();
+        return remaining.Count == Roles.Count ? this : this with { Roles = remaining };
+    }
+
+    private static void ValidateRoleNames(IReadOnlyCollection<string> roles)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        if (roles.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("A role name must not be null, empty or whitespace.", nameof(roles));
+        }
+    }
+}

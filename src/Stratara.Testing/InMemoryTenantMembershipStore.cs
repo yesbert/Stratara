@@ -5,7 +5,8 @@ namespace Stratara.Testing;
 /// <summary>
 /// Thread-safe in-memory <see cref="ITenantMembershipStore"/> for tests — the drop-in double for
 /// the EF-backed membership store, mirroring its contract semantics: upsert on
-/// <see cref="SetMembershipAsync"/>, erasure sweeps per user and per tenant, and the
+/// <see cref="SetMembershipAsync"/>, atomic single-role changes through <see cref="AddRolesAsync"/> and
+/// <see cref="RemoveRolesAsync"/>, erasure sweeps per user and per tenant, and the
 /// membership-guarded active-tenant selection (selecting a tenant without an active membership
 /// throws, removals clear a now-dangling selection).
 /// </summary>
@@ -64,6 +65,31 @@ public sealed class InMemoryTenantMembershipStore : ITenantMembershipStore
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<TenantMembership?> AddRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default) =>
+        Task.FromResult(ChangeRoles(userId, tenantId, membership => membership.WithRolesAdded(roles)));
+
+    /// <inheritdoc/>
+    public Task<TenantMembership?> RemoveRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default) =>
+        Task.FromResult(ChangeRoles(userId, tenantId, membership => membership.WithRolesRemoved(roles)));
+
+    private TenantMembership? ChangeRoles(Guid userId, Guid tenantId, Func<TenantMembership, TenantMembership> change)
+    {
+        lock (_gate)
+        {
+            if (!_memberships.TryGetValue((userId, tenantId), out var membership))
+            {
+                return null;
+            }
+
+            var changed = change(membership);
+            _memberships[(userId, tenantId)] = changed;
+            return changed;
+        }
     }
 
     /// <inheritdoc/>
