@@ -134,7 +134,8 @@ migration for them.
 `SetMembershipAsync` stays a whole replace: a whole write and a role change that run at the same time
 do not protect each other. A membership store you implemented yourself gets both operations without a
 code change, as a read followed by a whole write, and with that no protection against a concurrent
-writer — override them where that matters. `TenantMembership.WithRolesAdded` and `WithRolesRemoved`
+writer — override them where that matters, and forward them from a decorator to the store it wraps,
+or the decorator quietly falls back to that unprotected form. `TenantMembership.WithRolesAdded` and `WithRolesRemoved`
 compute the changed role set for such an override.
 
 ### Ending a membership without forgetting it

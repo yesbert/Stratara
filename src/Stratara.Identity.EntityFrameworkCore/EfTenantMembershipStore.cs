@@ -110,6 +110,8 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
         await using var lease = await contextSource.LeaseAsync(cancellationToken);
         var context = lease.Context;
 
+        List<string>? previous = null;
+        var sawConcurrentChange = false;
         for (var attempt = 0; attempt < MaxRoleChangeAttempts; attempt++)
         {
             var entry = await context.Set<TenantMembershipEntry>()
@@ -128,6 +130,8 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
             }
 
             var read = entry.Roles;
+            sawConcurrentChange |= previous is not null && !previous.SequenceEqual(read, StringComparer.Ordinal);
+            previous = read;
             var next = changed.Roles.ToList();
             var updated = await context.Set<TenantMembershipEntry>()
                 .Where(e => e.UserId == userId && e.TenantId == tenantId && e.Roles == read)
@@ -139,23 +143,41 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
             }
         }
 
-        throw new InvalidOperationException(
-            $"The roles of user '{userId}' in tenant '{tenantId}' were changed concurrently on each of " +
-            $"{MaxRoleChangeAttempts} attempts; the role change was not applied.");
+        throw new InvalidOperationException(sawConcurrentChange
+            ? $"The roles of user '{userId}' in tenant '{tenantId}' were changed concurrently on each of " +
+              $"{MaxRoleChangeAttempts} attempts; the role change was not applied."
+            : $"The stored roles of user '{userId}' in tenant '{tenantId}' are not in the form this store writes, so " +
+              "the role change could not be applied safely. Write the role set you want with SetMembershipAsync instead; " +
+              "that write stores the roles in this store's form, and later role changes work again.");
     }
 
     private static void SyncTrackedRoles(TContext context, Guid userId, Guid tenantId, List<string> roles)
     {
-        var tracked = context.ChangeTracker.Entries<TenantMembershipEntry>()
-            .FirstOrDefault(e => e.Entity.UserId == userId && e.Entity.TenantId == tenantId);
-        if (tracked is null)
+        var autoDetect = context.ChangeTracker.AutoDetectChangesEnabled;
+        context.ChangeTracker.AutoDetectChangesEnabled = false;
+        try
         {
-            return;
-        }
+            var tracked = context.ChangeTracker.Entries<TenantMembershipEntry>()
+                .FirstOrDefault(e => e.Entity.UserId == userId && e.Entity.TenantId == tenantId);
+            if (tracked is null)
+            {
+                return;
+            }
 
-        var property = tracked.Property(e => e.Roles);
-        property.CurrentValue = roles.ToList();
-        property.OriginalValue = roles.ToList();
+            tracked.DetectChanges();
+            var property = tracked.Property(e => e.Roles);
+            if (property.IsModified)
+            {
+                return;
+            }
+
+            property.CurrentValue = roles.ToList();
+            property.OriginalValue = roles.ToList();
+        }
+        finally
+        {
+            context.ChangeTracker.AutoDetectChangesEnabled = autoDetect;
+        }
     }
 
     public async Task RemoveMembershipAsync(

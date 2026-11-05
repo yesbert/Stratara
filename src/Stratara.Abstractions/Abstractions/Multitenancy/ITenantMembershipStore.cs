@@ -77,7 +77,8 @@ public interface ITenantMembershipStore
     /// The framework's stores apply the change atomically: two role changes to the same membership that overlap both
     /// take effect. This default implementation reads the membership and writes it back whole with
     /// <see cref="SetMembershipAsync"/>, so on a store that does not override it a concurrent writer can undo the
-    /// change; an implementation should override it. A whole write through <see cref="SetMembershipAsync"/> still
+    /// change; an implementation should override it, and a decorator should forward it to the store it wraps. A whole
+    /// write through <see cref="SetMembershipAsync"/> still
     /// replaces the roles, so it and a role change running at the same time do not protect each other.
     /// </remarks>
     /// <param name="userId">The user whose membership to change.</param>
@@ -86,10 +87,13 @@ public interface ITenantMembershipStore
     /// <param name="cancellationToken">Token to observe while changing.</param>
     /// <returns>The membership as it stands afterwards, or <c>null</c> when the user does not belong to the tenant.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="roles"/> is <c>null</c>.</exception>
-    /// <exception cref="ArgumentException">A role name is <c>null</c>, empty or whitespace.</exception>
+    /// <exception cref="ArgumentException">
+    /// A role name is <c>null</c>, empty or whitespace and the membership exists; without a membership nothing is
+    /// changed and <c>null</c> is returned.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The store could not apply the change because concurrent writers changed the membership's roles on every
-    /// attempt.
+    /// The store could not apply the change safely: concurrent writers changed the membership's roles on every
+    /// attempt, or the stored roles were written in a form the store cannot compare against.
     /// </exception>
     async Task<TenantMembership?> AddRolesAsync(
         Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default)
@@ -119,7 +123,8 @@ public interface ITenantMembershipStore
     /// The framework's stores apply the change atomically: two role changes to the same membership that overlap both
     /// take effect. This default implementation reads the membership and writes it back whole with
     /// <see cref="SetMembershipAsync"/>, so on a store that does not override it a concurrent writer can undo the
-    /// change; an implementation should override it. A whole write through <see cref="SetMembershipAsync"/> still
+    /// change; an implementation should override it, and a decorator should forward it to the store it wraps. A whole
+    /// write through <see cref="SetMembershipAsync"/> still
     /// replaces the roles, so it and a role change running at the same time do not protect each other.
     /// </remarks>
     /// <param name="userId">The user whose membership to change.</param>
@@ -128,10 +133,13 @@ public interface ITenantMembershipStore
     /// <param name="cancellationToken">Token to observe while changing.</param>
     /// <returns>The membership as it stands afterwards, or <c>null</c> when the user does not belong to the tenant.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="roles"/> is <c>null</c>.</exception>
-    /// <exception cref="ArgumentException">A role name is <c>null</c>, empty or whitespace.</exception>
+    /// <exception cref="ArgumentException">
+    /// A role name is <c>null</c>, empty or whitespace and the membership exists; without a membership nothing is
+    /// changed and <c>null</c> is returned.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The store could not apply the change because concurrent writers changed the membership's roles on every
-    /// attempt.
+    /// The store could not apply the change safely: concurrent writers changed the membership's roles on every
+    /// attempt, or the stored roles were written in a form the store cannot compare against.
     /// </exception>
     async Task<TenantMembership?> RemoveRolesAsync(
         Guid userId, Guid tenantId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken = default)

@@ -2,7 +2,8 @@
 
 ## 1. Prove the compare-and-swap translates
 
-- [x] 1.1 In `tests/Stratara.Identity.EntityFrameworkCore.Tests`, write a test that runs
+- [x] 1.1 (Proven, then folded into 4.1's injected-writer test, which fails the same way. The standalone
+  probe was removed in review as redundant.) In `tests/Stratara.Identity.EntityFrameworkCore.Tests`, write a test that runs
   `ExecuteUpdateAsync` filtered by `Roles == <list>` against the SQLite directory fixture. It must
   affect one row when the stored roles match and none when they differ. Run the same check once on
   PostgreSQL in `tests/Stratara.Identity.IntegrationTests` (`SharedIdentityStoreTests` fixture). If

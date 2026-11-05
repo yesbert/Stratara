@@ -57,8 +57,9 @@ the serialized list that was read. The serializer is deterministic, so equal lis
 - **Provider-native array or JSON operators** (PostgreSQL `jsonb` functions). Not portable, and the
   column is text.
 
-*Evidence:* `RolesCompareAndSwapTranslationTests` (SQLite) shows that EF translates the equality on the
-converted column into a comparison with the converted parameter. On PostgreSQL,
+*Evidence:* `EfTenantMembershipStoreRoleTests` (SQLite, with a concurrent writer injected between the read
+and the update) can only pass if EF translates the equality on the converted column into a comparison with
+the converted parameter. On PostgreSQL,
 `Two_hosts_adding_different_roles_to_one_membership_at_once_keep_both` can only pass if it does.
 
 ### D2 — `ExecuteUpdateAsync`, not the change tracker
@@ -130,6 +131,13 @@ separate approvals and are not part of this change.
 - [Two writers keep colliding and one exhausts its 5 attempts] → It throws instead of losing the
   change, as the spec requires. Role changes are rare and human-paced, so in practice this means
   something is wrong.
+- [Roles text written outside the store, e.g. `[ "a" ]` seeded by hand, never matches the re-serialized
+  list, so every attempt misses] → The store notices that no re-read showed a different role set and
+  throws `InvalidOperationException`, naming `SetMembershipAsync` with the wanted role set as the way out.
+  That write stores the canonical form. Test: `Roles_stored_in_a_foreign_form_fail_with_a_way_out_instead_of_a_concurrency_claim`.
+- [The consumer edited the roles of a tracked entry on the shared context and has not saved] → The
+  tracked-entry refresh leaves a modified `Roles` alone, and it inspects only that entry, not the whole
+  context. Test: `A_role_change_leaves_a_tracked_entry_the_consumer_edited_but_did_not_save_alone`.
 - [A concurrent `SetMembershipAsync` overwrites a role change that just landed] → This is
   last-writer-wins by contract. The operation docs say that whole writes and single-role changes on
   the same membership do not protect each other.

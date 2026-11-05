@@ -106,6 +106,38 @@ public sealed class EfTenantMembershipStoreRoleTests : IDisposable
         Assert.Equal(["Editor"], (await Store.GetMembershipAsync(_userId, _tenantId))!.Roles);
     }
 
+    [Fact]
+    public async Task Roles_stored_in_a_foreign_form_fail_with_a_way_out_instead_of_a_concurrency_claim()
+    {
+        await Store.SetMembershipAsync(new TenantMembership(_userId, _tenantId, ["Editor"]));
+        await using (var write = _connection.CreateCommand())
+        {
+            write.CommandText = "UPDATE \"tenant_membership\" SET \"Roles\" = '[ \"Editor\" ]'";
+            await write.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Store.AddRolesAsync(_userId, _tenantId, ["Viewer"]));
+        Assert.Contains("SetMembershipAsync", error.Message, StringComparison.Ordinal);
+
+        await Store.SetMembershipAsync(new TenantMembership(_userId, _tenantId, ["Editor", "Viewer"]));
+        Assert.Equal(["Editor", "Viewer", "Auditor"], (await Store.AddRolesAsync(_userId, _tenantId, ["Auditor"]))!.Roles);
+    }
+
+    [Fact]
+    public async Task A_role_change_leaves_a_tracked_entry_the_consumer_edited_but_did_not_save_alone()
+    {
+        await Store.SetMembershipAsync(new TenantMembership(_userId, _tenantId, ["Editor"]));
+        var context = _scope.ServiceProvider.GetRequiredService<TestDirectoryDbContext>();
+        var tracked = await context.Set<TenantMembershipEntry>()
+            .SingleAsync(e => e.UserId == _userId && e.TenantId == _tenantId, TestContext.Current.CancellationToken);
+        tracked.Roles = ["Owner"];
+
+        await Store.AddRolesAsync(_userId, _tenantId, ["Viewer"]);
+
+        Assert.Equal(["Owner"], tracked.Roles);
+        Assert.True(context.Entry(tracked).Property(e => e.Roles).IsModified);
+    }
+
     public void Dispose()
     {
         _scope.Dispose();
