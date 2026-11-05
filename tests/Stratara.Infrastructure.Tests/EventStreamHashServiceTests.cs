@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Stratara.Infrastructure.EventSourcing;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Persistence;
@@ -110,4 +111,65 @@ public class EventStreamHashServiceTests
             Assert.NotNull(e.Hash);
         });
     }
+
+    [Fact]
+    public async Task A_batch_whose_predecessor_is_not_chained_yet_is_left_for_the_next_pass()
+    {
+        var repo = new Mock<IEventStreamRepository>();
+        var transaction = new Mock<ITransaction>();
+        var uow = new Mock<IWriteUnitOfWork>();
+        uow.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(transaction.Object);
+        uow.Setup(u => u.CreateEventStreamRepository(transaction.Object)).Returns(repo.Object);
+
+        var entry = Entry(sequenceNumber: 3);
+        repo.SetupSequence(r => r.GetUnhashedEventsAsync(It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([entry])
+            .ReturnsAsync([]);
+        repo.Setup(r => r.GetPreviousEventAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(Entry(sequenceNumber: 2));
+
+        await new EventStreamHashService(uow.Object).HashEventsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(entry.Hash);
+        Assert.Null(entry.PreviousHash);
+        repo.Verify(r => r.UpdateRange(It.IsAny<IReadOnlyList<EventStreamEntry>>()), Times.Never);
+        transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task The_first_entry_of_the_store_chains_off_the_genesis_seed()
+    {
+        var repo = new Mock<IEventStreamRepository>();
+        var transaction = new Mock<ITransaction>();
+        var uow = new Mock<IWriteUnitOfWork>();
+        uow.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(transaction.Object);
+        uow.Setup(u => u.CreateEventStreamRepository(transaction.Object)).Returns(repo.Object);
+
+        var entry = Entry(sequenceNumber: 1);
+        repo.SetupSequence(r => r.GetUnhashedEventsAsync(It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([entry])
+            .ReturnsAsync([]);
+        repo.Setup(r => r.GetPreviousEventAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync((EventStreamEntry?)null);
+
+        await new EventStreamHashService(uow.Object).HashEventsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(SHA256.HashData("GENESIS"u8), entry.PreviousHash);
+        Assert.NotNull(entry.Hash);
+        repo.Verify(r => r.UpdateRange(It.IsAny<IReadOnlyList<EventStreamEntry>>()), Times.Once);
+    }
+
+    private static EventStreamEntry Entry(long sequenceNumber) => new()
+    {
+        Id = Guid.NewGuid(),
+        StreamId = Guid.NewGuid(),
+        SequenceNumber = sequenceNumber,
+        Version = 1,
+        EventTypeName = "TestCreated",
+        AggregateTypeName = "TestAggregate",
+        DataJson = "{}",
+        Timestamp = DateTimeOffset.UtcNow.AddMinutes(-10),
+        BucketId = 0,
+        TenantId = Guid.Empty,
+        ActorTenantId = Guid.Empty,
+        ActorUserId = Guid.Empty
+    };
 }

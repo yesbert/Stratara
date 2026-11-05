@@ -40,6 +40,27 @@ applies to the entire NuGet family.
 - **The `IEventUpcaster.TargetEventTypeName` documentation no longer describes an in-place shape change.** An
   upcaster whose target equals its source has always been refused as a cycle when the event is read; the
   documentation said otherwise. A reshaped payload moves to a new type name.
+- **The hash-chain worker no longer chains across an entry it has not chained yet.** An entry's timestamp is taken
+  when it is appended, not when it commits, so an entry with a lower sequence number can carry a later timestamp than
+  the one after it. The worker's batch skipped such an entry and linked its successor to its predecessor; the skipped
+  entry was chained on a later pass and verification then reported a break at that point. A batch now ends before the
+  first unchained entry that is not yet settled, and a batch whose predecessor is not chained is left for the next
+  pass instead of being chained off the genesis seed. A custom `IEventStreamRepository` gets the second guard for
+  free; its `GetUnhashedEventsAsync` should return a gap-free run as the updated documentation describes.
+- **Events appended after a nested command are attributed to the outer command.** A command dispatched from inside
+  another command's handler left its own id as the session's causation, so what the outer handler appended afterwards
+  named the inner command as its cause. With command auditing on, the outer command's causation is restored once
+  the inner one returns or fails. The outermost command still leaves its id on the session.
+- **The snapshot shape guard sees properties declared on a base class.** An auto-property without a public setter
+  loses its state when an aggregate is restored from a snapshot, and the start-up guard rejects it — but it missed
+  one declared on an aggregate's base class. **A host whose aggregate inherits such a property now fails at start-up**
+  with the guard's usual message, where it lost that state silently before.
+- **`AddStrataraTestingEventStore` keeps a write unit of work registered before it**, as the PostgreSQL registration
+  does; it replaced one silently.
+- **`MigrateAllDatabasesAsync` disposes the contexts it creates** — it left one undisposed per database.
+- **The command-host examples register command auditing.** The XML examples of `AddCommandWorkerServices`,
+  `AddCommandServices` and `AddHeavyCommandWorkerServices`, the `Stratara.Orleans` README and two guides showed a
+  host whose first append is refused for a missing causation; they now call `AddCommandAuditing()`.
 
 ## [4.7.1] — 2026-11-05
 

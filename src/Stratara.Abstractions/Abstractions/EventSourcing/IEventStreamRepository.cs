@@ -29,7 +29,20 @@ public interface IEventStreamRepository
     /// <summary>Returns the head version of the stream, or <c>0</c> if it does not exist.</summary>
     Task<long> GetVersionOrDefaultAsync(Guid streamId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns up to <paramref name="batchSize"/> entries that have not yet been hashed and are older than <paramref name="cutoff"/>.</summary>
+    /// <summary>
+    /// Returns up to <paramref name="batchSize"/> entries that have not yet been hashed, in sequence order, ending before
+    /// the first unhashed entry whose timestamp is later than <paramref name="cutoff"/>.
+    /// </summary>
+    /// <remarks>
+    /// A timestamp is taken when the entry is appended, not when it is committed, so an entry with a lower sequence
+    /// number can carry a later timestamp than one after it. The result is therefore a gap-free run of the unhashed
+    /// entries from the lowest one on: it never holds an entry that follows an unhashed entry left out, and it is empty
+    /// while the lowest unhashed entry is later than <paramref name="cutoff"/>.
+    /// </remarks>
+    /// <param name="batchSize">How many entries the result holds at most.</param>
+    /// <param name="cutoff">The latest timestamp an entry may carry to be counted as settled.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The unhashed entries in sequence order; empty when there are none to chain yet.</returns>
     Task<IReadOnlyList<EventStreamEntry>> GetUnhashedEventsAsync(int batchSize, DateTimeOffset cutoff, CancellationToken cancellationToken = default);
 
     /// <summary>Returns the entry immediately preceding <paramref name="sequenceNumber"/> in stream order.</summary>

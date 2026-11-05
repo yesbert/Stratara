@@ -298,6 +298,7 @@ builder.AddEventStreamHashWorkerServices();
 
 builder.Services
     .AddCommandHandlersFromAssemblyContaining<MyAggregateMarker>()
+    .AddCommandAuditing()
     .AddProjectionsFromAssemblyContaining<MyAggregateMarker>()
     .AddSagasFromAssemblyContaining<MyAggregateMarker>()
     .AddAggregatesFromAssemblyContaining<MyAggregateMarker>();
