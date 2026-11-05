@@ -40,7 +40,8 @@ also register them over a context of your own: the accounts and the memberships 
 `MigrateStrataraIdentityStoreAsync()` creates the database where it does not exist yet and applies the shipped
 migrations it has not applied. Every host applies the same migrations, identified the same way, so a migration one
 host applied is recognised by every other. **Hosts that start at the same time take turns**: EF Core's migration
-lock makes the second wait for the first, and nothing is applied twice.
+lock makes the second wait for the first, and nothing is applied twice. The schema and its migration history table
+are created before the migrations run, so even the first start on an empty database logs nothing at `Error`.
 
 ## Where it lives
 
