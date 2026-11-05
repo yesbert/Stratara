@@ -36,10 +36,11 @@ await using var plain = await encryptor.DecryptAsync(encrypted, scope);
 - **`FileMasterKeyProvider`** (`IMasterKeyProvider`) — KEK from `MasterKeyBase64`, validated to
   decode to exactly 32 bytes (AES-256) at startup. The custody seam: swap for an HSM / KMS / vault
   provider later without touching the stored data.
-- **`AesGcmSecureBlobEncryptor`** (`ISecureBlobEncryptor`) — AES-GCM stream encryption with a
-  `purpose`-bound AAD (`{tenant}||{purpose}`) and a versioned, self-describing format (v2 leading
-  byte). Reads legacy streams without the version byte; set
-  `Stratara:BlobEncryption:LegacyBlobsCarryPurpose` to match the legacy layout.
+- **`AesGcmSecureBlobEncryptor`** (`ISecureBlobEncryptor`) — AES-GCM stream encryption whose AAD
+  binds the whole `KeyScope` (level, tenant, user) and the `purpose`, in a versioned,
+  self-describing format (v3 leading byte). Reads v2 streams and legacy streams without the version
+  byte; set `Stratara:BlobEncryption:LegacyBlobsCarryPurpose` to match the legacy layout, and
+  `Stratara:BlobEncryption:WriteV2Blobs` to keep writing v2 while older hosts still read the blobs.
 - **`DummyKeyStore`** — Development-only deterministic fallback (throws outside `Development`).
 
 ## Key id schema

@@ -181,6 +181,8 @@ public static class LogEvents
         public const int OutboxLockReleaseFailed = 106_107;
         /// <summary>A bundle stored with its commit was accepted by the bus but its stored copy could not be removed; the drain will publish it again (warning).</summary>
         public const int DurableBundleRemovalFailed = 106_108;
+        /// <summary>A stored outbox entry could not be read back as the message it holds; it stays stored and the drain continues with the next entry (error).</summary>
+        public const int OutboxEntryUnreadable = 106_109;
     }
 
     /// <summary>Event-stream-hash worker event-IDs (107_000s).</summary>
@@ -319,6 +321,8 @@ public static class LogEvents
         public const int SubjectNotMarkable = 112_009;
         /// <summary>A subject was marked erased in the key store; no key covered by its erasure is created again.</summary>
         public const int SubjectMarkedErased = 112_010;
+        /// <summary>The key of a stored encrypted setting was revoked or erased, so the setting reads as absent while its row remains (warning).</summary>
+        public const int EncryptedSettingUnreadable = 112_011;
     }
 
     /// <summary>External-login provisioning event-IDs (115_000s) — emitted by the JIT external-login provisioning service.</summary>

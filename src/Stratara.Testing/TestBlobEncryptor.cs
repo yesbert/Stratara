@@ -6,7 +6,7 @@ namespace Stratara.Testing;
 /// <summary>
 /// Factory for the framework's real AES-GCM <see cref="ISecureBlobEncryptor"/> backed by an
 /// <see cref="InMemoryKeyStore"/>, so blob round-trips in tests exercise the production encryptor
-/// (scope- and purpose-bound associated data, v2 stream format) without a master KEK or an
+/// (scope- and purpose-bound associated data, v3 stream format) without a master KEK or an
 /// on-disk key file.
 /// </summary>
 public static class TestBlobEncryptor

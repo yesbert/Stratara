@@ -1,8 +1,11 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Testing;
 using Polly;
 using Polly.Registry;
 using Stratara.Contracts.Messages;
+using Stratara.Diagnostics;
 using Stratara.Contracts.Session;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.Tests.Diagnostics;
@@ -352,6 +355,37 @@ public class CommandOutboxDispatcherTests
         Assert.Equal(0, PublishedCount(measurements.Snapshot()));
     }
 
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → a stored message that cannot be read is logged and left stored, and
+    /// the drain continues with the entries behind it rather than ending the pass on it.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_AnEntryThatCannotBeRead_IsLoggedAndKept_AndTheEntriesBehindItArePublished()
+    {
+        var logger = new FakeLogger<CommandOutboxDispatcher>();
+        var harness = new Harness(logger);
+        var published = harness.CapturePublished();
+        var unreadable = new OutboxEntry
+        {
+            Id = Guid.NewGuid(),
+            DataJson = "{ not json",
+            DataTypeName = typeof(CommandEnvelope).AssemblyQualifiedName!,
+            BucketId = 0,
+            Timestamp = DateTimeOffset.UtcNow,
+        };
+        var readable = BuildOutboxEntry(new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}"));
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([unreadable, readable], TestContext.Current.CancellationToken);
+
+        Assert.Single(published);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(readable.Id, It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(unreadable.Id, It.IsAny<CancellationToken>()), Times.Never);
+        harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        var error = Assert.Single(logger.Collector.GetSnapshot(), r => r.Level == LogLevel.Error);
+        Assert.Equal(LogEvents.OutboxProcessing.OutboxEntryUnreadable, error.Id.Id);
+        Assert.Contains(unreadable.Id.ToString(), error.Message, StringComparison.Ordinal);
+    }
+
     private static double PublishedCount(IEnumerable<CapturedMeasurement> measurements) =>
         measurements
             .Where(m => m.Instrument == "outbox.published"
@@ -390,7 +424,7 @@ public class CommandOutboxDispatcherTests
             return published;
         }
 
-        public Harness()
+        public Harness(ILogger<CommandOutboxDispatcher>? logger = null)
         {
             MessagingIdentifier.SetupGet(m => m.CommandTopic).Returns(CommandTopic);
             MessagingIdentifier.SetupGet(m => m.HeavyCommandTopic).Returns(HeavyCommandTopic);
@@ -405,7 +439,7 @@ public class CommandOutboxDispatcherTests
                 .Returns<object, Guid?, Guid?, CancellationToken>((obj, _, _, _) => Task.FromResult(JsonSerializer.Serialize(obj)));
 
             Sut = new CommandOutboxDispatcher(
-                NullLogger<CommandOutboxDispatcher>.Instance,
+                logger ?? NullLogger<CommandOutboxDispatcher>.Instance,
                 UnitOfWork.Object,
                 MessageBus.Object,
                 MessagingIdentifier.Object,

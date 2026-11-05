@@ -25,6 +25,9 @@ public static class OutboxServiceCollectionExtensions
     /// consult it before each publish to skip the fast-path while a projection replay is in progress. The
     /// underlying registration uses <c>TryAddSingleton</c>, so it is safe to call this method together with
     /// <see cref="AddProjectionReplayState"/> or <c>AddEventProjectionWorkerServices()</c> — duplicates collapse.
+    /// Where an enqueue-time decorator such as <c>AddAuthorizingCommandOutboxDispatcher()</c> was registered first, the
+    /// decorator stays the <see cref="ICommandOutboxDispatcher"/> and keeps wrapping <see cref="CommandOutboxDispatcher"/>,
+    /// so the worker composites, which call this method, can be added before or after it.
     /// </remarks>
     /// <example>
     /// <code>
@@ -35,7 +38,15 @@ public static class OutboxServiceCollectionExtensions
     public static IServiceCollection AddOutboxDispatcher(this IServiceCollection services)
     {
         services.AddProjectionReplayState();
-        services.AddScoped<ICommandOutboxDispatcher, CommandOutboxDispatcher>();
+        if (HasDecoratedCommandDispatcher(services))
+        {
+            services.TryAddScoped<CommandOutboxDispatcher>();
+        }
+        else
+        {
+            services.AddScoped<ICommandOutboxDispatcher, CommandOutboxDispatcher>();
+        }
+
         services.AddScoped<IEventBundleOutboxDispatcher, EventBundleOutboxDispatcher>();
         services.AddOptions<OutboxOptions>()
             .Configure<IServiceProvider>((options, provider) =>
@@ -166,4 +177,12 @@ public static class OutboxServiceCollectionExtensions
         services.AddSingleton<IOutboxLock, RedisOutboxLock>();
         return services;
     }
+
+    /// <summary>
+    /// Whether an enqueue-time decorator owns the <see cref="ICommandOutboxDispatcher"/> slot: it keeps the dispatcher it
+    /// wraps under the key <c>typeof(ICommandOutboxDispatcher)</c>, and a plain registration added now would replace the
+    /// decorator rather than the dispatcher it wraps.
+    /// </summary>
+    private static bool HasDecoratedCommandDispatcher(IServiceCollection services) =>
+        services.Any(d => d.ServiceType == typeof(ICommandOutboxDispatcher) && d.IsKeyedService && Equals(d.ServiceKey, typeof(ICommandOutboxDispatcher)));
 }

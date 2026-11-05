@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Moq;
 using Stratara.Abstractions.Authorization;
@@ -95,4 +96,70 @@ public class PermissionPolicyTests
             r => r.ResolvePermissionsAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Permission_policies_resolve_whether_authorization_was_added_before_or_after(bool authorizationFirst)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Catalog());
+        if (authorizationFirst)
+        {
+            services.AddAuthorization(o => o.AddPolicy("Conventional", p => p.RequireRole("admin")));
+        }
+
+        services.AddStrataraPermissionPolicies();
+        if (!authorizationFirst)
+        {
+            services.AddAuthorization(o => o.AddPolicy("Conventional", p => p.RequireRole("admin")));
+        }
+
+        await using var provider = services.BuildServiceProvider();
+        var policies = provider.GetRequiredService<IAuthorizationPolicyProvider>();
+
+        Assert.IsType<PermissionPolicyProvider>(policies);
+        var permission = await policies.GetPolicyAsync("sims.read");
+        Assert.NotNull(permission);
+        Assert.Contains(permission.Requirements, r => r is PermissionRequirement { Permission: "sims.read" });
+        Assert.NotNull(await policies.GetPolicyAsync("Conventional"));
+        Assert.Null(await policies.GetPolicyAsync("Undeclared"));
+        Assert.NotNull(await policies.GetDefaultPolicyAsync());
+    }
+
+    [Fact]
+    public async Task A_fallback_policy_the_host_configures_is_still_served()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Catalog());
+        services.AddAuthorization(o => o.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        services.AddStrataraPermissionPolicies();
+
+        await using var provider = services.BuildServiceProvider();
+
+        Assert.NotNull(await provider.GetRequiredService<IAuthorizationPolicyProvider>().GetFallbackPolicyAsync());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_policy_provider_the_host_supplies_is_kept(bool authorizationFirst)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Catalog());
+        if (authorizationFirst)
+        {
+            services.AddAuthorization();
+        }
+
+        services.AddSingleton<IAuthorizationPolicyProvider, HostPolicyProvider>();
+        services.AddStrataraPermissionPolicies();
+        services.AddAuthorization();
+
+        await using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<HostPolicyProvider>(provider.GetRequiredService<IAuthorizationPolicyProvider>());
+    }
+
+    private sealed class HostPolicyProvider(IOptions<AuthorizationOptions> options) : DefaultAuthorizationPolicyProvider(options);
 }

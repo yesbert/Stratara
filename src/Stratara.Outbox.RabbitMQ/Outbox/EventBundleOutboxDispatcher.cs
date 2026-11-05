@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
@@ -126,7 +128,11 @@ internal sealed class EventBundleOutboxDispatcher(
         var published = 0;
         foreach (var outboxEntry in outboxEntries)
         {
-            var eventBundle = outboxEntry.MapTo<EventBundle>();
+            if (!TryRead(outboxEntry, out var eventBundle))
+            {
+                continue;
+            }
+
             if (await TrySendEventBundleAsync(eventBundle, cancellationToken))
             {
                 await repository.DeleteAsync(outboxEntry.Id, cancellationToken);
@@ -142,6 +148,25 @@ internal sealed class EventBundleOutboxDispatcher(
         }
 
         await transaction.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads a stored bundle back. An entry that cannot be read is logged and left stored: entries are drained oldest
+    /// first, so throwing here would end every pass on the same row and nothing behind it would be published again.
+    /// </summary>
+    private bool TryRead(OutboxEntry outboxEntry, [NotNullWhen(true)] out EventBundle? eventBundle)
+    {
+        try
+        {
+            eventBundle = outboxEntry.MapTo<EventBundle>();
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogOutboxEntryUnreadable(outboxEntry.Id, outboxEntry.DataTypeName, ex);
+            eventBundle = null;
+            return false;
+        }
     }
 
     private async Task<bool> TrySendEventBundleAsync(EventBundle eventBundle, CancellationToken cancellationToken)

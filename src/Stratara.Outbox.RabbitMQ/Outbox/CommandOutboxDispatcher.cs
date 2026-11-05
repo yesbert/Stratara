@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Registry;
@@ -87,7 +88,11 @@ internal sealed class CommandOutboxDispatcher(
         var published = 0;
         foreach (var outboxEntry in outboxEntries)
         {
-            var commandEnvelope = outboxEntry.MapTo<CommandEnvelope>();
+            if (!TryRead(outboxEntry, out var commandEnvelope))
+            {
+                continue;
+            }
+
             var topic = ResolveTopic(commandEnvelope);
             if (await TrySendCommandEnvelopeAsync(commandEnvelope, topic, cancellationToken))
             {
@@ -104,6 +109,25 @@ internal sealed class CommandOutboxDispatcher(
         }
 
         await transaction.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads a stored envelope back. An entry that cannot be read is logged and left stored: entries are drained oldest
+    /// first, so throwing here would end every pass on the same row and nothing behind it would be published again.
+    /// </summary>
+    private bool TryRead(OutboxEntry outboxEntry, [NotNullWhen(true)] out CommandEnvelope? commandEnvelope)
+    {
+        try
+        {
+            commandEnvelope = outboxEntry.MapTo<CommandEnvelope>();
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogOutboxEntryUnreadable(outboxEntry.Id, outboxEntry.DataTypeName, ex);
+            commandEnvelope = null;
+            return false;
+        }
     }
 
     private async Task<bool> TrySendCommandEnvelopeAsync(CommandEnvelope commandEnvelope, string topic, CancellationToken cancellationToken)

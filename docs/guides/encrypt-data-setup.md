@@ -158,12 +158,41 @@ The tenant is the session's only where nothing more specific states the owner. A
 its **stream's** owner, whoever appends it, and a command that implements `INamesDataOwner` is bound
 to the owner it names, whoever dispatches it.
 
-## Reading blobs written before the v2 format
+## Blob formats, and reading older ones
 
-Blob ciphertext carries a leading version byte since v2. A stream written before that has no version
-byte, and how to read it depends on whether the writer emitted a length-prefixed `purpose` field —
-which the framework cannot tell from the bytes. Say which, through the `Stratara:BlobEncryption`
-section (`StrataraBlobEncryptionOptions.SectionName`):
+A blob's ciphertext is bound to the whole `KeyScope` it was written for — level, tenant and user —
+and to its purpose, so a blob does not decrypt under another user of the same tenant, under the
+tenant-level scope, or under another level. This is the v3 format, which starts with the byte `0x03`.
+Blobs written by earlier releases stay readable: a v2 blob (leading `0x02`) was bound to the tenant
+and the purpose only, and still decrypts exactly as before.
+
+A reader that knows which purpose it wrote with should say so, through the
+`DecryptAsync(stream, scope, purpose, cancellationToken)` overload: a blob written for another
+purpose then fails authentication instead of decrypting. A legacy blob that records no purpose
+cannot be checked against one and decrypts as before.
+
+### Rolling upgrades
+
+A host on a release before v3 cannot read a v3 blob. While such hosts still read blobs this host
+writes, keep writing v2 and switch once every host is upgraded:
+
+```jsonc
+{
+  "Stratara": {
+    "BlobEncryption": {
+      "WriteV2Blobs": true
+    }
+  }
+}
+```
+
+The default is `false`. Both formats are read whatever the setting.
+
+### Blobs written before the v2 format
+
+A stream written before v2 has no version byte, and how to read it depends on whether the writer
+emitted a length-prefixed `purpose` field — which the framework cannot tell from the bytes. Say which,
+through the same `Stratara:BlobEncryption` section (`StrataraBlobEncryptionOptions.SectionName`):
 
 ```jsonc
 {
@@ -177,8 +206,7 @@ section (`StrataraBlobEncryptionOptions.SectionName`):
 
 `AddSecurity()`, `AddStrataraBlobEncryption()` and `AddStrataraFileKeyStore(configuration)` read the section
 from the host's configuration. The default is `false` — a legacy stream is read as carrying no purpose field, and `"blob"` is
-assumed. New streams are always written in the v2 format regardless of this setting, so this is a
-read-path compatibility switch and nothing else.
+assumed. It only affects how a legacy stream is read, never the format new streams are written in.
 
 ## Revoking a version, and reading what it encrypted
 

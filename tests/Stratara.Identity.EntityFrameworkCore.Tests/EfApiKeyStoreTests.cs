@@ -424,6 +424,61 @@ public class EfApiKeyStoreTests
         Assert.NotNull(await fixture.Store.ValidateAsync(machine.RawKey));
     }
 
+    [Fact]
+    public async Task A_revoke_that_failed_before_removing_the_membership_removes_it_when_repeated()
+    {
+        var failure = new FailFirstMembershipDelete();
+        using var fixture = new ApiKeyFixture(failure);
+        var tenantId = Guid.CreateVersion7();
+        var ct = TestContext.Current.CancellationToken;
+        var issued = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "CI key", ["Deployer"]), ct);
+
+        failure.Armed = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Store.RevokeAsync(issued.Descriptor.Id, ct));
+        Assert.Null(await fixture.Store.ValidateAsync(issued.RawKey, ct));
+
+        await fixture.Store.RevokeAsync(issued.Descriptor.Id, ct);
+
+        Assert.Null(await fixture.Memberships.GetMembershipAsync(issued.Descriptor.Id, tenantId, ct));
+    }
+
+    [Fact]
+    public async Task A_tenant_sweep_that_failed_before_removing_the_memberships_removes_them_when_repeated()
+    {
+        var failure = new FailFirstMembershipDelete();
+        using var fixture = new ApiKeyFixture(failure);
+        var tenantId = Guid.CreateVersion7();
+        var ct = TestContext.Current.CancellationToken;
+        var issued = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "CI key", ["Deployer"]), ct);
+
+        failure.Armed = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Store.RemoveAllForTenantAsync(tenantId, ct));
+
+        await fixture.Store.RemoveAllForTenantAsync(tenantId, ct);
+
+        Assert.Null(await fixture.Store.ValidateAsync(issued.RawKey, ct));
+        Assert.Null(await fixture.Memberships.GetMembershipAsync(issued.Descriptor.Id, tenantId, ct));
+    }
+
+    /// <summary>Fails the next delete against the membership table once it is armed, as a lost connection would.</summary>
+    private sealed class FailFirstMembershipDelete : DbCommandInterceptor
+    {
+        public bool Armed { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Armed && command.CommandText.Contains("DELETE", StringComparison.OrdinalIgnoreCase)
+                      && command.CommandText.Contains("tenant_membership", StringComparison.Ordinal))
+            {
+                Armed = false;
+                throw new InvalidOperationException("Injected failure before the membership was removed.");
+            }
+
+            return ValueTask.FromResult(result);
+        }
+    }
+
     /// <summary>Lets another host import first, once, just before the intercepted host starts writing the key.</summary>
     private sealed class AnotherHostFirst : DbTransactionInterceptor
     {

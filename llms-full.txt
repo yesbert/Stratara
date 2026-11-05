@@ -79,6 +79,7 @@ Every bindable options type, the section it binds from, and the default each key
 | Key | Type | Default |
 |---|---|---|
 | `Stratara:BlobEncryption:LegacyBlobsCarryPurpose` | `Boolean` | `false` |
+| `Stratara:BlobEncryption:WriteV2Blobs` | `Boolean` | `false` |
 
 ### `Stratara:KeyStore` — Stratara.Security.StrataraFileKeyStoreOptions
 
