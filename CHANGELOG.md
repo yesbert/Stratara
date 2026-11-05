@@ -16,6 +16,13 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.7.1`._
+
+## [4.7.1] — 2026-11-05
+
+A patch for the shared identity store: single roles of a membership can now change without losing a concurrent
+change, and a fresh store's first migration no longer logs a spurious error.
+
 ### Added
 
 - **`ITenantMembershipStore.AddRolesAsync` and `RemoveRolesAsync`** give or take single roles of one membership,
@@ -5043,7 +5050,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.7.0...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.7.1...main
+[4.7.1]: https://github.com/yesbert/Stratara/releases/tag/v4.7.1
 [4.7.0]: https://github.com/yesbert/Stratara/releases/tag/v4.7.0
 [4.6.1]: https://github.com/yesbert/Stratara/releases/tag/v4.6.1
 [4.6.0]: https://github.com/yesbert/Stratara/releases/tag/v4.6.0

@@ -151,6 +151,13 @@ A double that quietly ignores a guarantee turns every test that relies on it int
 - **THEN** forward and reverse lookups agree, writing is an upsert, active-tenant selection is
   membership-guarded, and the erasure sweeps clear selections along with memberships
 
+#### Scenario: The membership store double changes single roles
+
+- **WHEN** a test adds or removes roles of one membership through the in-memory membership store,
+  including from several callers at once
+- **THEN** only the named roles change, no membership is created where none exists, and no
+  concurrent change is lost
+
 #### Scenario: The API-key store double is used
 
 - **WHEN** a test issues, validates, imports or revokes through the in-memory API-key store
