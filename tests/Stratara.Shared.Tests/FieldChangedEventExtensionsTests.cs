@@ -22,6 +22,8 @@ public class FieldChangedEventExtensionsTests
         Senior
     }
 
+    private static readonly string[] TagsAsArray = ["a", "b"];
+
     private static FieldChangedEvent<Person> Stored(FieldChangedEvent<Person> evt) =>
         JsonSerializer.Deserialize<FieldChangedEvent<Person>>(JsonSerializer.Serialize(evt))!;
 
@@ -82,7 +84,7 @@ public class FieldChangedEventExtensionsTests
     {
         var person = new Person();
 
-        person.ApplyPropertyChanged(new FieldChangedEvent<Person>(nameof(Person.Tags), new[] { "a", "b" }));
+        person.ApplyPropertyChanged(new FieldChangedEvent<Person>(nameof(Person.Tags), TagsAsArray));
 
         Assert.Equal(["a", "b"], person.Tags);
     }

@@ -72,19 +72,22 @@ public class AesGcmSecureBlobEncryptorTests
         await Assert.ThrowsAnyAsync<CryptographicException>(async () => await encryptor.DecryptAsync(new MemoryStream(encrypted), otherScope));
     }
 
-    public static TheoryData<string, KeyScope, KeyScope> ForeignScopes() => new()
+    private static readonly Dictionary<string, (KeyScope Written, KeyScope Read)> ForeignScopeCases = new()
     {
-        { "another user of the same tenant", new KeyScope(DataSensitivityLevel.UserScoped, Tenant, "alice"), new KeyScope(DataSensitivityLevel.UserScoped, Tenant, "bob") },
-        { "the tenant-level scope of the same tenant", new KeyScope(DataSensitivityLevel.UserScoped, Tenant, "alice"), new KeyScope(DataSensitivityLevel.TenantScoped, Tenant) },
-        { "another user without a tenant", new KeyScope(DataSensitivityLevel.UserScoped, null, "alice"), new KeyScope(DataSensitivityLevel.UserScoped, null, "bob") },
-        { "another tenant", new KeyScope(DataSensitivityLevel.TenantScoped, Tenant), new KeyScope(DataSensitivityLevel.TenantScoped, "different-tenant") },
-        { "another level of the same tenant", new KeyScope(DataSensitivityLevel.TenantScoped, Tenant), new KeyScope(DataSensitivityLevel.Confidential, Tenant) },
+        ["another user of the same tenant"] = (new KeyScope(DataSensitivityLevel.UserScoped, Tenant, "alice"), new KeyScope(DataSensitivityLevel.UserScoped, Tenant, "bob")),
+        ["the tenant-level scope of the same tenant"] = (new KeyScope(DataSensitivityLevel.UserScoped, Tenant, "alice"), new KeyScope(DataSensitivityLevel.TenantScoped, Tenant)),
+        ["another user without a tenant"] = (new KeyScope(DataSensitivityLevel.UserScoped, null, "alice"), new KeyScope(DataSensitivityLevel.UserScoped, null, "bob")),
+        ["another tenant"] = (new KeyScope(DataSensitivityLevel.TenantScoped, Tenant), new KeyScope(DataSensitivityLevel.TenantScoped, "different-tenant")),
+        ["another level of the same tenant"] = (new KeyScope(DataSensitivityLevel.TenantScoped, Tenant), new KeyScope(DataSensitivityLevel.Confidential, Tenant)),
     };
+
+    public static TheoryData<string> ForeignScopes() => new(ForeignScopeCases.Keys);
 
     [Theory]
     [MemberData(nameof(ForeignScopes))]
-    public async Task A_blob_does_not_decrypt_under_a_scope_it_was_not_written_for(string _, KeyScope written, KeyScope read)
+    public async Task A_blob_does_not_decrypt_under_a_scope_it_was_not_written_for(string foreignScope)
     {
+        var (written, read) = ForeignScopeCases[foreignScope];
         var keyStore = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
         var encryptor = Encryptor(keyStore);
 
@@ -96,9 +99,9 @@ public class AesGcmSecureBlobEncryptorTests
 
     [Theory]
     [MemberData(nameof(ForeignScopes))]
-    public async Task A_blob_round_trips_under_the_scope_it_was_written_for(string _, KeyScope written, KeyScope unused)
+    public async Task A_blob_round_trips_under_the_scope_it_was_written_for(string foreignScope)
     {
-        Assert.NotEqual(written, unused);
+        var (written, _) = ForeignScopeCases[foreignScope];
         var keyStore = TestSupport.NewKeyStore(TestSupport.NewOptions(TestSupport.NewKekBase64()));
         var encryptor = Encryptor(keyStore);
 

@@ -78,7 +78,7 @@ public static class AspNetCoreOpenTelemetryExtensions
             return builder;
         }
 
-        builder.Services.AddSingleton<RequestInstrumentationConfigured>();
+        builder.Services.AddSingleton(RequestInstrumentationConfigured.Instance);
         builder.ConfigureOpenTelemetry(metrics => { metrics.AddAspNetCoreInstrumentation(); },
             tracing =>
             {
@@ -97,5 +97,8 @@ public static class AspNetCoreOpenTelemetryExtensions
     }
 
     /// <summary>Marks a service collection whose request instrumentation is configured, so it is added once.</summary>
-    private sealed class RequestInstrumentationConfigured;
+    private sealed class RequestInstrumentationConfigured
+    {
+        public static RequestInstrumentationConfigured Instance { get; } = new();
+    }
 }
