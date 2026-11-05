@@ -61,6 +61,26 @@ applies to the entire NuGet family.
 - **The command-host examples register command auditing.** The XML examples of `AddCommandWorkerServices`,
   `AddCommandServices` and `AddHeavyCommandWorkerServices`, the `Stratara.Orleans` README and two guides showed a
   host whose first append is refused for a missing causation; they now call `AddCommandAuditing()`.
+- **Publishing on Azure Service Bus reuses one sender per topic.** Every publish opened a new sender, and with it a
+  send link that stayed open until the client was disposed — a host publishing at a steady rate accumulated links
+  until the connection's quota was reached. The bus now opens one sender per topic and closes them when it is
+  disposed.
+- **One unreadable outbox row no longer stops the outbox.** A stored entry that could not be read back threw out of
+  the drain pass; entries are drained oldest first, so every pass ended on the same row and nothing behind it was
+  published again. Such an entry is now logged as error `106_109` (`OutboxEntryUnreadable`), left where it is, and
+  the pass continues. A failure while draining commands no longer keeps event bundles from being drained in the
+  same pass.
+- **`AddAuthorizingCommandOutboxDispatcher()` holds whichever order it is called in.** `AddOutboxDispatcher()` — and
+  with it every worker composite — registered a plain dispatcher on top of the authorizing one when it ran second,
+  so commands marked `[RequireRole]` or `[RequirePermission]` were enqueued without a check, silently. It now leaves
+  the decorator in place.
+- **Calling both `ConfigureOpenTelemetry()` and `ConfigureAspNetOpenTelemetry()` no longer stops the host.** With
+  `OTEL_EXPORTER_OTLP_ENDPOINT` set, the documented quick start registered the OTLP exporter twice and the host
+  failed at start-up with `NotSupportedException`. Either method, or both, in any order and any number of times,
+  now configures telemetry once.
+- **The 5000 ms default OTLP export timeout applies.** It was set through the process environment after the host's
+  configuration had been read, so the exporter kept its own 10 s default. The default is now placed in the host's
+  configuration where no timeout is configured, and the process environment is left alone.
 
 ## [4.7.1] — 2026-11-05
 
