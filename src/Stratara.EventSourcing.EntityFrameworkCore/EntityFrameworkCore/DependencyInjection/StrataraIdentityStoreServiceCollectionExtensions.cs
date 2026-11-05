@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -20,6 +20,8 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
     private const string DefaultConnectionStringName = "defaultdb";
     private const string DuplicateDatabase = "42P04";
     private const string UniqueViolation = "23505";
+    private const string AdminDatabase = "postgres";
+    private const long HistoryTableLockKey = 0x5354524154415241; // "STRATARA"
 
     /// <summary>
     /// Registers <see cref="StrataraIdentityStore"/> on PostgreSQL together with the tenant directory's stores over it —
@@ -83,7 +85,8 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
     /// <remarks>
     /// Every host that shares the store applies the same migrations, so one a host applied is recognised as applied by
     /// every other. Hosts that migrate at the same time take turns: the migration lock of EF Core makes a second host
-    /// wait for the first, and a database another host created a moment earlier counts as created.
+    /// wait for the first, and a database another host created a moment earlier counts as created. The store's schema and
+    /// its migration history table are created before the migrations run.
     /// </remarks>
     /// <param name="services">The host's root service provider.</param>
     /// <param name="cancellationToken">Cancels the migration.</param>
@@ -95,25 +98,70 @@ public static class StrataraIdentityStoreServiceCollectionExtensions
             .GetRequiredService<IDbContextFactory<StrataraIdentityStore>>()
             .CreateDbContextAsync(cancellationToken);
 
-        await EnsureDatabaseAsync(store.GetService<IRelationalDatabaseCreator>(), cancellationToken);
+        var connectionString = store.Database.GetConnectionString()!;
+        await EnsureDatabaseAsync(connectionString, cancellationToken);
+        await EnsureHistoryTableAsync(connectionString, store.GetService<IHistoryRepository>(), cancellationToken);
         await store.Database.MigrateAsync(cancellationToken);
     }
 
-    private static async Task EnsureDatabaseAsync(IRelationalDatabaseCreator creator, CancellationToken cancellationToken)
+    // The database and the history table are created over plain Npgsql connections rather than through EF Core. Npgsql's
+    // migrator reads the applied migrations before the base migrator creates the history table, and EF Core logs that
+    // failed read at Error — on every first start. A host that loses a race to create the database, the schema or the
+    // table would have its failed command logged at Error the same way. Commands on a plain connection are not logged.
+    private static async Task EnsureDatabaseAsync(string connectionString, CancellationToken cancellationToken)
     {
-        if (await creator.ExistsAsync(cancellationToken))
+        var target = new NpgsqlConnectionStringBuilder(connectionString);
+        var admin = new NpgsqlConnectionStringBuilder(connectionString) { Database = AdminDatabase, Pooling = false };
+        await using var connection = new NpgsqlConnection(admin.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using (var exists = new NpgsqlCommand("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)", connection))
         {
-            return;
+            exists.Parameters.Add(new NpgsqlParameter { Value = target.Database });
+            if ((bool)(await exists.ExecuteScalarAsync(cancellationToken))!)
+            {
+                return;
+            }
         }
 
         try
         {
-            await creator.CreateAsync(cancellationToken);
+            var name = new NpgsqlCommandBuilder().QuoteIdentifier(target.Database!);
+            await using var create = new NpgsqlCommand($"CREATE DATABASE {name}", connection);
+            await create.ExecuteNonQueryAsync(cancellationToken);
         }
         catch (PostgresException exception) when (exception.SqlState is DuplicateDatabase or UniqueViolation)
         {
-            return;
+            // Another host created it a moment earlier.
         }
+    }
+
+    private static async Task EnsureHistoryTableAsync(
+        string connectionString, IHistoryRepository history, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string probe =
+            $"SELECT to_regclass('{StrataraIdentityStore.Schema}.\"{StrataraIdentityStore.MigrationsHistoryTable}\"') IS NOT NULL";
+        await using (var exists = new NpgsqlCommand(probe, connection))
+        {
+            if ((bool)(await exists.ExecuteScalarAsync(cancellationToken))!)
+            {
+                return;
+            }
+        }
+
+        // Hosts that start at once take turns here, so none of them meets a schema or table half created by another.
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var create = new NpgsqlCommand(
+                         $"SELECT pg_advisory_xact_lock({HistoryTableLockKey}); {history.GetCreateIfNotExistsScript()}",
+                         connection, transaction))
+        {
+            await create.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static string ResolveConnectionString(IServiceProvider provider)

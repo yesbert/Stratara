@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using Stratara.EventSourcing.EntityFrameworkCore.IdentityStore;
 using Testcontainers.PostgreSql;
@@ -25,7 +26,7 @@ public sealed class IdentityStoreDatabase : IAsyncLifetime
     /// A host that shares the identity store: its own default database, the identity store in
     /// <paramref name="identityDatabase"/>, accounts registered the way the framework's identity registration does.
     /// </summary>
-    public IHost Host(string identityDatabase, string? defaultDatabase = null)
+    public IHost Host(string identityDatabase, string? defaultDatabase = null, ILoggerProvider? logs = null)
     {
         var builder = Microsoft.Extensions.Hosting.Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -33,7 +34,13 @@ public sealed class IdentityStoreDatabase : IAsyncLifetime
             ["ConnectionStrings:defaultdb"] = ConnectionStringFor(defaultDatabase ?? $"host_{Guid.NewGuid():N}"),
             [$"ConnectionStrings:{StrataraIdentityStore.ConnectionStringName}"] = ConnectionStringFor(identityDatabase),
         });
-        builder.Services.AddLogging();
+        builder.Services.AddLogging(logging =>
+        {
+            if (logs is not null)
+            {
+                logging.SetMinimumLevel(LogLevel.Trace).AddProvider(logs);
+            }
+        });
         builder.Services.AddDataProtection();
         builder.Services.AddStrataraIdentityStore();
         builder.AddAspNetIdentity<IdentityUser, StrataraIdentityStore>();
