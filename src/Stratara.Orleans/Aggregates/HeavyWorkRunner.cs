@@ -50,7 +50,10 @@ internal sealed class HeavyWorkRunner : IHostedService
         _acquirePermit = new ResiliencePipelineBuilder<bool>()
             .AddRetry(new RetryStrategyOptions<bool>
             {
-                ShouldHandle = new PredicateBuilder<bool>().HandleResult(false),
+                // A keeper that cannot be reached — its silo died, the call timed out — is waited for as a full bound
+                // is: the unit's handler has not run, so its attempt must not fail for it. Anything else the keeper
+                // throws is a fault of its own and fails the attempt, where it is logged and counted.
+                ShouldHandle = new PredicateBuilder<bool>().HandleResult(false).Handle<Exception>(ex => ex is OrleansException or TimeoutException),
                 MaxRetryAttempts = int.MaxValue,
                 BackoffType = DelayBackoffType.Constant,
                 Delay = options.Value.PermitRetry,

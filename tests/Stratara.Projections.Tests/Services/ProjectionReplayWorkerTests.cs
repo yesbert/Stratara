@@ -273,8 +273,13 @@ public class ProjectionReplayWorkerTests
         harness.Configure = services => services.AddSingleton(preservation.Object);
         harness.BeforeStop = async () =>
         {
-            harness.Time.Advance(ProjectionReplayWorker.AbandonedCheckInterval);
-            await Task.Delay(100);
+            // The worker may not be waiting on the clock yet when it is advanced, and an advance it has not
+            // started waiting for is lost — so advance until the second check has run.
+            for (var attempt = 0; attempt < 100 && preservation.Invocations.Count < 2; attempt++)
+            {
+                harness.Time.Advance(ProjectionReplayWorker.AbandonedCheckInterval);
+                await Task.Delay(20);
+            }
         };
 
         await harness.RunAsync(triggerReplay: false);

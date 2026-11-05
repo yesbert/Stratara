@@ -379,7 +379,9 @@ public sealed class OrleansDispatchOptions
     /// <summary>
     /// How long completed intents are collected before one delete removes them. A host that dies
     /// inside the window resumes those intents after <see cref="IntentGrace"/> and runs their handlers
-    /// a second time; keep it far below the grace.
+    /// a second time; keep it far below the grace. The host fails at start unless <see cref="IntentGrace"/> is longer
+    /// than three times this window: a completed command's record is no longer renewed while its completion is
+    /// collected, so the window has to end within the last renewal period the record has left.
     /// </summary>
     public TimeSpan CompletionWindow { get; set; } = TimeSpan.FromMilliseconds(20);
 

@@ -48,9 +48,24 @@ internal static class TimerPorts
 /// <summary>
 /// Refuses to start a host whose timers could reach the wrong port or none: stateful processes registered
 /// without the process timers, more than one owner check or handler of the host's own, or one without the other.
+/// Whether a saga is a stateful process is read from the type it is registered as, so a saga that needs a session to
+/// be built — none is set at start — does not fail the check; only a saga registered through a factory is built to
+/// learn its type, and one that cannot be built there is passed over, as the saga reader passes it over.
 /// </summary>
-internal sealed class TimerPortsStartupCheck(IServiceScopeFactory scopeFactory) : IHostedService
+internal sealed class TimerPortsStartupCheck(IServiceScopeFactory scopeFactory, IServiceCollection registrations) : IHostedService
 {
+    /// <summary>Registers the check once, over the composition it reads the registered sagas from.</summary>
+    public static void Register(IServiceCollection services)
+    {
+        if (services.Any(d => d.ServiceType == typeof(TimerPortsStartupCheck)))
+        {
+            return;
+        }
+
+        services.AddSingleton(provider => new TimerPortsStartupCheck(provider.GetRequiredService<IServiceScopeFactory>(), services));
+        services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<TimerPortsStartupCheck>());
+    }
+
     /// <exception cref="InvalidOperationException">The registered timer ports do not compose.</exception>
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -73,9 +88,18 @@ internal sealed class TimerPortsStartupCheck(IServiceScopeFactory scopeFactory) 
                 $"The host registers {(hostOwners.Count == 0 ? $"an {nameof(ITimerHandler)} without an {nameof(ITimerOwners)}" : $"an {nameof(ITimerOwners)} without an {nameof(ITimerHandler)}")}, so its timers would fail when they fire. Register both.");
         }
 
-        var processes = services.GetServices<ISaga>().OfType<ISagaProcess>().Select(process => process.GetType().Name).ToList();
-        var processTimers = owners.OfType<IPrefixedTimerPort>().Any(port => port.OwnerPrefix == SagaProcessTimerHost.Prefix);
-        if (processes.Count > 0 && !processTimers)
+        if (owners.OfType<IPrefixedTimerPort>().Any(port => port.OwnerPrefix == SagaProcessTimerHost.Prefix))
+        {
+            return Task.CompletedTask;
+        }
+
+        var processes = registrations
+            .Where(d => d.ServiceType == typeof(ISaga) && !d.IsKeyedService)
+            .Select(d => SagaTypeOf(d, services))
+            .Where(type => type is not null && typeof(ISagaProcess).IsAssignableFrom(type))
+            .Select(type => type!.Name)
+            .ToList();
+        if (processes.Count > 0)
         {
             throw new InvalidOperationException(
                 $"Stateful processes are registered ({string.Join(", ", processes)}) but nothing serves their timers. Register AddStrataraSagaGrains.");
@@ -85,6 +109,29 @@ internal sealed class TimerPortsStartupCheck(IServiceScopeFactory scopeFactory) 
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private static Type? SagaTypeOf(ServiceDescriptor descriptor, IServiceProvider services)
+    {
+        if (descriptor.ImplementationType is { } type)
+        {
+            return type;
+        }
+
+        if (descriptor.ImplementationInstance is { } instance)
+        {
+            return instance.GetType();
+        }
+
+        try
+        {
+            return descriptor.ImplementationFactory?.Invoke(services).GetType();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = ex;
+            return null;
+        }
+    }
 
     private static List<string> Unprefixed<TPort>(IEnumerable<TPort> ports) =>
         [.. ports.Where(port => port is not IPrefixedTimerPort).Select(port => port!.GetType().Name)];

@@ -10,7 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Diagnostics;
 using Stratara.Infrastructure.Security.Mapping;
 using Stratara.Abstractions.Security;
-using Stratara.Shared.Reflections;
 
 namespace Stratara.Infrastructure.Security.Serialization;
 
@@ -100,9 +99,10 @@ internal sealed partial class SecureJsonSerializer(
             return await DecryptWholeJsonAsync(root, returnType, tenantId, userId, cancellationToken);
         }
 
-        if (HasAnyEncryptedProperties(root))
+        var contract = StoredContract.For(returnType, metadata);
+        if (HasAnyEncryptedProperties(root) || (metadata.ClassAttribute is null && IsTheStoredForm(root, contract)))
         {
-            return await DecryptPropertiesAsync(root, returnType, metadata, tenantId, userId, cancellationToken);
+            return await DecryptPropertiesAsync(root, returnType, contract, tenantId, userId, cancellationToken);
         }
 
         return JsonSerializer.Deserialize(json, returnType);
@@ -124,10 +124,21 @@ internal sealed partial class SecureJsonSerializer(
         var buffer = new ArrayBufferWriter<byte>();
         await using var writer = new Utf8JsonWriter(buffer);
         writer.WriteStartObject();
+        var contract = StoredContract.For(obj.GetType(), metadata);
         foreach (var accessor in metadata.AllProperties)
         {
+            if (!contract.MembersByClrName.TryGetValue(accessor.Name, out var member) || !member.IsWritten)
+            {
+                continue;
+            }
+
             var value = accessor.GetValue(obj);
-            await WriteEncryptedOrPlainAsync(writer, accessor, value, metadata, tenantId, userId, cancellationToken);
+            if (member.ShouldSerialize?.Invoke(obj, value) == false)
+            {
+                continue;
+            }
+
+            await WriteEncryptedOrPlainAsync(writer, member, value, metadata, tenantId, userId, cancellationToken);
         }
 
         writer.WriteEndObject();
@@ -135,24 +146,24 @@ internal sealed partial class SecureJsonSerializer(
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    private async Task WriteEncryptedOrPlainAsync(Utf8JsonWriter writer, PropertyAccessor accessor, object? value, EncryptionMetadata metadata,
+    private async Task WriteEncryptedOrPlainAsync(Utf8JsonWriter writer, StoredMember member, object? value, EncryptionMetadata metadata,
         Guid? tenantId, Guid? userId, CancellationToken cancellationToken)
     {
-        writer.WritePropertyName(accessor.Name);
+        writer.WritePropertyName(member.ClrName);
         if (value is null)
         {
             writer.WriteNullValue();
             return;
         }
 
-        if (!metadata.EncryptedAttributesByName.TryGetValue(accessor.Name, out var attr))
+        if (!metadata.EncryptedAttributesByName.TryGetValue(member.ClrName, out var attr))
         {
-            JsonSerializer.Serialize(writer, value, accessor.PropertyType);
+            JsonSerializer.Serialize(writer, value, member.PropertyType, member.Options);
             return;
         }
 
-        var plainJsonUtf8 = JsonSerializer.SerializeToUtf8Bytes(value, accessor.PropertyType);
-        var wrapper = await EncryptToWrapperAsync(plainJsonUtf8, attr.Level, tenantId, userId, accessor.Name, cancellationToken);
+        var plainJsonUtf8 = JsonSerializer.SerializeToUtf8Bytes(value, member.PropertyType, member.Options);
+        var wrapper = await EncryptToWrapperAsync(plainJsonUtf8, attr.Level, tenantId, userId, member.ClrName, cancellationToken);
         JsonSerializer.Serialize(writer, wrapper);
     }
 
@@ -184,16 +195,16 @@ internal sealed partial class SecureJsonSerializer(
         return plainJsonUtf8 is null ? null : JsonSerializer.Deserialize(plainJsonUtf8, returnType);
     }
 
-    private async Task<object?> DecryptPropertiesAsync(JsonElement root, Type returnType, EncryptionMetadata metadata, Guid? tenantId, Guid? userId,
+    private async Task<object?> DecryptPropertiesAsync(JsonElement root, Type returnType, StoredContract contract, Guid? tenantId, Guid? userId,
         CancellationToken cancellationToken)
     {
         var buffer = new ArrayBufferWriter<byte>();
         await using var writer = new Utf8JsonWriter(buffer);
         writer.WriteStartObject();
 
-        foreach (var accessor in metadata.AllProperties)
+        foreach (var member in contract.MembersByClrName.Values)
         {
-            await WriteDecryptedOrPlainAsync(writer, accessor, root, tenantId, userId, cancellationToken);
+            await WriteDecryptedOrPlainAsync(writer, member, root, tenantId, userId, cancellationToken);
         }
 
         writer.WriteEndObject();
@@ -201,14 +212,14 @@ internal sealed partial class SecureJsonSerializer(
         return JsonSerializer.Deserialize(buffer.WrittenSpan, returnType);
     }
 
-    private async Task WriteDecryptedOrPlainAsync(Utf8JsonWriter writer, PropertyAccessor accessor, JsonElement root,
+    private async Task WriteDecryptedOrPlainAsync(Utf8JsonWriter writer, StoredMember member, JsonElement root,
         Guid? tenantId, Guid? userId, CancellationToken cancellationToken)
     {
-        writer.WritePropertyName(accessor.Name);
+        writer.WritePropertyName(member.ContractName);
 
-        if (!root.TryGetProperty(accessor.Name, out var propEl) || propEl.ValueKind == JsonValueKind.Null)
+        if (!root.TryGetProperty(member.ClrName, out var propEl) || propEl.ValueKind == JsonValueKind.Null)
         {
-            WriteAbsentValue(writer, accessor.PropertyType);
+            WriteAbsentValue(writer, member.PropertyType);
             return;
         }
 
@@ -219,10 +230,10 @@ internal sealed partial class SecureJsonSerializer(
         }
 
         var wrapper = JsonSerializer.Deserialize<EncryptedWrapper>(propEl.GetRawText())!;
-        var plain = await DecryptToBytesAsync(wrapper, tenantId, userId, accessor.Name, cancellationToken);
+        var plain = await DecryptToBytesAsync(wrapper, tenantId, userId, member.ClrName, cancellationToken);
         if (plain is null)
         {
-            WriteAbsentValue(writer, accessor.PropertyType);
+            WriteAbsentValue(writer, member.PropertyType);
             return;
         }
 
@@ -323,6 +334,13 @@ internal sealed partial class SecureJsonSerializer(
 
     private static bool IsEncryptedWrapper(JsonElement el) =>
         el.ValueKind == JsonValueKind.Object && el.TryGetProperty(SecurityConstants.EncryptionMarker, out _);
+
+    // Without ciphertext in it, the field-by-field form and ordinary JSON look alike; a renamed
+    // property under its CLR name is what only the former carries. Ordinary JSON keeps going straight
+    // to the serializer, so a property it lacks keeps its initializer as it always has.
+    private static bool IsTheStoredForm(JsonElement root, StoredContract contract) =>
+        root.ValueKind == JsonValueKind.Object
+        && Array.Exists(contract.NamesOnlyTheStoredFormUses, name => root.TryGetProperty(name, out _));
 
     private static bool HasAnyEncryptedProperties(JsonElement root)
     {

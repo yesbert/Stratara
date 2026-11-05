@@ -74,6 +74,45 @@ public sealed class OrleansOptionsValidatorTests
         Assert.Contains("OrleansDispatchOptions.CompletionWindow", failure.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A completed command's record is no longer renewed while its completion is collected, and its last renewal can be
+    /// up to two renewal periods old when one renewal failed; the drain may claim it a grace after that renewal. Its
+    /// delete has to land within the one renewal period left, so the window must be shorter than a third of the grace.
+    /// </summary>
+    [Theory]
+    [InlineData(12, 10)]
+    [InlineData(30, 10)]
+    [InlineData(3, 1)]
+    public async Task A_completion_window_not_shorter_than_the_renewal_period_fails_the_start(int graceSeconds, int windowSeconds)
+    {
+        var services = BaseServices().AddStrataraOrleansCommandDispatcher(o =>
+        {
+            o.IntentGrace = TimeSpan.FromSeconds(graceSeconds);
+            o.CompletionWindow = TimeSpan.FromSeconds(windowSeconds);
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        var failure = Assert.ThrowsAny<Exception>(() => provider.GetRequiredService<IStartupValidator>().Validate());
+
+        Assert.Contains("OrleansDispatchOptions.IntentGrace", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("three times CompletionWindow", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(31, 10)]
+    [InlineData(4, 1)]
+    public async Task A_completion_window_shorter_than_the_renewal_period_starts(int graceSeconds, int windowSeconds)
+    {
+        var services = BaseServices().AddStrataraOrleansCommandDispatcher(o =>
+        {
+            o.IntentGrace = TimeSpan.FromSeconds(graceSeconds);
+            o.CompletionWindow = TimeSpan.FromSeconds(windowSeconds);
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IStartupValidator>().Validate();
+    }
+
     private static IServiceCollection BaseServices() =>
         new ServiceCollection()
             .AddLogging()

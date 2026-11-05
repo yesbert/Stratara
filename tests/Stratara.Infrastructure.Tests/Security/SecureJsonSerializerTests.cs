@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Infrastructure.Security.Serialization;
 using Stratara.Abstractions.Security;
@@ -549,5 +550,138 @@ public class SecureJsonSerializerTests
         Assert.NotNull(read);
         Assert.Equal("Plan", read.Title);
         Assert.Equal("secret", read.Body);
+    }
+
+    private enum Shade
+    {
+        Light,
+        Dark,
+    }
+
+    private sealed class AnnotatedDto
+    {
+        [JsonPropertyName("ref")]
+        public string Reference { get; set; } = "";
+
+        [JsonIgnore]
+        public string Scratch { get; set; } = "";
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Note { get; set; }
+
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public Shade Shade { get; set; }
+
+        [EncryptData(DataSensitivityLevel.UserScoped)]
+        public string? Secret { get; set; }
+    }
+
+    [Fact]
+    public async Task SerializeDeserialize_PropertyLevel_ARenamedPropertyRoundTrips()
+    {
+        var written = await _serializer.SerializeAsync(
+            new AnnotatedDto { Reference = "R-1", Secret = "s" }, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        var read = await _serializer.DeserializeAsync<AnnotatedDto>(written, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        Assert.Equal("R-1", read!.Reference);
+        Assert.Equal("s", read.Secret);
+    }
+
+    /// <summary>
+    /// With the marked property empty the stored form carries no ciphertext at all, so the read takes
+    /// a different branch from the one above — and has to map the names just the same.
+    /// </summary>
+    [Fact]
+    public async Task SerializeDeserialize_PropertyLevel_ARenamedPropertyRoundTripsWhenNothingIsEncrypted()
+    {
+        var written = await _serializer.SerializeAsync(
+            new AnnotatedDto { Reference = "R-2", Secret = null }, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        var read = await _serializer.DeserializeAsync<AnnotatedDto>(written, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        Assert.Equal("R-2", read!.Reference);
+        Assert.Null(read.Secret);
+    }
+
+    /// <summary>
+    /// The stored names are what an event upcaster works on, so they stay the property names even
+    /// where the type renames a property for ordinary JSON.
+    /// </summary>
+    [Fact]
+    public async Task Serialize_PropertyLevel_StoresPropertiesUnderTheirClrNames()
+    {
+        var written = await _serializer.SerializeAsync(
+            new AnnotatedDto { Reference = "R-3", Secret = "s" }, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        var root = JsonDocument.Parse(written).RootElement;
+        Assert.Equal("R-3", root.GetProperty("Reference").GetString());
+        Assert.False(root.TryGetProperty("ref", out _));
+    }
+
+    [Fact]
+    public async Task Serialize_PropertyLevel_LeavesOutAnIgnoredProperty()
+    {
+        var written = await _serializer.SerializeAsync(
+            new AnnotatedDto { Reference = "R-4", Scratch = "never-stored", Secret = "s" },
+            TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("never-stored", written, StringComparison.Ordinal);
+        Assert.False(JsonDocument.Parse(written).RootElement.TryGetProperty("Scratch", out _));
+    }
+
+    [Fact]
+    public async Task Serialize_PropertyLevel_HonoursAConditionalIgnore()
+    {
+        var withoutNote = await _serializer.SerializeAsync(
+            new AnnotatedDto { Secret = "s", Note = null }, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+        var withNote = await _serializer.SerializeAsync(
+            new AnnotatedDto { Secret = "s", Note = "kept" }, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        Assert.False(JsonDocument.Parse(withoutNote).RootElement.TryGetProperty("Note", out _));
+        var read = await _serializer.DeserializeAsync<AnnotatedDto>(withNote, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+        Assert.Equal("kept", read!.Note);
+    }
+
+    [Fact]
+    public async Task Serialize_PropertyLevel_WritesAPropertyThroughItsOwnConverter()
+    {
+        var written = await _serializer.SerializeAsync(
+            new AnnotatedDto { Shade = Shade.Dark, Secret = "s" }, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Dark", JsonDocument.Parse(written).RootElement.GetProperty("Shade").GetString());
+        var read = await _serializer.DeserializeAsync<AnnotatedDto>(written, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+        Assert.Equal(Shade.Dark, read!.Shade);
+    }
+
+    /// <summary>
+    /// Rows already stored carry every property under its CLR name, an ignored one included, and the
+    /// converted property in its default form. They have to keep reading.
+    /// </summary>
+    [Fact]
+    public async Task Deserialize_PropertyLevel_APayloadInTheEarlierShape_StillReads()
+    {
+        var encrypted = await _serializer.SerializeAsync(
+            new AnnotatedDto { Secret = "old-secret" }, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+        var secret = JsonDocument.Parse(encrypted).RootElement.GetProperty("Secret").GetRawText();
+        var earlier = $$"""{"Reference":"R-old","Scratch":"stored-once","Note":null,"Shade":1,"Secret":{{secret}}}""";
+
+        var read = await _serializer.DeserializeAsync<AnnotatedDto>(earlier, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        Assert.Equal("R-old", read!.Reference);
+        Assert.Equal("old-secret", read.Secret);
+        Assert.Equal(Shade.Dark, read.Shade);
+        Assert.Equal("", read.Scratch);
+    }
+
+    [Fact]
+    public async Task Deserialize_PropertyLevel_OrdinaryJsonUnderTheContractNames_StillReads()
+    {
+        var ordinary = JsonSerializer.Serialize(new AnnotatedDto { Reference = "R-plain", Shade = Shade.Dark });
+
+        var read = await _serializer.DeserializeAsync<AnnotatedDto>(ordinary, TestTenantId, TestUserId, TestContext.Current.CancellationToken);
+
+        Assert.Equal("R-plain", read!.Reference);
+        Assert.Equal(Shade.Dark, read.Shade);
     }
 }
