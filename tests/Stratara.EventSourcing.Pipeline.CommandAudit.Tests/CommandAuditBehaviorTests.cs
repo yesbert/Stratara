@@ -2,6 +2,8 @@ using Stratara.EventSourcing.Pipeline.CommandAudit;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Persistence;
+using Stratara.Abstractions.Session;
+using Stratara.Contracts.Session;
 
 namespace Stratara.EventSourcing.Pipeline.CommandAudit.Tests;
 
@@ -135,20 +137,79 @@ public class CommandAuditBehaviorTests
         harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// A command dispatched from inside another command's handler is recorded with its own id as the causation; once it
+    /// returns, the outer handler's events are caused by the outer command again, not by the one it dispatched.
+    /// </summary>
+    [Fact]
+    public async Task A_command_dispatched_inside_another_hands_the_causation_back_when_it_returns()
+    {
+        var harness = new Harness("outer");
+        var sut = new CommandAuditBehavior<TestCommand>(harness.UnitOfWork.Object, harness.Sessions);
+        string? causationInside = null;
+
+        await sut.HandleAsync(new TestCommand("inner"), () =>
+        {
+            causationInside = harness.Sessions.Current?.CausationId;
+            return Task.CompletedTask;
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal("recorded", causationInside);
+        Assert.Equal("outer", harness.Sessions.Current?.CausationId);
+    }
+
+    [Fact]
+    public async Task A_command_with_a_result_dispatched_inside_another_hands_the_causation_back_when_it_fails()
+    {
+        var harness = new Harness("outer");
+        var sut = new CommandAuditBehavior<TestCommandWithResult, int>(harness.UnitOfWork.Object, harness.Sessions);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sut.HandleAsync(
+            new TestCommandWithResult(1), () => throw new InvalidOperationException("refused"), TestContext.Current.CancellationToken));
+
+        Assert.Equal("outer", harness.Sessions.Current?.CausationId);
+    }
+
+    /// <summary>The outermost command leaves its own id as the causation, for what runs after it in the same scope.</summary>
+    [Fact]
+    public async Task The_outermost_command_leaves_its_own_id_as_the_causation()
+    {
+        var harness = new Harness(causationId: null);
+        var sut = new CommandAuditBehavior<TestCommand>(harness.UnitOfWork.Object, harness.Sessions);
+
+        await sut.HandleAsync(new TestCommand("outer"), () => Task.CompletedTask, TestContext.Current.CancellationToken);
+
+        Assert.Equal("recorded", harness.Sessions.Current?.CausationId);
+    }
+
     public sealed record StubRequest : IRequest;
+
+    private sealed class SessionHolder(SessionContext? current) : ISessionContextProvider
+    {
+        public SessionContext? Current { get; private set; } = current;
+
+        public void Clear() => Current = null;
+
+        public void Set(SessionContext context) => Current = context;
+    }
 
     private sealed class Harness
     {
         public Mock<IWriteUnitOfWork> UnitOfWork { get; } = new();
         public Mock<ITransaction> Transaction { get; } = new();
         public Mock<ICommandAuditRepository> AuditRepository { get; } = new();
+        public ISessionContextProvider Sessions { get; }
 
-        public Harness()
+        /// <summary>The recording stage stamps the command's id onto the session as its causation, as the store does.</summary>
+        public Harness(string? causationId = null)
         {
+            Sessions = new SessionHolder(new SessionContext(
+                "correlation", causationId, null, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), null));
             UnitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Transaction.Object);
             UnitOfWork.Setup(u => u.CreateCommandAuditRepository(It.IsAny<ITransaction>())).Returns(AuditRepository.Object);
             AuditRepository
                 .Setup(r => r.AddAsync(It.IsAny<ICommandBase>(), It.IsAny<CancellationToken>()))
+                .Callback(() => Sessions.Set(Sessions.Current! with { CausationId = "recorded" }))
                 .ReturnsAsync(Guid.NewGuid());
         }
     }

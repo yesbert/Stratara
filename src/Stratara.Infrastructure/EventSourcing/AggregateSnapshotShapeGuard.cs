@@ -63,7 +63,7 @@ internal sealed class AggregateSnapshotShapeGuard(ITrustedTypeResolver typeResol
             .Where(property => property.CanRead)
             .Where(property => property.GetIndexParameters().Length == 0)
             .Where(property => property.SetMethod is null || !property.SetMethod.IsPublic)
-            .Where(property => HoldsState(aggregateType, property))
+            .Where(HoldsState)
             .Select(property => property.Name)];
 
     /// <summary>
@@ -78,8 +78,10 @@ internal sealed class AggregateSnapshotShapeGuard(ITrustedTypeResolver typeResol
                         "from a computed one, which is the distinction the guard exists to make: an auto-property " +
                         "without a public setter loses its state on restore, a computed property does not. " +
                         "Nothing is invoked or mutated — the field is only tested for existence.")]
-    private static bool HoldsState(Type aggregateType, PropertyInfo property) =>
-        aggregateType.GetField(
+    private static bool HoldsState(PropertyInfo property) =>
+        // The backing field is private to the type that declares the property, and reflection does not return a base
+        // class's private field through a derived type.
+        property.DeclaringType?.GetField(
             $"<{property.Name}>k__BackingField",
             BindingFlags.NonPublic | BindingFlags.Instance) is not null;
 }

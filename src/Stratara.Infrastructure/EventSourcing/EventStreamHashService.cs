@@ -13,7 +13,8 @@ namespace Stratara.Infrastructure.EventSourcing;
 /// persists the updated entries.
 /// </summary>
 /// <remarks>
-/// The first entry in the very first batch chains off a fixed <c>GENESIS</c> seed. A small commit
+/// The first entry of the store chains off a fixed <c>GENESIS</c> seed. A batch whose predecessor is
+/// not chained yet is left alone until a later pass, so the chain never forks off the seed. A small commit
 /// delay (5 seconds) is enforced before hashing to give a still-open writer enough time to flush
 /// concurrent transactions. The service is invoked from <see cref="EventStreamHashWorker"/>.
 /// </remarks>
@@ -36,6 +37,12 @@ internal sealed class EventStreamHashService(IWriteUnitOfWork unitOfWork) : IEve
         {
             var firstEntry = eventEntries[0];
             var previousEntry = await repository.GetPreviousEventAsync(firstEntry.SequenceNumber, stoppingToken);
+            if (previousEntry is { Hash: null })
+            {
+                // Chaining off the seed here would fork the chain; the predecessor is chained on a later pass first.
+                return;
+            }
+
             var previousHash = previousEntry?.Hash ?? SHA256.HashData("GENESIS"u8.ToArray());
             List<EventStreamEntry> updatedEntries = [];
 

@@ -40,6 +40,7 @@ builder.AddCommandServices();
 builder.AddEventProjectionServices();
 builder.Services
     .AddCommandHandlersFromAssemblyContaining<IAppMarker>()
+    .AddCommandAuditing()
     .AddStrataraOrleansCommandDispatcher()
     .AddStrataraIntentStore<AppWriteDbContext>()
     .AddStrataraAggregateGrains()

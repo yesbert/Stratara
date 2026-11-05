@@ -132,7 +132,7 @@ public static class TestEventStoreServiceCollectionExtensions
             (_, options) => useStore(options),
             ServiceLifetime.Scoped);
         services.TryAddScoped<IWriteDbContext>(sp => sp.GetRequiredService<IDbContextFactory<TWriteDbContext>>().CreateDbContext());
-        services.AddScoped<IWriteUnitOfWork>(sp => new WriteUnitOfWork<TWriteDbContext>(
+        services.TryAddScoped<IWriteUnitOfWork>(sp => new WriteUnitOfWork<TWriteDbContext>(
             sp.GetRequiredService<IDbContextFactory<TWriteDbContext>>(),
             sp.GetRequiredService<ISessionContextProvider>(),
             sp.GetRequiredService<ISecureJsonSerializer>()));

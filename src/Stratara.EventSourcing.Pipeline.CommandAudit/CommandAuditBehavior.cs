@@ -2,6 +2,7 @@ using JetBrains.Annotations;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Mediator;
 using Stratara.Abstractions.Persistence;
+using Stratara.Abstractions.Session;
 
 namespace Stratara.EventSourcing.Pipeline.CommandAudit;
 
@@ -17,6 +18,27 @@ internal static class CommandAuditWriter
         await auditRepository.AddAsync(command, cancellationToken);
         await transaction.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// The causation an enclosing command left on the session, or <see langword="null"/> where there is none: recording a
+    /// command makes its own id the session's causation, and a command dispatched from inside another one's handler
+    /// shares that handler's session.
+    /// </summary>
+    internal static string? EnclosingCausation(ISessionContextProvider? sessionContextProvider) =>
+        sessionContextProvider?.Current?.CausationId is { Length: > 0 } causationId ? causationId : null;
+
+    /// <summary>
+    /// Hands the enclosing command's causation back once the command it dispatched has run, so what its handler appends
+    /// afterwards is caused by it. The outermost command keeps its own id as the causation, for what runs after it in
+    /// the same scope.
+    /// </summary>
+    internal static void RestoreCausation(ISessionContextProvider? sessionContextProvider, string? enclosingCausation)
+    {
+        if (enclosingCausation is not null && sessionContextProvider?.Current is { } current)
+        {
+            sessionContextProvider.Set(current with { CausationId = enclosingCausation });
+        }
+    }
 }
 
 /// <summary>
@@ -28,7 +50,7 @@ internal static class CommandAuditWriter
 /// <typeparam name="TRequest">The mediator request type passed through the pipeline.</typeparam>
 /// <typeparam name="TResult">The result type returned by the inner handler.</typeparam>
 [UsedImplicitly]
-internal sealed class CommandAuditBehavior<TRequest, TResult>(IWriteUnitOfWork unitOfWork)
+internal sealed class CommandAuditBehavior<TRequest, TResult>(IWriteUnitOfWork unitOfWork, ISessionContextProvider? sessionContextProvider = null)
     : IPipelineBehavior<TRequest, TResult>
     where TRequest : IRequest<TResult>
 {
@@ -42,12 +64,21 @@ internal sealed class CommandAuditBehavior<TRequest, TResult>(IWriteUnitOfWork u
     /// <returns>The result returned by the inner handler.</returns>
     public async Task<TResult> HandleAsync(TRequest request, Func<Task<TResult>> next, CancellationToken cancellationToken)
     {
-        if (request is ICommandBase command)
+        if (request is not ICommandBase command)
         {
-            await CommandAuditWriter.WriteAsync(unitOfWork, command, cancellationToken);
+            return await next();
         }
 
-        return await next();
+        var enclosingCausation = CommandAuditWriter.EnclosingCausation(sessionContextProvider);
+        await CommandAuditWriter.WriteAsync(unitOfWork, command, cancellationToken);
+        try
+        {
+            return await next();
+        }
+        finally
+        {
+            CommandAuditWriter.RestoreCausation(sessionContextProvider, enclosingCausation);
+        }
     }
 }
 
@@ -58,7 +89,7 @@ internal sealed class CommandAuditBehavior<TRequest, TResult>(IWriteUnitOfWork u
 /// </summary>
 /// <typeparam name="TRequest">The mediator request type passed through the pipeline.</typeparam>
 [UsedImplicitly]
-internal sealed class CommandAuditBehavior<TRequest>(IWriteUnitOfWork unitOfWork)
+internal sealed class CommandAuditBehavior<TRequest>(IWriteUnitOfWork unitOfWork, ISessionContextProvider? sessionContextProvider = null)
     : IPipelineBehavior<TRequest>
     where TRequest : IRequest
 {
@@ -71,11 +102,21 @@ internal sealed class CommandAuditBehavior<TRequest>(IWriteUnitOfWork unitOfWork
     /// <param name="cancellationToken">Token to observe while writing the audit row and awaiting <paramref name="next"/>.</param>
     public async Task HandleAsync(TRequest request, Func<Task> next, CancellationToken cancellationToken)
     {
-        if (request is ICommandBase command)
+        if (request is not ICommandBase command)
         {
-            await CommandAuditWriter.WriteAsync(unitOfWork, command, cancellationToken);
+            await next();
+            return;
         }
 
-        await next();
+        var enclosingCausation = CommandAuditWriter.EnclosingCausation(sessionContextProvider);
+        await CommandAuditWriter.WriteAsync(unitOfWork, command, cancellationToken);
+        try
+        {
+            await next();
+        }
+        finally
+        {
+            CommandAuditWriter.RestoreCausation(sessionContextProvider, enclosingCausation);
+        }
     }
 }

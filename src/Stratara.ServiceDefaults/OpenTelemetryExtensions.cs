@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
@@ -66,6 +67,10 @@ public static class OpenTelemetryExtensions
     /// Adds default instrumentation (HTTP client, EF Core, RabbitMQ, runtime) and wires the OTLP exporter
     /// when <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set.
     /// </summary>
+    /// <remarks>
+    /// The default pipeline is configured once per service collection, however often this method runs and whether or
+    /// not <c>ConfigureAspNetOpenTelemetry</c> runs it as well. The callbacks are applied on every call.
+    /// </remarks>
     /// <typeparam name="TBuilder">The host-builder type.</typeparam>
     /// <param name="builder">The host application builder.</param>
     /// <param name="configureMetrics">Optional callback to extend the metrics pipeline with host-specific meters/exporters.</param>
@@ -83,6 +88,28 @@ public static class OpenTelemetryExtensions
         Action<TracerProviderBuilder>? configureTracing = null)
         where TBuilder : IHostApplicationBuilder
     {
+        if (!builder.Services.Any(d => d.ServiceType == typeof(DefaultPipelineConfigured)))
+        {
+            builder.Services.AddSingleton<DefaultPipelineConfigured>();
+            builder.ConfigureDefaultPipeline();
+        }
+
+        if (configureMetrics is not null)
+        {
+            builder.Services.AddOpenTelemetry().WithMetrics(configureMetrics);
+        }
+
+        if (configureTracing is not null)
+        {
+            builder.Services.AddOpenTelemetry().WithTracing(configureTracing);
+        }
+
+        return builder;
+    }
+
+    private static void ConfigureDefaultPipeline<TBuilder>(this TBuilder builder)
+        where TBuilder : IHostApplicationBuilder
+    {
         builder.Logging.AddOpenTelemetry(logging =>
         {
             logging.IncludeFormattedMessage = true;
@@ -96,8 +123,6 @@ public static class OpenTelemetryExtensions
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
                     .AddMeter(ApplicationDiagnostics.Metrics.MeterName);
-
-                configureMetrics?.Invoke(metrics);
             })
             .WithTracing(tracing =>
             {
@@ -118,14 +143,16 @@ public static class OpenTelemetryExtensions
                             activity.SetTag("db.command_timeout", command.CommandTimeout);
                         };
                     });
-
-                configureTracing?.Invoke(tracing);
             });
 
         builder.AddOpenTelemetryExporters();
-
-        return builder;
     }
+
+    /// <summary>
+    /// Marks a service collection whose default pipeline is configured. OpenTelemetry refuses a second
+    /// <c>UseOtlpExporter</c> on one service collection when the providers are built, so the host would not start.
+    /// </summary>
+    private sealed class DefaultPipelineConfigured;
 
     private const string OtlpEndpointKey = "OTEL_EXPORTER_OTLP_ENDPOINT";
     private const string OtlpTimeoutKey = "OTEL_EXPORTER_OTLP_TIMEOUT";
@@ -136,10 +163,11 @@ public static class OpenTelemetryExtensions
     {
         if (string.IsNullOrWhiteSpace(builder.Configuration[OtlpEndpointKey])) return;
 
-        if (string.IsNullOrWhiteSpace(builder.Configuration[OtlpTimeoutKey])
-            && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(OtlpTimeoutKey)))
+        // The exporter reads the host's configuration, which loaded the process environment before this runs; the
+        // default has to be placed there to apply.
+        if (string.IsNullOrWhiteSpace(builder.Configuration[OtlpTimeoutKey]))
         {
-            Environment.SetEnvironmentVariable(OtlpTimeoutKey, DefaultOtlpTimeoutMilliseconds);
+            builder.Configuration.AddInMemoryCollection([new KeyValuePair<string, string?>(OtlpTimeoutKey, DefaultOtlpTimeoutMilliseconds)]);
         }
 
         builder.Services.AddOpenTelemetry().UseOtlpExporter();

@@ -49,6 +49,47 @@ applies to the entire NuGet family.
 - **The `IEventUpcaster.TargetEventTypeName` documentation no longer describes an in-place shape change.** An
   upcaster whose target equals its source has always been refused as a cycle when the event is read; the
   documentation said otherwise. A reshaped payload moves to a new type name.
+- **The hash-chain worker no longer chains across an entry it has not chained yet.** An entry's timestamp is taken
+  when it is appended, not when it commits, so an entry with a lower sequence number can carry a later timestamp than
+  the one after it. The worker's batch skipped such an entry and linked its successor to its predecessor; the skipped
+  entry was chained on a later pass and verification then reported a break at that point. A batch now ends before the
+  first unchained entry that is not yet settled, and a batch whose predecessor is not chained is left for the next
+  pass instead of being chained off the genesis seed. A custom `IEventStreamRepository` gets the second guard for
+  free; its `GetUnhashedEventsAsync` should return a gap-free run as the updated documentation describes.
+- **Events appended after a nested command are attributed to the outer command.** A command dispatched from inside
+  another command's handler left its own id as the session's causation, so what the outer handler appended afterwards
+  named the inner command as its cause. With command auditing on, the outer command's causation is restored once
+  the inner one returns or fails. The outermost command still leaves its id on the session.
+- **The snapshot shape guard sees properties declared on a base class.** An auto-property without a public setter
+  loses its state when an aggregate is restored from a snapshot, and the start-up guard rejects it — but it missed
+  one declared on an aggregate's base class. **A host whose aggregate inherits such a property now fails at start-up**
+  with the guard's usual message, where it lost that state silently before.
+- **`AddStrataraTestingEventStore` keeps a write unit of work registered before it**, as the PostgreSQL registration
+  does; it replaced one silently.
+- **`MigrateAllDatabasesAsync` disposes the contexts it creates** — it left one undisposed per database.
+- **The command-host examples register command auditing.** The XML examples of `AddCommandWorkerServices`,
+  `AddCommandServices` and `AddHeavyCommandWorkerServices`, the `Stratara.Orleans` README and two guides showed a
+  host whose first append is refused for a missing causation; they now call `AddCommandAuditing()`.
+- **Publishing on Azure Service Bus reuses one sender per topic.** Every publish opened a new sender, and with it a
+  send link that stayed open until the client was disposed — a host publishing at a steady rate accumulated links
+  until the connection's quota was reached. The bus now opens one sender per topic and closes them when it is
+  disposed.
+- **One unreadable outbox row no longer stops the outbox.** A stored entry that could not be read back threw out of
+  the drain pass; entries are drained oldest first, so every pass ended on the same row and nothing behind it was
+  published again. Such an entry is now logged as error `106_109` (`OutboxEntryUnreadable`), left where it is, and
+  the pass continues. A failure while draining commands no longer keeps event bundles from being drained in the
+  same pass.
+- **`AddAuthorizingCommandOutboxDispatcher()` holds whichever order it is called in.** `AddOutboxDispatcher()` — and
+  with it every worker composite — registered a plain dispatcher on top of the authorizing one when it ran second,
+  so commands marked `[RequireRole]` or `[RequirePermission]` were enqueued without a check, silently. It now leaves
+  the decorator in place.
+- **Calling both `ConfigureOpenTelemetry()` and `ConfigureAspNetOpenTelemetry()` no longer stops the host.** With
+  `OTEL_EXPORTER_OTLP_ENDPOINT` set, the documented quick start registered the OTLP exporter twice and the host
+  failed at start-up with `NotSupportedException`. Either method, or both, in any order and any number of times,
+  now configures telemetry once.
+- **The 5000 ms default OTLP export timeout applies.** It was set through the process environment after the host's
+  configuration had been read, so the exporter kept its own 10 s default. The default is now placed in the host's
+  configuration where no timeout is configured, and the process environment is left alone.
 - **Blob ciphertext is bound to its whole scope.** The framework's blob encryptor authenticated a blob against its
   tenant and purpose only, so a blob written under one user's scope decrypted when read under another user's scope,
   or under the tenant-level scope, of the same tenant. New blobs are written in a format (leading byte `0x03`) whose

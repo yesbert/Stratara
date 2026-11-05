@@ -40,6 +40,18 @@ public class AggregateSnapshotShapeGuardTests
         public string Opened { get; } = "unset";
     }
 
+    private abstract class AggregateBase : IAggregate
+    {
+        public Guid Id { get; set; }
+        public string Owner { get; private set; } = string.Empty;
+        public string Opened { get; } = "unset";
+    }
+
+    private sealed class DerivedAggregate : AggregateBase
+    {
+        public decimal Balance { get; set; }
+    }
+
     private sealed class NotAnAggregate
     {
         public string Name { get; private set; } = string.Empty;
@@ -88,6 +100,18 @@ public class AggregateSnapshotShapeGuardTests
             GuardOver(typeof(GetterOnlyAggregate)).StartAsync(CancellationToken.None));
 
         Assert.Contains("Opened", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_auto_property_without_a_public_setter_declared_on_a_base_class_is_a_violation()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            GuardOver(typeof(DerivedAggregate)).StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains(nameof(DerivedAggregate), ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Owner", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Opened", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Balance", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

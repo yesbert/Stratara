@@ -52,7 +52,9 @@ public static class WorkerDefaultsHostBuilderExtensions
     /// <code>
     /// var builder = Host.CreateApplicationBuilder(args);
     /// builder.AddCommandWorkerServices();
-    /// builder.Services.AddCommandHandlersFromAssemblyContaining&lt;IAppMarker&gt;();
+    /// builder.Services
+    ///     .AddCommandHandlersFromAssemblyContaining&lt;IAppMarker&gt;()
+    ///     .AddCommandAuditing();
     /// builder.Build().Run();
     /// </code>
     /// </example>
@@ -79,6 +81,7 @@ public static class WorkerDefaultsHostBuilderExtensions
     /// builder.AddCommandServices();
     /// builder.Services
     ///     .AddCommandHandlersFromAssemblyContaining&lt;IAppMarker&gt;()
+    ///     .AddCommandAuditing()
     ///     .AddStrataraOrleansCommandDispatcher()
     ///     .AddStrataraIntentStore&lt;AppWriteDbContext&gt;()
     ///     .AddStrataraAggregateGrains();
@@ -114,7 +117,9 @@ public static class WorkerDefaultsHostBuilderExtensions
     /// <code>
     /// var builder = Host.CreateApplicationBuilder(args);
     /// builder.AddHeavyCommandWorkerServices(degreeOfParallelism: 2);
-    /// builder.Services.AddCommandHandlersFromAssemblyContaining&lt;IAppMarker&gt;();
+    /// builder.Services
+    ///     .AddCommandHandlersFromAssemblyContaining&lt;IAppMarker&gt;()
+    ///     .AddCommandAuditing();
     /// builder.Build().Run();
     /// </code>
     /// </example>

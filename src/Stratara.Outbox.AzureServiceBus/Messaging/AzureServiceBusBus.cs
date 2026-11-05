@@ -85,22 +85,40 @@ internal sealed class AzureServiceBusBus(
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MessageRetryPolicy> _subscriptionPolicies = new(StringComparer.Ordinal);
     private readonly AzureServiceBusSubscriptionStops _stops = subscriptionStops ?? new(NullLogger<AzureServiceBusSubscriptionStops>.Instance);
 
+    // One sender per topic for the bus's lifetime: each sender holds a send link until it is closed. Lazy, so a race on
+    // the first publish to a topic does not open a second sender that nothing would close.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<ServiceBusSender>> _senders = new(StringComparer.Ordinal);
+
     /// <inheritdoc/>
     /// <remarks>
     /// Waits for every subscription that was stopped to finish stopping, so its running handlers could settle. A host
     /// waits for them earlier, when it stops (<see cref="AzureServiceBusSubscriptionStops"/>); this covers a bus used
-    /// without one.
+    /// without one. Then closes the senders the bus opened for publishing.
     /// </remarks>
     public async ValueTask DisposeAsync()
     {
         _stops.BusDisposing();
         await _stops.WhenAllStoppedAsync();
+
+        foreach (var sender in _senders.Values)
+        {
+            if (sender.IsValueCreated)
+            {
+                await sender.Value.DisposeAsync();
+            }
+        }
+
+        _senders.Clear();
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// One sender is opened per topic on its first publish and reused for every later one; senders are closed when the
+    /// bus is disposed.
+    /// </remarks>
     public async Task PublishAsync<T>(string topic, T message, CancellationToken cancellationToken = default)
     {
-        var sender = client.CreateSender(topic);
+        var sender = _senders.GetOrAdd(topic, name => new Lazy<ServiceBusSender>(() => client.CreateSender(name))).Value;
         var json = JsonSerializer.Serialize(message);
         await sender.SendMessageAsync(new ServiceBusMessage(json), cancellationToken);
     }
