@@ -64,6 +64,58 @@ public sealed class StoreReaderFailureTests
         Assert.False(written.Token.IsCancellationRequested, "the checkpoint for the applied entries was written with the cancelled token");
     }
 
+    [Fact]
+    public async Task A_handler_that_times_out_stalls_the_partition_logs_it_and_keeps_what_applied_before_it()
+    {
+        var checkpoints = new EmptyCheckpoints();
+        var logger = new RecordingLogger();
+        var loop = LoopOver(new FlakyReader(), checkpoints, logger);
+        var calls = 0;
+
+        var applied = await loop.CatchUpAsync(
+            (batch, token) => loop.ApplyEachAsync(batch, (_, _) => ++calls == 4
+                ? Task.FromException<bool>(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout"))
+                : Task.FromResult(true), token),
+            static () => false,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, applied);
+        Assert.True(loop.StalledOnEntry);
+        Assert.Equal(3, Assert.Single(checkpoints.Written).Position);
+        Assert.Contains(logger.Entries, e => e.EventId.Id == LogEvents.Orleans.EntryAttemptFailed);
+        Assert.Contains(logger.Entries, e => e.EventId.Id == LogEvents.Orleans.PartitionStalled);
+    }
+
+    [Fact]
+    public async Task A_catch_up_whose_own_token_is_cancelled_inside_a_handler_ends_quietly()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var checkpoints = new EmptyCheckpoints();
+        var logger = new RecordingLogger();
+        var loop = LoopOver(new FlakyReader(), checkpoints, logger);
+        var calls = 0;
+
+        var applied = await loop.CatchUpAsync(
+            (batch, token) => loop.ApplyEachAsync(batch, (_, entryToken) =>
+            {
+                if (++calls < 4)
+                {
+                    return Task.FromResult(true);
+                }
+
+                cancellation.Cancel();
+                entryToken.ThrowIfCancellationRequested();
+                return Task.FromResult(true);
+            }, token),
+            static () => false,
+            cancellation.Token);
+
+        Assert.Equal(3, applied);
+        Assert.False(loop.StalledOnEntry);
+        Assert.Equal(3, Assert.Single(checkpoints.Written).Position);
+        Assert.Empty(logger.Entries);
+    }
+
     private static StoreReaderLoop LoopOver(ICommittedPositionReader reader, IProjectionCheckpointStore checkpoints, ILogger logger)
     {
         var services = new ServiceCollection().AddSingleton(reader).AddSingleton(checkpoints).BuildServiceProvider();

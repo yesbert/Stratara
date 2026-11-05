@@ -14,8 +14,10 @@ namespace Stratara.Identity.AspNetCore.Services;
 /// <remarks>
 /// <para>
 /// Tenant resolution: the user's persisted active-tenant selection when it points at an active
-/// membership, otherwise the user's only — or deterministically first — active membership. A
-/// user without any active membership gets no claim, so downstream tenant resolution stays on
+/// membership, otherwise the user's only active membership where they hold exactly one. A user
+/// without any active membership gets no claim, and neither does a user who holds several and
+/// has not selected one — the factory does not choose for them, because a wrong tenant claim
+/// fails invisibly where a missing one fails closed. Downstream tenant resolution then stays on
 /// its fail-closed path. A principal that already carries the claim (a consumer-owned factory
 /// stamped it) is left untouched.
 /// </para>

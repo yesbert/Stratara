@@ -71,6 +71,33 @@ public class ProjectionTesterTests
         Assert.Equal("gone", projection.LastBareName);
     }
 
+    private sealed class BothOverloadsProjection
+    {
+        public List<string> Handled { get; } = [];
+
+        private Task HandleAsync(IEvent<ItemAdded> @event, CancellationToken cancellationToken)
+        {
+            Handled.Add("wrapped");
+            return Task.CompletedTask;
+        }
+
+        private Task HandleAsync(ItemAdded @event, CancellationToken cancellationToken)
+        {
+            Handled.Add("bare");
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task A_projection_declaring_both_overloads_has_its_payload_handler_run_as_in_production()
+    {
+        var projection = new BothOverloadsProjection();
+
+        await ProjectionTester.HandleAsync(projection, TestEvent.Create(new ItemAdded("x")), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["bare"], projection.Handled);
+    }
+
     [Fact]
     public async Task Throws_when_no_handler_matches()
     {

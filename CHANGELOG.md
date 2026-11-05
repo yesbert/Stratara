@@ -16,6 +16,15 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+### Added
+
+- **`ISecureBlobEncryptor.DecryptAsync(stream, scope, purpose)`** decrypts a blob only if it was written for that
+  purpose; a blob written for another purpose fails authentication. It is a default interface method, so an existing
+  implementation keeps compiling — and keeps not checking the purpose until it overrides the method. The
+  framework's encryptor enforces it, and encrypted settings now read through it.
+- **`StrataraBlobEncryptionOptions.WriteV2Blobs`** keeps new blobs in the previous format during a rolling upgrade
+  (see *Blob ciphertext is bound to its whole scope* below). Default `false`.
+
 ### Fixed
 
 - **A recorded field-changed event can be replayed.** After a round trip through the store, the value of a
@@ -81,6 +90,65 @@ applies to the entire NuGet family.
 - **The 5000 ms default OTLP export timeout applies.** It was set through the process environment after the host's
   configuration had been read, so the exporter kept its own 10 s default. The default is now placed in the host's
   configuration where no timeout is configured, and the process environment is left alone.
+- **Blob ciphertext is bound to its whole scope.** The framework's blob encryptor authenticated a blob against its
+  tenant and purpose only, so a blob written under one user's scope decrypted when read under another user's scope,
+  or under the tenant-level scope, of the same tenant. New blobs are written in a format (leading byte `0x03`) whose
+  authenticated data covers the sensitivity level, the tenant, the user and the purpose. Blobs already stored read
+  as before. **Releases before this one cannot read the new format:** where older hosts still read blobs that newer
+  hosts write, set `Stratara:BlobEncryption:WriteV2Blobs` to `true` until every host is upgraded.
+- **An encrypted setting cannot be read as another setting.** The purpose a blob was written for was taken from the
+  blob itself on read, so the ciphertext of one encrypted setting, copied into another setting's row in the same
+  scope, decrypted there. The setting store now requires the purpose of the setting it reads.
+- **A setting whose key was revoked or erased no longer makes its scope unreadable.** Reading a scope decrypted
+  every encrypted setting in it and failed as a whole when one key was gone — which is the state an erasure leaves
+  behind. Such a setting now reads as absent and is logged as warning `112_011` (`EncryptedSettingUnreadable`); the
+  rest of the scope is returned. A value that fails authentication or is not ciphertext still fails the read.
+- **A key revoked or erased by another process stops resolving at once.** A process that held a key of the file key
+  store in memory kept decrypting with it after another process sharing the file had revoked it or erased its
+  scope. A lookup now checks whether the file changed before it answers from memory.
+- **A bearer principal carries its subject as the name identifier.** `AddStrataraJwtBearer` left the principal
+  without `ClaimTypes.NameIdentifier`, the claim the session, the permission policies and the tenant claim read — a
+  bearer request ran with an empty actor and every permission policy refused it. The validated principal now
+  carries its `sub` under that claim type; a token-validated handler the host configures still runs.
+- **`AddStrataraPermissionPolicies()` works after `AddAuthorization()`.** It registered its policy provider only
+  where none was registered, and `AddAuthorization()`, `AddAuthorizationCore()` and `AddControllers()` register the
+  framework's default — every `[Authorize("<permission>")]` endpoint then failed with "policy not found". The
+  default provider is now replaced; a provider the host supplies is kept.
+- **Repeating a failed API-key revocation or tenant sweep removes the machine membership it left behind.** A revoke
+  that failed after recording the revocation returned early when repeated, and a tenant sweep deleted the keys
+  before the memberships they identify.
+- **The `MembershipClaimsPrincipalFactory` remarks describe what it does**: no tenant claim where a user has several
+  memberships and none selected.
+- **A replay applies each entry in a scope of its own session.** The full replay built every projection and its
+  scoped dependencies once per batch, before any entry's session was set, and applied the entries of every tenant
+  through those instances — a dependency that takes its tenant when it is constructed wrote all of them without
+  one. Entries are now applied in a fresh scope per run of entries recorded under the same session, with the
+  session set before anything is resolved, as the execution model's readers already do.
+- **A replay fails before it empties anything where the forgotten-tenant store is missing.** With a projection that
+  forgets deleted tenants registered but no store for it, the replay skipped the clearing step, emptied every read
+  model and then failed on the first fact. It now fails at once with the registration message.
+- **The tenant read model ignores a fact older than what it holds.** `TenantProjection` recorded the version of the
+  last fact it applied but never compared it, so a redelivered or late rename, activation, deactivation, locale
+  change or reassignment overwrote newer state. A fact that is not newer than the row is now skipped. A late
+  `TenantCreated` arriving after the tenant's deletion still re-creates the row.
+- **A handler that times out stalls its partition visibly on the Orleans execution model.** A cancellation thrown
+  from inside a projection or saga handler — an HTTP or database timeout — that the reader itself had not requested
+  matched none of the reader's failure paths: nothing was logged, the partition was not marked stalled, a wait
+  reported `TimedOut` instead of `Stalled`, and the entries of the batch that had already applied were applied again
+  on every retry. It is now treated as the failure it is: logged, counted, and checkpointed below the failing
+  entry.
+- **An entry retried after a missing preceding fact starts from a fresh scope on the Orleans execution model**, as
+  it does on the bus. The retry reused the failed attempt's scoped dependencies, so state that attempt had left
+  behind — a tracked change, a staged write — was applied a second time.
+- **`InMemoryMessageBus` gives the handlers of one subscription competing delivery.** It handed every message to
+  every handler on the topic, so several workers on one subscription — which is what `ProjectionWorker` and
+  `SagaWorker` open — each applied every bundle, and a saga issued its command once per worker. Each message now
+  reaches one handler per subscription, in turn, as on RabbitMQ and Azure Service Bus; different subscriptions
+  still each receive every message. **A test that relied on every handler of one subscription seeing every message
+  needs separate subscription names.**
+- **`ProjectionTester` runs the overload production runs.** For a projection declaring both `HandleAsync(TData, …)`
+  and `HandleAsync(IEvent<TData>, …)` it tried the enveloped overload first; the framework tries the payload one
+  first.
 
 ## [4.7.1] — 2026-11-05
 
