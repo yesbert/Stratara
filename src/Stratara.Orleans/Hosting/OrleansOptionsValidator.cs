@@ -16,7 +16,8 @@ namespace Stratara.Orleans.Hosting;
 /// the start and names itself instead of stalling a reader, polling forever or re-running a command:
 /// batch sizes, limits and partition counts are positive, polls and windows are longer than zero, a period
 /// the runtime keeps as a reminder is at or above the runtime's minimum reminder period, and a command's grace
-/// is longer than the window in which its completion is collected. A singleton work's own settings are validated with
+/// is longer than three times the window in which its completion is collected, so its completion is collected within
+/// the last renewal period its record has left. A singleton work's own settings are validated with
 /// the settings for every singleton work, as the work runs with them.
 /// </summary>
 internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminders, SingletonWorkRegistrations? singletonWorks = null) :
@@ -30,6 +31,9 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
     IValidateOptions<OutboxDrainOptions>,
     IValidateOptions<StoreWakeUpOptions>
 {
+    // A held command's record is renewed every third of the grace, so the grace spans three renewal periods.
+    private const int RenewalsPerGrace = 3;
+
     private TimeSpan MinimumReminderPeriod => reminders.Value.MinimumReminderPeriod;
 
     /// <summary>Validates <typeparamref name="TOptions"/> when the host starts.</summary>
@@ -45,9 +49,11 @@ internal sealed class OrleansOptionsValidator(IOptions<ReminderOptions> reminder
             ? null
             : $"{nameof(options.CompletionWindow)} ({options.CompletionWindow}) must be at most {IntentCompletionQueue.LongestWindow}.",
         Positive(options.CompletionBatchSize, nameof(options.CompletionBatchSize)),
-        options.IntentGrace > options.CompletionWindow
+        options.IntentGrace > options.CompletionWindow * RenewalsPerGrace
             ? null
-            : $"{nameof(options.IntentGrace)} ({options.IntentGrace}) must be longer than {nameof(options.CompletionWindow)} ({options.CompletionWindow}), or a command whose completion is still being collected is handed over again.");
+            : $"{nameof(options.IntentGrace)} ({options.IntentGrace}) must be longer than three times {nameof(options.CompletionWindow)} ({options.CompletionWindow}). " +
+              $"A completed command's record is no longer renewed while its completion is collected, and its last renewal can be two renewal periods old — a third of {nameof(options.IntentGrace)} each — when one renewal failed; " +
+              "a window that does not end within the third period lets the drain hand the command over again and run its handler a second time.");
 
     public ValidateOptionsResult Validate(string? name, HeavyWorkOptions options) => Result<HeavyWorkOptions>(
         Positive(options.ClusterWideLimit, nameof(options.ClusterWideLimit)),
