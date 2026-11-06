@@ -60,6 +60,12 @@ Every bindable options type, the section it binds from, and the default each key
 | `ProjectionReplay:LeaseSeconds` | `Int32` | `300` |
 | `ProjectionReplay:RefreshSeconds` | `Int32` | `5` |
 
+### `RedisCoordination` — Stratara.Outbox.RabbitMQ.RedisCoordinationOptions
+
+| Key | Type | Default |
+|---|---|---|
+| `RedisCoordination:ProductName` | `String` | — |
+
 ### `Projections` — Stratara.Projections.Services.ProjectionOptions
 
 | Key | Type | Default |

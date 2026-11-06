@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Stratara.Abstractions.Settings;
 
@@ -50,9 +51,8 @@ internal sealed class EfSettingStore<TContext>(IDirectoryContextSource<TContext>
 
         if (value is null)
         {
-            await context.Set<SettingEntry>()
-                .Where(e => e.Name == name && e.TenantId == tenantId && e.UserId == userId)
-                .ExecuteDeleteAsync(cancellationToken);
+            await context.DeleteAndForgetAsync<SettingEntry>(
+                e => e.Name == name && e.TenantId == tenantId && e.UserId == userId, cancellationToken);
             return;
         }
 
@@ -83,23 +83,15 @@ internal sealed class EfSettingStore<TContext>(IDirectoryContextSource<TContext>
     {
         await using var lease = await contextSource.LeaseAsync(cancellationToken);
 
-        var query = lease.Context.Set<SettingEntry>().AsQueryable();
-
-        if (scope.UserId is { } userId)
+        var (tenantId, userId) = (scope.TenantId, scope.UserId);
+        Expression<Func<SettingEntry, bool>> inScope = (tenantId, userId) switch
         {
-            query = query.Where(e => e.UserId == userId);
-        }
+            (null, null) => e => e.TenantId == string.Empty && e.UserId == string.Empty,
+            (null, _) => e => e.UserId == userId,
+            (_, null) => e => e.TenantId == tenantId,
+            _ => e => e.TenantId == tenantId && e.UserId == userId,
+        };
 
-        if (scope.TenantId is { } tenantId)
-        {
-            query = query.Where(e => e.TenantId == tenantId);
-        }
-
-        if (scope.UserId is null && scope.TenantId is null)
-        {
-            query = query.Where(e => e.TenantId == string.Empty && e.UserId == string.Empty);
-        }
-
-        await query.ExecuteDeleteAsync(cancellationToken);
+        await lease.Context.DeleteAndForgetAsync(inScope, cancellationToken);
     }
 }

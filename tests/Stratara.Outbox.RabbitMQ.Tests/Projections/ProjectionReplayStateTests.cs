@@ -118,6 +118,13 @@ public class ProjectionReplayStateTests
 
         Assert.True(await WaitUntilAsync(() => state.IsReplayActive, TimeSpan.FromSeconds(10)), "the third refresh never landed");
 
+        // The answer is published before the recovery is logged, so the log is waited for rather than read at once.
+        Assert.True(
+            await WaitUntilAsync(
+                () => redis.Logger.Collector.GetSnapshot().Any(e => e.Id.Id == LogEvents.Projection.ProjectionReplayRefreshRecovered),
+                TimeSpan.FromSeconds(10)),
+            "the recovery was never logged.");
+
         var events = redis.Logger.Collector.GetSnapshot().Select(e => e.Id.Id).ToList();
         Assert.Single(events, id => id == LogEvents.Projection.ProjectionReplayRefreshFailed);
         Assert.Single(events, id => id == LogEvents.Projection.ProjectionReplayRefreshRecovered);
