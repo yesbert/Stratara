@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using Stratara.Outbox.RabbitMQ;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.Projections;
 using Stratara.Abstractions.Outbox;
@@ -103,6 +104,7 @@ public static class OutboxServiceCollectionExtensions
         services.AddOptions<ProjectionReplayOptions>().ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<ProjectionReplayOptions>, ProjectionReplayOptionsBinding>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ProjectionReplayOptions>, ProjectionReplayOptionsBinding>());
+        services.AddRedisCoordinationOptions();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IProjectionReplayState>(CreateProjectionReplayState);
         return services;
@@ -118,7 +120,8 @@ public static class OutboxServiceCollectionExtensions
                 redis,
                 options,
                 serviceProvider.GetRequiredService<TimeProvider>(),
-                serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<ProjectionReplayState>());
+                serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<ProjectionReplayState>(),
+                serviceProvider.GetRequiredService<IOptions<RedisCoordinationOptions>>());
         }
 
         var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<InProcessProjectionReplayState>();
@@ -161,6 +164,8 @@ public static class OutboxServiceCollectionExtensions
     /// example via <c>AddCaching()</c> from <c>Stratara.Infrastructure</c>). The lock is leased
     /// with <see cref="OutboxOptions.LockLeaseSeconds"/>; tune the lease to comfortably exceed the
     /// worst-case drain duration.
+    /// Workers of two products on one Redis hold separate locks when each sets
+    /// <see cref="RedisCoordinationOptions.ProductName"/>, read from the <c>RedisCoordination</c> section.
     /// </remarks>
     /// <example>
     /// Required before running more than one outbox-worker replica; the default lock is a no-op that
@@ -173,9 +178,17 @@ public static class OutboxServiceCollectionExtensions
     /// </example>
     public static IServiceCollection AddRedisOutboxLock(this IServiceCollection services)
     {
+        services.AddRedisCoordinationOptions();
         services.RemoveAll<IOutboxLock>();
         services.AddSingleton<IOutboxLock, RedisOutboxLock>();
         return services;
+    }
+
+    private static void AddRedisCoordinationOptions(this IServiceCollection services)
+    {
+        services.AddOptions<RedisCoordinationOptions>().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RedisCoordinationOptions>, RedisCoordinationOptionsBinding>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RedisCoordinationOptions>, RedisCoordinationOptionsBinding>());
     }
 
     /// <summary>

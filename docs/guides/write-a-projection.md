@@ -544,6 +544,32 @@ on the refresh period only until `104_018` says it is subscribed again, and keep
 A host on a release before 4.4.2 announces nothing, so a replay it starts is seen by a newer host at
 the refresh period rather than at once.
 
+**Two products on one Redis each need a name.** Without one, every host on that Redis shares one
+replay: a request of either product is claimed by whichever host wins, its outcome is reported to both,
+and while either replays, the other suspends publication. `RedisCoordination:ProductName`
+(`RedisCoordinationOptions.ProductName`) puts the product's name into every Redis key and channel the
+framework writes, and the Redis-leased outbox lock reads the same setting:
+
+```jsonc
+{
+  "RedisCoordination": {
+    "ProductName": "acme"
+  }
+}
+```
+
+The application name is no substitute, because it differs between a product's hosts. The name may hold
+letters, digits, `.`, `_` and `-`, compared exactly, so `Acme` and `acme` are different products; anything
+else is refused when the host starts, with an `OptionsValidationException` naming the setting. With no
+name set, the fixed names of earlier releases stay, and an installation that sets nothing runs unchanged.
+
+**Set the name on all hosts of a product together, while no replay runs.** A host with a name does not meet
+a host without one, or a host of an earlier release, and neither can see the other, so nothing reports it.
+The host left without the name receives no request from the named hosts, sees neither their marking nor their
+outcome, and **keeps publishing during their replay**, against read models being rebuilt. A replay active
+at the switch keeps its marking under the old name until the lease lapses. Nothing is migrated: the old
+keys stay behind, and `stratara:projection:replay:last` and `:error`, which have no lease, are safe to delete.
+
 One thing a version bump does not do for you: a marking that is *already* stuck from before you
 adopted the lease was written without an expiry and does not gain one. Clear it once — an explicit
 deactivation, or let the next replay's own completion clear it.

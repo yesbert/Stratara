@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Stratara.Abstractions.Outbox;
 using Stratara.Shared.Diagnostics.Extensions;
@@ -7,7 +8,7 @@ namespace Stratara.Outbox.RabbitMQ.Outbox;
 
 /// <summary>
 /// Redis-backed <see cref="IOutboxLock"/>. Acquires a leased key under
-/// <c>stratara:outbox:lock</c> using <c>SET NX</c> with the configured expiry. The instance
+/// <c>stratara:outbox:lock</c>, carrying the name in <see cref="RedisCoordinationOptions.ProductName"/> where one is set, using <c>SET NX</c> with the configured expiry. The instance
 /// that succeeds receives a handle whose disposal removes the key via a value-checked Lua
 /// script (so a stale disposal cannot release someone else's lease).
 /// </summary>
@@ -18,9 +19,11 @@ namespace Stratara.Outbox.RabbitMQ.Outbox;
 /// of the outbox handles the resulting duplicate publish. Choose a lease that is comfortably
 /// longer than the worst-case drain duration.
 /// </remarks>
-internal sealed class RedisOutboxLock(IConnectionMultiplexer redis, ILogger<RedisOutboxLock> logger) : IOutboxLock
+internal sealed class RedisOutboxLock(IConnectionMultiplexer redis, IOptions<RedisCoordinationOptions> coordination, ILogger<RedisOutboxLock> logger) : IOutboxLock
 {
-    private const string LockKey = "stratara:outbox:lock";
+    private const string LockName = "stratara:outbox:lock";
+
+    private readonly string _lockKey = coordination.Value.Name(LockName);
 
     private static readonly LuaScript ReleaseScript = LuaScript.Prepare(
         "if redis.call('get', @key) == @value then return redis.call('del', @key) else return 0 end");
@@ -35,8 +38,8 @@ internal sealed class RedisOutboxLock(IConnectionMultiplexer redis, ILogger<Redi
 
         try
         {
-            var acquired = await db.StringSetAsync(LockKey, token, lease, When.NotExists);
-            return acquired ? new Handle(db, token, logger) : null;
+            var acquired = await db.StringSetAsync(_lockKey, token, lease, When.NotExists);
+            return acquired ? new Handle(db, _lockKey, token, logger) : null;
         }
         catch (RedisException ex)
         {
@@ -45,13 +48,13 @@ internal sealed class RedisOutboxLock(IConnectionMultiplexer redis, ILogger<Redi
         }
     }
 
-    private sealed class Handle(IDatabase db, string token, ILogger logger) : IOutboxLockHandle
+    private sealed class Handle(IDatabase db, string lockKey, string token, ILogger logger) : IOutboxLockHandle
     {
         public async ValueTask DisposeAsync()
         {
             try
             {
-                await db.ScriptEvaluateAsync(ReleaseScript, new { key = (RedisKey)LockKey, value = token });
+                await db.ScriptEvaluateAsync(ReleaseScript, new { key = (RedisKey)lockKey, value = token });
             }
             catch (RedisException ex)
             {

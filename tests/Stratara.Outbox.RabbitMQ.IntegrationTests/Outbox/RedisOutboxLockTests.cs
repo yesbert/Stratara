@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.IntegrationTests.Fixtures;
@@ -11,8 +12,8 @@ public class RedisOutboxLockTests(RedisFixture redis)
 {
     private const string LockKey = "stratara:outbox:lock";
 
-    private static RedisOutboxLock CreateSut(IConnectionMultiplexer connection)
-        => new(connection, NullLogger<RedisOutboxLock>.Instance);
+    private static RedisOutboxLock CreateSut(IConnectionMultiplexer connection, string? productName = null)
+        => new(connection, Options.Create(new RedisCoordinationOptions { ProductName = productName }), NullLogger<RedisOutboxLock>.Instance);
 
     [Fact]
     public async Task TryAcquireAsync_OnEmptyLockKey_ReturnsHandle()
@@ -125,6 +126,48 @@ public class RedisOutboxLockTests(RedisFixture redis)
 
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => sut.TryAcquireAsync(TimeSpan.FromSeconds(30), cts.Token));
+    }
+
+    [Fact]
+    public async Task TwoProducts_EachAcquireTheirOwnLock()
+    {
+        await redis.FlushAsync();
+
+        await using var first = await CreateSut(redis.Connection, "product-a").TryAcquireAsync(TimeSpan.FromSeconds(30));
+        await using var second = await CreateSut(redis.Connection, "product-b").TryAcquireAsync(TimeSpan.FromSeconds(30));
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+    }
+
+    [Fact]
+    public async Task TwoWorkersOfOneProduct_ExcludeEachOther_AndReleaseUnderTheirName()
+    {
+        await redis.FlushAsync();
+        var worker = CreateSut(redis.Connection, "product-a");
+        var peer = CreateSut(redis.Connection, "product-a");
+
+        var held = await worker.TryAcquireAsync(TimeSpan.FromSeconds(30));
+        Assert.NotNull(held);
+        Assert.True(await redis.Connection.GetDatabase().KeyExistsAsync("stratara:product-a:outbox:lock"));
+        Assert.Null(await peer.TryAcquireAsync(TimeSpan.FromSeconds(30)));
+
+        await held.DisposeAsync();
+
+        await using var next = await peer.TryAcquireAsync(TimeSpan.FromSeconds(30));
+        Assert.NotNull(next);
+    }
+
+    [Fact]
+    public async Task ANamedWorkerAndAnUnnamedWorker_DoNotExcludeEachOther()
+    {
+        await redis.FlushAsync();
+
+        await using var unnamed = await CreateSut(redis.Connection).TryAcquireAsync(TimeSpan.FromSeconds(30));
+        await using var named = await CreateSut(redis.Connection, "product-a").TryAcquireAsync(TimeSpan.FromSeconds(30));
+
+        Assert.NotNull(unnamed);
+        Assert.NotNull(named);
     }
 
     [Fact]

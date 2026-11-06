@@ -84,9 +84,7 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
 
         if (membership.Status != MembershipStatus.Active)
         {
-            await context.Set<ActiveTenantEntry>()
-                .Where(e => e.UserId == membership.UserId && e.TenantId == membership.TenantId)
-                .ExecuteDeleteAsync(cancellationToken);
+            await context.DeleteAndForgetAsync<ActiveTenantEntry>(e => e.UserId == membership.UserId && e.TenantId == membership.TenantId, cancellationToken);
         }
     }
 
@@ -186,13 +184,9 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
         await using var lease = await contextSource.LeaseAsync(cancellationToken);
         var context = lease.Context;
 
-        await context.Set<TenantMembershipEntry>()
-            .Where(e => e.UserId == userId && e.TenantId == tenantId)
-            .ExecuteDeleteAsync(cancellationToken);
+        await context.DeleteAndForgetAsync<TenantMembershipEntry>(e => e.UserId == userId && e.TenantId == tenantId, cancellationToken);
 
-        await context.Set<ActiveTenantEntry>()
-            .Where(e => e.UserId == userId && e.TenantId == tenantId)
-            .ExecuteDeleteAsync(cancellationToken);
+        await context.DeleteAndForgetAsync<ActiveTenantEntry>(e => e.UserId == userId && e.TenantId == tenantId, cancellationToken);
     }
 
     public async Task RemoveAllMembershipsAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -200,13 +194,9 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
         await using var lease = await contextSource.LeaseAsync(cancellationToken);
         var context = lease.Context;
 
-        await context.Set<TenantMembershipEntry>()
-            .Where(e => e.UserId == userId)
-            .ExecuteDeleteAsync(cancellationToken);
+        await context.DeleteAndForgetAsync<TenantMembershipEntry>(e => e.UserId == userId, cancellationToken);
 
-        await context.Set<ActiveTenantEntry>()
-            .Where(e => e.UserId == userId)
-            .ExecuteDeleteAsync(cancellationToken);
+        await context.DeleteAndForgetAsync<ActiveTenantEntry>(e => e.UserId == userId, cancellationToken);
     }
 
     public async Task RemoveAllMembersAsync(Guid tenantId, CancellationToken cancellationToken = default)
@@ -214,13 +204,9 @@ internal sealed class EfTenantMembershipStore<TContext>(IDirectoryContextSource<
         await using var lease = await contextSource.LeaseAsync(cancellationToken);
         var context = lease.Context;
 
-        await context.Set<TenantMembershipEntry>()
-            .Where(e => e.TenantId == tenantId)
-            .ExecuteDeleteAsync(cancellationToken);
+        await context.DeleteAndForgetAsync<TenantMembershipEntry>(e => e.TenantId == tenantId, cancellationToken);
 
-        await context.Set<ActiveTenantEntry>()
-            .Where(e => e.TenantId == tenantId)
-            .ExecuteDeleteAsync(cancellationToken);
+        await context.DeleteAndForgetAsync<ActiveTenantEntry>(e => e.TenantId == tenantId, cancellationToken);
     }
 
     public async Task<Guid?> GetActiveTenantAsync(Guid userId, CancellationToken cancellationToken = default)

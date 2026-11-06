@@ -30,6 +30,8 @@ await pipeline.ExecuteAsync(async ct => {
 | Event bundle dispatcher | `ResilienceNames.EventBundleDispatcher` | 3 retries, exponential, 200ms, jitter; never retries `CommittedEventsNotPublishedException` |
 | Concurrency conflict | `ResilienceNames.ConcurrencyConflict` | Retry **only** on `ConcurrencyConflictException`, 5 attempts, short exponential, jitter |
 
+The two dispatcher pipelines govern a message's first dispatch. Republishing a stored message from the outbox makes one attempt per drain pass and does not run under them.
+
 The `ResilienceFactory` that builds these is `internal` — interact via DI and `ResilienceNames` only.
 
 ## Mediator resilience behavior

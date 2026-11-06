@@ -66,7 +66,9 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   running, `LastReplay` (`Succeeded` / `Failed` / `Interrupted`, counts, times) once ended. On
   PostgreSQL `AddReadModelRestore<TReadContext>()` copies the read context's tables before the replay
   empties them and writes them back when it fails or its host dies, so a failed replay no longer leaves
-  an empty read store. See [Write a projection](https://stratara.tech/guides/write-a-projection.html).
+  an empty read store. Products sharing one Redis each set `RedisCoordination:ProductName`, on all of a
+  product's hosts together: a host without the name does not meet those with it and keeps publishing during
+  their replay; unset keeps the fixed names. See [Write a projection](https://stratara.tech/guides/write-a-projection.html).
 - **A message a handler cannot take (since 4.0.4):** on a durable subscription the transport
   redelivers it up to `MessageRetry:MaxDeliveryAttempts` times (default 3; a concurrency conflict up
   to `MessageRetry:MaxConflictRequeues`, default 100) and then moves it to the subscription's
@@ -76,7 +78,8 @@ subscription and cache key it uses. This file explains; that one enumerates, and
   RabbitMQ dropped a failed message and requeued a conflict without bound. **RabbitMQ worker queues
   are quorum queues named `<subscription>.v2`** since 4.0.4; after deploying, delete the old
   `<subscription>` queue once it is drained, or it fills forever at the fanout exchange. Needs
-  RabbitMQ 3.13+. **Changing the bounds later (since 4.0.5):** an existing worker queue keeps the
+  RabbitMQ 4.2+: below it a broker restart loses the topic exchange and its bindings, and a message for a
+  subscription not yet rebound is lost silently, so update the broker first. **Changing the bounds later (since 4.0.5):** an existing worker queue keeps the
   `x-delivery-limit` it was declared with and is used as it is, with warning `108_112`; before
   RabbitMQ 4.3 a raised bound needs the drained queue deleted once. On Azure Service Bus a
   subscription's `MaxDeliveryCount` must leave room for the bounds (a default subscription allows
