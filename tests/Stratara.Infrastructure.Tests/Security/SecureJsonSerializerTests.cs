@@ -7,6 +7,8 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Stratara.Infrastructure.Security.Serialization;
 using Stratara.Abstractions.Security;
+using Stratara.Shared.EventSourcing;
+using Stratara.Shared.EventSourcing.Extensions;
 using Stratara.Testing;
 
 namespace Stratara.Infrastructure.Tests.Security;
@@ -683,5 +685,328 @@ public class SecureJsonSerializerTests
 
         Assert.Equal("R-plain", read!.Reference);
         Assert.Equal(Shade.Dark, read.Shade);
+    }
+
+    private sealed record HomeAddress(string Street, int Number);
+
+    private sealed class MarkedCustomer
+    {
+        [EncryptData(DataSensitivityLevel.TenantScoped)]
+        public string? Email { get; set; }
+
+        [EncryptData]
+        public string? Phone { get; set; }
+
+        [EncryptData]
+        public int? Age { get; set; }
+
+        [EncryptData]
+        public Guid Reference { get; set; }
+
+        [EncryptData]
+        public HomeAddress? Home { get; set; }
+
+        [EncryptData]
+        public List<string> Tags { get; set; } = [];
+
+        [EncryptData]
+        [JsonConverter(typeof(JsonStringEnumConverter<Shade>))]
+        public Shade Tint { get; set; }
+
+        public string? City { get; set; }
+    }
+
+    private sealed class OnePropertyMarked
+    {
+        [EncryptData(DataSensitivityLevel.TenantScoped)]
+        public string? Email { get; set; }
+    }
+
+    private sealed record ConstructorMarkedCustomer([EncryptData(DataSensitivityLevel.TenantScoped)] string Email, string City);
+
+    private sealed class UnmarkedCustomer
+    {
+        public string? City { get; set; }
+    }
+
+    private SecureJsonSerializer CreateSerializer(IKeyStore keyStore) =>
+        new(keyStore, _encryptionFactory, NullLogger<SecureJsonSerializer>.Instance);
+
+    private static JsonElement StoredValue(string json) => JsonDocument.Parse(json).RootElement.GetProperty("NewValue");
+
+    [Fact]
+    public void Metadata_RecordedChangeOfAnAggregateWithMarks_BorrowsThem()
+    {
+        var metadata = MetadataCache.GetOrCreateMetadata(typeof(FieldChangedEvent<MarkedCustomer>));
+
+        Assert.True(metadata.RequiresEncryption);
+        Assert.Same(MetadataCache.GetOrCreateMetadata(typeof(MarkedCustomer)), metadata.RecordedAggregate);
+        Assert.Contains(nameof(MarkedCustomer.Email), metadata.RecordedAggregate!.EncryptedPropertiesByName.Keys);
+        Assert.DoesNotContain(nameof(MarkedCustomer.City), metadata.RecordedAggregate.EncryptedPropertiesByName.Keys);
+    }
+
+    [Fact]
+    public void Metadata_RecordedChangeOfAnAggregateMarkedThroughItsConstructor_BorrowsThem()
+    {
+        var metadata = MetadataCache.GetOrCreateMetadata(typeof(FieldChangedEvent<ConstructorMarkedCustomer>));
+
+        Assert.True(metadata.RequiresEncryption);
+        Assert.Contains(nameof(ConstructorMarkedCustomer.Email), metadata.RecordedAggregate!.EncryptedPropertiesByName.Keys);
+    }
+
+    [Fact]
+    public void Metadata_RecordedChangeOfAnAggregateWithoutMarks_RequiresNothing()
+    {
+        var metadata = MetadataCache.GetOrCreateMetadata(typeof(FieldChangedEvent<UnmarkedCustomer>));
+
+        Assert.False(metadata.RequiresEncryption);
+        Assert.NotNull(metadata.RecordedAggregate);
+    }
+
+    [Fact]
+    public void Metadata_AnyOtherType_HasNoRecordedAggregate()
+    {
+        Assert.Null(MetadataCache.GetOrCreateMetadata(typeof(MarkedCustomer)).RecordedAggregate);
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeToAMarkedProperty_WritesTheNamePlainAndTheValueAsAnEnvelope()
+    {
+        var json = await _serializer.SerializeAsync(
+            new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Email), "ada@secret.example"), TestTenantId, TestUserId);
+
+        Assert.DoesNotContain("ada@secret.example", json, StringComparison.Ordinal);
+        Assert.Equal(nameof(MarkedCustomer.Email), JsonDocument.Parse(json).RootElement.GetProperty("PropertyName").GetString());
+        Assert.True(StoredValue(json).GetProperty(SecurityConstants.EncryptionMarker).GetBoolean());
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeToAMarkedProperty_RequestsTheKeyTheAggregatesOwnSerializationRequests()
+    {
+        await _serializer.SerializeAsync(new OnePropertyMarked { Email = "a" }, TestTenantId, TestUserId);
+        await _serializer.SerializeAsync(
+            new FieldChangedEvent<OnePropertyMarked>(nameof(OnePropertyMarked.Email), "b"), TestTenantId, TestUserId);
+
+        var scopes = _keyStoreMock.Invocations
+            .Where(invocation => invocation.Method.Name == nameof(IKeyStore.GetOrCreateCurrentKeyAsync))
+            .Select(invocation => (KeyScope)invocation.Arguments[0]!)
+            .ToList();
+        Assert.Equal(2, scopes.Count);
+        Assert.Equal(scopes[0], scopes[1]);
+        Assert.Equal(new KeyScope(DataSensitivityLevel.TenantScoped, TestTenantId.ToString(), TestUserId.ToString()), scopes[1]);
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeToAPropertyMarkedThroughTheConstructor_IsProtected()
+    {
+        var json = await _serializer.SerializeAsync(
+            new FieldChangedEvent<ConstructorMarkedCustomer>(nameof(ConstructorMarkedCustomer.Email), "ada@secret.example"), TestTenantId, TestUserId);
+
+        Assert.DoesNotContain("ada@secret.example", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeThatClearsAMarkedProperty_WritesNullWithoutAKey()
+    {
+        var change = new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Email), null);
+
+        var json = await _serializer.SerializeAsync(change, TestTenantId, TestUserId);
+
+        Assert.Equal(JsonSerializer.Serialize(change), json);
+        _keyStoreMock.Verify(k => k.GetOrCreateCurrentKeyAsync(It.IsAny<KeyScope>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeToAnUnmarkedProperty_IsByteIdenticalAndAsksForNoKey()
+    {
+        var change = new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.City), "Berlin");
+
+        var json = await _serializer.SerializeAsync(change, TestTenantId, TestUserId);
+
+        Assert.Equal(JsonSerializer.Serialize(change), json);
+        _keyStoreMock.Verify(k => k.GetOrCreateCurrentKeyAsync(It.IsAny<KeyScope>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeOfAnAggregateWithoutMarks_IsByteIdenticalAndAsksForNoKey()
+    {
+        var change = new FieldChangedEvent<UnmarkedCustomer>(nameof(UnmarkedCustomer.City), "Berlin");
+
+        var json = await _serializer.SerializeAsync(change, TestTenantId, TestUserId);
+
+        Assert.Equal(JsonSerializer.Serialize(change), json);
+        _keyStoreMock.Verify(k => k.GetOrCreateCurrentKeyAsync(It.IsAny<KeyScope>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeForAnErasedOwner_IsRefusedByTheKeyStore()
+    {
+        var keyStore = new InMemoryKeyStore();
+        await keyStore.MarkSubjectErasedAsync(KeySubject.User(TestUserId.ToString()));
+
+        await Assert.ThrowsAsync<KeyScopeErasedException>(() => CreateSerializer(keyStore).SerializeAsync(
+            new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Phone), "1"), TestTenantId, TestUserId));
+    }
+
+    [Fact]
+    public async Task Serialize_RecordedChangeWithNothingToIsolateBy_IsRefusedOutsideDevelopment()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _serializer.SerializeAsync(
+            new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Phone), "1"), Guid.Empty, Guid.Empty));
+    }
+
+    private async Task<object?> RoundTripAsync(string propertyName, object value)
+    {
+        var json = await _serializer.SerializeAsync(new FieldChangedEvent<MarkedCustomer>(propertyName, value), TestTenantId, TestUserId);
+        Assert.True(StoredValue(json).TryGetProperty(SecurityConstants.EncryptionMarker, out _));
+
+        var read = await _serializer.DeserializeAsync<FieldChangedEvent<MarkedCustomer>>(json, TestTenantId, TestUserId);
+
+        Assert.Equal(propertyName, read!.PropertyName);
+        var aggregate = new MarkedCustomer();
+        aggregate.ApplyPropertyChanged(read);
+        return typeof(MarkedCustomer).GetProperty(propertyName)!.GetValue(aggregate);
+    }
+
+    [Fact]
+    public async Task RoundTrip_RecordedChange_String() =>
+        Assert.Equal("ada", await RoundTripAsync(nameof(MarkedCustomer.Email), "ada"));
+
+    [Fact]
+    public async Task RoundTrip_RecordedChange_NullableInt() =>
+        Assert.Equal(36, await RoundTripAsync(nameof(MarkedCustomer.Age), 36));
+
+    [Fact]
+    public async Task RoundTrip_RecordedChange_NonNullableGuid()
+    {
+        var reference = Guid.CreateVersion7();
+
+        Assert.Equal(reference, await RoundTripAsync(nameof(MarkedCustomer.Reference), reference));
+    }
+
+    [Fact]
+    public async Task RoundTrip_RecordedChange_Record()
+    {
+        var home = new HomeAddress("Main", 7);
+
+        Assert.Equal(home, await RoundTripAsync(nameof(MarkedCustomer.Home), home));
+    }
+
+    [Fact]
+    public async Task RoundTrip_RecordedChange_ACollectionOfAnotherShapeThanTheProperty()
+    {
+        string[] submitted = ["a", "b"];
+
+        Assert.Equal<IEnumerable<string>>(submitted, (List<string>)(await RoundTripAsync(nameof(MarkedCustomer.Tags), submitted))!);
+    }
+
+    [Fact]
+    public async Task RoundTrip_RecordedChange_APropertyWithItsOwnConverter_ReadsBackLikeAnUnmarkedChange() =>
+        Assert.Equal(Shade.Dark, await RoundTripAsync(nameof(MarkedCustomer.Tint), Shade.Dark));
+
+    [Fact]
+    public async Task Deserialize_RecordedChangeWrittenInTheClear_ForAMarkedProperty_ReadsAsStored()
+    {
+        var earlier = JsonSerializer.Serialize(new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Email), "earlier"));
+
+        var read = await _serializer.DeserializeAsync<FieldChangedEvent<MarkedCustomer>>(earlier, TestTenantId, TestUserId);
+
+        Assert.Equal("earlier", Assert.IsType<JsonElement>(read!.NewValue).GetString());
+        _keyStoreMock.Verify(k => k.GetDataEncryptionKeyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Deserialize_RecordedChangeThatClearedAMarkedProperty_ReadsAsAbsent()
+    {
+        var read = await _serializer.DeserializeAsync<FieldChangedEvent<MarkedCustomer>>(
+            JsonSerializer.Serialize(new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Email), null)), TestTenantId, TestUserId);
+
+        Assert.Null(read!.NewValue);
+    }
+
+    [Fact]
+    public async Task Deserialize_RecordedCiphertext_AfterEveryMarkWasRemoved_IsStillDecrypted()
+    {
+        var json = await _serializer.SerializeAsync(
+            new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Email), "ada"), TestTenantId, TestUserId);
+
+        var read = await _serializer.DeserializeAsync<FieldChangedEvent<UnmarkedCustomer>>(json, TestTenantId, TestUserId);
+
+        Assert.Equal("ada", Assert.IsType<JsonElement>(read!.NewValue).GetString());
+    }
+
+    [Fact]
+    public async Task Deserialize_RecordedCiphertext_AfterTheKeyVersionIsRevoked_ReadsAsAbsent()
+    {
+        var keyStore = new InMemoryKeyStore();
+        var sut = CreateSerializer(keyStore);
+        var json = await sut.SerializeAsync(new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Phone), "1"), TestTenantId, TestUserId);
+
+        await keyStore.RevokeAsync(StoredValue(json).GetProperty("kid").GetString()!);
+        var read = await sut.DeserializeAsync<FieldChangedEvent<MarkedCustomer>>(json, TestTenantId, TestUserId);
+
+        Assert.Equal(nameof(MarkedCustomer.Phone), read!.PropertyName);
+        Assert.Null(read.NewValue);
+    }
+
+    [Fact]
+    public async Task Deserialize_RecordedCiphertext_AfterTheSubjectIsErased_ReadsAsAbsent()
+    {
+        var keyStore = new InMemoryKeyStore();
+        var sut = CreateSerializer(keyStore);
+        var json = await sut.SerializeAsync(new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Phone), "1"), TestTenantId, TestUserId);
+
+        await keyStore.EraseScopeAsync(new KeyScope(DataSensitivityLevel.UserScoped, TestTenantId.ToString(), TestUserId.ToString()));
+        await keyStore.MarkSubjectErasedAsync(KeySubject.User(TestUserId.ToString()));
+        var read = await sut.DeserializeAsync<FieldChangedEvent<MarkedCustomer>>(json, TestTenantId, TestUserId);
+
+        Assert.Equal(nameof(MarkedCustomer.Phone), read!.PropertyName);
+        Assert.Null(read.NewValue);
+    }
+
+    [Theory]
+    [InlineData(nameof(MarkedCustomer.Phone))]
+    [InlineData(nameof(MarkedCustomer.City))]
+    public async Task Deserialize_RecordedCiphertext_UnderAnAlteredPropertyName_FailsAuthentication(string alteredName)
+    {
+        var json = await _serializer.SerializeAsync(
+            new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Email), "ada"), TestTenantId, TestUserId);
+        var altered = json.Replace($"\"{nameof(MarkedCustomer.Email)}\"", $"\"{alteredName}\"", StringComparison.Ordinal);
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(
+            () => _serializer.DeserializeAsync<FieldChangedEvent<MarkedCustomer>>(altered, TestTenantId, TestUserId));
+    }
+
+    [Fact]
+    public async Task Deserialize_RecordedCiphertext_WithoutAPropertyName_FailsAuthentication()
+    {
+        var json = await _serializer.SerializeAsync(
+            new FieldChangedEvent<MarkedCustomer>(nameof(MarkedCustomer.Email), "ada"), TestTenantId, TestUserId);
+        var nameless = $$"""{"NewValue":{{StoredValue(json).GetRawText()}}}""";
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(
+            () => _serializer.DeserializeAsync<FieldChangedEvent<MarkedCustomer>>(nameless, TestTenantId, TestUserId));
+    }
+
+    [Fact]
+    public async Task Deserialize_ASnapshotEnvelopePastedIntoARecordedChange_DoesNotDecrypt()
+    {
+        var snapshot = await _serializer.SerializeAsync(new OnePropertyMarked { Email = "ada" }, TestTenantId, TestUserId);
+        var envelope = JsonDocument.Parse(snapshot).RootElement.GetProperty(nameof(OnePropertyMarked.Email)).GetRawText();
+        var pasted = $$"""{"PropertyName":"{{nameof(OnePropertyMarked.Email)}}","NewValue":{{envelope}}}""";
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(
+            () => _serializer.DeserializeAsync<FieldChangedEvent<OnePropertyMarked>>(pasted, TestTenantId, TestUserId));
+    }
+
+    [Fact]
+    public async Task Deserialize_ARecordedEnvelopePastedIntoASnapshot_DoesNotDecrypt()
+    {
+        var change = await _serializer.SerializeAsync(
+            new FieldChangedEvent<OnePropertyMarked>(nameof(OnePropertyMarked.Email), "ada"), TestTenantId, TestUserId);
+        var pasted = $$"""{"{{nameof(OnePropertyMarked.Email)}}":{{StoredValue(change).GetRawText()}}}""";
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(
+            () => _serializer.DeserializeAsync<OnePropertyMarked>(pasted, TestTenantId, TestUserId));
     }
 }

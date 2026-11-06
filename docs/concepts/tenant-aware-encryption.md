@@ -40,6 +40,7 @@ Decryption requires the **same** AAD. If a sealed value from tenant A is present
 | What is sealed | The owner it is sealed for |
 |---|---|
 | An event | The owner recorded for its **stream** — whoever appends it. |
+| A recorded change to a marked property | The same owner, at the **property's** level, so it falls under the key the property's value in the snapshot is under. The value is also bound to the property's name, which stays readable. |
 | A command that implements `INamesDataOwner` | The owner the **command names** — in the copy that travels to its handler and in the audit record alike, whoever dispatches it. |
 | A command that names no owner | The dispatching **session's** data-owner tenant. |
 
@@ -84,6 +85,8 @@ DBAs, support engineers, and anyone else with direct database read access see ci
 
 - **Compromise of the framework's running process.** If an attacker has code execution inside your app with access to the resolved `IKeyStore`, they can decrypt under any tenant context they can construct. This is the standard cryptography threat-model boundary: cryptography defends data, not running code.
 - **Plaintext exposure before encryption.** `[EncryptData]` seals at the serialization boundary. If you log a property before it's serialized, the log line has the plaintext. Don't log sensitive fields.
+- **Field changes recorded in the clear before this protection existed.** A change to a marked property recorded by a version that did not protect it, or before the property was marked, is plain JSON in the store. It keeps replaying, the framework does not rewrite it because a stream's chain is evidence, and destroying a key does not reach it. [Field changes recorded in the clear](../guides/encrypt-data-setup.md#field-changes-recorded-in-the-clear) shows how to find these events and what your options are.
+- **The name of a changed property.** A recorded change keeps the name readable, because replay needs it before any key is fetched. Only the value is sealed.
 - **Information leak through ciphertext length.** AES-GCM is a stream cipher mode — ciphertext length equals plaintext length. An observer who sees the row size can infer the field's length. Pad to a fixed length if that's a meaningful concern.
 
 ## Why AES-GCM specifically

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Stratara.Infrastructure.Security.Cryptography;
+using Stratara.Shared.EventSourcing;
 using Stratara.Shared.Reflections;
 using Stratara.Abstractions.Security;
 
@@ -40,9 +41,14 @@ internal static class MetadataCache
                 }
             }
 
-            return new EncryptionMetadata(classAttr, propertyAccessors, encryptedProps.ToArray());
+            return new EncryptionMetadata(classAttr, propertyAccessors, encryptedProps.ToArray(), RecordedAggregateOf(t));
         });
     }
+
+    private static EncryptionMetadata? RecordedAggregateOf(Type type) =>
+        type.IsGenericType && type.GetGenericTypeDefinition() == typeof(FieldChangedEvent<>)
+            ? GetOrCreateMetadata(type.GetGenericArguments()[0])
+            : null;
 
     private static Dictionary<string, ParameterInfo> GetPrimaryConstructorParameters(Type type)
     {

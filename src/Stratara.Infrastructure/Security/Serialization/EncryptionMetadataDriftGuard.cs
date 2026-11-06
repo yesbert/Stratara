@@ -4,6 +4,7 @@ using Stratara.Abstractions.Domain;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
+using Stratara.Shared.EventSourcing;
 
 namespace Stratara.Infrastructure.Security.Serialization;
 
@@ -14,7 +15,8 @@ namespace Stratara.Infrastructure.Security.Serialization;
 /// <see cref="SecureJsonSerializer"/>: if a future contributor adds a new attribute branch (e.g.
 /// tenant-conditional encryption) without updating <c>RequiresEncryption</c>, instances of that
 /// type would silently serialise unencrypted. This guard surfaces the drift at startup instead of
-/// in production. It also refuses a registered aggregate, or an event payload type a registered
+/// in production. A <see cref="FieldChangedEvent{TAggregate}"/> carries no attribute of its own and
+/// borrows its protection from the aggregate's marked properties, so those count as its attributes. It also refuses a registered aggregate, or an event payload type a registered
 /// aggregate applies, that is marked for encryption as a whole: once its subject is erased nothing of
 /// it can be read, and the replay that meets it stops there.
 /// </summary>
@@ -26,7 +28,7 @@ internal sealed class EncryptionMetadataDriftGuard(ITrustedTypeResolver typeReso
         foreach (var type in typeResolver.RegisteredTypes)
         {
             var metadata = MetadataCache.GetOrCreateMetadata(type);
-            var hasAnyAttribute = HasAnyEncryptDataAttribute(type);
+            var hasAnyAttribute = HasAnyEncryptDataAttribute(type) || BorrowsAMarkFromItsAggregate(type);
             if (metadata.RequiresEncryption == hasAnyAttribute)
             {
                 continue;
@@ -72,13 +74,16 @@ internal sealed class EncryptionMetadataDriftGuard(ITrustedTypeResolver typeReso
             ? parameterType.GetGenericArguments()[0]
             : parameterType;
 
-    private static bool HasAnyEncryptDataAttribute(Type type)
-    {
-        if (type.GetCustomAttribute<EncryptDataAttribute>() is not null)
-        {
-            return true;
-        }
+    private static bool BorrowsAMarkFromItsAggregate(Type type) =>
+        type.IsGenericType
+        && type.GetGenericTypeDefinition() == typeof(FieldChangedEvent<>)
+        && HasAMarkedMember(type.GetGenericArguments()[0]);
 
+    private static bool HasAnyEncryptDataAttribute(Type type) =>
+        type.GetCustomAttribute<EncryptDataAttribute>() is not null || HasAMarkedMember(type);
+
+    private static bool HasAMarkedMember(Type type)
+    {
         var properties = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
         if (properties.Any(p => p.GetCustomAttribute<EncryptDataAttribute>() is not null))
         {

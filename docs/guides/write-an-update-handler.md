@@ -84,6 +84,22 @@ An update names the aggregate and the version it started from. That version is w
 `SourceValue` retrievable, and it is what the three-way comparison rests on — without it there is no
 "what the editor saw", and you are back to a two-way compare with all its silent reverts.
 
+## A change to a marked property
+
+A change to a property marked `[EncryptData]` on the aggregate is recorded protected, as the property
+is: ciphertext in the store and on the bus, for the stream's owner, with the property's name readable.
+Your handler does nothing different, and neither does an aggregate that applies the event with
+`ApplyPropertyChanged`.
+
+After the owner's erasure, or once that key version is revoked, the change reads as carrying no value,
+and replay sets the property to its absent value and goes on. **Make an erasable field nullable.** A
+`string` or a `decimal?` comes back as `null`; a non-nullable `decimal` comes back as `0`, which a reader
+cannot tell apart from a recorded zero.
+
+Changes recorded in the clear by an earlier version stay as they are, and an erasure does not reach
+them. See [Changes to a marked property](encrypt-data-setup.md#changes-to-a-marked-property) for the
+order to upgrade hosts in and how to find those events.
+
 ## See also
 
 - [Write a Command Handler](write-a-command-handler.md) — where an update command is handled.
