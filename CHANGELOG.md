@@ -26,6 +26,13 @@ applies to the entire NuGet family.
   (see *Blob ciphertext is bound to its whole scope* below). Default `false`.
 - **`KeyUnavailableException`** tells a key that no longer resolves from any other failure when decrypting. It
   derives from `InvalidOperationException`, as the failure it replaces.
+- **`RedisCoordinationOptions.ProductName`** (section `RedisCoordination`) puts a product's name into every Redis key
+  and channel Stratara uses for projection replays and the outbox lock, so two products can share one Redis. Without
+  it, two products on one server ran each other's replay requests and saw each other's active flag. Letters, digits,
+  `.`, `_` and `-` only; anything else is refused at start. **Nothing changes if no name is set. Set it on all of a
+  product's hosts in one deployment, with no replay running:** a host without the name, or on an earlier release, does
+  not meet named hosts, keeps publishing during their replay, and holds a different outbox lock. Nothing is migrated;
+  old keys stay behind.
 
 ### Fixed
 
@@ -195,6 +202,16 @@ applies to the entire NuGet family.
   with no worker bound made a pass outlive its lock and kept event bundles waiting behind the commands. The next pass
   is now the retry, and a first dispatch keeps its retries. A brief publish failure of a stored message therefore waits
   for the next polling interval, and a policy re-registered under a dispatcher name no longer affects republication.
+- **Removing a membership, a tenant selection or a setting and writing it again in one scope no longer throws.** The
+  stores deleted directly in the database and left the tracked copy behind, so on the scoped registration the second
+  write failed with EF's identity-conflict `InvalidOperationException`. A consumer's other pending changes are not
+  touched.
+
+### Changed
+
+- **RabbitMQ 4.2 is the minimum version.** On 3.13, 4.0 and 4.1 a broker restart removes a topic exchange and its
+  bindings, so a message for a subscription not yet bound again is lost, silently, while the publisher sees success.
+  From 4.2 they survive. **A deployment below 4.2 updates its broker first.** The framework does not check the version.
 
 ## [4.7.1] — 2026-11-05
 
