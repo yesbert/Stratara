@@ -1,6 +1,6 @@
 # Encrypt recorded field changes
 
-> **Status:** proposed
+> **Status:** approved
 
 ## Why
 

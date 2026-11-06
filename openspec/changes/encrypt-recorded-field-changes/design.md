@@ -201,12 +201,12 @@ marked property), not as drift. Evidence: the implementation of the guard.
    the meantime (Decision 5). Rolling back therefore requires rolling back every host together, or
    not at all — stated in the upgrade section.
 
-## Open Questions (owner decisions)
+## Owner decisions (2026-11-06)
 
-1. **One release or two** (Decision 5): write the protected form immediately with a documented
-   reader-first order, or ship read support one release ahead of writing it.
-2. **Interim step** (Decision 6): none (recommended), a start-up warning, or the refusal.
-3. **Diagnostic for existing exposure** (Decision 4): documentation and a query only (recommended), or
-   also a read-only framework diagnostic that reports affected events per stream.
-4. **Version bump**: the published API does not change, but the stored format of new events does and
-   older readers cannot read it. Whether that is a patch or a minor is the owner's call.
+The owner approved this change for the coming release, ahead of the release itself.
+
+1. **One release or two** (Decision 5): one release that reads and writes the protected form, with the
+   reader-first upgrade order documented. No known consumer applies change sets.
+2. **Interim step** (Decision 6): none — the fix ships in the release.
+3. **Diagnostic for existing exposure** (Decision 4): documentation and a query only.
+4. **Version bump**: decided with the release, together with the rest of its content.
