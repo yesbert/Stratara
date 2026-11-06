@@ -24,6 +24,8 @@ applies to the entire NuGet family.
   framework's encryptor enforces it, and encrypted settings now read through it.
 - **`StrataraBlobEncryptionOptions.WriteV2Blobs`** keeps new blobs in the previous format during a rolling upgrade
   (see *Blob ciphertext is bound to its whole scope* below). Default `false`.
+- **`KeyUnavailableException`** tells a key that no longer resolves from any other failure when decrypting. It
+  derives from `InvalidOperationException`, as the failure it replaces.
 
 ### Fixed
 
@@ -102,7 +104,9 @@ applies to the entire NuGet family.
 - **A setting whose key was revoked or erased no longer makes its scope unreadable.** Reading a scope decrypted
   every encrypted setting in it and failed as a whole when one key was gone — which is the state an erasure leaves
   behind. Such a setting now reads as absent and is logged as warning `112_011` (`EncryptedSettingUnreadable`); the
-  rest of the scope is returned. A value that fails authentication or is not ciphertext still fails the read.
+  rest of the scope is returned. Altered ciphertext, a value that is not ciphertext, and a key store failing for
+  another reason still fail the read; a key identifier altered to one that does not resolve reads as absent, like a
+  deleted row. A custom `ISecureBlobEncryptor` signals a lost key with the new `KeyUnavailableException`.
 - **A key revoked or erased by another process stops resolving at once.** A process that held a key of the file key
   store in memory kept decrypting with it after another process sharing the file had revoked it or erased its
   scope. A lookup now checks whether the file changed before it answers from memory.

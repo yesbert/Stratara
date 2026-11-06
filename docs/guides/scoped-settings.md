@@ -124,9 +124,13 @@ nor replayed as a different setting. Plaintext definitions pass through untouche
 
 A stored value whose key was revoked or erased reads as absent and is logged as
 `LogEvents.KeyManagement.EncryptedSettingUnreadable` (warning). The rest of the scope still reads,
-and an inherited setting falls back to the next scope as it would for an unset one. Any other value
-that does not decrypt — ciphertext moved from another setting or scope, a tampered value, or a
-plaintext row written before the definition was declared encrypted — still fails the read.
+and an inherited setting falls back to the next scope as it would for an unset one. A value that does
+not decrypt for any other reason — ciphertext moved from another setting or scope, altered ciphertext,
+or a plaintext row written before the definition was declared encrypted — still fails the read, and so
+does a key store that fails for a reason other than a lost key. A custom `ISecureBlobEncryptor` signals
+a lost key with `KeyUnavailableException`. The key identifier is stored with the value and is not
+authenticated: a row whose identifier was altered to one that does not resolve reads as absent, the
+same outcome as deleting the row, which anyone able to alter it could do.
 
 ```csharp
 builder.Services.AddStrataraBlobEncryption();   // Stratara.Security — required for IsEncrypted
