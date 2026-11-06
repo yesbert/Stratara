@@ -11,6 +11,8 @@ namespace Stratara.Outbox.RabbitMQ.IntegrationTests.Projections;
 [Collection(RedisCollection.Name)]
 public class ProjectionReplayProductNameTests(RedisFixture redis)
 {
+    private static readonly string[] ExpectedChannels = ["request", "state"];
+
     private const string ProductA = "product-a";
     private const string ProductB = "product-b";
 
@@ -163,7 +165,7 @@ public class ProjectionReplayProductNameTests(RedisFixture redis)
             new[] { "active", "claimed:" + requestId.ToString("N"), "error", "last", "processed", "request-id", "total" },
             keys.Select(key => key.StartsWith(prefix, StringComparison.Ordinal) ? key[prefix.Length..] : key).Order(StringComparer.Ordinal));
         Assert.Equal(
-            new[] { "request", "state" },
+            ExpectedChannels,
             channels.Distinct().Select(channel => channel.StartsWith(prefix, StringComparison.Ordinal) ? channel[prefix.Length..] : channel).Order(StringComparer.Ordinal));
     }
 
