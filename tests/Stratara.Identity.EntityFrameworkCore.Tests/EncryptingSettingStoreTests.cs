@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
+using Moq;
 using Stratara.Abstractions.Security;
 using Stratara.Abstractions.Settings;
 using Stratara.Diagnostics;
@@ -137,6 +138,25 @@ public class EncryptingSettingStoreTests
         Assert.Null(await store.GetOrNullAsync("Smtp.Password", scope, ct));
         Assert.Contains(logger.Collector.GetSnapshot(), record =>
             record.Id.Id == LogEvents.KeyManagement.EncryptedSettingUnreadable && record.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task A_key_store_that_fails_for_another_reason_fails_the_read()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var keyStore = new InMemoryKeyStore();
+        var inner = new InMemorySettingStore();
+        var writer = new EncryptingSettingStore(inner, Catalog(), TestBlobEncryptor.CreateAesGcm(keyStore));
+        var scope = SettingScope.ForTenant(TenantId);
+        await writer.SetAsync("Smtp.Password", "s3cret!", scope, ct);
+
+        var refusing = new Mock<IKeyStore>();
+        refusing.Setup(k => k.GetDataEncryptionKeyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("The key file was written by a newer release."));
+        var reader = new EncryptingSettingStore(inner, Catalog(), TestBlobEncryptor.CreateAesGcm(refusing.Object));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.GetOrNullAsync("Smtp.Password", scope, ct));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.GetAllAsync(scope, ct));
     }
 
     [Theory]
