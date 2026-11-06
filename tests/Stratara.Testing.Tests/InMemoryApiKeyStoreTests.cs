@@ -100,6 +100,87 @@ public class InMemoryApiKeyStoreTests
         Assert.Null(await memberships.GetMembershipAsync(issued.Descriptor.Id, TenantId));
     }
 
+    [Theory]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task Personal_access_token_fails_validation_while_the_membership_is_not_active(MembershipStatus status)
+    {
+        var memberships = new InMemoryTenantMembershipStore();
+        var store = new InMemoryApiKeyStore(memberships);
+        var userId = Guid.CreateVersion7();
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, []));
+        var pat = await store.IssueAsync(new ApiKeyIssueRequest(TenantId, "cli", [], userId));
+
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, [], status));
+
+        Assert.Null(await store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_fails_validation_when_the_membership_was_removed()
+    {
+        var memberships = new InMemoryTenantMembershipStore();
+        var store = new InMemoryApiKeyStore(memberships);
+        var userId = Guid.CreateVersion7();
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, []));
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TestTenants.Of("secondary"), []));
+        var pat = await store.IssueAsync(new ApiKeyIssueRequest(TenantId, "cli", [], userId));
+
+        await memberships.RemoveMembershipAsync(userId, TenantId);
+
+        Assert.Null(await store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_validates_again_when_the_membership_returns()
+    {
+        var memberships = new InMemoryTenantMembershipStore();
+        var store = new InMemoryApiKeyStore(memberships);
+        var userId = Guid.CreateVersion7();
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, []));
+        var pat = await store.IssueAsync(new ApiKeyIssueRequest(TenantId, "cli", [], userId));
+
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, [], MembershipStatus.Former));
+        Assert.Null(await store.ValidateAsync(pat.RawKey));
+
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, []));
+
+        var descriptor = await store.ValidateAsync(pat.RawKey);
+        Assert.NotNull(descriptor);
+        Assert.Equal(pat.Descriptor.Id, descriptor.Id);
+        Assert.Null(descriptor.RevokedAt);
+    }
+
+    [Fact]
+    public async Task Personal_access_token_revoked_meanwhile_stays_refused_when_the_membership_returns()
+    {
+        var memberships = new InMemoryTenantMembershipStore();
+        var store = new InMemoryApiKeyStore(memberships);
+        var userId = Guid.CreateVersion7();
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, []));
+        var pat = await store.IssueAsync(new ApiKeyIssueRequest(TenantId, "cli", [], userId));
+
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, [], MembershipStatus.Former));
+        await store.RevokeAsync(pat.Descriptor.Id);
+        await memberships.SetMembershipAsync(new TenantMembership(userId, TenantId, []));
+
+        Assert.Null(await store.ValidateAsync(pat.RawKey));
+    }
+
+    [Theory]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task Machine_key_validates_whatever_its_membership_row_says(MembershipStatus status)
+    {
+        var store = new InMemoryApiKeyStore();
+        var machine = await store.IssueAsync(new ApiKeyIssueRequest(TenantId, "ci", ["Deployer"]));
+
+        await store.Memberships.SetMembershipAsync(
+            new TenantMembership(machine.Descriptor.Id, TenantId, ["Deployer"], status));
+
+        Assert.NotNull(await store.ValidateAsync(machine.RawKey));
+    }
+
     [Fact]
     public async Task Expiry_is_enforced_at_validation_time()
     {

@@ -7,7 +7,8 @@ namespace Stratara.Testing;
 /// Thread-safe in-memory <see cref="IApiKeyStore"/> for tests — the drop-in double for the
 /// EF-backed key store, mirroring its contract semantics: canonical raw keys, machine keys
 /// materialized as memberships of their tenant, personal access tokens guarded by the bound user's
-/// active membership, fail-closed validation, and the idempotent import path.
+/// active membership at issuance and at every validation, fail-closed validation, and the idempotent
+/// import path.
 /// </summary>
 /// <remarks>
 /// The double keeps raw keys in memory instead of hashing them — the hash is a storage concern, and
@@ -31,7 +32,7 @@ public sealed class InMemoryApiKeyStore : IApiKeyStore
 
     /// <summary>
     /// Creates the store, optionally sharing the membership store that machine keys materialize
-    /// into and that personal access tokens are guarded against.
+    /// into and that personal access tokens are guarded against when issued and when validated.
     /// </summary>
     /// <param name="memberships">
     /// The membership plane to write machine memberships into; a private
@@ -110,24 +111,31 @@ public sealed class InMemoryApiKeyStore : IApiKeyStore
     }
 
     /// <inheritdoc/>
-    public Task<ApiKeyDescriptor?> ValidateAsync(string rawKey, CancellationToken cancellationToken = default)
+    public async Task<ApiKeyDescriptor?> ValidateAsync(string rawKey, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(rawKey))
         {
-            return Task.FromResult<ApiKeyDescriptor?>(null);
+            return null;
         }
 
+        ApiKeyDescriptor? descriptor;
         lock (_gate)
         {
-            if (!_keys.TryGetValue(rawKey, out var descriptor)
+            if (!_keys.TryGetValue(rawKey, out descriptor)
                 || descriptor.RevokedAt is not null
                 || (descriptor.ExpiresAt is { } expiry && expiry <= _clock.GetUtcNow()))
             {
-                return Task.FromResult<ApiKeyDescriptor?>(null);
+                return null;
             }
-
-            return Task.FromResult<ApiKeyDescriptor?>(descriptor);
         }
+
+        if (descriptor.UserId is not { } userId)
+        {
+            return descriptor;
+        }
+
+        var membership = await Memberships.GetMembershipAsync(userId, descriptor.TenantId, cancellationToken);
+        return membership is { Status: MembershipStatus.Active } ? descriptor : null;
     }
 
     /// <inheritdoc/>

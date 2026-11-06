@@ -43,6 +43,28 @@ list (`GetForTenantAsync`) and audit freely. Issuance is guarded: roles on a per
 throw, as does a token for a user without an **active membership** in the target tenant — a token
 can never out-scope the user behind it.
 
+## A token follows its user's membership
+
+The membership is checked again every time a personal access token is used, not only when it is
+issued. `ValidateAsync` returns `null` for a token whose user's membership in the key's tenant is
+`Former`, `Pending` or missing — a membership in another tenant does not count — and the API-key
+scheme then fails authentication with a 401. The request carries no principal and no tenant claim, so
+an endpoint that requires only authentication refuses it as well.
+
+The token itself is not touched. It is not revoked, nothing is written, and it validates again as soon
+as the membership is active again, unless it has been revoked or has expired in the meantime. To end a
+token for good when someone leaves, revoke it (`RevokeAsync`), or erase the user's keys
+(`RemoveAllForUserAsync`).
+
+Machine keys are not affected: a key with no bound user does not depend on any user's membership. If
+you modelled a service as a user and it has no active membership, its token now fails; issue it a machine
+key instead.
+
+**A custom `IApiKeyStore` must make the same check.** The check is part of what `ValidateAsync` promises,
+and the compiler cannot tell you it is missing: a store without it keeps letting a person who has left a
+tenant authenticate into that tenant. `InMemoryApiKeyStore` in `Stratara.Testing` honours the contract,
+against the membership store you give it.
+
 ## Bootstrapping a key the caller already knows
 
 Issuance is the wrong shape when server and caller must share a key **before either boots** —
@@ -87,7 +109,7 @@ and cross-tenant authorization then treat the key exactly like any other actor �
 key-specific branch anywhere in the authorization stack to audit or forget. `RevokeAsync` and the
 erasure sweeps (`RemoveAllForTenantAsync`, `RemoveAllForUserAsync`) remove those rows again, so
 revoking a key removes its access, not merely its credential. Personal access tokens write no
-membership row — they ride the user's existing one.
+membership row — they ride the user's existing one, and stop validating when it stops being active.
 
 ### Which tenant a key's roles are looked up in
 
@@ -176,9 +198,10 @@ everything else → the cookie fallback. Set it as the default and no endpoint n
 | An import reinstates a revoked or expired key | never — it throws |
 | Storage holds only the SHA-256 hex digest | always — deliberately unsalted |
 | Unknown, revoked, or expired key → authentication fails, never falls through to anonymous | always (fail-closed) |
+| A personal access token whose user's membership in the key's tenant is not active → authentication fails | always — and it validates again when the membership returns |
 | Machine-key roles resolve through `tenant_membership` like any actor's | always — no parallel authorization path |
 | A personal access token carries its own roles | never — issuance throws |
-| A personal access token requires the bound user's active membership | always |
+| A personal access token requires the bound user's active membership | always — at issuance and at every validation |
 | The key is read from the request header | `HeaderName = "X-Api-Key"` |
 | The key is also read from the `access_token` query parameter | `AllowQueryStringKey = false` |
 

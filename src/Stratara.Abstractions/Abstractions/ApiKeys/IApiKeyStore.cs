@@ -8,7 +8,8 @@ namespace Stratara.Abstractions.ApiKeys;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Fail-closed validation: unknown, revoked, and expired keys all return <c>null</c>. The
+/// Fail-closed validation: unknown, revoked, and expired keys all return <c>null</c>, as does a
+/// personal access token whose bound user holds no active membership in the key's tenant. The
 /// erasure sweeps (<see cref="RemoveAllForTenantAsync"/>, <see cref="RemoveAllForUserAsync"/>)
 /// exist so tenant- and user-erasure flows can clear the key plane in one call.
 /// </para>
@@ -63,11 +64,28 @@ public interface IApiKeyStore
     Task<ApiKeyDescriptor> ImportAsync(ApiKeyImportRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validates a presented raw key: hash lookup, then revocation and expiry checks.
+    /// Validates a presented raw key: hash lookup, then revocation and expiry checks, and for a
+    /// personal access token the bound user's membership in the key's tenant.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A personal access token validates only while its bound user holds an active membership in the
+    /// key's tenant. A former, pending, or missing membership returns <c>null</c>, indistinguishable from
+    /// any other failure. The key itself is not changed: it validates again once the membership is active
+    /// again, unless it has been revoked or has expired in the meantime. A machine key does not depend on
+    /// any user's membership.
+    /// </para>
+    /// <para>
+    /// An implementation of this interface must make the same membership check. Without it, a person who
+    /// has left a tenant keeps authenticating into that tenant with their token.
+    /// </para>
+    /// </remarks>
     /// <param name="rawKey">The presented plaintext key.</param>
     /// <param name="cancellationToken">Token to observe while validating.</param>
-    /// <returns>The key's descriptor, or <c>null</c> for unknown/revoked/expired keys.</returns>
+    /// <returns>
+    /// The key's descriptor, or <c>null</c> for an unknown, revoked, or expired key and for a personal
+    /// access token whose bound user holds no active membership in the key's tenant.
+    /// </returns>
     Task<ApiKeyDescriptor?> ValidateAsync(string rawKey, CancellationToken cancellationToken = default);
 
     /// <summary>

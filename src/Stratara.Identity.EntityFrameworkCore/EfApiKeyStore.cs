@@ -23,7 +23,9 @@ namespace Stratara.Identity.EntityFrameworkCore;
 /// <c>tenant_membership</c> row for the key id carrying the key's roles, so role checks,
 /// permission resolution, and cross-tenant authorization treat the key exactly like any other
 /// actor — no parallel authorization path. Revocation and the erasure sweeps remove those rows
-/// again. Personal access tokens write no membership; they act as their bound user.
+/// again. Personal access tokens write no membership; they act as their bound user, and validate only
+/// while that user holds an active membership in the key's tenant. The key and that membership are read
+/// in one statement.
 /// </para>
 /// <para>
 /// <see cref="ImportAsync"/> is the same write path for a key the caller already holds. It accepts
@@ -168,17 +170,29 @@ internal sealed class EfApiKeyStore<TContext>(
         }
 
         await using var lease = await contextSource.LeaseAsync(cancellationToken);
+        var context = lease.Context;
+        var hashedKey = Hash(rawKey);
 
-        var entry = await FindByHashAsync(lease.Context, Hash(rawKey), cancellationToken);
+        var found = await context.Set<ApiKeyEntry>()
+            .AsNoTracking()
+            .Where(e => e.HashedKey == hashedKey)
+            .Select(e => new
+            {
+                Entry = e,
+                HasStanding = e.UserId == null || context.Set<TenantMembershipEntry>().Any(
+                    m => m.UserId == e.UserId && m.TenantId == e.TenantId && m.Status == MembershipStatus.Active),
+            })
+            .SingleOrDefaultAsync(cancellationToken);
 
-        if (entry is null
-            || entry.RevokedAt is not null
-            || (entry.ExpiresAt is { } expiry && expiry <= _clock.GetUtcNow()))
+        if (found is null
+            || !found.HasStanding
+            || found.Entry.RevokedAt is not null
+            || (found.Entry.ExpiresAt is { } expiry && expiry <= _clock.GetUtcNow()))
         {
             return null;
         }
 
-        return ToDescriptor(entry);
+        return ToDescriptor(found.Entry);
     }
 
     public async Task RevokeAsync(Guid apiKeyId, CancellationToken cancellationToken = default)
