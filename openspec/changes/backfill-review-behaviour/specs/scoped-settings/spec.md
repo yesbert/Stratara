@@ -4,7 +4,8 @@
 
 Reading an encrypted setting whose key was revoked or erased SHALL yield an absent value and record a
 warning naming the setting, and the rest of the scope SHALL still read. A stored value that fails
-authentication or is not ciphertext SHALL fail the read rather than read as absent.
+authentication or is not ciphertext, or whose key cannot be resolved for another reason, SHALL fail the
+read rather than read as absent.
 
 An erasure leaves such rows behind by design, so one destroyed key must not make its scope unreadable.
 Silently reading a damaged value as unset would be a different thing.
@@ -28,6 +29,11 @@ Silently reading a damaged value as unset would be a different thing.
 
 - **WHEN** the ciphertext or the authentication tag of a stored value was altered
 - **THEN** the read fails
+
+#### Scenario: The key store fails for another reason
+
+- **WHEN** resolving the key fails for a reason other than the key being gone
+- **THEN** the read fails rather than reading as absent
 
 #### Scenario: A stored value was moved
 

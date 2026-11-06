@@ -105,17 +105,10 @@ beneath it what approval means here, in the terms `openspec/config.yaml` → `ru
 
 Each of these is behaviour the record deliberately does not bless. None is in a requirement.
 
-- **A stored setting's key id can be altered to make it read as absent.** The read treats a key that does not
-  resolve as destroyed before anything is authenticated (`AesGcmSecureBlobEncryptor.DecryptCoreAsync`,
-  `EncryptingSettingStore.TryDecryptAsync`), so someone able to write the row can make an inherited setting
-  fall through to an outer scope, with only a warning. `A_tampered_value_fails_the_read` alters the last byte
-  only. → The requirement says "fails authentication", which this case does not reach, and the scenario names
-  ciphertext and tag. The owner decides whether the code should change.
-- **Any `InvalidOperationException` from the key lookup reads as absent.** `TryDecryptAsync` catches the type,
-  and `EnvelopeFileKeyStore.ReloadStateUnlocked` throws it for a file in a newer format, which since #245 any
-  lookup can meet once the file has changed. A process that is not upgraded with the others would then read
-  encrypted settings as unset and fall through to outer scopes, rather than fail as *A file written by a newer
-  release is opened* intends. → Not written into a requirement; for the owner.
+- **A stored setting's key id can be altered to make it read as absent.** The identifier is stored with the value and
+  read before anything is authenticated, and a key that does not resolve cannot be told from a destroyed one. Someone
+  able to write the row gains nothing by this: deleting the row has the same effect. → Documented in the guide; the
+  requirement says "fails authentication", which this case does not reach, and the scenario names ciphertext and tag.
 - **A late `TenantCreated` after the deletion re-creates the row.** The changelog says so and #246 leaves it open.
   → Stated in no requirement, neither as a guarantee nor as a limit.
 - **A factory-registered stateful process that cannot be built is passed over** by the timer start-up check, so its
