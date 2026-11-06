@@ -83,6 +83,14 @@ public class EfApiKeyStoreTests
             return scope.ServiceProvider.GetRequiredService<IApiKeyStore>();
         }
 
+        /// <summary>The membership store of a later request: a scope and a context of its own over the same database.</summary>
+        public ITenantMembershipStore OtherHostMemberships()
+        {
+            var scope = _provider.CreateScope();
+            _otherHosts.Add(scope);
+            return scope.ServiceProvider.GetRequiredService<ITenantMembershipStore>();
+        }
+
         /// <summary>A context of another scope over the same database, to read what was saved.</summary>
         public TestDirectoryDbContext OtherHostContext()
         {
@@ -202,6 +210,187 @@ public class EfApiKeyStoreTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId)));
+    }
+
+    [Theory]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task Personal_access_token_fails_validation_while_the_membership_is_not_active(MembershipStatus status)
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], status));
+
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_fails_validation_when_the_membership_was_removed()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await fixture.Memberships.RemoveMembershipAsync(userId, tenantId);
+
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_is_not_kept_alive_by_a_membership_in_another_tenant()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, Guid.CreateVersion7(), []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await fixture.Memberships.RemoveMembershipAsync(userId, tenantId);
+
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_is_not_kept_alive_by_another_users_membership()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(Guid.CreateVersion7(), tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], MembershipStatus.Former));
+
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_validates_while_the_membership_is_active()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Viewer"]));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        var descriptor = await fixture.Store.ValidateAsync(pat.RawKey);
+
+        Assert.NotNull(descriptor);
+        Assert.Equal(pat.Descriptor.Id, descriptor.Id);
+        Assert.Equal(userId, descriptor.UserId);
+        Assert.Equal(tenantId, descriptor.TenantId);
+        Assert.Empty(descriptor.Roles);
+    }
+
+    [Theory]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task Personal_access_token_validates_again_when_the_membership_returns(MembershipStatus status)
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], status));
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+
+        var listed = Assert.Single(await fixture.Store.GetForTenantAsync(tenantId));
+        Assert.Null(listed.RevokedAt);
+
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+
+        var descriptor = await fixture.Store.ValidateAsync(pat.RawKey);
+        Assert.NotNull(descriptor);
+        Assert.Equal(pat.Descriptor.Id, descriptor.Id);
+        Assert.Null(descriptor.RevokedAt);
+    }
+
+    [Fact]
+    public async Task Personal_access_token_validates_again_after_its_membership_was_removed_and_granted_anew()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await fixture.Memberships.RemoveMembershipAsync(userId, tenantId);
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+
+        await fixture.OtherHostMemberships().SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+
+        Assert.NotNull(await fixture.Store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_revoked_meanwhile_stays_refused_when_the_membership_returns()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], MembershipStatus.Former));
+        await fixture.Store.RevokeAsync(pat.Descriptor.Id);
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
+    public async Task Personal_access_token_expired_meanwhile_stays_refused_when_the_membership_returns()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(
+            tenantId, "pat", [], userId, fixture.Clock.GetUtcNow().AddHours(1)));
+
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], MembershipStatus.Former));
+        fixture.Clock.Advance(TimeSpan.FromHours(2));
+        await fixture.Memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+
+        Assert.Null(await fixture.Store.ValidateAsync(pat.RawKey));
+    }
+
+    [Theory]
+    [InlineData(MembershipStatus.Active)]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task Machine_key_validates_whatever_its_membership_row_says(MembershipStatus status)
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var machine = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "machine", ["Viewer"]));
+
+        await fixture.Memberships.SetMembershipAsync(
+            new TenantMembership(machine.Descriptor.Id, tenantId, ["Viewer"], status));
+
+        Assert.NotNull(await fixture.Store.ValidateAsync(machine.RawKey));
+    }
+
+    [Fact]
+    public async Task Machine_key_validates_after_its_membership_row_was_removed()
+    {
+        using var fixture = new ApiKeyFixture();
+        var tenantId = Guid.CreateVersion7();
+        var machine = await fixture.Store.IssueAsync(new ApiKeyIssueRequest(tenantId, "machine", ["Viewer"]));
+
+        await fixture.Memberships.RemoveMembershipAsync(machine.Descriptor.Id, tenantId);
+
+        Assert.NotNull(await fixture.Store.ValidateAsync(machine.RawKey));
     }
 
     [Fact]

@@ -169,6 +169,12 @@ applies to the entire NuGet family.
   being collected, and its last renewal can be two thirds of the grace old — with a window longer than the rest, the
   drain handed the command over again and its handler ran a second time. **A host configured with a window of a
   third of the grace or more now fails at start-up**; the defaults (30 s and 20 ms) are far inside the bound.
+- **A personal access token validates only while its user is an active member of the key's tenant.** Validation
+  checked existence, revocation and expiry, so a token kept authenticating with its tenant claim after the membership
+  had ended, and an endpoint that needs only authentication served that tenant's data. **Such a token now gets a
+  `401` while the membership is former, pending or missing**, and works again if the membership becomes active. The
+  token is not revoked, and machine keys are unaffected. **A custom `IApiKeyStore` must apply the same check**; the
+  compiler does not flag it. A service modelled as a user without an active membership should move to a machine key.
 - **A recorded change to a field marked for encryption is encrypted.** A change set, or a `FieldChangedEvent<T>`
   appended directly, wrote the new value of an `[EncryptData]` property in plaintext to the event store and the bus,
   where a later erasure could not reach it. It is now stored as ciphertext at the property's level and for the
