@@ -169,6 +169,17 @@ applies to the entire NuGet family.
   being collected, and its last renewal can be two thirds of the grace old — with a window longer than the rest, the
   drain handed the command over again and its handler ran a second time. **A host configured with a window of a
   third of the grace or more now fails at start-up**; the defaults (30 s and 20 ms) are far inside the bound.
+- **A recorded change to a field marked for encryption is encrypted.** A change set, or a `FieldChangedEvent<T>`
+  appended directly, wrote the new value of an `[EncryptData]` property in plaintext to the event store and the bus,
+  where a later erasure could not reach it. It is now stored as ciphertext at the property's level and for the
+  stream's owner; the property name stays readable, and once the key is destroyed replay sets the property to null or
+  its type's default and continues. No API change and no migration. **Upgrade every host that reads the stream or
+  consumes its events before any host that writes, and roll back all hosts together:** an earlier host fails on such
+  a value for a string, number, identifier, enum or collection property, and silently gets a wrong value for a
+  record, class, `object` or `JsonElement` property. **Changes already recorded in the clear stay as they are**, keep
+  replaying, and are not reached by an erasure, because rewriting them would break the tamper-evident chain; the
+  guide *Encrypt Sensitive Data* shows how to find them and what the options are. Upcasters see ciphertext for such a
+  value, and rewriting the recorded property name makes it unreadable.
 
 ## [4.7.1] — 2026-11-05
 

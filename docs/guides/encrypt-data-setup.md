@@ -156,7 +156,9 @@ Decryption requires the **same** AAD. If a ciphertext is moved between tenants, 
 
 The tenant is the session's only where nothing more specific states the owner. An event is bound to
 its **stream's** owner, whoever appends it, and a command that implements `INamesDataOwner` is bound
-to the owner it names, whoever dispatches it.
+to the owner it names, whoever dispatches it. A recorded field change is an event like any other, and
+its value is additionally bound to the property it names — see
+[Changes to a marked property](#changes-to-a-marked-property).
 
 ## Blob formats, and reading older ones
 
@@ -249,6 +251,82 @@ to a type that already has ordinary serialized data, that data is read as ordina
 rejected. A field that is stored in the clear is taken as it is, while a field stored encrypted is
 decrypted. New writes are encrypted from the moment the attribute is in place.
 
+## Changes to a marked property
+
+An update applied as a change set records one `FieldChangedEvent<TAggregate>` per changed property,
+and you can append one yourself. The event carries no marks of its own: **it is protected as the
+property it names.** Where that property is marked on the aggregate, the recorded value is stored and
+published as ciphertext, at the property's own level, for the stream's owner — the key the property's
+value in the aggregate's snapshot is under, so an erasure that shreds one shreds the other. A change
+to an unmarked property is stored as ordinary JSON and asks for no key.
+
+```json
+{"PropertyName":"Email","NewValue":{"__enc":true,"v":1,"alg":1,"kid":"…","n":"…","t":"…","ct":"…"}}
+```
+
+- **The name stays readable.** Replay needs it before any key is fetched. It is also bound to the
+  value: a stored change whose property name was altered fails with `CryptographicException` rather than
+  assigning one property's value to another. An envelope copied between a snapshot and a recorded
+  change fails the same way.
+- **Replay sets the value, then its absence.** While the key exists, rebuilding sets the property to
+  the recorded value. Once the key is destroyed the event reads as carrying no value, the property is
+  set to `null` or to the default of a non-nullable value type, and the replay goes on with the next
+  event.
+- **Removing a mark does not strand anything.** Whether a value is decrypted depends on what is
+  stored, not on the current mark, so ciphertext keeps reading after the mark is gone.
+
+### Rolling upgrades of recorded changes
+
+A host on a version that did not protect recorded changes cannot read one that is protected. **Upgrade
+every host that reads the stream or consumes its events first, and the hosts that write to it after
+them.** There is no setting that keeps writing the old form: it would be an off-switch for encryption
+of data you marked as needing it.
+
+What an earlier host does when it meets a protected change depends on the property's type:
+
+- For a `string`, a number, a `Guid`, a date, an enum or a collection, applying the event throws
+  `JsonException`, because the envelope cannot be converted to the property's type. The replay or the
+  event handler fails, and delivery retries.
+- For a property typed `object` or `JsonElement`, the envelope itself is assigned as the value. For a
+  record or a class, or a dictionary that can hold the envelope's members, the envelope reads as an
+  object with none of the expected values. **There is no failure in these cases, only a wrong value.**
+  The reader-first order is what prevents this.
+
+The same applies to rolling back. A host rolled back to an earlier version fails on the protected
+changes written in the meantime, so roll back every host together or not at all.
+
+### Field changes recorded in the clear
+
+Changes recorded before this protection existed, or before the property was marked, hold the value in
+plain JSON. They keep replaying as they are, and the framework does not rewrite them: a stream's chain
+hashes each entry's payload, so a rewrite would destroy the evidence the chain exists to give.
+
+**This is existing exposure that an erasure does not reach.** Destroying a key does nothing to a value
+that was never encrypted under it, in the store or in any copy of it.
+
+The affected events are the field changes that name a marked property and whose value is not an
+envelope. With the default PostgreSQL naming, this lists them for one aggregate and only reads; put in
+your aggregate's full name, its assembly and its marked properties:
+
+```sql
+SELECT stream_id, version, tenant_id, user_id
+FROM event_stream_entry
+WHERE event_type_name LIKE 'Stratara.Shared.EventSourcing.FieldChangedEvent`1[[MyApp.Customer, MyApp,%'
+  AND data_json::jsonb ->> 'PropertyName' IN ('Email', 'Phone')
+  AND jsonb_typeof(data_json::jsonb -> 'NewValue') <> 'null'
+  AND data_json::jsonb -> 'NewValue' -> '__enc' IS NULL;
+```
+
+You then have two options, and neither is free:
+
+- **Accept and record the exposure.** Nothing changes in the store; your erasure records state that
+  these values are outside what a key's destruction reaches.
+- **Replace the payloads, as a deliberate operator act outside the framework.** Re-encrypt or null
+  those payloads, then re-chain and re-anchor the stream from the first altered entry. Every entry
+  from that point gets a new hash, and the chain no longer proves that those entries are unchanged.
+  Whoever relies on that evidence has to be told. The framework ships no migration for this, on
+  purpose: it would automate breaking the evidence.
+
 ## Data that belongs to a person
 
 Some data is a person's, not a tenant's: a profile with their name, e-mail and language that follows
@@ -284,7 +362,7 @@ erasure shreds them, and no tenant's erasure reaches them. It reads normally fro
 
 ## EncryptionMetadataDriftGuard
 
-At host-start, `EncryptionMetadataDriftGuard` (registered as `IHostedService` by `AddSecurity()`) walks the **Trusted-Type-Allowlist** and checks every type's `EncryptionMetadata.RequiresEncryption` against the actual `[EncryptData]` attributes. If they drift (someone removed `[EncryptData]` but didn't update the metadata), the host fails-fast.
+At host-start, `EncryptionMetadataDriftGuard` (registered as `IHostedService` by `AddSecurity()`) walks the **Trusted-Type-Allowlist** and checks every type's `EncryptionMetadata.RequiresEncryption` against the actual `[EncryptData]` attributes — for a `FieldChangedEvent<TAggregate>`, those of the aggregate's properties. If they drift (someone removed `[EncryptData]` but didn't update the metadata), the host fails-fast.
 
 This catches a class of bugs that's easy to introduce: marking a property `[EncryptData]` initially, then dropping the attribute in a refactor — without re-keying the historical events.
 

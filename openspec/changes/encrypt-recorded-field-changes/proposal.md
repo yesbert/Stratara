@@ -37,9 +37,11 @@ how older hosts read it, and how upcasters see it, which are the owner's decisio
   evidence. The documentation states the exposure honestly — erasure does not reach those values —
   and tells a consumer how to find the affected events and what its options are.
 - **Rolling upgrade (BREAKING for mixed-version readers).** A host on an earlier version cannot read
-  a protected recorded change written by this version: for a typed property it fails loudly when
-  the ciphertext cannot be converted to the property's type. The documentation states the upgrade
-  order: every host that reads the stream or consumes its events first.
+  a protected recorded change written by this version. For a string, number, identifier, enum or
+  collection property it fails loudly; for a record, class, `object` or `JsonElement` property it
+  **silently gets a wrong value**. The documentation therefore states the upgrade order as a
+  requirement: every host that reads the stream or consumes its events first, and a rollback of all
+  hosts together.
 - **Upcasters see ciphertext** for the value of a protected recorded change, and the readable
   property name; they can still route or rename the event type, but cannot inspect or transform the
   value, and cannot rename the property the change names without making its value unreadable.

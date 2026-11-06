@@ -3,6 +3,7 @@ using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
 using Stratara.Infrastructure.Security.Serialization;
+using Stratara.Shared.EventSourcing;
 
 namespace Stratara.Infrastructure.Tests.Security;
 
@@ -154,6 +155,36 @@ public class EncryptionMetadataDriftGuardTests
         var resolver = new TrustedTypeResolver();
         resolver.Register(typeof(FieldByFieldNotebook));
         resolver.Register(typeof(NoteWrittenFieldByField));
+        var sut = new EncryptionMetadataDriftGuard(resolver);
+
+        var exception = await Record.ExceptionAsync(async () => await sut.StartAsync(CancellationToken.None));
+
+        Assert.Null(exception);
+    }
+
+    private sealed class MarkedAggregate
+    {
+        [EncryptData]
+        public string? Email { get; set; }
+    }
+
+    private sealed class ConstructorMarkedAggregate([EncryptData] string email)
+    {
+        public string Email { get; } = email;
+    }
+
+    private sealed class UnmarkedAggregate
+    {
+        public string? City { get; set; }
+    }
+
+    [Fact]
+    public async Task StartAsync_ARecordedChangeBorrowingMarksFromItsAggregate_IsAgreementNotDrift()
+    {
+        var resolver = new TrustedTypeResolver();
+        resolver.Register(typeof(FieldChangedEvent<MarkedAggregate>));
+        resolver.Register(typeof(FieldChangedEvent<ConstructorMarkedAggregate>));
+        resolver.Register(typeof(FieldChangedEvent<UnmarkedAggregate>));
         var sut = new EncryptionMetadataDriftGuard(resolver);
 
         var exception = await Record.ExceptionAsync(async () => await sut.StartAsync(CancellationToken.None));

@@ -134,10 +134,11 @@ facts. What is honest instead:
 
 A host on an earlier version deserializes `FieldChangedEvent<T>` as unmarked, so `NewValue` arrives as
 the envelope object; `SetValueByName` then tries to convert that object to the property's type. For a
-`string`, number, `Guid`, date or record property this throws `JsonException` and the replay or the
-event handler fails — loud, and retried by the delivery machinery. For a property typed `object`,
-`JsonElement` or a string-keyed dictionary the envelope would be **assigned silently**. Evidence: the
-implementation of `SetValueByName`; to be pinned by a test (tasks 2.6).
+`string`, number, `Guid`, date, enum or collection property this throws `JsonException` and the replay
+or the event handler fails — loud, and retried by the delivery machinery. For a property typed
+`object`, `JsonElement` or a string-keyed dictionary the envelope would be **assigned silently**, and a
+record or class property silently reads as an empty object. Implementation showed the record case; this
+paragraph first claimed it failed loudly. Evidence: tests pinning the behaviour (task 2.6).
 
 Recommended: one release that both reads and writes the protected form, with the reader-first upgrade
 order documented (the `data-encryption` requirement "The upgrade order … is documented"), following the
@@ -200,6 +201,16 @@ marked property), not as drift. Evidence: the implementation of the guard.
 4. Rollback: a host rolled back to an earlier version fails to replay protected changes written in
    the meantime (Decision 5). Rolling back therefore requires rolling back every host together, or
    not at all — stated in the upgrade section.
+
+## Implementation notes
+
+- A property's own `[JsonConverter]` is not applied to the recorded value, unlike the snapshot: replay
+  reads through the declared type alone, as it does for an unmarked property, so a converter's form
+  would not read back.
+- A value that is not an instance of the declared type, such as an array for a list, is written with
+  its runtime type; change sets allow that shape.
+- An aggregate marked for encryption as a whole gets no protection here. The drift guard already
+  refuses such an aggregate at start-up where it is registered.
 
 ## Owner decisions (2026-11-06)
 

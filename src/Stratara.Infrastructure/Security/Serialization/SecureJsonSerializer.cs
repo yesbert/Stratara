@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Stratara.Diagnostics;
 using Stratara.Infrastructure.Security.Mapping;
 using Stratara.Abstractions.Security;
+using Stratara.Shared.EventSourcing;
 
 namespace Stratara.Infrastructure.Security.Serialization;
 
@@ -30,6 +31,11 @@ namespace Stratara.Infrastructure.Security.Serialization;
 /// property name for per-property encryption — so a ciphertext copied between properties or
 /// between subjects fails decryption.
 /// </para>
+/// <para>
+/// A <see cref="FieldChangedEvent{TAggregate}"/> carries no marks of its own: its value is protected
+/// when the property it names is marked on the aggregate, at that mark's level, with the scope
+/// <c>field-changed:&lt;PropertyName&gt;</c> binding the value to the readable name.
+/// </para>
 /// </remarks>
 internal sealed partial class SecureJsonSerializer(
     IKeyStore keyStore,
@@ -37,6 +43,9 @@ internal sealed partial class SecureJsonSerializer(
     ILogger<SecureJsonSerializer>? logger = null,
     IHostEnvironment? environment = null) : ISecureJsonSerializer
 {
+    private const string RecordedPropertyName = nameof(FieldChangedEvent<object>.PropertyName);
+    private const string RecordedNewValue = nameof(FieldChangedEvent<object>.NewValue);
+
     private static readonly ConcurrentDictionary<Type, byte[]> DefaultValueJson = new();
 
     /// <inheritdoc/>
@@ -59,6 +68,11 @@ internal sealed partial class SecureJsonSerializer(
         if (!metadata.RequiresEncryption)
         {
             return JsonSerializer.Serialize(obj);
+        }
+
+        if (metadata.RecordedAggregate is { } aggregate)
+        {
+            return await SerializeRecordedChangeAsync(obj, metadata, aggregate, tenantId, userId, cancellationToken);
         }
 
         if (metadata.ClassAttribute is not null)
@@ -86,6 +100,14 @@ internal sealed partial class SecureJsonSerializer(
         CancellationToken cancellationToken = default)
     {
         var metadata = MetadataCache.GetOrCreateMetadata(returnType);
+
+        // Before the marks are consulted: a value recorded as ciphertext stays readable after its
+        // property, or every property of the aggregate, is no longer marked.
+        if (metadata.RecordedAggregate is not null)
+        {
+            return await DeserializeRecordedChangeAsync(json, returnType, tenantId, userId, cancellationToken);
+        }
+
         if (!metadata.RequiresEncryption)
         {
             return JsonSerializer.Deserialize(json, returnType);
@@ -106,6 +128,74 @@ internal sealed partial class SecureJsonSerializer(
         }
 
         return JsonSerializer.Deserialize(json, returnType);
+    }
+
+    private async Task<string> SerializeRecordedChangeAsync(object change, EncryptionMetadata metadata, EncryptionMetadata aggregate,
+        Guid? tenantId, Guid? userId, CancellationToken cancellationToken)
+    {
+        var propertyName = ValueOf(change, metadata, RecordedPropertyName) as string;
+        var newValue = ValueOf(change, metadata, RecordedNewValue);
+        if (newValue is null || propertyName is null || !aggregate.EncryptedPropertiesByName.TryGetValue(propertyName, out var marked))
+        {
+            return JsonSerializer.Serialize(change);
+        }
+
+        // The property's own converter is left out on purpose: replay reads the value through the
+        // declared type alone, as it does for a change to an unmarked property. A value of another shape
+        // than the property, which replay also accepts, cannot be written as the declared type.
+        var declaredType = marked.Property.PropertyType;
+        var plainJsonUtf8 = JsonSerializer.SerializeToUtf8Bytes(newValue, declaredType.IsInstanceOfType(newValue) ? declaredType : newValue.GetType());
+        var wrapper = await EncryptToWrapperAsync(plainJsonUtf8, marked.Attribute.Level, tenantId, userId,
+            SecurityConstants.RecordedChangeScopePrefix + propertyName, cancellationToken);
+
+        var buffer = new ArrayBufferWriter<byte>();
+        await using var writer = new Utf8JsonWriter(buffer);
+        writer.WriteStartObject();
+        writer.WriteString(RecordedPropertyName, propertyName);
+        writer.WritePropertyName(RecordedNewValue);
+        JsonSerializer.Serialize(writer, wrapper);
+        writer.WriteEndObject();
+        await writer.FlushAsync(cancellationToken);
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static object? ValueOf(object change, EncryptionMetadata metadata, string memberName) =>
+        Array.Find(metadata.AllProperties, accessor => accessor.Name == memberName)?.GetValue(change);
+
+    private async Task<object?> DeserializeRecordedChangeAsync(string json, Type returnType, Guid? tenantId, Guid? userId,
+        CancellationToken cancellationToken)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty(RecordedNewValue, out var stored) || !IsEncryptedWrapper(stored))
+        {
+            return JsonSerializer.Deserialize(json, returnType);
+        }
+
+        // A payload that lost its name decrypts under an empty one, and so fails authentication.
+        var propertyName = root.TryGetProperty(RecordedPropertyName, out var name) && name.ValueKind == JsonValueKind.String
+            ? name.GetString()
+            : string.Empty;
+        var wrapper = JsonSerializer.Deserialize<EncryptedWrapper>(stored.GetRawText())!;
+        var plain = await DecryptToBytesAsync(wrapper, tenantId, userId, SecurityConstants.RecordedChangeScopePrefix + propertyName, cancellationToken);
+
+        var buffer = new ArrayBufferWriter<byte>();
+        await using var writer = new Utf8JsonWriter(buffer);
+        writer.WriteStartObject();
+        writer.WriteString(RecordedPropertyName, propertyName);
+        writer.WritePropertyName(RecordedNewValue);
+        if (plain is null)
+        {
+            writer.WriteNullValue();
+        }
+        else
+        {
+            writer.WriteRawValue(plain, true);
+        }
+
+        writer.WriteEndObject();
+        await writer.FlushAsync(cancellationToken);
+        return JsonSerializer.Deserialize(buffer.WrittenSpan, returnType);
     }
 
     private async Task<string> EncryptWholeJsonAsync(object obj, DataSensitivityLevel level, Guid? tenantId, Guid? userId,
@@ -156,14 +246,14 @@ internal sealed partial class SecureJsonSerializer(
             return;
         }
 
-        if (!metadata.EncryptedAttributesByName.TryGetValue(member.ClrName, out var attr))
+        if (!metadata.EncryptedPropertiesByName.TryGetValue(member.ClrName, out var marked))
         {
             JsonSerializer.Serialize(writer, value, member.PropertyType, member.Options);
             return;
         }
 
         var plainJsonUtf8 = JsonSerializer.SerializeToUtf8Bytes(value, member.PropertyType, member.Options);
-        var wrapper = await EncryptToWrapperAsync(plainJsonUtf8, attr.Level, tenantId, userId, member.ClrName, cancellationToken);
+        var wrapper = await EncryptToWrapperAsync(plainJsonUtf8, marked.Attribute.Level, tenantId, userId, member.ClrName, cancellationToken);
         JsonSerializer.Serialize(writer, wrapper);
     }
 
