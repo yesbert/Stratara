@@ -136,6 +136,10 @@ published SHALL remain stored and be retried on a later pass, and SHALL NOT caus
 attempt them again. A pass SHALL NOT depend on storage coming back empty to end, because messages
 that cannot be published never leave it.
 
+A pass SHALL attempt each stored message once. The bounded retries of a first dispatch SHALL NOT apply
+to republication: the message is already durable and the next pass is its retry, while retries inside a
+pass would keep every message behind it waiting and could outlast the lock's lease.
+
 #### Scenario: A worker acquires the lock
 
 - **WHEN** the worker acquires the lock and stored messages exist
@@ -146,6 +150,17 @@ that cannot be published never leave it.
 - **WHEN** a batch is handed to the dispatcher and none of it can be published
 - **THEN** the pass ends rather than re-reading the same messages, the messages remain stored, and
   the next interval retries them
+
+#### Scenario: A stored message is refused during a pass
+
+- **WHEN** the bus refuses a stored message during a pass
+- **THEN** that message is attempted once in the pass, stays stored, and is attempted once more on the
+  next pass
+
+#### Scenario: A refused message is followed by others
+
+- **WHEN** the bus refuses a stored message and further messages follow it in the batch
+- **THEN** each of them is attempted in the same pass, whichever topic it is for
 
 #### Scenario: Stored messages of one kind cannot be published
 
@@ -623,3 +638,86 @@ working without change.
 
 - **WHEN** the framework's own repository is asked to remove a batch
 - **THEN** the batch is removed in one round trip to the database — verified on the PostgreSQL store
+
+### Requirement: The distributed outbox lock is confined to one product
+
+The Redis-leased outbox lock SHALL be held per product name, set with
+`RedisCoordinationOptions.ProductName` — the same setting that confines replay coordination — so that
+workers of different products on one store do not wait for each other. A worker that sets no name SHALL
+use the unnamed lock, shared with other workers that set none and with earlier releases.
+
+#### Scenario: Two products share one store
+
+- **WHEN** a worker of one product holds the lock, and a worker of a product with a different name asks
+  for it — verified on the Redis-backed lock
+- **THEN** the second worker acquires its own lock
+
+#### Scenario: Two workers of one product
+
+- **WHEN** a worker holds the lock, and another worker with the same name asks for it
+- **THEN** the second worker does not acquire it
+
+#### Scenario: One worker of a product lacks the name
+
+- **WHEN** a worker of a product sets no name and another worker of that product sets one
+- **THEN** they do not exclude each other and may drain concurrently, which the at-least-once contract
+  tolerates as duplicate publication, and the documentation says so
+
+### Requirement: The RabbitMQ transport requires a broker that keeps its routing across a restart
+
+`Stratara.Outbox.RabbitMQ` SHALL require RabbitMQ 4.2 or later. On such a broker, a worker subscription
+SHALL stay routed across a broker restart whether or not a host of it is running, so that what is published
+afterwards waits for it. The framework SHALL NOT refuse an older broker; below the floor this is not guaranteed.
+
+#### Scenario: A subscription established ahead of its handler
+
+- **WHEN** a worker subscription is established without a handler, the broker restarts and a message is
+  published — verified on RabbitMQ only, against a real broker restart
+- **THEN** the message waits for the subscription and reaches the handler that later attaches
+
+#### Scenario: A subscription whose host is down over the restart
+
+- **WHEN** a worker subscription's host is down while the broker restarts and a message is published
+- **THEN** the message waits in that subscription's queue
+
+#### Scenario: A broker below the floor
+
+- **WHEN** a host runs against a broker below 4.2
+- **THEN** the documentation states that a subscription not yet rebound can silently lose a message after
+  a broker restart, and that the broker must be updated first
+
+### Requirement: A stored message that cannot be read does not stop the drain
+
+A stored message that cannot be read back SHALL be logged as an error naming the entry and its type,
+SHALL stay stored, and SHALL NOT keep the messages behind it from being published. Messages are drained
+oldest first, so a failure on one would otherwise end every pass on the same row.
+
+#### Scenario: One stored message cannot be read
+
+- **WHEN** a drain pass reads a stored command or event bundle whose content cannot be read back, with
+  readable messages behind it
+- **THEN** the unreadable one is logged and stays stored, and those behind it are published and removed
+  in the same pass
+
+#### Scenario: Draining one kind fails as a whole
+
+- **WHEN** a drain pass fails while draining stored commands
+- **THEN** the failure is logged, and stored event bundles are still drained in that pass
+
+### Requirement: Publishing does not accumulate connections to the broker
+
+Publishing at a steady rate SHALL NOT use up the connection's capacity for send links. The Azure Service
+Bus transport SHALL hold one sender per topic, opened on the first publish to it, and SHALL close the
+senders it opened when the bus is disposed.
+
+#### Scenario: Several messages are published to one topic
+
+- **WHEN** a host publishes several messages to one topic
+- **THEN** one sender is used for all of them, and another topic has one of its own — verified on the
+  Azure Service Bus transport against a substituted client, not a live namespace
+
+#### Scenario: The bus is disposed
+
+- **WHEN** the bus is disposed
+- **THEN** every sender it opened is closed — verified on the Azure Service Bus transport against a
+  substituted client, not a live namespace

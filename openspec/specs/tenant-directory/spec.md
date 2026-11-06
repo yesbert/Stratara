@@ -362,6 +362,10 @@ A tenant's creation event SHALL declare the tenant it creates as that event's ow
 the recorded owner of a new tenant is the tenant itself and does not depend on which session
 performed the creation.
 
+The read model SHALL NOT let a late or redelivered fact overwrite newer state: a rename, activation,
+deactivation, locale change or reassignment whose version is not newer than the version the row holds
+SHALL be skipped.
+
 #### Scenario: A tenant's lifecycle is recorded
 
 - **WHEN** a tenant is created, renamed, activated, deactivated, assigned, has its default locale
@@ -387,6 +391,18 @@ performed the creation.
 
 - **WHEN** a deletion is processed for a row another writer has already removed
 - **THEN** the concurrency failure is absorbed rather than failing the bundle
+
+#### Scenario: A lifecycle fact older than the row arrives
+
+- **WHEN** a rename, activation, deactivation, locale change or reassignment arrives with a version
+  older than the one the tenant's row holds
+- **THEN** the row keeps its newer state
+
+#### Scenario: A lifecycle fact is delivered twice
+
+- **WHEN** a rename, activation, deactivation, locale change or reassignment arrives with the version
+  the tenant's row already holds
+- **THEN** nothing is written
 
 ### Requirement: The directory tables can be hosted in an existing context
 

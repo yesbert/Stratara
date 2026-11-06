@@ -1,6 +1,6 @@
 # Record the behaviour the review fixes shipped
 
-> **Status:** proposed
+> **Status:** approved (owner, 2026-11-06)
 
 > **Backfill.** This change records behaviour that is already on `main` and in `[Unreleased]`; nothing
 > here is to be built. Approving it says "this is an accurate record", not "build this", so it is

@@ -293,7 +293,8 @@ the snapshot. A snapshot SHALL be read back under the owner it was written under
 An aggregate SHALL expose its state so that it can be written to a snapshot and read back — its
 properties must be settable from outside the type. Where a registered aggregate declares a property
 that holds state and cannot be set from outside, the host SHALL refuse to start, naming the
-aggregate and the property.
+aggregate and the property. A property inherited from a base class counts as one the aggregate
+declares.
 
 Refusing to start is the point. The failure this replaces is silent: the aggregate rebuilds, the
 events after the snapshot apply, and only the state the snapshot held is missing — so the damage
@@ -319,3 +320,9 @@ because a restore that omits it loses nothing.
 - **WHEN** a registered aggregate declares a property computed from its other properties, with no
   setter
 - **THEN** the host starts — the property is recomputed after a restore and nothing is lost
+
+#### Scenario: A base class declares the property
+
+- **WHEN** a registered aggregate inherits, from a base class, a state-holding property that cannot be
+  set from outside the type
+- **THEN** the host fails to start, naming the aggregate and the property

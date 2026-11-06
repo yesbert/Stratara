@@ -188,6 +188,17 @@ A double that quietly ignores a guarantee turns every test that relies on it int
 - **THEN** the round trip recovers the plaintext and decrypting under a different scope fails, so a
   test cannot pass on scope binding the real encryptor would refuse
 
+#### Scenario: Several handlers attach under one subscription of the message bus double
+
+- **WHEN** a test attaches several handlers under one subscription name and publishes several messages
+- **THEN** each message reaches one of those handlers, in turn in the order they attached, and a
+  handler for another message type does not take a turn for a message it cannot handle
+
+#### Scenario: Several subscriptions listen on one topic of the message bus double
+
+- **WHEN** a test attaches handlers under different subscription names on one topic and publishes
+- **THEN** each subscription receives every message
+
 ### Requirement: Test identities are deterministic and derived from a name
 
 The framework SHALL derive a stable identifier from a readable name, so tests can refer to tenants
@@ -325,3 +336,19 @@ across silos belongs to an integration test against real infrastructure.
 - **WHEN** a test commits facts that one projection applies and another does not, and waits for the readers
 - **THEN** the wait returns within seconds, although the other projection's reader has not written its checkpoint
   past those facts
+
+### Requirement: A test invokes a projection's handler as production does
+
+`ProjectionTester` SHALL invoke a projection's handler for an event under the preference production
+uses: the handler taking the payload where the projection declares one, and otherwise the handler
+taking the enveloped event.
+
+#### Scenario: A projection declares both handlers
+
+- **WHEN** a test hands an event to a projection declaring both a payload and an enveloped handler for it
+- **THEN** the payload handler runs
+
+#### Scenario: A projection declares only an enveloped handler
+
+- **WHEN** a test hands an event to a projection declaring only an enveloped handler for it
+- **THEN** that handler runs with the envelope
