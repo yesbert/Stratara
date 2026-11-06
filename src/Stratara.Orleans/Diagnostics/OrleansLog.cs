@@ -275,4 +275,22 @@ internal static partial class OrleansLog
         Level = LogLevel.Warning,
         Message = "Handing recorded command {IntentId} over to its grain failed (aggregate {AggregateId}, heavy {Heavy}); the drain hands it over again after the grace.")]
     public static partial void LogHandOverFailed(this ILogger logger, Exception exception, Guid intentId, Guid? aggregateId, bool heavy);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.ReplaySagaCheckpointsRestored,
+        Level = LogLevel.Warning,
+        Message = "The truncator {Truncator} removed or moved back {Count} saga checkpoints during a full replay; they were written back: {Positions}. A truncator empties read models and leaves the checkpoints of the saga consumers in place, because a saga without its position runs its side effects again.")]
+    public static partial void LogReplaySagaCheckpointsRestored(this ILogger logger, string truncator, int count, string positions);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.ReplaySagaCheckpointsNotGuarded,
+        Level = LogLevel.Warning,
+        Message = "The checkpoint store {Store} cannot list its checkpoints, so this full replay does not check that the truncator left the saga positions in place; implement ListAsync, or use the framework's store.")]
+    public static partial void LogReplaySagaCheckpointsNotGuarded(this ILogger logger, string store);
+
+    [LoggerMessage(
+        EventId = LogEvents.Orleans.ReplaySagaCheckpointsNotRestored,
+        Level = LogLevel.Error,
+        Message = "The truncator {Truncator} removed or moved back saga checkpoints during a full replay and these could not be written back: {Positions}. Restore them before the sagas read on, or the sagas run their side effects again.")]
+    public static partial void LogReplaySagaCheckpointsNotRestored(this ILogger logger, Exception exception, string truncator, string positions);
 }

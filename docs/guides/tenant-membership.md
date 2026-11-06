@@ -382,7 +382,8 @@ aggregate has no `Apply` for without reading it. A host that never registers the
 at the first skip; `AddTrustedType<CustomerTenantsDeleted>()` there acknowledges it. The
 [snapshot guide](configure-snapshots.md#what-a-rebuild-applies-and-what-it-skips) has the details.
 Your own projections that remove a deleted tenant's rows can declare `IForgetsDeletedTenants`, so a
-fact recorded for the tenant after its deletion is passed over instead of failing them — see
+fact of the tenant that arrives after its deletion is passed over instead of failing them or adding a
+row nothing removes — see
 [Write a Projection](write-a-projection.md#a-deleted-tenants-late-facts).
 Register the aggregate and the projection like your own:
 

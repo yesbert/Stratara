@@ -119,6 +119,230 @@ public class DirectoryContextSharingTests
     }
 
     [Fact]
+    public async Task SharedContext_RemoveMembership_LetsTheSameScopeSetItAgain()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ITenantMembershipStore>();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.RemoveMembershipAsync(userId, tenantId);
+        Assert.Null(await store.GetMembershipAsync(userId, tenantId));
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Reader"]));
+
+        Assert.Equal(["Reader"], (await store.GetMembershipAsync(userId, tenantId))?.Roles);
+    }
+
+    [Fact]
+    public async Task SharedContext_RemoveMembership_LetsTheSameScopeSelectTheTenantAgain()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ITenantMembershipStore>();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+        await store.RemoveMembershipAsync(userId, tenantId);
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+
+        Assert.Equal(tenantId, await store.GetActiveTenantAsync(userId));
+    }
+
+    [Fact]
+    public async Task SharedContext_RemoveAllMemberships_LetsTheSameScopeSetThemAgain()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ITenantMembershipStore>();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+        await store.RemoveAllMembershipsAsync(userId);
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Reader"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+
+        Assert.Equal(["Reader"], (await store.GetMembershipAsync(userId, tenantId))?.Roles);
+        Assert.Equal(tenantId, await store.GetActiveTenantAsync(userId));
+    }
+
+    [Fact]
+    public async Task SharedContext_RemoveAllMembers_LetsTheSameScopeSetThemAgain()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ITenantMembershipStore>();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+        await store.RemoveAllMembersAsync(tenantId);
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Reader"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+
+        Assert.Equal(["Reader"], (await store.GetMembershipAsync(userId, tenantId))?.Roles);
+        Assert.Equal(tenantId, await store.GetActiveTenantAsync(userId));
+    }
+
+    [Fact]
+    public async Task SharedContext_EndingAMembership_LetsTheSameScopeSelectTheTenantAgainOnceActive()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ITenantMembershipStore>();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"], MembershipStatus.Former));
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.SetActiveTenantAsync(userId, tenantId);
+
+        Assert.Equal(tenantId, await store.GetActiveTenantAsync(userId));
+    }
+
+    [Fact]
+    public async Task SharedContext_RemoveMembership_LeavesTheConsumersOtherPendingChangesPending()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ITenantMembershipStore>();
+        var context = host.Resolve<TestDirectoryDbContext>();
+        var userId = Guid.CreateVersion7();
+        var tenantId = Guid.CreateVersion7();
+        var otherUserId = Guid.CreateVersion7();
+        await store.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+        await store.SetMembershipAsync(new TenantMembership(otherUserId, tenantId, ["Editor"]));
+
+        var modified = await context.Set<TenantMembershipEntry>().SingleAsync(e => e.UserId == otherUserId);
+        modified.Roles = ["Reader"];
+        var added = new TenantMembershipEntry { UserId = Guid.CreateVersion7(), TenantId = tenantId, Roles = ["Editor"] };
+        context.Set<TenantMembershipEntry>().Add(added);
+        var readded = new TenantMembershipEntry { UserId = userId, TenantId = tenantId, Roles = ["Owner"] };
+
+        await store.RemoveMembershipAsync(userId, tenantId);
+        context.Set<TenantMembershipEntry>().Add(readded);
+        await store.RemoveMembershipAsync(userId, tenantId);
+
+        context.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, context.Entry(modified).State);
+        Assert.Equal(EntityState.Added, context.Entry(added).State);
+        Assert.Equal(EntityState.Added, context.Entry(readded).State);
+
+        await context.SaveChangesAsync();
+        Assert.Equal(["Reader"], (await store.GetMembershipAsync(otherUserId, tenantId))?.Roles);
+        Assert.Equal(["Owner"], (await store.GetMembershipAsync(userId, tenantId))?.Roles);
+    }
+
+    [Fact]
+    public async Task SharedContext_ClearingASetting_LetsTheSameScopeSetItAgain()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ISettingStore>();
+
+        await store.SetAsync("theme", "dark", SettingScope.Global);
+        await store.SetAsync("theme", null, SettingScope.Global);
+        Assert.Null(await store.GetOrNullAsync("theme", SettingScope.Global));
+        await store.SetAsync("theme", "light", SettingScope.Global);
+
+        Assert.Equal("light", await store.GetOrNullAsync("theme", SettingScope.Global));
+    }
+
+    public static TheoryData<string> Scopes => ["global", "tenant", "user", "tenant-user"];
+
+    [Theory]
+    [MemberData(nameof(Scopes))]
+    public async Task SharedContext_DeletingASettingScope_LetsTheSameScopeSetItAgain(string kind)
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ISettingStore>();
+        var scope = kind switch
+        {
+            "tenant" => SettingScope.ForTenant(Guid.CreateVersion7()),
+            "user" => SettingScope.ForUser(Guid.CreateVersion7()),
+            "tenant-user" => SettingScope.ForUserInTenant(Guid.CreateVersion7(), Guid.CreateVersion7()),
+            _ => SettingScope.Global,
+        };
+
+        await store.SetAsync("theme", "dark", scope);
+        await store.DeleteScopeAsync(scope);
+        await store.SetAsync("theme", "light", scope);
+
+        Assert.Equal("light", await store.GetOrNullAsync("theme", scope));
+    }
+
+    [Fact]
+    public async Task SharedContext_DeletingATenantsSettings_LeavesAnotherTenantsTrackedChangePending()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<ISettingStore>();
+        var context = host.Resolve<TestDirectoryDbContext>();
+        var deleted = SettingScope.ForTenant(Guid.CreateVersion7());
+        var kept = SettingScope.ForTenant(Guid.CreateVersion7());
+        await store.SetAsync("theme", "dark", deleted);
+        await store.SetAsync("theme", "dark", kept);
+        var pending = await context.Set<SettingEntry>().SingleAsync(e => e.TenantId == kept.NormalizedTenantId);
+        pending.Value = "light";
+
+        await store.DeleteScopeAsync(deleted);
+
+        context.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, context.Entry(pending).State);
+    }
+
+    [Fact]
+    public async Task SharedContext_RemovingATenantsKeys_LetsTheSameScopeImportTheKeyAgain()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<IApiKeyStore>();
+        var tenantId = Guid.CreateVersion7();
+        var rawKey = ApiKeyFormat.CreateRawKey();
+
+        await store.ImportAsync(new ApiKeyImportRequest(rawKey, tenantId, "CI key", ["Deployer"]));
+        await store.RemoveAllForTenantAsync(tenantId);
+        var imported = await store.ImportAsync(new ApiKeyImportRequest(rawKey, tenantId, "CI key", ["Deployer"]));
+
+        Assert.Equal(imported.Id, (await store.ValidateAsync(rawKey))?.Id);
+        await store.RevokeAsync(imported.Id);
+        Assert.Null(await store.ValidateAsync(rawKey));
+    }
+
+    [Fact]
+    public async Task SharedContext_RemovingATenantsKeys_LetsTheSameScopeIssueAgainAndSave()
+    {
+        using var host = new DirectoryHost();
+        host.Gate.Release();
+        var store = host.Resolve<IApiKeyStore>();
+        var memberships = host.Resolve<ITenantMembershipStore>();
+        var context = host.Resolve<TestDirectoryDbContext>();
+        var tenantId = Guid.CreateVersion7();
+        var userId = Guid.CreateVersion7();
+        await memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, ["Editor"]));
+
+        await store.IssueAsync(new ApiKeyIssueRequest(tenantId, "CI key", ["Deployer"]));
+        var token = await store.IssueAsync(new ApiKeyIssueRequest(tenantId, "Token", [], userId));
+        await store.RevokeAsync(token.Descriptor.Id);
+        await store.RemoveAllForUserAsync(userId);
+        await store.RemoveAllForTenantAsync(tenantId);
+        var again = await store.IssueAsync(new ApiKeyIssueRequest(tenantId, "CI key", ["Deployer"]));
+        await context.SaveChangesAsync();
+
+        Assert.Equal(again.Descriptor.Id, Assert.Single(await store.GetForTenantAsync(tenantId)).Id);
+    }
+
+    [Fact]
     public void RegisteringBothVariants_LeavesTheFirstOneRegistered()
     {
         var services = new ServiceCollection();

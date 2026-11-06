@@ -35,6 +35,21 @@ public sealed class ProjectionCheckpointGuardTests : IAsyncLifetime
     public async ValueTask DisposeAsync() => await _connection.DisposeAsync();
 
     [Fact]
+    public async Task Listing_translates_on_the_provider_and_returns_only_the_prefix()
+    {
+        var store = Store();
+        await store.SetAsync("sagas:A", 0, Reader, 5, TestContext.Current.CancellationToken);
+        await store.SetAsync("sagas:A", 1, "other/4", 6, TestContext.Current.CancellationToken);
+        await store.SetAsync("View", 0, Reader, 7, TestContext.Current.CancellationToken);
+
+        var listed = await store.ListAsync("sagas", TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [new StoredCheckpoint("sagas:A", 0, Reader, 5), new StoredCheckpoint("sagas:A", 1, "other/4", 6)],
+            listed.OrderBy(row => row.Partition));
+    }
+
+    [Fact]
     public async Task A_stale_activation_is_refused_naming_both_positions_and_the_successor_stands()
     {
         var stale = Store();

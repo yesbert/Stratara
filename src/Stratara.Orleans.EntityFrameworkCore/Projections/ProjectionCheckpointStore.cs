@@ -90,6 +90,18 @@ public sealed class ProjectionCheckpointStore<TContext>(IDbContextFactory<TConte
         return checkpoint.Position;
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<StoredCheckpoint>> ListAsync(string consumerPrefix, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(consumerPrefix);
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.Set<ProjectionCheckpoint>().AsNoTracking()
+            .Where(c => c.Projection.StartsWith(consumerPrefix))
+            .Select(c => new StoredCheckpoint(c.Projection, c.Partition, c.Reader, c.Position))
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Names what differs: the partition count, when the same reader wrote the checkpoint under
     /// another count, or the two readers otherwise.

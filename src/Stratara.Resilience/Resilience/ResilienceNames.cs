@@ -15,14 +15,16 @@ public static class ResilienceNames
 
     /// <summary>
     /// Command-dispatcher pipeline. Strategy: 3 retries, exponential, 200ms, jitter.
-    /// Used when dispatching command envelopes through the outbox. Never retries cancellation or
+    /// Used on the first dispatch of a command envelope through the outbox; republishing a stored
+    /// envelope makes one attempt and does not run under it. Never retries cancellation or
     /// <see cref="Stratara.Abstractions.EventSourcing.CommittedEventsNotPublishedException"/>.
     /// </summary>
     public const string CommandDispatcher = "CommandDispatcherPipeline";
 
     /// <summary>
     /// Event-bundle-dispatcher pipeline. Strategy: 3 retries, exponential, 200ms, jitter.
-    /// Used when dispatching event bundles through the outbox. Never retries cancellation or
+    /// Used on the first dispatch of an event bundle through the outbox; republishing a stored
+    /// bundle makes one attempt and does not run under it. Never retries cancellation or
     /// <see cref="Stratara.Abstractions.EventSourcing.CommittedEventsNotPublishedException"/>.
     /// </summary>
     public const string EventBundleDispatcher = "EventBundleDispatcherPipeline";

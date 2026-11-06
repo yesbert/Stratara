@@ -270,8 +270,14 @@ queue, and the broker refuses the attempt. The rollout is two steps:
 2. When the old queue is empty and no old consumer is left, delete it. It is still bound to the
    exchange and would otherwise fill with every message forever.
 
-Quorum queues exist since RabbitMQ 3.8; the framework's floor is 3.13 (see
+Quorum queues exist since RabbitMQ 3.8; the framework's floor is 4.2 (see
 [Prerequisites](../getting-started/prerequisites.md)) and its integration tests run against 4.x.
+
+**Why 4.2.** A real broker restart on 3.13, 4.0 and 4.1 loses the topic exchange and its bindings while
+the queue survives. A subscription whose host is up rebinds on recovery, which is enough for the broker
+to report a publication as routed, so nothing tells the publisher that a subscription not yet rebound
+missed it: the message is lost silently. On 4.2, 4.3 and 4.3.6 the exchange and its bindings survive.
+The framework does not check the version, so a host below 4.2 must update the broker first.
 
 **Client subscriptions** (`default-` prefix) are exclusive, auto-deleting queues for a process that is
 listening right now; they have no dead-letter queue. A conflict is requeued, any other failure is
@@ -319,6 +325,8 @@ The `OutboxWorker` polls the outbox table every `OutboxOptions.PollingIntervalSe
 
 **A cycle takes one batch of each kind and ends.** Rows the broker would not accept stay in the table and are retried on the next interval; a cycle never re-reads what it has just failed to publish. That bounds the work a cycle can do, and it is what stops an unreachable broker — or a suppressed drain during a projection replay — from turning a cycle into a loop over the same rows. The practical consequence: a large accumulated backlog drains at one batch per interval rather than in a single pass. With the defaults that is 20 000 rows a minute, and both knobs below are yours.
 
+**A cycle attempts each row once.** The bounded retries of a first dispatch, about 1.4 seconds per refused message, do not apply to republication: the row is already durable and the next interval is its retry. A row the broker refuses, such as a heavy command with no heavy worker bound, costs one publish attempt and logs one failure per cycle, and the rows behind it still get their attempt. A publication that fails only for a moment therefore waits for the next interval.
+
 `OutboxOptions.BatchSize` (default 10_000) caps how many rows the worker claims per cycle, and `LockLeaseSeconds` (default 60) is how long a claimed batch stays leased to one worker. Bind them under the `Outbox` configuration section.
 
 ## Running more than one outbox worker
@@ -338,6 +346,13 @@ builder.Services.AddRedisOutboxLock();   // replaces the always-granting default
 The lease is `LockLeaseSeconds` from the `Outbox` section. Choose one comfortably longer than your
 slowest drain. A holder that stalls past its lease can overlap with a peer, and at-least-once
 delivery is what absorbs the resulting duplicate publish.
+
+The lock is held per product when `RedisCoordination:ProductName` is set, so workers of two products on
+one Redis do not wait for each other. It is the same setting that confines the projection replay
+([Write a projection](write-a-projection.md)). Set it on all of a product's workers together: a worker
+with the name and a worker without it hold different locks and may drain at the same time, which the
+at-least-once contract tolerates as duplicate publication and which nothing reports. With no name set,
+the lock stays where earlier releases hold it.
 
 ### The lock is released only by its holder
 

@@ -14,7 +14,8 @@ namespace Stratara.Outbox.RabbitMQ.Projections;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Keys are namespaced under <c>stratara:projection:replay:*</c>. The dispatchers in this
+/// Keys and channels are namespaced under <c>stratara:projection:replay:*</c>, carrying the name in
+/// <see cref="RedisCoordinationOptions.ProductName"/> where one is set, so that only the hosts of one product meet. The dispatchers in this
 /// package and the Orleans execution model consult <see cref="IsReplayActive"/> on every publish,
 /// every dispatch and every catch-up to suspend the fast-path while a replay is running; the replay
 /// worker uses <see cref="TryActivate"/>, <see cref="SetProgress"/> and <see cref="Complete"/> to surface progress and
@@ -51,15 +52,15 @@ namespace Stratara.Outbox.RabbitMQ.Projections;
 /// </remarks>
 internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposable, IAsyncDisposable
 {
-    private const string CacheKey = "stratara:projection:replay:active";
-    private const string ProcessedKey = "stratara:projection:replay:processed";
-    private const string TotalKey = "stratara:projection:replay:total";
-    private const string ErrorKey = "stratara:projection:replay:error";
-    private const string Channel = "stratara:projection:replay:request";
-    private const string StateChannel = "stratara:projection:replay:state";
-    private const string RequestIdKey = "stratara:projection:replay:request-id";
-    private const string LastKey = "stratara:projection:replay:last";
-    private const string ClaimKeyPrefix = "stratara:projection:replay:claimed:";
+    private const string ActiveName = "stratara:projection:replay:active";
+    private const string ProcessedName = "stratara:projection:replay:processed";
+    private const string TotalName = "stratara:projection:replay:total";
+    private const string ErrorName = "stratara:projection:replay:error";
+    private const string RequestChannelName = "stratara:projection:replay:request";
+    private const string StateChannelName = "stratara:projection:replay:state";
+    private const string RequestIdName = "stratara:projection:replay:request-id";
+    private const string LastName = "stratara:projection:replay:last";
+    private const string ClaimPrefixName = "stratara:projection:replay:claimed:";
     private const string StateChanged = "changed";
     private const string Active = "true";
     private const string Yes = "1";
@@ -113,6 +114,15 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         return 1
         """;
 
+    private readonly string _activeKey;
+    private readonly string _processedKey;
+    private readonly string _totalKey;
+    private readonly string _errorKey;
+    private readonly string _requestChannel;
+    private readonly string _stateChannel;
+    private readonly string _requestIdKey;
+    private readonly string _lastKey;
+    private readonly string _claimKeyPrefix;
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger? _logger;
     private readonly TimeSpan _lease;
@@ -137,8 +147,19 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         IConnectionMultiplexer redis,
         IOptions<ProjectionReplayOptions> options,
         TimeProvider? timeProvider = null,
-        ILogger<ProjectionReplayState>? logger = null)
+        ILogger<ProjectionReplayState>? logger = null,
+        IOptions<RedisCoordinationOptions>? coordination = null)
     {
+        var names = coordination?.Value ?? new RedisCoordinationOptions();
+        _activeKey = names.Name(ActiveName);
+        _processedKey = names.Name(ProcessedName);
+        _totalKey = names.Name(TotalName);
+        _errorKey = names.Name(ErrorName);
+        _requestChannel = names.Name(RequestChannelName);
+        _stateChannel = names.Name(StateChannelName);
+        _requestIdKey = names.Name(RequestIdName);
+        _lastKey = names.Name(LastName);
+        _claimKeyPrefix = names.Name(ClaimPrefixName);
         _redis = redis;
         _logger = logger;
         _lease = TimeSpan.FromSeconds(options.Value.LeaseSeconds);
@@ -161,9 +182,9 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public void Activate()
     {
         var db = _redis.GetDatabase();
-        db.KeyDelete(ErrorKey);
-        db.StringSet(CacheKey, Active, _lease);
-        db.StringSet(RequestIdKey, Guid.Empty.ToString("N"), _lease);
+        db.KeyDelete(_errorKey);
+        db.StringSet(_activeKey, Active, _lease);
+        db.StringSet(_requestIdKey, Guid.Empty.ToString("N"), _lease);
         _startedAt[Guid.Empty] = _timeProvider.GetUtcNow();
         _ownRequestId = Guid.Empty.ToString("N");
         Transition(active: true);
@@ -175,7 +196,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         var startedAt = _timeProvider.GetUtcNow();
         var claimed = (int)_redis.GetDatabase().ScriptEvaluate(
             TryActivateScript,
-            [ClaimKeyPrefix + requestId.ToString("N"), CacheKey, ErrorKey, RequestIdKey, ProcessedKey, TotalKey],
+            [_claimKeyPrefix + requestId.ToString("N"), _activeKey, _errorKey, _requestIdKey, _processedKey, _totalKey],
             [(long)ClaimRetention.TotalSeconds, (long)_lease.TotalMilliseconds, requestId.ToString("N")]);
 
         if (claimed < 0)
@@ -208,7 +229,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
 
         var ended = (int)_redis.GetDatabase().ScriptEvaluate(
             CompleteScript,
-            [LastKey, CacheKey, ProcessedKey, TotalKey, RequestIdKey, ErrorKey],
+            [_lastKey, _activeKey, _processedKey, _totalKey, _requestIdKey, _errorKey],
             [
                 completion.RequestId.ToString("N"),
                 startedAt.ToUnixTimeMilliseconds(),
@@ -229,7 +250,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public void Deactivate()
     {
         var db = _redis.GetDatabase();
-        db.KeyDelete([CacheKey, ProcessedKey, TotalKey, ErrorKey, RequestIdKey]);
+        db.KeyDelete([_activeKey, _processedKey, _totalKey, _errorKey, _requestIdKey]);
         _startedAt.Clear();
         _ownRequestId = string.Empty;
         Transition(active: false);
@@ -239,8 +260,8 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public void SetFailed(string errorMessage)
     {
         var db = _redis.GetDatabase();
-        db.KeyDelete([CacheKey, ProcessedKey, TotalKey, RequestIdKey]);
-        db.StringSet(ErrorKey, errorMessage);
+        db.KeyDelete([_activeKey, _processedKey, _totalKey, _requestIdKey]);
+        db.StringSet(_errorKey, errorMessage);
         _startedAt.Clear();
         _ownRequestId = string.Empty;
         Transition(active: false);
@@ -251,7 +272,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     {
         _redis.GetDatabase().ScriptEvaluate(
             SetProgressScript,
-            [ProcessedKey, TotalKey, CacheKey, RequestIdKey],
+            [_processedKey, _totalKey, _activeKey, _requestIdKey],
             [processedEvents, totalEvents, (long)_lease.TotalMilliseconds, _ownRequestId]);
     }
 
@@ -259,8 +280,8 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public ReplayProgress GetProgress()
     {
         var db = _redis.GetDatabase();
-        var values = db.StringGet([CacheKey, ProcessedKey, TotalKey, ErrorKey, RequestIdKey]);
-        var last = db.HashGetAll(LastKey);
+        var values = db.StringGet([_activeKey, _processedKey, _totalKey, _errorKey, _requestIdKey]);
+        var last = db.HashGetAll(_lastKey);
 
         var isActive = values[0] == Active;
         var processed = isActive && values[1].HasValue ? (long)values[1] : 0;
@@ -280,7 +301,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public async Task SubscribeToReplayRequestAsync(Func<Task> onReplayRequested, CancellationToken cancellationToken = default)
     {
         var subscriber = _redis.GetSubscriber();
-        await subscriber.SubscribeAsync(RedisChannel.Literal(Channel), async (_, _) =>
+        await subscriber.SubscribeAsync(RedisChannel.Literal(_requestChannel), async (_, _) =>
         {
             await onReplayRequested();
         });
@@ -297,7 +318,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
     public async Task SubscribeToReplayRequestAsync(Func<Guid, Task> onReplayRequested, CancellationToken cancellationToken = default)
     {
         var subscriber = _redis.GetSubscriber();
-        await subscriber.SubscribeAsync(RedisChannel.Literal(Channel), async (_, message) =>
+        await subscriber.SubscribeAsync(RedisChannel.Literal(_requestChannel), async (_, message) =>
         {
             var requestId = Guid.TryParse((string?)message, out var parsed) && parsed != Guid.Empty ? parsed : Guid.CreateVersion7();
             await onReplayRequested(requestId);
@@ -317,7 +338,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
         }
 
         var subscriber = _redis.GetSubscriber();
-        subscriber.Publish(RedisChannel.Literal(Channel), requestId.ToString("N"));
+        subscriber.Publish(RedisChannel.Literal(_requestChannel), requestId.ToString("N"));
     }
 
     /// <summary>Stops the refresh; the loop ends at its next await and the subscription goes with the connection.</summary>
@@ -357,7 +378,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
             _active = active;
         }
 
-        _redis.GetSubscriber().Publish(RedisChannel.Literal(StateChannel), StateChanged);
+        _redis.GetSubscriber().Publish(RedisChannel.Literal(_stateChannel), StateChanged);
     }
 
     /// <summary>
@@ -395,7 +416,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
 
         try
         {
-            var queue = await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(StateChannel));
+            var queue = await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(_stateChannel));
             queue.OnMessage(_ => OnStateChangedAsync());
             _subscription = queue;
             if (_subscribeFailing)
@@ -446,7 +467,7 @@ internal sealed class ProjectionReplayState : IProjectionReplayState, IDisposabl
                 generation = _generation;
             }
 
-            var value = await _redis.GetDatabase().StringGetAsync(CacheKey);
+            var value = await _redis.GetDatabase().StringGetAsync(_activeKey);
             lock (_fieldGate)
             {
                 if (_generation == generation)

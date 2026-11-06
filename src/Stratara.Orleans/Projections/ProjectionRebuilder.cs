@@ -116,7 +116,7 @@ internal static class TruncationBetweenResets
         }
     }
 
-    private static async Task<Exception?> CaptureAsync(Func<Task> step)
+    public static async Task<Exception?> CaptureAsync(Func<Task> step)
     {
         try
         {

@@ -246,19 +246,31 @@ The framework then does three things for this projection, and nothing else:
   projection applies facts. What one projection has recorded never depends on how far another has
   got; the partitions of one projection on the Orleans execution model converge through the usual
   retry until each has applied the deletion.
-- When the projection throws `PrecedingFactMissingException` for a fact whose owning tenant it has
-  recorded, the fact is passed over: treated as applied, not retried, and logged at Information
-  (`104_014`) with the projection, the stream, the fact's type and the tenant.
+- Before every other fact it asks the record about the fact's owning tenant. A fact of a recorded tenant
+  is passed over: the projection is not called, the fact is treated as applied, not retried, and logged
+  at Information (`104_014`) with the projection, the stream, the fact's type and the tenant. The same
+  happens when the projection throws `PrecedingFactMissingException` for a fact whose tenant was recorded
+  just after that check. The two deletion facts are always handled, because applying one again must still
+  remove what is there, and a fact with an empty tenant is handled without asking.
 - A replay empties the record of each declaring projection the host registers, just before it empties
   the read models, and leaves another deployment's records in a shared read store alone; rebuilding
   an `IRebuildableProjection` on its own on the Orleans execution model empties its record just before
   its read model. The record is rebuilt from the history, in order.
 
-A fact of a deleted tenant that the projection applies without complaint — a late creation, say —
-is applied as usual; if you want those dropped too, inject `IForgottenTenantStore` and ask it. A
-missing prerequisite for any tenant not recorded — or one the store could not be asked about — is
-retried and fails as before, and a projection that does not declare the interface is not affected at
-all.
+A missing prerequisite for any tenant not recorded is retried and fails as before, and a fact the store
+could not be asked about is reported as a missing prerequisite carrying that failure: it is neither applied
+nor dropped. A projection that does not declare the interface is not affected at all.
+
+Three limits come with the declaration:
+
+- **The check costs one read per fact.** One `IForgottenTenantStore.HasForgottenAsync` for each fact the
+  projection handles, on every path including a replay. The answer is not cached, because a cached answer
+  could hide a deletion another partition applied or outlive the record being emptied.
+- **The decision is the envelope's tenant.** A fact owned by a recorded tenant whose handler would remove
+  something belonging to another tenant is passed over as well, and what it would have removed stays. Record
+  such a fact under the tenant whose data it changes, or do not declare the interface.
+- **The check and the handler are not one transaction.** A deletion applied by another partition between
+  the two can still leave the row of a fact that was already past the check.
 
 **The record lives in the read store.** The framework's read context declares the table
 `projection_forgotten_tenant`, so upgrading needs a migration of your read context.
@@ -362,6 +374,14 @@ rebuild passes each row again.
 
 **There is no per-projection scope.** You cannot replay one projection. Every read model registered
 in the host is emptied, including the ones that were fine.
+
+**Your truncator empties read models and nothing else.** `IProjectionViewTruncator` is yours to write. Name
+the tables it empties, and do not cascade across the read store's schema: the checkpoints of the store-reading
+saga consumers, whose names start with `sagas:`, sit in the same table as the projections', and a saga that loses
+its position runs its side effects again. A saga has no replay, so a rebuild of the read side is no reason to move
+one. On a host that registers store-reading projections the replay catches the mistake — see
+[the migration guide](migrate-to-the-orleans-execution-model.md#a-full-replay-on-a-host-whose-projections-read-the-store).
+Everywhere else this paragraph is all that stands in the way.
 
 **It runs on request, with no confirmation step.** The worker does not start one at host start-up —
 it subscribes and waits. But when a request arrives it begins immediately, in the one host that
@@ -523,6 +543,32 @@ the marking again; a host that cannot subscribe to the announcements logs `104_0
 on the refresh period only until `104_018` says it is subscribed again, and keeps refreshing meanwhile.
 A host on a release before 4.4.2 announces nothing, so a replay it starts is seen by a newer host at
 the refresh period rather than at once.
+
+**Two products on one Redis each need a name.** Without one, every host on that Redis shares one
+replay: a request of either product is claimed by whichever host wins, its outcome is reported to both,
+and while either replays, the other suspends publication. `RedisCoordination:ProductName`
+(`RedisCoordinationOptions.ProductName`) puts the product's name into every Redis key and channel the
+framework writes, and the Redis-leased outbox lock reads the same setting:
+
+```jsonc
+{
+  "RedisCoordination": {
+    "ProductName": "acme"
+  }
+}
+```
+
+The application name is no substitute, because it differs between a product's hosts. The name may hold
+letters, digits, `.`, `_` and `-`, compared exactly, so `Acme` and `acme` are different products; anything
+else is refused when the host starts, with an `OptionsValidationException` naming the setting. With no
+name set, the fixed names of earlier releases stay, and an installation that sets nothing runs unchanged.
+
+**Set the name on all hosts of a product together, while no replay runs.** A host with a name does not meet
+a host without one, or a host of an earlier release, and neither can see the other, so nothing reports it.
+The host left without the name receives no request from the named hosts, sees neither their marking nor their
+outcome, and **keeps publishing during their replay**, against read models being rebuilt. A replay active
+at the switch keeps its marking under the old name until the lease lapses. Nothing is migrated: the old
+keys stay behind, and `stratara:projection:replay:last` and `:error`, which have no lease, are safe to delete.
 
 One thing a version bump does not do for you: a marking that is *already* stuck from before you
 adopted the lease was written without an expiry and does not gain one. Clear it once — an explicit
