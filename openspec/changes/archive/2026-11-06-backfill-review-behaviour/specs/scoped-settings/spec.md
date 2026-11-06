@@ -7,8 +7,7 @@ warning naming the setting, and the rest of the scope SHALL still read. A stored
 authentication or is not ciphertext, or whose key cannot be resolved for another reason, SHALL fail the
 read rather than read as absent.
 
-An erasure leaves such rows behind by design, so one destroyed key must not make its scope unreadable.
-Silently reading a damaged value as unset would be a different thing.
+An erasure leaves such rows behind, so one destroyed key must not make its scope unreadable.
 
 #### Scenario: One setting's key was destroyed
 

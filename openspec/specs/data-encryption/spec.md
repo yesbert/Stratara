@@ -155,6 +155,23 @@ plausible plaintext.
 Encrypting a stream SHALL bind the result to both the scope and a caller-supplied purpose, so that
 ciphertext written for one purpose in one scope cannot be decrypted as another.
 
+Ciphertext written in the current format SHALL be authenticated against the whole scope — its
+sensitivity level, its tenant and its user — and the purpose. A stream in an earlier format SHALL keep
+the binding that format was written with: the previous format binds the tenant and the purpose only,
+and the format before it may record no purpose at all.
+
+A reader MAY name the purpose it expects, through the `ISecureBlobEncryptor.DecryptAsync` form that
+takes one; the framework's encryptor SHALL then fail authentication for a stream written for another
+purpose. A reader that names none is given whatever the stream was written for. That form SHALL be a
+default interface method, so an existing implementation keeps compiling and does not check the purpose
+until it overrides it.
+
+`StrataraBlobEncryptionOptions.WriteV2Blobs`, read from `Stratara:BlobEncryption:WriteV2Blobs` and
+`false` by default, SHALL keep new streams in the previous format for a rolling upgrade. Both formats
+SHALL be read whatever it is set to. The documentation SHALL state that a release before the current
+format cannot read it, and that the option is for as long as such a host still reads what this one
+writes.
+
 #### Scenario: A blob round-trips within its own scope
 
 - **WHEN** a stream is encrypted for a scope and purpose and decrypted for the same scope
@@ -162,13 +179,51 @@ ciphertext written for one purpose in one scope cannot be decrypted as another.
 
 #### Scenario: A blob is read under a different scope
 
-- **WHEN** an encrypted stream is decrypted under a different scope than it was written for
+- **WHEN** a stream encrypted in the current format is decrypted under a scope that differs in its
+  level, its tenant or its user from the one it was written for
 - **THEN** decryption fails
 
 #### Scenario: A blob written by an earlier format version is read
 
 - **WHEN** a stream encrypted under a previously shipped stream format is decrypted
 - **THEN** it is still readable — a format revision does not strand data already written
+
+#### Scenario: A blob is read for another purpose
+
+- **WHEN** a stream that records its purpose is decrypted by a reader naming another purpose
+- **THEN** decryption fails
+
+#### Scenario: A reader names no purpose
+
+- **WHEN** a stream is decrypted under its own scope by a reader that names no purpose
+- **THEN** it decrypts, whatever purpose it was written for
+
+#### Scenario: A blob records no purpose
+
+- **WHEN** a stream in an earlier format that records no purpose is decrypted by a reader naming one
+- **THEN** it decrypts — there is no purpose to check it against
+
+#### Scenario: An encryptor does not override the purpose-taking form
+
+- **WHEN** an implementation of `ISecureBlobEncryptor` written before that form existed is asked to
+  decrypt for a purpose
+- **THEN** it compiles and decrypts as it did, without checking the purpose
+
+#### Scenario: A rolling upgrade writes the previous format
+
+- **WHEN** `WriteV2Blobs` is `true` and a stream is encrypted
+- **THEN** it is written in the previous format, and a host on the current release reads it
+
+#### Scenario: A blob in the previous format is read under another scope of its tenant
+
+- **WHEN** a stream in the previous format is decrypted under a scope of the same tenant that differs
+  in its level or its user
+- **THEN** it decrypts, because that format does not bind them
+
+#### Scenario: A blob in the previous format is read under another tenant
+
+- **WHEN** a stream in the previous format is decrypted under a scope of another tenant
+- **THEN** decryption fails
 
 ### Requirement: Fields are encrypted selectively and transparently
 
@@ -304,6 +359,9 @@ what it did not understand. A process on a release from before a format change c
 so the framework SHALL state, for each release that changes the format, that every process sharing a
 file is upgraded together.
 
+A key another process has revoked, or whose scope another process has erased, SHALL stop resolving at
+a process's next lookup, although that process held the key in memory.
+
 #### Scenario: One process creates a key another needs
 
 - **WHEN** one process creates a key for a new scope and a second process, already running, asks
@@ -331,6 +389,18 @@ file is upgraded together.
 - **WHEN** a key store opens a file whose format is newer than the one it knows
 - **THEN** it fails to open, naming the format it found and the one it supports, and leaves the file
   unchanged
+
+#### Scenario: One process revokes a key another holds in memory
+
+- **WHEN** a process has resolved a key and another process sharing the file then revokes it
+- **THEN** the first process's next lookup does not resolve it — verified on the file-backed key store
+  with two instances over one file
+
+#### Scenario: One process erases a scope another holds in memory
+
+- **WHEN** a process has resolved a key and another process sharing the file then erases its scope
+- **THEN** the first process's next lookup does not resolve it — verified on the file-backed key store
+  with two instances over one file
 
 ### Requirement: A scope that claims isolation but collapses to one key is refused
 
@@ -497,3 +567,130 @@ marked as a whole.
 
 - **WHEN** a registered command type carries the encryption marking on the type itself
 - **THEN** the host starts and the command is encrypted as a whole as before
+
+### Requirement: A recorded field change is protected as the property it names
+
+Where a field-changed event records a new value for an aggregate property marked for encryption,
+the value SHALL be stored and published as ciphertext at that property's sensitivity level, for
+the stream's owner — the tenant and user the stream's other protected fields and its snapshot are
+encrypted for. The name of the changed property SHALL remain readable.
+
+#### Scenario: A change to a marked property is appended
+
+- **WHEN** a field-changed event for a property marked for encryption is appended to a stream
+- **THEN** the persisted payload holds ciphertext for the recorded value and the property name in
+  the clear, and the value is in the clear nowhere in that payload
+
+#### Scenario: The change is published
+
+- **WHEN** a field-changed event for a property marked for encryption is delivered to a consumer of
+  the stream's events
+- **THEN** the delivered payload carries the recorded value as ciphertext, as it is stored —
+  verified on the mapping of a delivered message, not against a running broker
+
+#### Scenario: The change uses the property's level and the stream's owner
+
+- **WHEN** a property is marked at a given sensitivity level and a change to it is recorded in a
+  stream owned by a tenant and user
+- **THEN** the recorded value is encrypted under the key that level and owner select, the same key
+  the property's value in the aggregate's snapshot is encrypted under
+
+#### Scenario: The owner is erased
+
+- **WHEN** the subject a recorded change was encrypted for is erased, or its key version revoked
+- **THEN** the recorded value can no longer be recovered from the stored or the published payload
+
+#### Scenario: A change to an unmarked property is appended
+
+- **WHEN** a field-changed event for a property that is not marked for encryption is appended
+- **THEN** it is stored as ordinary data and no key lookup is performed
+
+#### Scenario: The change is appended directly
+
+- **WHEN** a consumer appends a field-changed event for a marked property itself, rather than
+  through a change set
+- **THEN** the recorded value is protected in the same way
+
+### Requirement: A protected recorded value is bound to the property it names
+
+A protected value in a field-changed event SHALL decrypt only as the value of the property the event
+names. Altering the stored property name SHALL make decryption fail rather than yield the value under
+another property.
+
+#### Scenario: The property name is altered in storage
+
+- **WHEN** the property name of a stored field-changed event carrying a protected value is changed
+  and the event is read
+- **THEN** reading the event fails rather than assigning the decrypted value to the other property
+
+#### Scenario: The property name is unchanged
+
+- **WHEN** a stored field-changed event carrying a protected value is read with its key available
+- **THEN** the recorded value is recovered
+
+### Requirement: Field changes recorded in the clear are read as they are and not rewritten
+
+A field-changed event recorded in the clear for a property that is marked for encryption — written
+before the property was marked, or by a version that did not protect recorded changes — SHALL be read
+as it is stored. The framework SHALL NOT rewrite a recorded event to protect it.
+
+The documentation SHALL state that erasing a key does not reach such a value, and SHALL describe how a
+consumer finds the affected events and what options it has.
+
+#### Scenario: An earlier plaintext change is read
+
+- **WHEN** a field-changed event whose value was recorded in the clear is read for a property that is
+  now marked for encryption
+- **THEN** the value is read as ordinary data rather than rejected
+
+#### Scenario: The framework is upgraded
+
+- **WHEN** a host starts on this version against a store holding field changes recorded in the clear
+- **THEN** those events are left exactly as they were recorded
+
+#### Scenario: A property is no longer marked
+
+- **WHEN** a field-changed event whose value was recorded as ciphertext is read after the property's
+  mark was removed
+- **THEN** the value is still decrypted and read
+
+### Requirement: The upgrade order for protected recorded changes is documented
+
+The documentation SHALL state that a host on a version that did not protect recorded field changes
+cannot read one that is protected, and that every host reading a stream or consuming its events is
+to be upgraded before any host writes to it.
+
+#### Scenario: A consumer plans an upgrade
+
+- **WHEN** a consumer reads the encryption documentation before upgrading hosts that share a store or
+  an event subscription
+- **THEN** it finds the reader-first upgrade order and the failure an earlier reader shows
+
+### Requirement: A type with marked fields follows its JSON attributes
+
+A type stored field by field, because a property is marked for encryption, SHALL honour its
+`System.Text.Json` attributes when written as it does when read. The stored form SHALL keep each
+property under its own name, so payloads already stored still read and an upcaster sees the names it
+always saw.
+
+#### Scenario: A property is renamed
+
+- **WHEN** a property carrying `[JsonPropertyName]` on such a type is written and read back, whether or
+  not any value in the payload is encrypted
+- **THEN** its value is recovered, and the stored form holds it under the property's own name
+
+#### Scenario: A property is ignored
+
+- **WHEN** a property carrying `[JsonIgnore]` on such a type is written, unconditionally or under a
+  condition its value meets
+- **THEN** it is not stored
+
+#### Scenario: A property has its own converter
+
+- **WHEN** a property carrying `[JsonConverter]` on such a type is written
+- **THEN** it is stored in the converter's form, and that form is what an upcaster sees
+
+#### Scenario: A payload was stored before the attributes were followed
+
+- **WHEN** a payload stored under the property names, with no property left out, is read
+- **THEN** it reads as before, and ordinary JSON under the attributes' names also still reads

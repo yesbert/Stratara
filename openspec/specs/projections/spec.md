@@ -11,7 +11,7 @@ those models from scratch when their shape changes — without the write side kn
 A projection SHALL be dispatched only the events it declares handlers for, determined from the
 handler signatures themselves rather than from a separate registration. The one exception: a
 projection that declares it forgets deleted tenants SHALL also be dispatched the framework's
-tenant-deletion facts, as *A projection can forget a deleted tenant* describes.
+tenant-deletion facts, as *A declaring projection records the tenants it has seen deleted* describes.
 
 An event that no projection in the host is dispatched SHALL NOT be read. Its type SHALL NOT be resolved
 and its payload SHALL NOT be decrypted, so it SHALL NOT need to be registered in the host. It SHALL
@@ -461,10 +461,21 @@ the replaying host's own.
 Otherwise a rebuilt read model would attribute every row to whichever session happened to be
 ambient, and tenant-scoped writes would land in the wrong tenant.
 
+The recorded session SHALL be in place before the projection, and anything it depends on, are resolved
+for the entry, so that a service that takes its tenant when it is constructed takes the entry's.
+Consecutive entries recorded under one session MAY share what was resolved for them; entries recorded
+under different sessions SHALL NOT.
+
 #### Scenario: Events from several tenants are replayed
 
 - **WHEN** a replay processes events recorded by different sessions
 - **THEN** each is processed under its own recorded session context
+
+#### Scenario: A projection's dependency takes its tenant when it is constructed
+
+- **WHEN** a replay processes entries of several tenants and a projection depends on a service that
+  takes the tenant when it is constructed
+- **THEN** each entry is applied with that service constructed under the entry's own tenant
 
 ### Requirement: Publication is suppressed while a replay is active
 
@@ -519,8 +530,8 @@ than from a side effect that was not suppressed.
 
 - **WHEN** a host registers a shared coordination store before or after composing its role
 - **THEN** the replay state is held in that shared coordination store, and a replay requested in one
-  host is seen as
-  active by every host sharing it, exactly as before this requirement existed
+  host is seen as active by every host sharing it under the same product name, exactly as before this
+  requirement existed
 
 #### Scenario: A host falls back to in-process coordination
 
@@ -682,8 +693,8 @@ in its read model yet, distinct from any other failure. A bundle reported that w
 within the process a bounded number of times with a short backoff, holding no aggregate lock while it
 waits, and SHALL fail as an unhandled projection failure only once those retries are exhausted. The
 one exception: where the projection declares it forgets deleted tenants and has recorded the fact's
-owning tenant as deleted, the fact SHALL be passed over, as *A projection can forget a deleted
-tenant* describes.
+owning tenant as deleted, the fact SHALL be passed over, as *A missing prerequisite of a deleted
+tenant's fact is not retried* describes.
 
 The distinction is the point: "the beginning has not arrived" and "the beginning will never arrive"
 produce the same observation in a projection, and only time tells them apart. A short wait resolves
@@ -711,151 +722,6 @@ the first without turning the second into a poison message.
 - **WHEN** a bundle reports a missing prerequisite and the creating fact for the same aggregate is
   handed to another consumer of the same process
 - **THEN** the creating fact is applied while the first bundle waits, rather than waiting behind it
-
-### Requirement: A projection can forget a deleted tenant
-
-The framework SHALL let a projection declare that it forgets a tenant once the tenant is deleted. A
-projection that does not declare it SHALL behave exactly as it would without this requirement.
-
-Declaring it is the projection's promise that, once either of the framework's tenant-deletion facts
-has been applied, the deleted tenant's data is gone from its read model: a tenant's deletion, and the
-cascade that deletes a customer's tenants. A projection that keeps a tenant's data after either SHALL
-NOT declare it.
-
-For a projection that declares it:
-
-- The framework SHALL hand the projection both tenant-deletion facts, whether or not the projection
-  handles them itself. After the projection has applied one, the framework SHALL record, for that
-  projection, every tenant the fact deleted.
-- The record SHALL be kept for each projection separately, in the order that projection applies
-  facts. A projection's record SHALL NOT depend on how far any other projection has got.
-- Where the projection reports that a fact's prerequisite has not been applied yet, and the fact's
-  owning tenant is recorded as deleted for that projection, the framework SHALL pass the fact over. It
-  SHALL treat the fact as applied, SHALL NOT retry it, and SHALL log it with the projection, the
-  stream, the fact's type and the tenant.
-- A fact of a recorded tenant that the projection applies without such a report SHALL be applied as
-  usual. A report for any tenant not recorded SHALL be retried and SHALL fail as the missing-prerequisite
-  requirement describes. So SHALL a report the record could not be consulted for.
-- The record is derived from the facts. A replay SHALL empty the record of each declaring projection
-  the host registers, before it empties the read models. It SHALL NOT touch the record of a
-  projection the host does not register. A projection rebuilt on its own SHALL have its own record
-  emptied just before its read model. The record is then rebuilt from the history, in order.
-- Where no place to keep the record is registered in the host, the projection SHALL fail on the first
-  fact it is handed, with a message naming the registration. It SHALL NOT go on without the record.
-
-A host without a declaring projection SHALL NOT need the place that keeps the record, for a replay or
-for anything else.
-
-A deletion removes a tenant's data from a projection on purpose. A fact recorded for that tenant
-afterwards is legitimate history: work queued before the deletion ran to its end. The projection
-meets it with nothing to apply it to. The missing-prerequisite report can tell "not yet" from "never"
-only by waiting, so it turns such a fact into a dead-lettered bundle live and into a failed replay on
-rebuild. A replay that fails leaves the read models it emptied empty. Knowing which tenants the
-projection itself has deleted is what separates "removed on purpose" from both.
-
-The knowledge is kept per projection because projections apply facts in parallel, and on a
-store-reading host each at its own pace. A shared record could tell one projection about a deletion
-it has not applied yet. A record is emptied before the read model rather than after it for two
-reasons. A deletion applied in between is then recorded again rather than lost, while a record that
-outlives its reset only concerns a tenant whose data is removed at the deletion in any case. And a
-missing place to keep it then fails the replay before anything has been emptied.
-
-#### Scenario: A late fact of a deleted tenant reports a missing prerequisite
-
-- **WHEN** a declaring projection has applied the deletion of a tenant, and later reports a missing
-  prerequisite for a fact owned by that tenant
-- **THEN** the fact is passed over without being retried, the rest of the bundle or batch is applied,
-  and the pass-over is logged with the projection, the stream, the fact's type and the tenant
-
-#### Scenario: A replay meets a fact recorded after its tenant's deletion
-
-- **WHEN** a replay rebuilds a declaring projection over a history in which a tenant is deleted and a
-  fact owned by that tenant is recorded afterwards
-- **THEN** the replay completes, and the read model does not hold the deleted tenant's data — verified
-  with the replay worker and the default projection handler
-
-#### Scenario: A store-reading projection meets a fact recorded after its tenant's deletion
-
-- **WHEN** a declaring projection reads the store on the Orleans execution model, and its partition
-  holds a tenant's creation, the cascade that deletes the tenant, and a later fact owned by the tenant
-- **THEN** the reader reads past the late fact rather than stalling the partition — verified on the
-  in-process execution-model host over SQLite
-
-#### Scenario: The cascade deletes several tenants
-
-- **WHEN** a declaring projection applies the cascade that deletes a customer's tenants
-- **THEN** every tenant it lists is recorded as deleted for that projection
-
-#### Scenario: The projection does not handle the deletion facts itself
-
-- **WHEN** a declaring projection declares no handler for a deletion fact
-- **THEN** it is still handed the fact, nothing of its own runs for it, and the deleted tenants are
-  recorded
-
-#### Scenario: A late fact of a deleted tenant is applied without complaint
-
-- **WHEN** a declaring projection applies a fact owned by a recorded tenant without reporting a
-  missing prerequisite
-- **THEN** the fact is applied as usual
-
-#### Scenario: A missing prerequisite for a tenant that was not deleted
-
-- **WHEN** a declaring projection reports a missing prerequisite for a fact whose owning tenant is not
-  recorded as deleted for it
-- **THEN** the bundle is retried and fails as the missing-prerequisite requirement describes
-
-#### Scenario: The record cannot be consulted
-
-- **WHEN** a declaring projection reports a missing prerequisite and the place that keeps the record
-  fails when asked
-- **THEN** the report stands as a missing prerequisite, carrying that failure, and is retried as the
-  missing-prerequisite requirement describes
-
-#### Scenario: Another projection has already applied the deletion
-
-- **WHEN** one declaring projection has applied a tenant's deletion and another has not reached it yet
-- **THEN** the second one's missing-prerequisite reports for that tenant are retried and fail as
-  before, until it has applied the deletion itself
-
-#### Scenario: A projection does not declare itself
-
-- **WHEN** a projection that does not declare it reports a missing prerequisite for a fact of a deleted
-  tenant
-- **THEN** the bundle is retried and fails as the missing-prerequisite requirement describes, and the
-  deletion facts reach it only if it handles them
-
-#### Scenario: A replay starts
-
-- **WHEN** a replay starts in a host with declaring projections
-- **THEN** each one's record is emptied before the read models are emptied
-
-#### Scenario: Another deployment shares the read store
-
-- **WHEN** a host replays while another deployment's projections keep their records in the same read
-  store
-- **THEN** only the records of the replaying host's own declaring projections are emptied
-
-#### Scenario: A host without a declaring projection replays
-
-- **WHEN** a host that registers no declaring projection replays
-- **THEN** the place that keeps the record is not touched, and need not exist
-
-#### Scenario: One projection is rebuilt on the Orleans execution model
-
-- **WHEN** a rebuildable, declaring projection is rebuilt on its own
-- **THEN** its own record is emptied just before its read model, and every other projection's record
-  is kept
-
-#### Scenario: The record is kept apart for each projection
-
-- **WHEN** two projections record the same tenant as deleted, and one of them has its record emptied
-- **THEN** the other still holds the tenant, and a tenant recorded twice for one projection is held
-  once — verified on SQLite
-
-#### Scenario: No place to keep the record is registered
-
-- **WHEN** a declaring projection is handed a fact in a host where nothing keeps the record
-- **THEN** the projection fails with a message naming the registration that provides it
 
 ### Requirement: The projection worker's degree of parallelism is configurable
 
@@ -920,3 +786,223 @@ sees a partition that is not moving without inspecting checkpoints.
 - **WHEN** an entry fails on every retry
 - **THEN** each retry is logged with the projection, the partition and the entry's identity, and the
   stall counter for that projection and partition rises
+
+### Requirement: Replay coordination in a shared store is confined to one product
+
+Replay coordination in a shared coordination store SHALL be confined to the hosts sharing one product
+name, set with `RedisCoordinationOptions.ProductName`. Hosts with different names SHALL NOT see each
+other's requests, active marking, progress, failure or outcome. Wherever this capability speaks of hosts
+sharing the coordination store, it means hosts sharing the store under the same name.
+
+#### Scenario: Two products share one store
+
+- **WHEN** a replay is requested in a product, and another product with a different name shares the
+  store — verified on the Redis-backed coordination store
+- **THEN** only hosts of the requesting product receive the request and can claim it
+
+#### Scenario: A running replay stays within its product
+
+- **WHEN** a replay of one product is active or has ended
+- **THEN** every host of that product sees its marking, progress and outcome, and hosts of the other
+  product see none of them and keep dispatching
+
+### Requirement: A host that sets no product name keeps the unnamed coordination
+
+A host that sets no product name SHALL coordinate under the framework's unnamed coordination, unchanged
+from releases without the setting, and SHALL meet other hosts that set none and hosts of earlier releases.
+A host with a name SHALL NOT meet any of them, so a product's hosts MUST be given the name together.
+
+#### Scenario: Nothing is set
+
+- **WHEN** hosts set no product name
+- **THEN** they coordinate with each other and with hosts of earlier releases as before
+
+#### Scenario: One host of a product lacks the name
+
+- **WHEN** a host of a product sets no name and another host of that product sets one
+- **THEN** the two do not coordinate: neither receives the other's requests or sees its marking, so the
+  unnamed host keeps publishing during the named host's replay, and the documentation says so
+
+### Requirement: An unusable product name is refused at start
+
+A product name of only whitespace, or holding anything other than letters, digits, `.`, `_` and `-`,
+SHALL be refused when the host starts, with a message naming the setting. An empty or absent name SHALL
+mean that no name is set.
+
+#### Scenario: A name holds a separator
+
+- **WHEN** a host sets a product name holding a character outside the permitted set
+- **THEN** the host fails at start with a message naming `RedisCoordination:ProductName`
+
+### Requirement: A projection can declare that it forgets a deleted tenant
+
+The framework SHALL let a projection declare that it forgets a tenant once the tenant is deleted. A projection that does not declare it SHALL behave exactly as it would without these requirements. Declaring it is the projection's promise that, once either tenant-deletion fact has been applied, the deleted tenant's data is gone from its read model: a tenant's deletion, and the cascade that deletes a customer's tenants. A projection that keeps a tenant's data after either SHALL NOT declare it.
+
+#### Scenario: A projection does not declare itself
+
+- **WHEN** a projection that does not declare it reports a missing prerequisite for a fact of a deleted
+  tenant
+- **THEN** the bundle is retried and fails as the missing-prerequisite requirement describes, and the
+  deletion facts reach it only if it handles them
+
+#### Scenario: A projection that does not declare itself meets a deleted tenant's fact
+
+- **WHEN** a projection that does not declare it is handed a fact owned by a deleted tenant
+- **THEN** it is called for the fact as usual, and the record is neither consulted nor needed
+
+### Requirement: A declaring projection records the tenants it has seen deleted
+
+The framework SHALL hand a declaring projection both tenant-deletion facts, whether or not it handles them, and after it has applied one SHALL record, for that projection, every tenant the fact deleted. The record SHALL be kept for each projection separately, in the order it applies facts, and SHALL NOT depend on how far another projection has got: projections apply facts in parallel, so a shared record could tell one about a deletion it has not applied yet.
+
+#### Scenario: The cascade deletes several tenants
+
+- **WHEN** a declaring projection applies the cascade that deletes a customer's tenants
+- **THEN** every tenant it lists is recorded as deleted for that projection
+
+#### Scenario: The projection does not handle the deletion facts itself
+
+- **WHEN** a declaring projection declares no handler for a deletion fact
+- **THEN** it is still handed the fact, nothing of its own runs for it, and the deleted tenants are
+  recorded
+
+#### Scenario: A deletion fact arrives for a tenant already recorded
+
+- **WHEN** a declaring projection is handed a tenant-deletion fact, and the tenant that owns the fact
+  or a tenant it deletes is already recorded
+- **THEN** the fact is handled as usual and every tenant it deletes is recorded
+
+#### Scenario: The record is kept apart for each projection
+
+- **WHEN** two projections record the same tenant as deleted, and one of them has its record emptied
+- **THEN** the other still holds the tenant, and a tenant recorded twice for one projection is held
+  once — verified on SQLite
+
+### Requirement: A deleted tenant's facts are passed over before handling
+
+Before handing a declaring projection any fact other than a tenant-deletion fact, the framework SHALL consult its record, and SHALL pass a fact of a recorded tenant over without calling the projection, logged with the projection, the stream, the fact's type and the tenant. A fact with an empty tenant SHALL be handled without consulting it. No answer SHALL be reused for a later fact. A row-adding fact reports nothing, so a record asked only after a report leaves that row for good.
+
+#### Scenario: A late fact of a deleted tenant reports nothing
+
+- **WHEN** a declaring projection is handed a fact owned by a recorded tenant that it would have
+  applied without reporting a missing prerequisite
+- **THEN** the fact is not applied: the projection is not called for it, and it is passed over and
+  logged like any other fact of a recorded tenant
+
+#### Scenario: A fact that would add a row arrives after its tenant's deletion
+
+- **WHEN** a declaring projection has applied a tenant's deletion and is handed a fact owned by that
+  tenant that would add a row
+- **THEN** the projection is not called for it, no row is added, and the pass-over is logged with the
+  projection, the stream, the fact's type and the tenant
+
+#### Scenario: A replay applies a deleted tenant's fact after the deletion
+
+- **WHEN** a replay rebuilds a declaring projection over a history in which a tenant's deletion is
+  applied before a row-adding fact owned by that tenant
+- **THEN** the replay completes and the read model holds no row of that tenant — verified with the
+  replay worker and the default projection handler
+
+#### Scenario: A fact has an empty tenant
+
+- **WHEN** a declaring projection is handed a fact with an empty tenant
+- **THEN** the record is not consulted and the fact is handled as usual
+
+#### Scenario: A fact of a deleted tenant would remove something elsewhere
+
+- **WHEN** a declaring projection is handed a fact owned by a recorded tenant whose handler would
+  remove something that belongs to another tenant
+- **THEN** the fact is passed over like any other, and what it would have removed stays
+
+#### Scenario: Each fact consults the record
+
+- **WHEN** a declaring projection is handed several facts of one tenant that is not recorded
+- **THEN** the record is consulted once for each of them, and a deletion applied between two of them
+  is seen by the later one
+
+### Requirement: A missing prerequisite of a deleted tenant's fact is not retried
+
+Where a declaring projection reports that a fact's prerequisite has not been applied yet and the fact's owning tenant is recorded, the framework SHALL treat the fact as applied, SHALL NOT retry it, and SHALL log it. A report for a tenant not recorded SHALL be retried and fail as the missing-prerequisite requirement describes. So SHALL a fact the record could not be consulted for, neither applied nor passed over on that attempt. A report tells "not yet" from "never" only by waiting.
+
+#### Scenario: A late fact of a deleted tenant reports a missing prerequisite
+
+- **WHEN** a declaring projection has applied the deletion of a tenant, and later reports a missing
+  prerequisite for a fact owned by that tenant
+- **THEN** the fact is passed over without being retried, the rest of the bundle or batch is applied,
+  and the pass-over is logged with the projection, the stream, the fact's type and the tenant
+
+#### Scenario: A replay meets a fact recorded after its tenant's deletion
+
+- **WHEN** a replay rebuilds a declaring projection over a history in which a tenant is deleted and a
+  fact owned by that tenant is recorded afterwards
+- **THEN** the replay completes, and the read model does not hold the deleted tenant's data — verified
+  with the replay worker and the default projection handler
+
+#### Scenario: A store-reading projection meets a fact recorded after its tenant's deletion
+
+- **WHEN** a declaring projection reads the store on the Orleans execution model, and its partition
+  holds a tenant's creation, the cascade that deletes the tenant, and a later fact owned by the tenant
+- **THEN** the reader reads past the late fact rather than stalling the partition — verified on the
+  in-process execution-model host over SQLite
+
+#### Scenario: A missing prerequisite for a tenant that was not deleted
+
+- **WHEN** a declaring projection reports a missing prerequisite for a fact whose owning tenant is not
+  recorded as deleted for it
+- **THEN** the bundle is retried and fails as the missing-prerequisite requirement describes
+
+#### Scenario: The record cannot be consulted
+
+- **WHEN** a declaring projection reports a missing prerequisite, or is about to be handed a fact, and
+  the place that keeps the record fails when asked
+- **THEN** a missing prerequisite is reported for the fact, carrying that failure, the projection is
+  not called for it on that attempt, and it is retried as the missing-prerequisite requirement describes
+
+#### Scenario: Another projection has already applied the deletion
+
+- **WHEN** one declaring projection has applied a tenant's deletion and another has not reached it yet
+- **THEN** the second one's missing-prerequisite reports for that tenant are retried and fail as
+  before, until it has applied the deletion itself
+
+### Requirement: The record of deleted tenants is emptied with the read model
+
+The record is derived from the facts. A replay SHALL empty the record of each declaring projection the host registers, before it empties the read models, and SHALL NOT touch the record of a projection the host does not register. A projection rebuilt on its own SHALL have its own record emptied just before its read model. The record is then rebuilt from the history, in order, and a deletion applied in between is recorded again rather than lost.
+
+#### Scenario: A replay starts
+
+- **WHEN** a replay starts in a host with declaring projections
+- **THEN** each one's record is emptied before the read models are emptied
+
+#### Scenario: Another deployment shares the read store
+
+- **WHEN** a host replays while another deployment's projections keep their records in the same read
+  store
+- **THEN** only the records of the replaying host's own declaring projections are emptied
+
+#### Scenario: A host without a declaring projection replays
+
+- **WHEN** a host that registers no declaring projection replays
+- **THEN** the place that keeps the record is not touched, and need not exist
+
+#### Scenario: One projection is rebuilt on the Orleans execution model
+
+- **WHEN** a rebuildable, declaring projection is rebuilt on its own
+- **THEN** its own record is emptied just before its read model, and every other projection's record
+  is kept
+
+### Requirement: A declaring projection needs a place to keep its record
+
+Where no place to keep the record is registered in the host, a declaring projection SHALL fail on the first fact it is handed, with a message naming the registration, and SHALL NOT go on without the record. A replay SHALL fail on the same absence before it has emptied anything. A host without a declaring projection SHALL NOT need that place, for a replay or for anything else.
+
+#### Scenario: No place to keep the record is registered
+
+- **WHEN** a declaring projection is handed a fact in a host where nothing keeps the record
+- **THEN** the projection fails with a message naming the registration that provides it
+
+### Requirement: A host's truncator leaves the saga positions in place
+
+The contract of `IProjectionViewTruncator` SHALL state that a truncator empties read models and that the checkpoints of the store-reading sagas SHALL survive it, since a saga without its position runs its side effects again. It SHALL NOT recommend emptying the read store's whole schema. A saga has no replay, so a rebuild of the read side is no reason to move one.
+
+#### Scenario: A consumer writes a truncator
+
+- **WHEN** a consumer reads the contract of `IProjectionViewTruncator` or the guide to writing a projection
+- **THEN** it is told which checkpoints must survive a truncation and why, and is not advised to cascade across the schema

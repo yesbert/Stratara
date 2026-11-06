@@ -1756,3 +1756,103 @@ caller, as before. The documentation SHALL say how a conflict is handled on the 
 - **WHEN** an operator reads the operating guide for the execution model
 - **THEN** it says that a conflicting command runs again at once on its silo, within the conflict bound and the
   framework's concurrency-conflict pipeline, and is left to the drain after that
+
+### Requirement: A full replay keeps the saga positions
+
+A full replay on a host whose projections read the store SHALL keep every store-reading saga's position held in the checkpoint store, whichever host runs that saga. A position the host's truncator removed or moved back SHALL be written back, with a warning naming the truncator. A position left in place SHALL NOT be written. A position that cannot be remembered SHALL fail the replay before anything is emptied or reset.
+
+#### Scenario: The truncator empties the checkpoints
+
+- **WHEN** a full replay runs and the host's truncator removes every checkpoint in the read store
+- **THEN** each saga position holds the value it had before the truncation, the projections' checkpoints are at the beginning, and a warning names the truncator and the positions written back — verified with the framework's checkpoint store on PostgreSQL
+
+#### Scenario: The truncator leaves the saga positions alone
+
+- **WHEN** a full replay runs and the host's truncator does not touch the saga positions
+- **THEN** no saga position is written and no warning is logged
+
+#### Scenario: The replaying host does not run the sagas
+
+- **WHEN** a host that registers no saga replays, and its truncator removes the positions of sagas another host of the deployment runs
+- **THEN** those positions are written back too
+
+#### Scenario: A saga reader wrote a lower position in the meantime
+
+- **WHEN** after the truncation a saga's position is held under the same reader at a value lower than the one remembered
+- **THEN** the remembered position is written, and a position further on than the remembered one is left as it is
+
+#### Scenario: The truncation fails part-way
+
+- **WHEN** the host's truncator removes saga positions and then fails
+- **THEN** the positions are written back and the replay fails with the truncator's failure
+
+#### Scenario: The positions cannot be remembered
+
+- **WHEN** the checkpoint store fails when asked for the saga positions
+- **THEN** the replay fails, the truncator has not run, and no checkpoint has been changed
+
+#### Scenario: A position cannot be written back
+
+- **WHEN** writing a saga position back fails
+- **THEN** the replay fails, and an error names what could not be written with the value it held, so that an operator can restore it before the sagas read on
+
+#### Scenario: The checkpoint store cannot list positions
+
+- **WHEN** a full replay runs on a checkpoint store that does not implement listing
+- **THEN** the replay runs as it did before, and a warning says the saga positions were not guarded and names the store
+
+### Requirement: A command's grace outlasts the collection of its completion
+
+`OrleansDispatchOptions.IntentGrace` SHALL be longer than three times `CompletionWindow`, and a host
+configured otherwise SHALL fail at start with a message naming both. A completed command's record is no
+longer renewed while its completion is collected, so a longer window would let the drain hand the
+command over again and run its handler a second time.
+
+#### Scenario: The window is a third of the grace or more
+
+- **WHEN** a host configures a `CompletionWindow` of a third of `IntentGrace` or more
+- **THEN** the host fails at start with a message naming both settings
+
+#### Scenario: The window is shorter than a third of the grace
+
+- **WHEN** a host configures a `CompletionWindow` shorter than a third of `IntentGrace`, or leaves both
+  at their defaults of 20 ms and 30 s
+- **THEN** the host starts
+
+### Requirement: An entry is retried from a fresh scope
+
+Where an attempt to apply an entry to a store-reading projection or saga fails, its retry SHALL resolve
+the projection or saga, and what it depends on, anew, so that nothing the failed attempt left in a
+scoped dependency is applied a second time.
+
+#### Scenario: A projection's attempt left state behind
+
+- **WHEN** a projection stages a write in a scoped dependency, reports a missing preceding fact, and the
+  entry is retried
+- **THEN** the retry starts from a new instance of the dependency and the staged write is not applied —
+  verified on the in-process execution-model host
+
+#### Scenario: A saga's attempt left state behind
+
+- **WHEN** a saga stages a write in a scoped dependency, reports a missing preceding fact, and the entry
+  is retried
+- **THEN** the retry starts from a new instance of the dependency and the staged write is not applied —
+  verified on the in-process execution-model host
+
+### Requirement: The timer start-up check builds no saga to learn its type
+
+The check that a stateful process has what serves its timers SHALL read a saga's type from its
+registration and SHALL NOT build a saga registered as a type or an instance, so that a host whose sagas
+need a session to be constructed, which none is at start, starts. A saga registered through a factory
+is built to learn its type, and one that cannot be built there is passed over.
+
+#### Scenario: A saga needs a session to be constructed
+
+- **WHEN** a host registers a saga as a type whose dependency refuses to be constructed without a session
+- **THEN** the host starts
+
+#### Scenario: A stateful process needs a session and nothing serves its timers
+
+- **WHEN** a host registers, as a type, a stateful process that needs a session to be constructed, and
+  registers nothing that serves its timers
+- **THEN** the host fails at start, naming the process and the registration that serves them
