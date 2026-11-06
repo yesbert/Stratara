@@ -209,12 +209,6 @@ applies to the entire NuGet family.
   stores deleted directly in the database and left the tracked copy behind, so on the scoped registration the second
   write failed with EF's identity-conflict `InvalidOperationException`. A consumer's other pending changes are not
   touched.
-
-### Changed
-
-- **RabbitMQ 4.2 is the minimum version.** On 3.13, 4.0 and 4.1 a broker restart removes a topic exchange and its
-  bindings, so a message for a subscription not yet bound again is lost, silently, while the publisher sees success.
-  From 4.2 they survive. **A deployment below 4.2 updates its broker first.** The framework does not check the version.
 - **A fact of a forgotten tenant no longer adds a row.** A projection declaring `IForgetsDeletedTenants` consulted its
   record only after reporting a missing prerequisite, and a fact that adds a row reports nothing, so a fact read after
   its tenant's deletion left a row nothing removes — on every full replay, and whenever a partition lags. A declaring
@@ -228,6 +222,12 @@ applies to the entire NuGet family.
   writes back any saga position its truncator removed or moved back, and logs warning `117_138` naming the truncator;
   error `117_140` names positions it could not write back, and that replay fails. A host with saga grains and bus-fed
   projections has the contract only.
+
+### Changed
+
+- **RabbitMQ 4.2 is the minimum version.** On 3.13, 4.0 and 4.1 a broker restart removes a topic exchange and its
+  bindings, so a message for a subscription not yet bound again is lost, silently, while the publisher sees success.
+  From 4.2 they survive. **A deployment below 4.2 updates its broker first.** The framework does not check the version.
 
 ## [4.7.1] — 2026-11-05
 
