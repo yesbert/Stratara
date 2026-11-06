@@ -186,6 +186,11 @@ applies to the entire NuGet family.
   replaying, and are not reached by an erasure, because rewriting them would break the tamper-evident chain; the
   guide *Encrypt Sensitive Data* shows how to find them and what the options are. Upcasters see ciphertext for such a
   value, and rewriting the recorded property name makes it unreadable.
+- **A drain pass attempts each stored message once.** Republishing from the outbox ran every entry through the
+  dispatcher's retries, about 1.4 s for each entry that could not be published, so a backlog such as heavy commands
+  with no worker bound made a pass outlive its lock and kept event bundles waiting behind the commands. The next pass
+  is now the retry, and a first dispatch keeps its retries. A brief publish failure of a stored message therefore waits
+  for the next polling interval, and a policy re-registered under a dispatcher name no longer affects republication.
 
 ## [4.7.1] — 2026-11-05
 

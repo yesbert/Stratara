@@ -319,6 +319,8 @@ The `OutboxWorker` polls the outbox table every `OutboxOptions.PollingIntervalSe
 
 **A cycle takes one batch of each kind and ends.** Rows the broker would not accept stay in the table and are retried on the next interval; a cycle never re-reads what it has just failed to publish. That bounds the work a cycle can do, and it is what stops an unreachable broker — or a suppressed drain during a projection replay — from turning a cycle into a loop over the same rows. The practical consequence: a large accumulated backlog drains at one batch per interval rather than in a single pass. With the defaults that is 20 000 rows a minute, and both knobs below are yours.
 
+**A cycle attempts each row once.** The bounded retries of a first dispatch, about 1.4 seconds per refused message, do not apply to republication: the row is already durable and the next interval is its retry. A row the broker refuses, such as a heavy command with no heavy worker bound, costs one publish attempt and logs one failure per cycle, and the rows behind it still get their attempt. A publication that fails only for a moment therefore waits for the next interval.
+
 `OutboxOptions.BatchSize` (default 10_000) caps how many rows the worker claims per cycle, and `LockLeaseSeconds` (default 60) is how long a claimed batch stays leased to one worker. Bind them under the `Outbox` configuration section.
 
 ## Running more than one outbox worker

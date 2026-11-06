@@ -31,7 +31,9 @@ public sealed class OutboxOptions
     /// <summary>
     /// Lease (in seconds) requested when the worker acquires the outbox-drain lock. Should be
     /// comfortably longer than the worst-case drain duration (batch size × per-publish latency)
-    /// so the lock does not expire mid-cycle. Defaults to 60 seconds. Has no effect when the
+    /// so the lock does not expire mid-cycle. A cycle makes one publish attempt per entry, so an
+    /// entry the bus refuses costs one such latency and is attempted again on the next interval.
+    /// Defaults to 60 seconds. Has no effect when the
     /// no-op <c>NullOutboxLock</c> is registered.
     /// </summary>
     public int LockLeaseSeconds { get; set; } = 60;
