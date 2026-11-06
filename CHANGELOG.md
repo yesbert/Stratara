@@ -16,6 +16,17 @@ applies to the entire NuGet family.
 
 ## [Unreleased]
 
+_No changes yet since `4.8.0`._
+
+## [4.8.0] — 2026-11-06
+
+The result of a full review of the framework's source: recorded changes to fields marked for encryption are now
+encrypted, blobs are bound to their whole scope, a personal access token follows its user's membership, and a replay
+keeps deleted tenants and saga positions where they belong. **Read the upgrade notes before moving:** RabbitMQ 4.2 is now
+the minimum; protected values written by this release cannot be read by earlier hosts, so readers go first; tokens of
+former or pending members get a `401`; and a few start-up checks are stricter. Two products can now share one Redis by
+naming themselves.
+
 ### Added
 
 - **`ISecureBlobEncryptor.DecryptAsync(stream, scope, purpose)`** decrypts a blob only if it was written for that
@@ -5261,7 +5272,8 @@ Earlier `0.x` and `1.0.x` preview versions (during the restructuring phase)
 remain findable on the internal Azure Artifacts feed but are not documented
 retroactively here.
 
-[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.7.1...main
+[Unreleased]: https://github.com/yesbert/Stratara/compare/v4.8.0...main
+[4.8.0]: https://github.com/yesbert/Stratara/releases/tag/v4.8.0
 [4.7.1]: https://github.com/yesbert/Stratara/releases/tag/v4.7.1
 [4.7.0]: https://github.com/yesbert/Stratara/releases/tag/v4.7.0
 [4.6.1]: https://github.com/yesbert/Stratara/releases/tag/v4.6.1
