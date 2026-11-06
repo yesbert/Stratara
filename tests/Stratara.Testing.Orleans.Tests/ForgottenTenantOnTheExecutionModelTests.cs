@@ -7,7 +7,7 @@ using Stratara.Projections.Abstractions;
 namespace Stratara.Testing.Orleans.Tests;
 
 /// <summary>
-/// <c>projections</c> → <em>A projection can forget a deleted tenant</em>, on the Orleans execution model: a
+/// <c>projections</c> → the requirements on forgetting a deleted tenant, on the Orleans execution model: a
 /// store-reading projection that declares it reads past a fact recorded after its tenant's deletion instead of
 /// stalling its partition — verified on the in-process host over SQLite.
 /// </summary>
@@ -108,6 +108,41 @@ public sealed class ForgottenTenantOnTheExecutionModelTests
         var name = scope.ServiceProvider.GetRequiredService<IProjectionHandler>().GetProjectionName(new AccountRowProjection(rows));
         Assert.True(await scope.ServiceProvider.GetRequiredService<IForgottenTenantStore>()
             .HasForgottenAsync(name, Tenant, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// A reader that has applied a tenant's deletion meets a creating fact of that tenant on another stream, the order a
+    /// partition lagging behind another produces. The creating fact reports nothing, so only the record can stop it.
+    /// </summary>
+    [Fact]
+    public async Task A_store_reading_projection_adds_no_row_for_a_fact_read_after_its_tenants_deletion()
+    {
+        var rows = new Rows();
+        await using var host = await ExecutionModelTestHost.CreateAsync(services => services
+            .AddSingleton(rows)
+            .AddAggregatesFromAssemblyContaining<Account>()
+            .AddTrustedType<CustomerTenantsDeleted>()
+            .AddTrustedType<TenantDeleted>()
+            .AddScoped<IProjection, AccountRowProjection>()
+            .AddStrataraProjectionGrains());
+        var account = Guid.NewGuid();
+        var customer = Guid.NewGuid();
+
+        await AppendAsync(host, async events =>
+        {
+            await events.CreateAsync<Account>(customer, new CustomerTenantsDeleted(customer, [Tenant], DateTimeOffset.UtcNow));
+            await events.SaveChangesAsync();
+        });
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await AppendAsync(host, async events =>
+        {
+            await events.CreateAsync<Account>(account, new AccountOpened(account, Tenant, 10m));
+            await events.SaveChangesAsync();
+        });
+
+        await host.WaitForReadersAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Empty(rows.Accounts);
     }
 
     private static async Task AppendAsync(ExecutionModelTestHost host, Func<IEventSource, Task> work)

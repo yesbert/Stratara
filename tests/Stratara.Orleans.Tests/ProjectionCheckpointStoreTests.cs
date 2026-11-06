@@ -55,6 +55,36 @@ public sealed class ProjectionCheckpointStoreTests
         Assert.Equal(42, await store.GetAsync("View", 2, "partition-counter/16"));
     }
 
+    [Fact]
+    public async Task Listing_returns_the_rows_of_a_prefix_under_every_reader_and_partition()
+    {
+        var factory = new ContextFactory($"checkpoints-{Guid.NewGuid():N}");
+        await using (var context = factory.CreateDbContext())
+        {
+            context.Set<ProjectionCheckpoint>().AddRange(
+                new ProjectionCheckpoint { Projection = "sagas:A", Partition = 0, Position = 1, Reader = "one/2" },
+                new ProjectionCheckpoint { Projection = "sagas:A", Partition = 1, Position = 2, Reader = "other/4" },
+                new ProjectionCheckpoint { Projection = "View", Partition = 0, Position = 3, Reader = "one/2" });
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var store = new ProjectionCheckpointStore<CheckpointContext>(factory);
+
+        var listed = await store.ListAsync("sagas", TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Contains(new Stratara.Abstractions.Projections.StoredCheckpoint("sagas:A", 0, "one/2", 1), listed);
+        Assert.Contains(new Stratara.Abstractions.Projections.StoredCheckpoint("sagas:A", 1, "other/4", 2), listed);
+    }
+
+    [Fact]
+    public async Task Listing_a_prefix_nothing_starts_with_returns_an_empty_list()
+    {
+        var store = await StoreWithCheckpointAsync("partition-counter/16");
+
+        Assert.Empty(await store.ListAsync("sagas", TestContext.Current.CancellationToken));
+    }
+
     private static async Task<ProjectionCheckpointStore<CheckpointContext>> StoreWithCheckpointAsync(string reader)
     {
         var factory = new ContextFactory($"checkpoints-{Guid.NewGuid():N}");

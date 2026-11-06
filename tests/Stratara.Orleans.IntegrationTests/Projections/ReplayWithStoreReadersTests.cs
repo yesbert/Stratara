@@ -7,6 +7,7 @@ using Stratara.Abstractions.CommitOrder;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Projections;
 using Stratara.Abstractions.Session;
+using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Checkpoints;
 using Stratara.Orleans.CommitOrder;
 using Stratara.Orleans.EntityFrameworkCore.CommitOrder;
 using Stratara.Orleans.IntegrationTests.Fixtures;
@@ -84,6 +85,41 @@ public sealed class ReplayWithStoreReadersTests(PostgreSqlFixture postgres, Redi
                 await WaitUntilAsync(async () => await checkpoints.GetAsync(ProjectionName, partition, ReaderName) > 0),
                 $"the reader of partition {partition} did not advance again after the replay");
         }
+
+        await app.StopAsync();
+    }
+
+    /// <summary>
+    /// <c>orleans-execution</c> → <em>A full replay keeps the saga positions</em>: the host's truncator removes every
+    /// checkpoint in the read store, and this host registers no saga, so the positions are found by listing the store.
+    /// </summary>
+    [Fact]
+    public async Task A_truncator_that_empties_the_checkpoint_table_leaves_the_saga_positions_of_sagas_the_host_does_not_run()
+    {
+        var observed = new CheckpointsAtTruncation { EmptyCheckpoints = true };
+        using var app = await StartAsync(observed, siloPort: 11195, gatewayPort: 30084);
+        var tenantId = Guid.NewGuid();
+        var streamId = Guid.NewGuid();
+        var saga = $"sagas:{Guid.NewGuid():N}";
+        await AppendAsync(app.Services, tenantId, streamId, new CounterCreated(streamId));
+        await AppendAsync(app.Services, tenantId, streamId, new CounterIncremented(streamId, 1));
+        Assert.True(await WaitUntilAsync(async () => (await ReadViewAsync(app.Services, streamId))?.Value == 1), "the view was not built before the replay");
+        await using var scope = app.Services.CreateAsyncScope();
+        var checkpoints = scope.ServiceProvider.GetRequiredService<IProjectionCheckpointStore>();
+        await checkpoints.SetAsync(saga, 0, ReaderName, 123);
+        await checkpoints.SetAsync(saga, 1, ReaderName, 456);
+
+        var replay = app.Services.GetRequiredService<IProjectionReplayState>();
+        replay.RequestReplay();
+        Assert.True(await WaitUntilAsync(() => Task.FromResult(observed.Truncations > 0)), "the replay never emptied the read models");
+        Assert.True(await WaitUntilAsync(() => Task.FromResult(!replay.IsReplayActive)), "the replay did not end");
+
+        Assert.Equal(123, await checkpoints.GetAsync(saga, 0, ReaderName));
+        Assert.Equal(456, await checkpoints.GetAsync(saga, 1, ReaderName));
+        Assert.True(await WaitUntilAsync(async () => (await ReadViewAsync(app.Services, streamId))?.Value == 1), "the view was not refilled after the replay");
+        Assert.True(
+            await WaitUntilAsync(async () => await checkpoints.GetAsync(ProjectionName, PartitionOf(streamId), ReaderName) > 0),
+            "the projection's reader did not advance again after the replay");
 
         await app.StopAsync();
     }
@@ -203,6 +239,8 @@ public sealed class ReplayWithStoreReadersTests(PostgreSqlFixture postgres, Redi
 
         public List<long> Positions { get; } = [];
 
+        public bool EmptyCheckpoints { get; init; }
+
         public int Truncations { get; set; }
     }
 
@@ -223,6 +261,11 @@ public sealed class ReplayWithStoreReadersTests(PostgreSqlFixture postgres, Redi
             await context.CounterViews.ExecuteDeleteAsync(cancellationToken);
             await context.CounterAudits.ExecuteDeleteAsync(cancellationToken);
             await context.CounterTotals.ExecuteDeleteAsync(cancellationToken);
+            if (observed.EmptyCheckpoints)
+            {
+                await context.Set<ProjectionCheckpoint>().ExecuteDeleteAsync(cancellationToken);
+            }
+
             observed.Truncations++;
         }
     }

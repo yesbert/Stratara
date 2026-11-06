@@ -24,6 +24,9 @@ applies to the entire NuGet family.
   framework's encryptor enforces it, and encrypted settings now read through it.
 - **`StrataraBlobEncryptionOptions.WriteV2Blobs`** keeps new blobs in the previous format during a rolling upgrade
   (see *Blob ciphertext is bound to its whole scope* below). Default `false`.
+- **`IProjectionCheckpointStore.ListAsync`** and the `StoredCheckpoint` record list stored positions by consumer
+  prefix. The default implementation throws `NotSupportedException`, so an existing store keeps compiling; a replay
+  on such a store runs without the saga-position guard below and logs warning `117_139`.
 
 ### Fixed
 
@@ -186,6 +189,19 @@ applies to the entire NuGet family.
   replaying, and are not reached by an erasure, because rewriting them would break the tamper-evident chain; the
   guide *Encrypt Sensitive Data* shows how to find them and what the options are. Upcasters see ciphertext for such a
   value, and rewriting the recorded property name makes it unreadable.
+- **A fact of a forgotten tenant no longer adds a row.** A projection declaring `IForgetsDeletedTenants` consulted its
+  record only after reporting a missing prerequisite, and a fact that adds a row reports nothing, so a fact read after
+  its tenant's deletion left a row nothing removes — on every full replay, and whenever a partition lags. A declaring
+  projection is now not called for a fact of a tenant it recorded as deleted, except the deletion facts, and the
+  pass-over is logged as `104_014`. **A fact that removes something elsewhere is passed over too**, and each other fact
+  costs one read of the record per declaring projection: about 0.3 to 0.6 ms per fact against a local PostgreSQL, so
+  several minutes per million facts on a replay. Projections that do not declare it are unchanged.
+- **A truncator cannot restart every saga.** `IProjectionViewTruncator` recommended `TRUNCATE ... CASCADE` across the
+  read-store schema, which also holds the saga positions, and a replay that emptied them sent every saga back to the
+  beginning. The contract now names what must survive. On a host with `AddStrataraProjectionGrains`, a replay also
+  writes back any saga position its truncator removed or moved back, and logs warning `117_138` naming the truncator;
+  error `117_140` names positions it could not write back, and that replay fails. A host with saga grains and bus-fed
+  projections has the contract only.
 
 ## [4.7.1] — 2026-11-05
 
