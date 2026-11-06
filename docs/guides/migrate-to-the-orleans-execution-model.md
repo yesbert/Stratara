@@ -422,6 +422,18 @@ emptied, and the readers read from the beginning once the replay ends. Register 
 `IProjectionViewTruncator` **before** `AddStrataraProjectionGrains`; a truncator registered after it fails
 the host at start.
 
+The saga positions are not part of that. Before the truncator runs, the replay lists every saga checkpoint the store
+holds, including those of sagas another host of the deployment runs. It writes back any the truncator removed or moved
+back, and logs `117_138` naming the truncator, which is the sign to correct it. A truncator that leaves them causes no
+write and no warning. A list that fails ends the replay before anything is emptied, a truncator that fails still has
+the positions written back, and a position that cannot be written back fails the replay and is named in `117_140` with
+its value, to be restored by hand before the sagas read on.
+
+The guard has limits. It exists only where `AddStrataraProjectionGrains` is called, so a host with saga grains and bus-fed
+projections has only the contract on `IProjectionViewTruncator`. A custom checkpoint store has to implement
+`IProjectionCheckpointStore.ListAsync`; without it the replay runs unguarded and logs `117_139`. And a saga reader on
+another host that has not yet learned of the replay can re-run the entries of a batch or two when its next write is refused.
+
 A full replay therefore applies the store **twice** to a projection that reads the store: once by the replay
 itself, in sequence order with each stream in version order, and once more by the projection's readers from the
 beginning, in commit order. The second pass is the one the commit-order guarantee stands on — it catches an entry

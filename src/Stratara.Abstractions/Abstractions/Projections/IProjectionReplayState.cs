@@ -199,10 +199,23 @@ public sealed record ReplayOutcome(
 }
 
 /// <summary>
-/// Truncates every projection view as part of a replay reset. Implementations typically
-/// execute a single transaction with <c>TRUNCATE ... CASCADE</c> across the read-store
-/// schema.
+/// Empties every projection's read model as part of a replay reset.
 /// </summary>
+/// <remarks>
+/// <para>
+/// A truncator empties read models and nothing else. The checkpoints of the store-reading saga consumers, whose names
+/// start with <c>sagas:</c>, must survive it: they sit in the read store beside the read models, a saga has no replay,
+/// and a saga that loses its position runs its side effects again from where it starts over. Name the tables to empty
+/// rather than cascading across the read store's schema, which takes the checkpoints along. The checkpoints of the
+/// store-reading projections are returned to the beginning by the replay itself, so a truncator need not touch them.
+/// </para>
+/// <para>
+/// On a host that registers store-reading projections, a replay also remembers the saga positions before the truncator
+/// runs, writes back those it removed or moved back, and logs a warning naming it. That is a guard against a mistake and
+/// not a licence: a host without those projections, or with a checkpoint store that cannot list its checkpoints, has
+/// only this contract.
+/// </para>
+/// </remarks>
 public interface IProjectionViewTruncator
 {
     /// <summary>Truncate every projection view managed by the host.</summary>

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Stratara.Abstractions.Projections;
 
 /// <summary>
@@ -98,8 +100,34 @@ public interface IProjectionCheckpointStore
     Task<bool> CreateAsync(string projection, int partition, string reader, long position, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException(Unsupported(GetType(), nameof(CreateAsync)));
 
+    /// <summary>
+    /// Returns every stored checkpoint whose consumer name starts with <paramref name="consumerPrefix"/>, under whatever
+    /// reader it was written — the read a full replay remembers the saga positions with, including those of sagas the
+    /// replaying host does not register.
+    /// </summary>
+    /// <param name="consumerPrefix">What the consumer's name starts with.</param>
+    /// <param name="cancellationToken">Propagated to the store.</param>
+    /// <returns>The checkpoints found; an empty list where there are none.</returns>
+    /// <remarks>
+    /// Without this member a full replay cannot check that a host's truncator left the saga positions in place: it runs
+    /// as before and logs that they were not guarded. The framework's store implements it.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The store does not implement this member; the default does not.</exception>
+    Task<IReadOnlyList<StoredCheckpoint>> ListAsync(string consumerPrefix, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException(
+            $"The checkpoint store {GetType().FullName} does not implement {nameof(IProjectionCheckpointStore)}.{nameof(ListAsync)}, so a full replay " +
+            "cannot check that the host's truncator left the saga positions in place; implement it, or use the framework's store (AddStrataraProjectionCheckpoints).");
+
     private static string Unsupported(Type store, string member) =>
         $"The checkpoint store {store.FullName} does not implement {nameof(IProjectionCheckpointStore)}.{member}. Store-reading sagas need " +
         $"{nameof(FindAsync)} and {nameof(CreateAsync)} to tell a missing checkpoint from one at the beginning and to write a saga's first " +
         "checkpoint without replacing one; implement both, or use the framework's store (AddStrataraProjectionCheckpoints).";
 }
+
+/// <summary>A checkpoint as the store holds it.</summary>
+/// <param name="Consumer">The consumer, by the name the framework gives it.</param>
+/// <param name="Partition">The partition.</param>
+/// <param name="Reader">The name of the reader the position was written under; a position means nothing under another.</param>
+/// <param name="Position">The position the consumer resumes after.</param>
+[ExcludeFromCodeCoverage]
+public sealed record StoredCheckpoint(string Consumer, int Partition, string Reader, long Position);

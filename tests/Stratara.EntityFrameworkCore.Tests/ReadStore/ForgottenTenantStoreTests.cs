@@ -10,7 +10,7 @@ using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.ForgottenTenants;
 namespace Stratara.EventSourcing.EntityFrameworkCore.Tests.ReadStore;
 
 /// <summary>
-/// <c>projections</c> → <em>A projection can forget a deleted tenant</em>: the read store keeps each
+/// <c>projections</c> → <em>A declaring projection records the tenants it has seen deleted</em>: the read store keeps each
 /// projection's deleted tenants apart, records them idempotently, and empties one projection's record while
 /// keeping the others — verified on SQLite. A tenant another writer records first is recorded once and without an
 /// error in the log, and a provider without an insert that ignores a conflict still records each tenant once.

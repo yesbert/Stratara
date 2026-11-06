@@ -21,9 +21,11 @@ namespace Stratara.Projections.Services;
 /// <para>
 /// For a projection that declares <see cref="IForgetsDeletedTenants"/>, <see cref="TenantDeleted"/> and
 /// <see cref="CustomerTenantsDeleted"/> count as relevant whether or not it handles them. After one of
-/// them has been applied, the tenants it deleted are recorded for the projection before the next event,
-/// and a <see cref="PrecedingFactMissingException"/> for a fact owned by a recorded tenant is logged and
-/// passed over instead of propagating.
+/// them has been applied, the tenants it deleted are recorded for the projection before the next event.
+/// Every other fact with a tenant costs one read of the record: a fact owned by a recorded tenant is logged
+/// and passed over without calling the projection. A <see cref="PrecedingFactMissingException"/> for such a
+/// fact, recorded between that read and the handler, is passed over the same way. The answers are not kept,
+/// because a kept answer could hide a deletion another partition applied or outlive the record being emptied.
 /// </para>
 /// </remarks>
 internal sealed class ProjectionHandler(
@@ -81,19 +83,24 @@ internal sealed class ProjectionHandler(
     private async Task HandleForgettingAsync(IProjection projection, string projectionName, IForgottenTenantStore store, IEvent @event,
         CancellationToken cancellationToken)
     {
+        if (CanBeForgotten(@event) && await HasForgottenAsync(store, projectionName, @event, @event.StreamId, @event.EventTypeName, cancellationToken))
+        {
+            LogPassedOver(projectionName, @event);
+            return;
+        }
+
         try
         {
             await HandleEventAsync(projection, @event, cancellationToken);
         }
         catch (PrecedingFactMissingException missing)
         {
-            if (!await HasForgottenAsync(store, projectionName, @event, missing, cancellationToken))
+            if (!await HasForgottenAsync(store, projectionName, @event, missing.StreamId, missing.EventTypeName, cancellationToken))
             {
                 throw;
             }
 
-            (logger ?? NullLogger<ProjectionHandler>.Instance).LogProjectionForgottenTenantFactPassedOver(
-                projectionName, @event.StreamId, @event.EventTypeName, @event.TenantId);
+            LogPassedOver(projectionName, @event);
             return;
         }
 
@@ -111,11 +118,22 @@ internal sealed class ProjectionHandler(
     }
 
     /// <summary>
-    /// Asks the store whether the fact's tenant is forgotten. A store that fails is reported as the missing
-    /// prerequisite it was asked about, with the store's failure inside, so the bundle keeps its retry.
+    /// A deletion fact is always handled, because applying it again must still remove what is there, and no tenant owns
+    /// a fact with an empty tenant.
+    /// </summary>
+    private static bool CanBeForgotten(IEvent @event) =>
+        @event.TenantId != Guid.Empty && @event.Data is not (TenantDeleted or CustomerTenantsDeleted);
+
+    private void LogPassedOver(string projectionName, IEvent @event) =>
+        (logger ?? NullLogger<ProjectionHandler>.Instance).LogProjectionForgottenTenantFactPassedOver(
+            projectionName, @event.StreamId, @event.EventTypeName, @event.TenantId);
+
+    /// <summary>
+    /// Asks the store whether the fact's tenant is forgotten. A store that fails is reported as a missing prerequisite of
+    /// the fact, with the store's failure inside, so the fact is neither applied nor dropped and the bundle keeps its retry.
     /// </summary>
     private static async Task<bool> HasForgottenAsync(IForgottenTenantStore store, string projectionName, IEvent @event,
-        PrecedingFactMissingException missing, CancellationToken cancellationToken)
+        Guid streamId, string eventTypeName, CancellationToken cancellationToken)
     {
         try
         {
@@ -123,7 +141,7 @@ internal sealed class ProjectionHandler(
         }
         catch (Exception storeFailure) when (storeFailure is not OperationCanceledException)
         {
-            throw new PrecedingFactMissingException(missing.StreamId, missing.EventTypeName, storeFailure);
+            throw new PrecedingFactMissingException(streamId, eventTypeName, storeFailure);
         }
     }
 

@@ -443,5 +443,11 @@ public static class LogEvents
         public const int UnregisteredProjectionReaderRetired = 117_136;
         /// <summary>Firing a durable timer failed — its handler, or the owner check or unregistration around it; the timer stays registered and fires again after its retry period (error).</summary>
         public const int TimerFiringFailed = 117_137;
+        /// <summary>A host's truncator removed or moved back saga positions during a full replay, and they were written back (warning).</summary>
+        public const int ReplaySagaCheckpointsRestored = 117_138;
+        /// <summary>The checkpoint store cannot list its checkpoints, so a full replay ran without checking that the host's truncator left the saga positions in place (warning).</summary>
+        public const int ReplaySagaCheckpointsNotGuarded = 117_139;
+        /// <summary>Saga positions a host's truncator removed or moved back could not be written back during a full replay; the replay fails (error).</summary>
+        public const int ReplaySagaCheckpointsNotRestored = 117_140;
     }
 }

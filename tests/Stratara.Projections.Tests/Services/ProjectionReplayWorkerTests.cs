@@ -856,6 +856,34 @@ public class ProjectionReplayWorkerTests
     }
 
     [Fact]
+    public async Task ReplayCallback_LeavesNoRowForAFactOfATenantWhoseDeletionWasAppliedFirst()
+    {
+        var harness = new Harness();
+        var tenant = Guid.CreateVersion7();
+        var cascade = NewEntry(sequenceNumber: 1);
+        var created = NewEntry(sequenceNumber: 2);
+        var events = new Dictionary<EventStreamEntry, IEvent>
+        {
+            [cascade] = new Event<CustomerTenantsDeleted>(Guid.CreateVersion7(), 1, new CustomerTenantsDeleted(Guid.CreateVersion7(), [tenant], DateTimeOffset.UtcNow), cascade.StreamId, Guid.CreateVersion7(), Guid.Empty),
+            [created] = new Event<EntryCreated>(Guid.CreateVersion7(), 1, new EntryCreated(), created.StreamId, tenant, Guid.Empty)
+        };
+        harness.EventStreamRepository.Setup(r => r.GetMaxSequenceNumberAsync(It.IsAny<CancellationToken>())).ReturnsAsync(2);
+        SetupBatchSequence(harness, [[cascade, created], []]);
+        harness.EventMapperFactory
+            .Setup(f => f.MapToEventsAsync(It.IsAny<IEnumerable<EventStreamEntry>>(), It.IsAny<EventRelevance>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<EventStreamEntry> entries, EventRelevance _, CancellationToken _) => entries.Select(e => events[e]).ToList());
+        var projection = new EntryProjection();
+        var store = new InMemoryForgottenTenantStore();
+        harness.Configure = services => services.AddScoped<IProjectionManager>(_ => new ProjectionManager(
+            Mock.Of<ILogger<ProjectionManager>>(), new ProjectionHandler(new ProjectionMethodInvoker(), null, store), [projection]));
+
+        await harness.RunAsync(triggerReplay: true);
+
+        harness.ReplayState.Verify(s => s.SetFailed(It.IsAny<string>()), Times.Never);
+        Assert.Empty(projection.Rows);
+    }
+
+    [Fact]
     public async Task ReplayCallback_ReplaysPastAnEventNoProjectionHandlesOfATypeNeverRegistered()
     {
         var harness = new Harness();
