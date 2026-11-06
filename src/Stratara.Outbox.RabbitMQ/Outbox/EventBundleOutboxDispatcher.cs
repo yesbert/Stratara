@@ -70,7 +70,7 @@ internal sealed class EventBundleOutboxDispatcher(
         if (_stored.TryGetValue(eventBundle, out var storedId))
         {
             _stored.Remove(eventBundle);
-            if (!replayState.IsReplayActive && await TrySendEventBundleAsync(eventBundle, cancellationToken))
+            if (!replayState.IsReplayActive && await TrySendEventBundleAsync(_pipeline, eventBundle, cancellationToken))
             {
                 await RemoveStoredAsync(storedId.Value, cancellationToken);
             }
@@ -78,7 +78,7 @@ internal sealed class EventBundleOutboxDispatcher(
             return;
         }
 
-        if (!replayState.IsReplayActive && await TrySendEventBundleAsync(eventBundle, cancellationToken))
+        if (!replayState.IsReplayActive && await TrySendEventBundleAsync(_pipeline, eventBundle, cancellationToken))
         {
             return;
         }
@@ -133,7 +133,7 @@ internal sealed class EventBundleOutboxDispatcher(
                 continue;
             }
 
-            if (await TrySendEventBundleAsync(eventBundle, cancellationToken))
+            if (await TrySendEventBundleAsync(ResiliencePipeline.Empty, eventBundle, cancellationToken))
             {
                 await repository.DeleteAsync(outboxEntry.Id, cancellationToken);
                 published++;
@@ -169,11 +169,17 @@ internal sealed class EventBundleOutboxDispatcher(
         }
     }
 
-    private async Task<bool> TrySendEventBundleAsync(EventBundle eventBundle, CancellationToken cancellationToken)
+    /// <summary>
+    /// Publishes under the given pipeline. A first dispatch runs under the dispatch policy, where a retry saves a
+    /// database write or a second delivery from the drain. Republication from storage runs under none: the bundle is
+    /// already durable, the next pass is its retry, and retrying inside the pass would keep every entry behind it
+    /// waiting, up to past the lock's lease.
+    /// </summary>
+    private async Task<bool> TrySendEventBundleAsync(ResiliencePipeline pipeline, EventBundle eventBundle, CancellationToken cancellationToken)
     {
         try
         {
-            await _pipeline.ExecuteAsync(
+            await pipeline.ExecuteAsync(
                 static async (state, ct) =>
                 {
                     await state.messageBus.PublishAsync(state.messagingIdentifier.EventBundleTopic, state.eventBundle, ct);
