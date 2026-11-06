@@ -21,8 +21,8 @@ That's it for the minimum surface. The `Stratara.Mediator` + `Stratara.Abstracti
 |---|---|
 | `Stratara.EventSourcing.EntityFrameworkCore` | PostgreSQL 15+ for a running host (the store registration is Npgsql). `Stratara.Testing.EntityFrameworkCore` runs the same store on SQLite, for tests only |
 | `Stratara.Orleans`, `Stratara.Orleans.EntityFrameworkCore` | An Orleans 10.4 cluster: a storage-backed membership table and reminder service (the ADO.NET providers on PostgreSQL, with Orleans' own scripts applied), a storage-backed grain directory (Redis 7+), and PostgreSQL 15+ for the native commit-order reader |
-| `Stratara.Outbox.RabbitMQ` | RabbitMQ 3.13+ with the management plugin (publisher confirms + reconnect; worker subscriptions are quorum queues) |
-| `Stratara.Outbox.RabbitMQ`, optional | Redis 7+ — only for a multi-replica outbox worker (`AddRedisOutboxLock()`) or a projection replay that must span hosts; a single host runs without it |
+| `Stratara.Outbox.RabbitMQ` | RabbitMQ 4.2+ with the management plugin (publisher confirms + reconnect; worker subscriptions are quorum queues). Below 4.2 a broker restart loses the topic exchange and its bindings, and a message for a subscription not yet rebound is lost without any error. Nothing refuses an older broker, so a host below 4.2 must update the broker first |
+| `Stratara.Outbox.RabbitMQ`, optional | Redis 7+ — only for a multi-replica outbox worker (`AddRedisOutboxLock()`) or a projection replay that must span hosts; a single host runs without it. Products sharing one Redis each set `RedisCoordination:ProductName`, on all of a product's hosts together |
 | `Stratara.Outbox.AzureServiceBus` | An Azure Service Bus namespace; either a connection string or a `DefaultAzureCredential`-resolvable managed identity |
 | `Stratara.ServiceDefaults` | OpenTelemetry Collector endpoint (OTLP) if you want traces/metrics exported; runs no-op otherwise |
 | `Stratara.Identity.AspNetCore` | An ASP.NET Core host; no other identity provider locked in |

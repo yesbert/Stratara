@@ -15,6 +15,7 @@ Outbox-pattern command + event dispatch for the Stratara event-sourced stack wit
 | `Messaging/` | `RabbitMqBus` — `IMessageBus` over RabbitMQ. A worker subscription is a quorum queue `<subscription>.v2` with `<subscription>.dead-letter` beside it; a message a handler cannot take is redelivered under `MessageRetryOptions` and then dead-lettered. A subscription holds at most `Messaging:PrefetchCount` messages (default 16), and the host waits for a stopping subscription's running handler to settle before it counts as stopped — within the host's shutdown timeout; twenty seconds for a subscription stopped on its own. Azure Service Bus ships as the sibling `Stratara.Outbox.AzureServiceBus` package. |
 | `Mediator/` | `MediatorCommandWorker` (hosted service that subscribes to the command topic and dispatches into the in-process `IMediator`) |
 | `Projections/` | `ProjectionReplayState` (concrete `IProjectionReplayState`, Redis-backed where a connection is registered, in process otherwise; dispatchers skip publishing while replay is active), `ProjectionReplayOptions` (how long the replay marking survives without renewal) |
+| Root | `RedisCoordinationOptions`: `ProductName` (section `RedisCoordination`) puts a product's name into every Redis key and channel, so that products sharing one Redis do not meet. Set it on all of a product's hosts together; unset keeps the fixed names |
 | `DependencyInjection/` | `AddOutboxDispatcher()`, `AddOutboxWorker(IConfiguration)`, `AddRedisOutboxLock()` (opt-in distributed lock), `AddProjectionReplayState()`, `AddMediatorWorker()`, `AddMessaging()` |
 | `Diagnostics/Extensions/` | `LoggerOutboxExtensions`, `LoggerMessagingExtensions` (source-generated logger surfaces) |
 
@@ -54,6 +55,7 @@ The lease defaults to 60 s (`OutboxOptions.LockLeaseSeconds`). Tune it so it exc
 
 ## Dependencies
 
+- RabbitMQ 4.2 or later. Below 4.2 a broker restart loses the topic exchange and its bindings, and a message for a subscription not yet rebound is lost silently; update the broker first.
 - `Stratara.Abstractions` — for `ICommand`, `IEvent`, `IMessageBus`, `ICommandOutboxDispatcher`, `IEventBundleOutboxDispatcher`, `IProjectionReplayState`, `IMessagingIdentifier`, `IWriteUnitOfWork` (used at runtime via the outbox repository).
 - `Stratara.Contracts` — for `EventBundle` + `CommandEnvelope` messages.
 - `Stratara.Mediator` — `MediatorCommandWorker` dispatches into the in-process `IMediator`.

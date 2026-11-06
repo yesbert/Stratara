@@ -11,6 +11,7 @@ using Stratara.Abstractions.Session;
 using Stratara.EventSourcing.EntityFrameworkCore.ReadStore.Replay;
 using Stratara.Testing.Orleans;
 using Stratara.Identity.AspNetCore.Authentication;
+using Stratara.Outbox.RabbitMQ;
 using Stratara.Outbox.RabbitMQ.Outbox;
 using Stratara.Outbox.RabbitMQ.Projections;
 using Stratara.Projections.Services;
@@ -48,6 +49,11 @@ public class OptionsSectionBindingTests
             b => b.AddEventProjectionServices()),
         Case<ProjectionReplayOptions>("AddProjectionReplayState(), the refresh", "RefreshSeconds", "17",
             b => b.Services.AddProjectionReplayState()),
+
+        Case<RedisCoordinationOptions>("AddProjectionReplayState()", "ProductName", "acme",
+            b => b.Services.AddProjectionReplayState()),
+        Case<RedisCoordinationOptions>("AddRedisOutboxLock()", "ProductName", "acme",
+            b => b.Services.AddRedisOutboxLock()),
 
         Case<OutboxOptions>("AddOutboxDispatcher()", "BatchSize", "617",
             b => b.Services.AddOutboxDispatcher()),
