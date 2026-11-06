@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Registry;
+using Polly.Retry;
 using Stratara.Contracts.Messages;
 using Stratara.Diagnostics;
 using Stratara.Outbox.RabbitMQ.Outbox;
@@ -245,12 +246,12 @@ public class EventBundleOutboxDispatcherTests
 
         public EventBundleOutboxDispatcher Sut { get; }
 
-        public Harness(bool durableBundles = false, ILogger<EventBundleOutboxDispatcher>? logger = null)
+        public Harness(bool durableBundles = false, ILogger<EventBundleOutboxDispatcher>? logger = null, ResiliencePipeline? pipeline = null)
         {
             MessagingIdentifier.SetupGet(m => m.EventBundleTopic).Returns(EventBundleTopic);
             UnitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Transaction.Object);
             UnitOfWork.Setup(u => u.CreateOutboxRepository(It.IsAny<ITransaction>())).Returns(OutboxRepository.Object);
-            PipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(ResiliencePipeline.Empty);
+            PipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(pipeline ?? ResiliencePipeline.Empty);
 
             Sut = new EventBundleOutboxDispatcher(
                 logger ?? NullLogger<EventBundleOutboxDispatcher>.Instance,
@@ -262,6 +263,79 @@ public class EventBundleOutboxDispatcherTests
                 Options.Create(new OutboxOptions { DurableBundles = durableBundles }));
         }
     }
+
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → a pass attempts a stored message once. Retries inside a pass keep every message
+    /// behind it waiting, and bundles already wait behind the pass's commands.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_PublishFails_AttemptsEachEntryOnce()
+    {
+        var harness = new Harness(pipeline: RetryThreeTimes());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("no subscriber bound"));
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(NewEventBundle()), BuildOutboxEntry(NewEventBundle())]);
+
+        harness.MessageBus.Verify(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>A refused bundle does not end the pass: each entry behind it gets its attempt.</summary>
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_AnEntryIsRefused_TheEntriesBehindItArePublished()
+    {
+        var harness = new Harness(pipeline: RetryThreeTimes());
+        harness.MessageBus
+            .SetupSequence(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("refused"))
+            .Returns(Task.CompletedTask);
+        var refused = BuildOutboxEntry(NewEventBundle());
+        var accepted = BuildOutboxEntry(NewEventBundle());
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([refused, accepted]);
+
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(accepted.Id, It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(refused.Id, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary><c>resilience</c> → the dispatch policy still governs a first dispatch.</summary>
+    [Fact]
+    public async Task EnqueueEventBundleAsync_PublishFails_RetriesUnderThePipelineBeforeStoring()
+    {
+        var harness = new Harness(pipeline: RetryThreeTimes());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+        var bundle = NewEventBundle();
+
+        await harness.Sut.EnqueueEventBundleAsync(bundle);
+
+        harness.MessageBus.Verify(b => b.PublishAsync(EventBundleTopic, bundle, It.IsAny<CancellationToken>()), Times.Exactly(4));
+        harness.OutboxRepository.Verify(r => r.AddAsync(bundle, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>A durable bundle's first publication is a first dispatch too, though a copy is already stored.</summary>
+    [Fact]
+    public async Task DurableBundle_PublishFails_RetriesUnderThePipeline()
+    {
+        var harness = new Harness(durableBundles: true, pipeline: RetryThreeTimes());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(EventBundleTopic, It.IsAny<EventBundle>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+        var bundle = NewEventBundle();
+
+        await harness.Sut.StoreEventBundleAsync(bundle, Mock.Of<ITransaction>());
+        await harness.Sut.EnqueueEventBundleAsync(bundle);
+
+        harness.MessageBus.Verify(b => b.PublishAsync(EventBundleTopic, bundle, It.IsAny<CancellationToken>()), Times.Exactly(4));
+    }
+
+    private static ResiliencePipeline RetryThreeTimes() =>
+        new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.FromMilliseconds(1) })
+            .Build();
 
     [Fact]
     public void StoresBundlesWithCommit_FollowsTheOption()

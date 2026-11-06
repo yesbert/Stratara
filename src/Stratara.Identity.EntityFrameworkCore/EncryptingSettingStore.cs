@@ -111,7 +111,7 @@ internal sealed class EncryptingSettingStore(
         {
             return await DecryptAsync(name, ciphertext, scope, cancellationToken);
         }
-        catch (InvalidOperationException ex) when (ex is not ObjectDisposedException)
+        catch (KeyUnavailableException)
         {
             SettingStoreLog.EncryptedSettingKeyUnavailable(_logger, name, scope.NormalizedTenantId, scope.NormalizedUserId);
             return null;

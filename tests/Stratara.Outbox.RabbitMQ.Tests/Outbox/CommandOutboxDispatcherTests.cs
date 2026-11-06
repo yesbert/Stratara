@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Testing;
 using Polly;
 using Polly.Registry;
+using Polly.Retry;
 using Stratara.Contracts.Messages;
 using Stratara.Diagnostics;
 using Stratara.Contracts.Session;
@@ -250,6 +251,65 @@ public class CommandOutboxDispatcherTests
         harness.Transaction.Verify(t => t.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>
+    /// <c>outbox-and-messaging</c> → a pass attempts a stored message once. Retries inside a pass keep every message
+    /// behind it waiting, which is how a batch of unpublishable commands outlived the lock's lease.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_PublishFails_AttemptsEachEntryOnce()
+    {
+        var harness = new Harness(pipeline: RetryThreeTimes());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(CommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("no worker bound"));
+        var first = new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}");
+        var second = new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}");
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([BuildOutboxEntry(first), BuildOutboxEntry(second)]);
+
+        harness.MessageBus.Verify(b => b.PublishAsync(CommandTopic, It.Is<CommandEnvelope>(e => e.Id == first.Id), It.IsAny<CancellationToken>()), Times.Once);
+        harness.MessageBus.Verify(b => b.PublishAsync(CommandTopic, It.Is<CommandEnvelope>(e => e.Id == second.Id), It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>A refusal on one topic says nothing about the next: a heavy command with no worker does not hold up an ordinary one.</summary>
+    [Fact]
+    public async Task EnqueueOutboxEntriesAsync_AnEntryIsRefused_TheEntriesBehindItArePublished()
+    {
+        var harness = new Harness(pipeline: RetryThreeTimes());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(HeavyCommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("no worker bound"));
+        var refused = BuildOutboxEntry(new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}") { Heavy = true });
+        var accepted = BuildOutboxEntry(new CommandEnvelope(Guid.NewGuid(), "{}", "T", "{}"));
+
+        await harness.Sut.EnqueueOutboxEntriesAsync([refused, accepted]);
+
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(accepted.Id, It.IsAny<CancellationToken>()), Times.Once);
+        harness.OutboxRepository.Verify(r => r.DeleteAsync(refused.Id, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary><c>resilience</c> → the dispatch policy still governs a first dispatch: there a retry saves a database write.</summary>
+    [Fact]
+    public async Task EnqueueCommandAsync_PublishFails_RetriesUnderThePipelineBeforeStoring()
+    {
+        var harness = new Harness(pipeline: RetryThreeTimes());
+        harness.SessionContext.Setup(s => s.Current).Returns(SessionContext.Empty());
+        harness.MessageBus
+            .Setup(b => b.PublishAsync(CommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bus down"));
+
+        await harness.Sut.EnqueueCommandAsync(new TestCommand(Guid.NewGuid()));
+
+        harness.MessageBus.Verify(b => b.PublishAsync(CommandTopic, It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()), Times.Exactly(4));
+        harness.OutboxRepository.Verify(r => r.AddAsync(It.IsAny<CommandEnvelope>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static ResiliencePipeline RetryThreeTimes() =>
+        new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.FromMilliseconds(1) })
+            .Build();
+
     [Fact]
     public async Task EnqueueCommandAsync_HeavyCommand_FallingBackToStorage_RecordsTheHeavyLane()
     {
@@ -424,7 +484,7 @@ public class CommandOutboxDispatcherTests
             return published;
         }
 
-        public Harness(ILogger<CommandOutboxDispatcher>? logger = null)
+        public Harness(ILogger<CommandOutboxDispatcher>? logger = null, ResiliencePipeline? pipeline = null)
         {
             MessagingIdentifier.SetupGet(m => m.CommandTopic).Returns(CommandTopic);
             MessagingIdentifier.SetupGet(m => m.HeavyCommandTopic).Returns(HeavyCommandTopic);
@@ -432,7 +492,7 @@ public class CommandOutboxDispatcherTests
                 .Returns<Type>(t => IMessagingIdentifier.IsHeavy(t) ? HeavyCommandTopic : CommandTopic);
             UnitOfWork.Setup(u => u.StartAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Transaction.Object);
             UnitOfWork.Setup(u => u.CreateOutboxRepository(It.IsAny<ITransaction>())).Returns(OutboxRepository.Object);
-            PipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(ResiliencePipeline.Empty);
+            PipelineProvider.Setup(p => p.GetPipeline(It.IsAny<string>())).Returns(pipeline ?? ResiliencePipeline.Empty);
 
             var serializer = new Mock<ISecureJsonSerializer>();
             serializer.Setup(s => s.SerializeAsync(It.IsAny<object>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))

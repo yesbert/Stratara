@@ -60,7 +60,7 @@ internal sealed class CommandOutboxDispatcher(
             commandEnvelope = commandEnvelope with { Signature = signer.Sign(BusEnvelopeCanonical.Of(commandEnvelope)) };
         }
         var topic = messagingIdentifier.GetCommandTopic(command.GetType());
-        if (!replayState.IsReplayActive && await TrySendCommandEnvelopeAsync(commandEnvelope, topic, cancellationToken))
+        if (!replayState.IsReplayActive && await TrySendCommandEnvelopeAsync(_pipeline, commandEnvelope, topic, cancellationToken))
         {
             return commandEnvelope.Id;
         }
@@ -94,7 +94,7 @@ internal sealed class CommandOutboxDispatcher(
             }
 
             var topic = ResolveTopic(commandEnvelope);
-            if (await TrySendCommandEnvelopeAsync(commandEnvelope, topic, cancellationToken))
+            if (await TrySendCommandEnvelopeAsync(ResiliencePipeline.Empty, commandEnvelope, topic, cancellationToken))
             {
                 await repository.DeleteAsync(outboxEntry.Id, cancellationToken);
                 published++;
@@ -130,11 +130,16 @@ internal sealed class CommandOutboxDispatcher(
         }
     }
 
-    private async Task<bool> TrySendCommandEnvelopeAsync(CommandEnvelope commandEnvelope, string topic, CancellationToken cancellationToken)
+    /// <summary>
+    /// Publishes under the given pipeline. A first dispatch runs under the dispatch policy, where a retry saves a
+    /// database write. Republication from storage runs under none: the envelope is already durable, the next pass is
+    /// its retry, and retrying inside the pass would keep every entry behind it waiting, up to past the lock's lease.
+    /// </summary>
+    private async Task<bool> TrySendCommandEnvelopeAsync(ResiliencePipeline pipeline, CommandEnvelope commandEnvelope, string topic, CancellationToken cancellationToken)
     {
         try
         {
-            await _pipeline.ExecuteAsync(
+            await pipeline.ExecuteAsync(
                 static async (state, ct) =>
                 {
                     await state.messageBus.PublishAsync(state.topic, state.commandEnvelope, ct);

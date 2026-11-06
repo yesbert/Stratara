@@ -60,13 +60,13 @@ internal sealed class AesGcmSecureBlobEncryptor(
     }
 
     /// <inheritdoc/>
-    /// <exception cref="InvalidOperationException">The embedded key id cannot be resolved (revoked / erased / unknown).</exception>
+    /// <exception cref="KeyUnavailableException">The embedded key id cannot be resolved (revoked / erased / unknown).</exception>
     /// <exception cref="CryptographicException">The stream is malformed, or it fails authentication under the scope and purpose.</exception>
     public Task<Stream> DecryptAsync(Stream encryptedStream, KeyScope scope, CancellationToken cancellationToken = default) =>
         DecryptCoreAsync(encryptedStream, scope, expectedPurpose: null, cancellationToken);
 
     /// <inheritdoc/>
-    /// <exception cref="InvalidOperationException">The embedded key id cannot be resolved (revoked / erased / unknown).</exception>
+    /// <exception cref="KeyUnavailableException">The embedded key id cannot be resolved (revoked / erased / unknown).</exception>
     /// <exception cref="CryptographicException">The stream is malformed, or it fails authentication under the scope and purpose.</exception>
     public Task<Stream> DecryptAsync(Stream encryptedStream, KeyScope scope, string purpose, CancellationToken cancellationToken = default)
     {
@@ -81,7 +81,7 @@ internal sealed class AesGcmSecureBlobEncryptor(
         var purpose = expectedPurpose is not null && blob.CarriesPurpose ? expectedPurpose : blob.Purpose;
 
         var dataEncryptionKey = await keyStore.GetDataEncryptionKeyAsync(blob.KeyId, cancellationToken)
-                                ?? throw new InvalidOperationException($"Decryption key '{blob.KeyId}' is not available (revoked, erased, or unknown).");
+                                ?? throw new KeyUnavailableException(blob.KeyId);
         try
         {
             var aad = BuildAad(blob.Version, scope, purpose);

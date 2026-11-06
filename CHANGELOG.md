@@ -24,6 +24,8 @@ applies to the entire NuGet family.
   framework's encryptor enforces it, and encrypted settings now read through it.
 - **`StrataraBlobEncryptionOptions.WriteV2Blobs`** keeps new blobs in the previous format during a rolling upgrade
   (see *Blob ciphertext is bound to its whole scope* below). Default `false`.
+- **`KeyUnavailableException`** tells a key that no longer resolves from any other failure when decrypting. It
+  derives from `InvalidOperationException`, as the failure it replaces.
 
 ### Fixed
 
@@ -102,7 +104,9 @@ applies to the entire NuGet family.
 - **A setting whose key was revoked or erased no longer makes its scope unreadable.** Reading a scope decrypted
   every encrypted setting in it and failed as a whole when one key was gone — which is the state an erasure leaves
   behind. Such a setting now reads as absent and is logged as warning `112_011` (`EncryptedSettingUnreadable`); the
-  rest of the scope is returned. A value that fails authentication or is not ciphertext still fails the read.
+  rest of the scope is returned. Altered ciphertext, a value that is not ciphertext, and a key store failing for
+  another reason still fail the read; a key identifier altered to one that does not resolve reads as absent, like a
+  deleted row. A custom `ISecureBlobEncryptor` signals a lost key with the new `KeyUnavailableException`.
 - **A key revoked or erased by another process stops resolving at once.** A process that held a key of the file key
   store in memory kept decrypting with it after another process sharing the file had revoked it or erased its
   scope. A lookup now checks whether the file changed before it answers from memory.
@@ -186,6 +190,11 @@ applies to the entire NuGet family.
   replaying, and are not reached by an erasure, because rewriting them would break the tamper-evident chain; the
   guide *Encrypt Sensitive Data* shows how to find them and what the options are. Upcasters see ciphertext for such a
   value, and rewriting the recorded property name makes it unreadable.
+- **A drain pass attempts each stored message once.** Republishing from the outbox ran every entry through the
+  dispatcher's retries, about 1.4 s for each entry that could not be published, so a backlog such as heavy commands
+  with no worker bound made a pass outlive its lock and kept event bundles waiting behind the commands. The next pass
+  is now the retry, and a first dispatch keeps its retries. A brief publish failure of a stored message therefore waits
+  for the next polling interval, and a policy re-registered under a dispatcher name no longer affects republication.
 
 ## [4.7.1] — 2026-11-05
 
