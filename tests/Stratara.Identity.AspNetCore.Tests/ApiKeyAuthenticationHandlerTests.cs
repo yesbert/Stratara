@@ -6,8 +6,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Stratara.Abstractions.ApiKeys;
+using Stratara.Abstractions.Multitenancy;
 using Stratara.Identity.AspNetCore.Authentication;
 using Stratara.Sessions.Multitenancy;
+using Stratara.Testing;
 using Xunit;
 
 namespace Stratara.Identity.AspNetCore.Tests;
@@ -102,6 +104,28 @@ public class ApiKeyAuthenticationHandlerTests
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Failure);
+    }
+
+    [Theory]
+    [InlineData(MembershipStatus.Former)]
+    [InlineData(MembershipStatus.Pending)]
+    public async Task Personal_access_token_without_an_active_membership_yields_no_principal(MembershipStatus status)
+    {
+        var memberships = new InMemoryTenantMembershipStore();
+        var store = new InMemoryApiKeyStore(memberships);
+        await memberships.SetMembershipAsync(new TenantMembership(BoundUserId, TenantId, []));
+        var pat = await store.IssueAsync(new ApiKeyIssueRequest(TenantId, "pat", [], BoundUserId));
+
+        var whileActive = await AuthenticateAsync(store, ctx => ctx.Request.Headers["X-Api-Key"] = pat.RawKey);
+        Assert.True(whileActive.Succeeded);
+
+        await memberships.SetMembershipAsync(new TenantMembership(BoundUserId, TenantId, [], status));
+
+        var result = await AuthenticateAsync(store, ctx => ctx.Request.Headers["X-Api-Key"] = pat.RawKey);
+
+        Assert.False(result.Succeeded);
+        Assert.NotNull(result.Failure);
+        Assert.Null(result.Principal);
     }
 
     [Fact]

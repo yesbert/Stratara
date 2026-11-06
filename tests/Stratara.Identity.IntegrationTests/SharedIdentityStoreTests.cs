@@ -82,6 +82,39 @@ public sealed class SharedIdentityStoreTests(IdentityStoreDatabase database) : I
     }
 
     [Fact]
+    public async Task A_personal_access_token_follows_the_membership_on_the_shared_store()
+    {
+        var identityDatabase = NewDatabase();
+        using var host = database.Host(identityDatabase);
+        await host.Services.MigrateStrataraIdentityStoreAsync(TestContext.Current.CancellationToken);
+        var user = await CreateAccountAsync(host, "ada@example.com");
+        var userId = Guid.Parse(user.Id);
+        var tenantId = Guid.CreateVersion7();
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var memberships = scope.ServiceProvider.GetRequiredService<ITenantMembershipStore>();
+        var keys = scope.ServiceProvider.GetRequiredService<IApiKeyStore>();
+        await memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        var pat = await keys.IssueAsync(new ApiKeyIssueRequest(tenantId, "pat", [], userId));
+        var machine = await keys.IssueAsync(new ApiKeyIssueRequest(tenantId, "machine", ["Viewer"]));
+
+        Assert.NotNull(await keys.ValidateAsync(pat.RawKey));
+
+        await memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], MembershipStatus.Former));
+        Assert.Null(await keys.ValidateAsync(pat.RawKey));
+        Assert.NotNull(await keys.ValidateAsync(machine.RawKey));
+
+        await memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, [], MembershipStatus.Pending));
+        Assert.Null(await keys.ValidateAsync(pat.RawKey));
+
+        await memberships.RemoveMembershipAsync(userId, tenantId);
+        Assert.Null(await keys.ValidateAsync(pat.RawKey));
+
+        await memberships.SetMembershipAsync(new TenantMembership(userId, tenantId, []));
+        Assert.NotNull(await keys.ValidateAsync(pat.RawKey));
+    }
+
+    [Fact]
     public async Task A_second_host_on_a_migrated_store_applies_nothing_and_uses_it()
     {
         var identityDatabase = NewDatabase();

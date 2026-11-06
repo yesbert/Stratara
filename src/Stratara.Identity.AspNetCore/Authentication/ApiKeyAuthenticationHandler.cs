@@ -18,8 +18,9 @@ namespace Stratara.Identity.AspNetCore.Authentication;
 /// tokens, the key id for machine keys) and the <c>stratara:tenant_id</c> claim — exactly the
 /// claims the session-context middleware reads, so an API-key request flows through session
 /// context, membership roles, and permission resolution like any human sign-in. Validation is
-/// fail-closed (unknown/revoked/expired keys fail authentication); no permissions are embedded
-/// in the ticket.
+/// fail-closed (unknown/revoked/expired keys, and personal access tokens whose bound user holds no
+/// active membership in the key's tenant, fail authentication and yield no principal); no permissions
+/// are embedded in the ticket.
 /// </remarks>
 /// <param name="options">The scheme options.</param>
 /// <param name="logger">The ASP.NET authentication logger factory.</param>

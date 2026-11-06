@@ -190,7 +190,10 @@ request resolves to the reserved default tenant like any request without a claim
 or permission-guarded request is refused. The cookie refresh is what keeps the tenant; a
 bearer-token refresh re-creates the principal through the claims factory, which resolves from the
 selection. Only principals ASP.NET Identity issued are checked: an API key, or a token your application
-mints, keeps the tenant it carries. The checked mode cannot be combined with live resolution — registering
+mints, keeps the tenant it carries. That applies to a key that authenticates at all: a personal access
+token whose user's membership in the key's tenant is not active fails validation and yields no principal,
+so a removed person's token gets a 401 rather than a request in the default tenant (see
+[API Keys and Personal Access Tokens](api-keys-and-pats.md)). The checked mode cannot be combined with live resolution — registering
 both throws — and a host that registers a claims transformation of its own beside it is refused at start,
 because ASP.NET Core runs only one and the check would stop silently.
 
