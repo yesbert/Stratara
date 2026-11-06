@@ -75,6 +75,14 @@ migration needs the plaintext — splitting `FullName` into `First` and `Last`, 
 range-checking a salary — an upcaster is the wrong tool and no amount of retrying will make it work.
 Emit a new corrected event instead, and leave the old one as the fact it is.
 
+A recorded field change is the sharper case. Where a `FieldChangedEvent<TAggregate>` names a property
+marked for encryption, an upcaster sees the property's name in the clear and the value as ciphertext.
+It can route or rename the event type, but **it must not rewrite `PropertyName`**: the value is bound to
+the name it was recorded under, so reading the event then fails with `CryptographicException`, even
+when the new name is correct for the aggregate. Renaming an aggregate property therefore does not
+carry over protected changes recorded under the old name; keep the old property for replay, or emit a
+new corrected event.
+
 ### Snapshots are never upcasted
 
 Upcasting runs on every path that reads a recorded event: from the store, and from a message that

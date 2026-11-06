@@ -1,6 +1,10 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Stratara.Contracts.Messages;
+using Stratara.Contracts.Session;
 using Stratara.Abstractions.EventSourcing;
 using Stratara.Abstractions.Reflections;
 using Stratara.Abstractions.Security;
@@ -270,5 +274,113 @@ public class EventMapperFactoryTests
         var ev = events.Single();
         var typed = Assert.IsType<Event<UserCreated>>(ev);
         Assert.Equal("A", typed.Data.Name);
+    }
+
+    public sealed class Vault
+    {
+        [EncryptData]
+        public string? Secret { get; set; }
+
+        public string? Label { get; set; }
+    }
+
+    private static readonly Guid VaultTenant = Guid.NewGuid();
+    private static readonly Guid VaultUser = Guid.NewGuid();
+    private static readonly string RecordedVaultChange = typeof(FieldChangedEvent<Vault>).AssemblyQualifiedName!;
+
+    private static ISecureJsonSerializer RealSerializer()
+    {
+        var key = RandomNumberGenerator.GetBytes(32);
+        var keyStore = new Mock<IKeyStore>();
+        keyStore.Setup(k => k.GetOrCreateCurrentKeyAsync(It.IsAny<KeyScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new KeyMaterial("vault-key", key.ToArray()));
+        keyStore.Setup(k => k.GetDataEncryptionKeyAsync("vault-key", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => key.ToArray());
+
+        return new ServiceCollection()
+            .AddSingleton(keyStore.Object)
+            .AddSecurity()
+            .BuildServiceProvider()
+            .GetRequiredService<ISecureJsonSerializer>();
+    }
+
+    private static async Task<EventStreamEntry> StoredVaultChangeAsync(ISecureJsonSerializer serializer) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            TenantId = VaultTenant,
+            UserId = VaultUser,
+            ActorTenantId = VaultTenant,
+            ActorUserId = VaultUser,
+            StreamId = Guid.NewGuid(),
+            Version = 2,
+            EventTypeName = RecordedVaultChange,
+            AggregateTypeName = typeof(Vault).AssemblyQualifiedName!,
+            DataJson = await serializer.SerializeAsync(
+                new FieldChangedEvent<Vault>(nameof(Vault.Secret), "the secret"), VaultTenant, VaultUser),
+            BucketId = 0
+        };
+
+    private static EventMapperFactory VaultMapper(ISecureJsonSerializer serializer, params IEventUpcaster[] upcasters)
+    {
+        var resolver = new TrustedTypeResolver();
+        resolver.Register(typeof(FieldChangedEvent<Vault>));
+        return new EventMapperFactory(serializer, resolver, new EventUpcasterPipeline(upcasters));
+    }
+
+    [Fact]
+    public async Task A_message_built_from_a_stored_protected_change_carries_the_ciphertext_and_maps_back_to_the_value()
+    {
+        var serializer = RealSerializer();
+        var entry = await StoredVaultChangeAsync(serializer);
+
+        var message = new[] { entry }.MapToEventBundle(new SessionContext("correlation", null, null, VaultTenant, VaultUser, VaultTenant, VaultUser)).Events.Single();
+        Assert.Equal(entry.DataJson, message.DataJson);
+        Assert.DoesNotContain("the secret", message.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"__enc\":true", message.DataJson, StringComparison.Ordinal);
+
+        var mapped = await VaultMapper(serializer).MapToEventsAsync(new[] { message });
+
+        var change = Assert.IsType<Event<FieldChangedEvent<Vault>>>(mapped.Single()).Data;
+        Assert.Equal(nameof(Vault.Secret), change.PropertyName);
+        Assert.Equal("the secret", Assert.IsType<JsonElement>(change.NewValue).GetString());
+    }
+
+    [Fact]
+    public async Task An_upcaster_of_a_protected_change_sees_the_readable_name_and_the_ciphertext()
+    {
+        var serializer = RealSerializer();
+        var entry = await StoredVaultChangeAsync(serializer);
+        entry.EventTypeName = "Old.VaultChanged, Old";
+        JsonNode? seen = null;
+        var upcaster = new DelegateUpcaster(entry.EventTypeName, RecordedVaultChange, node =>
+        {
+            seen = node.DeepClone();
+            return node;
+        });
+
+        var mapped = await VaultMapper(serializer, upcaster).MapToEventsAsync(new[] { entry });
+
+        Assert.Equal(nameof(Vault.Secret), (string?)seen!["PropertyName"]);
+        Assert.True((bool?)seen["NewValue"]!["__enc"]);
+        Assert.DoesNotContain("the secret", seen.ToJsonString(), StringComparison.Ordinal);
+        var change = Assert.IsType<Event<FieldChangedEvent<Vault>>>(mapped.Single()).Data;
+        Assert.Equal("the secret", Assert.IsType<JsonElement>(change.NewValue).GetString());
+    }
+
+    [Fact]
+    public async Task An_upcaster_that_rewrites_the_name_of_a_protected_change_makes_mapping_fail()
+    {
+        var serializer = RealSerializer();
+        var entry = await StoredVaultChangeAsync(serializer);
+        entry.EventTypeName = "Old.VaultChanged, Old";
+        var upcaster = new DelegateUpcaster(entry.EventTypeName, RecordedVaultChange, node =>
+        {
+            node["PropertyName"] = nameof(Vault.Label);
+            return node;
+        });
+
+        await Assert.ThrowsAnyAsync<CryptographicException>(
+            () => VaultMapper(serializer, upcaster).MapToEventsAsync(new[] { entry }));
     }
 }
